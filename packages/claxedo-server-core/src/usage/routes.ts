@@ -184,7 +184,7 @@ export function UsageRoutes(input: {
    * throws the `ControlPlaneAuthError` its verifier raised.
    */
   identity: (request: Request) => Promise<SignedUsageIdentity | undefined>
-  /** The signed person's organization's current members, which name the members spending its team keys. */
+  /** The signed person's organization's current members, which name the members spending its organization accounts. */
   orgMembers: (request: Request) => Promise<readonly OrgMemberName[]>
   now?: () => number
   /** Plan usage for the quota view: the signed person's own accounts and the organization's they may spend. */

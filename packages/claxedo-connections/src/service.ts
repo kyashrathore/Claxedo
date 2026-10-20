@@ -1,4 +1,4 @@
-import { createAttempts, type Attempts, type MaybePromise } from "./attempts.js"
+import { createAttempts, type AttemptOwnership, type Attempts, type MaybePromise } from "./attempts.js"
 import { asRecord } from "@claxedo/helpers/guards"
 import type { IntegrationRegistry } from "./registry.js"
 import { ConnectionTokenError, createTokenService } from "./tokens.js"
@@ -481,6 +481,10 @@ export function createConnectionsService(deps: {
 
     attemptStatus(state: string): MaybePromise<{ status: AttemptStatus; integrationId: string; scope: ConnectionScope; message?: string } | undefined> {
       return attempts.status(state)
+    },
+
+    attemptOwnership(state: string): MaybePromise<AttemptOwnership | undefined> {
+      return attempts.ownership(state)
     },
 
     async remove(id: string): Promise<boolean> {

@@ -55,7 +55,6 @@ export default {
   "settings.appearance.theme.description": "Claxedo 테마 사용자 지정",
   "settings.keybindings.palette": "명령 팔레트",
   "settings.connections.reconnect": "다시 연결",
-  "settings.connections.confirm": "확인",
   "settings.section.connections": "연결",
   "settings.section.machines": "머신",
   "settings.common.remove": "제거",

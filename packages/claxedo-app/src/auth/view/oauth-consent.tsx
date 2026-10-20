@@ -1,14 +1,39 @@
 import { useLocation } from "@solidjs/router"
-import { createResource, createSignal, For, Show } from "solid-js"
+import { createResource, createSignal, For, Match, Show, Switch } from "solid-js"
 import {
-  MCP_CONSENT_DEFAULTS,
   carriedScopes,
+  consentDefaults,
+  consentRequester,
   offeredMcpScopes,
   readOAuthConsentClient,
   requestedScopes,
   submitOAuthConsent,
+  type ConsentRequester,
 } from "../oauth-consent"
 import "./auth.css"
+
+function ConsentRequesterHeading(props: { requester: ConsentRequester }) {
+  return (
+    <Switch>
+      <Match when={props.requester.kind === "deployment" && props.requester}>
+        {(requester) => <h1 class="auth-title" data-testid="consent-client">Allow {requester().name}?</h1>}
+      </Match>
+      <Match when={props.requester.kind === "unverified" && props.requester}>
+        {(requester) => (
+          <>
+            <h1 class="auth-title" data-testid="consent-client">Allow an unverified application?</h1>
+            <p class="auth-subtitle" data-testid="consent-unverified">
+              This application registered itself{requester().declaredName ? <> and calls itself “{requester().declaredName}”</> : null}. Claxedo has not checked who runs it.
+            </p>
+            <Show when={requester().redirectHost}>
+              {(host) => <p class="auth-subtitle">Allowing sends your access to <strong data-testid="consent-redirect-host">{host()}</strong>.</p>}
+            </Show>
+          </>
+        )}
+      </Match>
+    </Switch>
+  )
+}
 
 export function OAuthConsentPage() {
   const location = useLocation()
@@ -18,9 +43,11 @@ export function OAuthConsentPage() {
   const scopes = () => requestedScopes(query())
   const clientId = () => new URLSearchParams(query()).get("client_id")?.trim() || undefined
   const [client] = createResource(clientId, readOAuthConsentClient)
+  const requester = () => consentRequester(query(), clientId(), client.state === "ready" ? client()?.name : undefined)
   const offered = () => offeredMcpScopes(scopes(), clientId())
   const carried = () => carriedScopes(scopes())
-  const [granted, setGranted] = createSignal<ReadonlySet<string>>(new Set(MCP_CONSENT_DEFAULTS))
+  const [granted, setGranted] = createSignal<ReadonlySet<string>>(new Set(consentDefaults(requester())))
+  const grant = () => [...carried(), ...offered().map((entry) => entry.scope).filter((scope) => granted().has(scope))]
 
   const toggle = (scope: string, on: boolean) => {
     setGranted((current) => {
@@ -34,13 +61,11 @@ export function OAuthConsentPage() {
   const decide = async (accept: boolean) => {
     setSubmitting(accept ? "allow" : "deny")
     setFailure()
-    const offeredScopes = offered().map((entry) => entry.scope)
-    const grant = [...carried(), ...offeredScopes.filter((scope) => granted().has(scope))]
     try {
       const destination = await submitOAuthConsent({
         accept,
         oauthQuery: query(),
-        ...(offeredScopes.length > 0 ? { scope: grant.join(" ") } : {}),
+        ...(accept && scopes().length > 0 ? { scope: grant().join(" ") } : {}),
       })
       window.location.assign(destination)
     } catch (error) {
@@ -53,7 +78,7 @@ export function OAuthConsentPage() {
     <main class="auth-page">
       <section class="auth-card">
         <p class="auth-kicker">Authorization request</p>
-        <h1 class="auth-title" data-testid="consent-client">Allow {client()?.name ?? clientId() ?? "this application"}?</h1>
+        <ConsentRequesterHeading requester={requester()} />
         <p class="auth-subtitle">It is requesting access to your Claxedo workspaces on this deployment.</p>
         <Show when={offered().length > 0}>
           <fieldset class="auth-panel">
@@ -79,7 +104,7 @@ export function OAuthConsentPage() {
           <button type="button" class="auth-button auth-button-secondary" disabled={submitting() !== undefined} onClick={() => void decide(false)}>
             {submitting() === "deny" ? "Cancelling…" : "Cancel"}
           </button>
-          <button type="button" class="auth-button" disabled={submitting() !== undefined} onClick={() => void decide(true)}>
+          <button type="button" class="auth-button" disabled={submitting() !== undefined || (scopes().length > 0 && grant().length === 0)} onClick={() => void decide(true)}>
             {submitting() === "allow" ? "Allowing…" : "Allow"}
           </button>
         </div>

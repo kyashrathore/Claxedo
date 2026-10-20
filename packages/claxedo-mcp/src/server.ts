@@ -4,25 +4,14 @@
  * credentials it admits; the credential decides which tools exist.
  */
 import { Hono } from "hono"
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
-import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js"
-import {
-  isJSONRPCErrorResponse,
-  isJSONRPCRequest,
-  isJSONRPCResultResponse,
-  ListToolsRequestSchema,
-  type ElicitRequestFormParams,
-  type ElicitRequestURLParams,
-  type RequestId,
-} from "@modelcontextprotocol/sdk/types.js"
 import { bearerToken } from "@claxedo/helpers/string"
 import { stampRequestPeerAddress } from "@claxedo/helpers"
 import type { AppPluginsGrant, ClaxedoFetch, ClaxedoMcpClient, McpServiceGrant, WorkspaceTarget } from "./client/contract"
-import { MCP_SCOPES, type McpAuditEvent, type McpCredential, type McpToolContext } from "./context"
-import { createToolRegistry } from "./tools/registry"
+import { MCP_SCOPES, type McpAuditEvent, type McpCredential } from "./context"
 import { isLoopbackRequest } from "./endpoint/loopback"
 import { createMcpSessionStore } from "./endpoint/sessions"
 import { createInFlightCounter, releaseWhenSettled } from "./endpoint/in-flight"
+import type { McpSession } from "./endpoint/sdk-session"
 
 import type { ClaxedoMcpToolGroupDescription, ClaxedoMcpToolGroupId, McpToolGroup } from "./tools/index"
 export {
@@ -168,11 +157,6 @@ export function credentialKey(credential: McpCredential): string {
     : [credential.kind, credential.actorId, credential.clientId, credential.readOnly, [...credential.scopes].sort()])
 }
 
-type McpSession = {
-  transport: WebStandardStreamableHTTPServerTransport
-  close: () => Promise<void>
-}
-
 function mcpMountRefusal(status: number, code: string, message: string, headers: Record<string, string> = {}) {
   return Response.json({ error: { code, message } }, { status, headers })
 }
@@ -244,63 +228,28 @@ export function createClaxedoMcpRoutes(options: ClaxedoMcpMountOptions): Claxedo
     stateless: boolean,
   ): Promise<McpSession> => {
     const client = await options.createClient(credential, request)
-    const server = new McpServer(CLAXEDO_MCP_SERVER_INFO)
-    const inFlightCalls = new Set<RequestId>()
-    const elicit = (params: ElicitRequestFormParams | ElicitRequestURLParams) => {
-      const [only] = inFlightCalls
-      return server.server.elicitInput(params, inFlightCalls.size === 1 && only !== undefined ? { relatedRequestId: only } : undefined)
-    }
-    const ctx: McpToolContext = {
-      credential,
-      client,
-      audit: options.audit,
-      // Known only once `initialize` has been handled, which is after this
-      // context is built and after every tool is registered against it.
-      get elicit() {
-        return server.server.getClientCapabilities()?.elicitation ? elicit : undefined
-      },
-    }
-    const registry = createToolRegistry(server, ctx)
     const groups = enabled
       ? options.registerTools.filter((group) => enabled.includes(group.id))
       : options.registerTools
-    for (const group of groups) group.register(registry)
-    if (registry.listed.length === 0) {
-      server.server.registerCapabilities({ tools: {} })
-      server.server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: [] }))
-    }
-    const session: McpSession = {
-      transport: new WebStandardStreamableHTTPServerTransport(stateless
-        ? { sessionIdGenerator: undefined, enableJsonResponse: true }
+    // The MCP SDK builds its protocol schemas at module scope; loading it with
+    // the first MCP request keeps that work out of every Worker isolate's
+    // startup, which most isolates finish without serving one.
+    const { startMcpSession } = await import("./endpoint/sdk-session")
+    return await startMcpSession({
+      serverInfo: CLAXEDO_MCP_SERVER_INFO,
+      credential,
+      client,
+      audit: options.audit,
+      groups,
+      ...(stateless
+        ? {}
         : {
-            sessionIdGenerator: () => crypto.randomUUID(),
-            onsessioninitialized: (id) => sessions.add(id, { session, credentialKey: key, close: session.close }),
-            onsessionclosed: (id) => sessions.remove(id),
+            stateful: {
+              onInitialized: (id: string, session: McpSession) => sessions.add(id, { session, credentialKey: key, close: session.close }),
+              onClosed: (id: string) => sessions.remove(id),
+            },
           }),
-      close: () => session.transport.close(),
-    }
-    await server.connect(session.transport)
-    // A server-initiated request rides the SSE stream of the tool call that
-    // made it whenever exactly one call is open; the SDK otherwise routes it
-    // to the standalone GET stream, which not every host opens.
-    const { transport } = session
-    const onmessage = transport.onmessage
-    transport.onmessage = (message, extra) => {
-      registry.refresh()
-      if (isJSONRPCRequest(message) && message.method === "tools/call") inFlightCalls.add(message.id)
-      onmessage?.(message, extra)
-    }
-    const send = transport.send.bind(transport)
-    transport.send = async (message, sendOptions) => {
-      try {
-        await send(message, sendOptions)
-      } finally {
-        if ((isJSONRPCResultResponse(message) || isJSONRPCErrorResponse(message)) && message.id != null) {
-          inFlightCalls.delete(message.id)
-        }
-      }
-    }
-    return session
+    })
   }
 
   // A hosted runtime bearer is a session host's, minted again with every turn

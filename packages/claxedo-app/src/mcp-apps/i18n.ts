@@ -5,7 +5,6 @@ type McpAppsKey =
   | ConsentKey
   | "mcpApps.frame.title"
   | "mcpApps.loading"
-  | "mcpApps.loadingSlow"
   | "mcpApps.stopped"
   | "mcpApps.unavailable"
   | "mcpApps.fullscreen.enter"
@@ -15,7 +14,6 @@ export const mcpAppsDictionary = {
   en: {
     "mcpApps.frame.title": "{{server}} app",
     "mcpApps.loading": "Loading the app…",
-    "mcpApps.loadingSlow": "Waiting for the app's page…",
     "mcpApps.stopped": "The app tried to leave its page, so it was stopped.",
     "mcpApps.unavailable": "The app's server is not reachable. Send a message in this session, then try again.",
     "mcpApps.fullscreen.enter": "Full screen",

@@ -46,13 +46,13 @@ function literal(value: string | number) {
 
 export async function ownerClaimProvisioning(input: {
   deploymentId: string
-  apiOrigin: string
+  origin: string
   subject: string
   claim: string
   now?: Date
 }): Promise<OwnerClaimProvisioning> {
   const createdAt = (input.now ?? new Date()).getTime()
-  const identity: AuthIdentity = { adapter: "better-auth", issuer: betterAuthIssuer(input.apiOrigin), subject: input.subject }
+  const identity: AuthIdentity = { adapter: "better-auth", issuer: betterAuthIssuer(input.origin), subject: input.subject }
   return Object.freeze({
     deploymentId: input.deploymentId,
     identity,
@@ -97,14 +97,14 @@ export function verifyOwnerClaimOutput(output: string) {
 }
 
 export function signedInSubjectSql(email: string) {
-  return `select "id" from "user" where lower("email") = lower(${literal(email)});`
+  return `select "id" from "user" where lower("email") = lower(${literal(email)}) and "emailVerified" = 1;`
 }
 
 export function signedInSubject(output: string, email: string, appOrigin: string) {
   const rows = d1Rows(output, "signed-in account lookup")
   const id = rows[0]?.id
   if (rows.length !== 1 || typeof id !== "string" || !id) {
-    throw new Error(`no account signed in as ${email}; sign in at ${appOrigin} first`)
+    throw new Error(`no account with the verified email ${email}; sign in at ${appOrigin} and verify that email first`)
   }
   return id
 }
@@ -114,8 +114,8 @@ export function signedInSubject(output: string, email: string, appOrigin: string
  * origin, which the API trusts for credentialed CORS, so the request carries
  * the signed-in session and the Worker binds that exact account as owner.
  */
-export function ownerClaimRedemption(apiOrigin: string, claim: string) {
-  return `await fetch(${JSON.stringify(`${apiOrigin}/api/claxedo/auth/bootstrap-owner`)}, { method: "POST", credentials: "include", headers: { "content-type": "application/json", ${JSON.stringify(USER_DEPLOYED_OWNER_CLAIM_HEADER)}: ${JSON.stringify(canonicalOwnerClaim(claim))} }, body: "{}" }).then((r) => r.status)`
+export function ownerClaimRedemption(origin: string, claim: string) {
+  return `await fetch(${JSON.stringify(`${origin}/api/claxedo/auth/bootstrap-owner`)}, { method: "POST", credentials: "include", headers: { "content-type": "application/json", ${JSON.stringify(USER_DEPLOYED_OWNER_CLAIM_HEADER)}: ${JSON.stringify(canonicalOwnerClaim(claim))} }, body: "{}" }).then((r) => r.status)`
 }
 
 export function parseClaimOwnerArguments(argv: readonly string[]) {
@@ -136,7 +136,7 @@ async function main() {
   const claim = generateCanonicalOwnerClaim()
   const provisioning = await ownerClaimProvisioning({
     deploymentId: target.deploymentId,
-    apiOrigin: target.apiOrigin,
+    origin: target.appOrigin,
     subject,
     claim,
   })
@@ -147,7 +147,7 @@ async function main() {
       `Owner claim registered for ${email}; it expires in one hour.`,
       `Open ${target.appOrigin} in the browser where you signed in, open the developer console, and run:`,
       "",
-      `  ${ownerClaimRedemption(target.apiOrigin, claim)}`,
+      `  ${ownerClaimRedemption(target.appOrigin, claim)}`,
       "",
       "It prints 200 once the account owns the deployment. Reload the app.",
     ].join("\n"),

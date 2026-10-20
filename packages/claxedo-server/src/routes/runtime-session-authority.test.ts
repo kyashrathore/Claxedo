@@ -370,11 +370,12 @@ describe("runtime private-session authority oracle", () => {
       turnId: input.turnId,
       fencingToken: input.fencingToken,
     }))
+    const authorizeRuntimeSession = vi.fn(async () => {})
     const target = app({
       authority: {
         ...transitionStubs,
         registerRuntimeSession: async () => ({}),
-        authorizeRuntimeSession: async () => {},
+        authorizeRuntimeSession,
         runtimeAccessTokenActive: async () => ({ active: true }),
       },
       turnAuthority: {
@@ -392,25 +393,36 @@ describe("runtime private-session authority oracle", () => {
     })
     const token = await mintRelayHostToken(relayInput, key.privateKey, "EdDSA")
 
+    for (const unnamed of [{}, { writeClass: "session_control" }]) {
+      const refused = await request(target, token, { sessionId: "ses_private", action: "turn_acquire", turnId: "msg_1", ...unnamed })
+      expect(refused.status).toBe(400)
+      expect(await refused.json()).toMatchObject({ error: { code: "session_authority_request_invalid" } })
+    }
+    expect(acquireSessionTurn).not.toHaveBeenCalled()
+    expect(authorizeRuntimeSession).not.toHaveBeenCalled()
+
     const acquired = await request(target, token, {
       sessionId: "ses_private",
       workspaceId: "attacker_workspace",
       actorId: "attacker_actor",
       action: "turn_acquire",
       turnId: "msg_1",
+      writeClass: "agent_turn",
     })
     expect(acquired.status).toBe(200)
     const acquiredBody = await acquired.json() as { leaseId: string; fencingToken: number }
     expect(acquiredBody).toMatchObject({ fencingToken: 4 })
     expect(acquiredBody.leaseId).not.toBe("turn_lease_1")
-    expect(acquireSessionTurn).toHaveBeenCalledWith({
-      principalKind: "user",
-      actorId: "actor_1",
-      actorKind: "human",
-      sessionId: "ses_private",
-      workspaceId: "ws_1",
-      turnId: "msg_1",
-    })
+    const turnPrincipal = { principalKind: "user", actorId: "actor_1", actorKind: "human", sessionId: "ses_private", workspaceId: "ws_1" }
+    expect(acquireSessionTurn).toHaveBeenCalledWith({ ...turnPrincipal, turnId: "msg_1" })
+    // The turn authority decides the write as it writes the lease; the route asks nobody else.
+    expect(authorizeRuntimeSession).not.toHaveBeenCalled()
+
+    acquireSessionTurn.mockRejectedValueOnce(new ControlPlaneAuthError(403, "workspace_authorization_denied", "denied"))
+    const unwritable = await request(target, token, { sessionId: "ses_private", action: "turn_acquire", turnId: "msg_1b", writeClass: "agent_turn" })
+    expect(unwritable.status).toBe(403)
+    expect(await unwritable.json()).toMatchObject({ error: { code: "workspace_authorization_denied" } })
+    expect(authorizeRuntimeSession).not.toHaveBeenCalled()
 
     expect((await request(target, undefined, {
       sessionId: "ses_private",
@@ -447,6 +459,7 @@ describe("runtime private-session authority oracle", () => {
       sessionId: "ses_private",
       action: "turn_acquire",
       turnId: "msg_2",
+      writeClass: "agent_turn",
     })
     expect(conflict.status).toBe(409)
     expect(await conflict.json()).toMatchObject({ error: { code: "session_turn_in_progress" } })
@@ -637,7 +650,7 @@ describe("the owner grant as a session proof", () => {
         { action: "register", operationId: "op_1", sessionId: "ses_child", ...RUNTIME_TIMES },
         { action: "read", sessionId: "ses_parent" },
         { action: "reserve", sessionId: "ses_child", parentSessionId: "ses_parent" },
-        { action: "turn_acquire", sessionId: "ses_child", turnId: "msg_1" },
+        { action: "turn_acquire", sessionId: "ses_child", turnId: "msg_1", writeClass: "agent_turn" },
       ]) {
         const refused = await request(target, token, body)
         expect(refused.status).toBe(401)
@@ -704,7 +717,7 @@ describe("the owner grant as a session proof", () => {
     let owner: WorkspaceOwnerIdentity | undefined = OWNER
     const { target, turnAuthority, resolveWorkspaceOwner, grant } = await fixture({ owner: async () => owner })
     const token = (await grant()).token
-    const acquired = await request(target, token, { action: "turn_acquire", sessionId: "ses_child", turnId: "msg_1" })
+    const acquired = await request(target, token, { action: "turn_acquire", sessionId: "ses_child", turnId: "msg_1", writeClass: "agent_turn" })
     expect(acquired.status).toBe(200)
     const lease = await acquired.json() as { leaseId: string; fencingToken: number }
     expect(turnAuthority.acquireSessionTurn).toHaveBeenCalledWith({ ...principal, sessionId: "ses_child", workspaceId: "ws_1", turnId: "msg_1" })

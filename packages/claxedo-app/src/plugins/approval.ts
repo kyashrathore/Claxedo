@@ -56,10 +56,10 @@ export function approvalCheck(approval: Approval | undefined, subject: ApprovalS
 export function approvalLetsRun(check: ApprovalCheck): boolean {
   switch (check.kind) {
     case "approved":
-    case "codeChanged":
       return true
     case "unapproved":
     case "accessChanged":
+    case "codeChanged":
       return false
     default:
       return unreachable(check)

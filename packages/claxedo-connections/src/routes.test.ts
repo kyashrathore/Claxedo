@@ -559,6 +559,32 @@ describe("integrations routes", () => {
     })
   })
 
+  test("attempt status route answers only the attempt's owner, before and after it settles", async () => {
+    const { service } = oauthHarness()
+    const app = createIntegrationsRoutes(service, {
+      gate: () => null,
+      owner: (c) => c.req.header("x-owner"),
+      orgOwner: (c) => c.req.header("x-org"),
+      ownerlessRows: "refuse",
+    })
+    const as = (owner: string, org: string) => ({ headers: { "x-owner": owner, "x-org": org } })
+    const started = await app.request("/oauthy/connect", {
+      method: "POST",
+      body: JSON.stringify({ method: "oauth", scope: "personal" }),
+      ...as("user:alice", "org:a"),
+    })
+    const state = (await started.json() as { attemptId: string }).attemptId
+
+    expect((await app.request(`/attempts/${state}`, as("user:alice", "org:a"))).status).toBe(200)
+    const stranger = await app.request(`/attempts/${state}`, as("user:mallory", "org:a"))
+    expect(stranger.status).toBe(404)
+    expect(await stranger.json()).toEqual({ code: "attempt_not_found" })
+
+    expect((await app.request(`/callback?state=${state}&code=auth-code-1`)).status).toBe(200)
+    expect((await app.request(`/attempts/${state}`, as("user:mallory", "org:a"))).status).toBe(404)
+    expect(await (await app.request(`/attempts/${state}`, as("user:alice", "org:a"))).json()).toMatchObject({ status: "complete" })
+  })
+
   test("attempt status reports a failed attempt without carrying provider detail", async () => {
     const { app, startOAuth } = oauthHarness({
       callback: async () => {

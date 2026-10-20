@@ -1,6 +1,6 @@
 import { linkSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { randomUUID } from "node:crypto"
-import type { Server } from "node:http"
+import type { Server } from "node:net"
 import net from "node:net"
 import os from "node:os"
 import path from "node:path"

@@ -9,9 +9,11 @@ export const UI = {
   hideSidebar: "Hide Sidebar",
   openRail: "Open navigation sidebar",
   openPanel: "Open workspace panel",
+  showDetails: "Show session details",
   signedOutAccount: "Not signed in",
   signInAccount: "Sign in",
   palette: "Search files, commands, and sessions",
+  notifications: /^Notifications/,
   workedFor: /^Worked for/,
   explored: /^Explored/,
 } as const

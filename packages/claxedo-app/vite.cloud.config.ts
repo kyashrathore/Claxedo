@@ -3,9 +3,9 @@ import solidPlugin from "vite-plugin-solid"
 import tailwindcss from "@tailwindcss/vite"
 import { fileURLToPath } from "node:url"
 import { readFileSync } from "node:fs"
-import { resolveAccountBindingSelection, type AccountBindingId } from "./vite.account-binding"
-import { webContentSecurityPolicyPlugin } from "./vite.content-security-policy"
+import { resolveAccountBindingSelection, type AccountBindingBuildSelection, type AccountBindingId } from "./vite.account-binding"
 import { claxedoPluginBundles, workspaceSourceExport } from "./vite.plugin-bundles"
+import { webDocumentPlugin } from "./vite.web-document"
 
 const normalizePath = (p: string) => p.replace(/\\/g, "/")
 const shikiThemesDist = normalizePath(
@@ -29,6 +29,56 @@ function devTls(): { key: Buffer; cert: Buffer } | undefined {
   }
 }
 
+const localeFile = /\/src\/(?:(?:[^/]+\/)+locales|i18n\/errors)\/([a-z]+)\.ts$/
+
+function localeChunk(id: string): string | undefined {
+  const match = localeFile.exec(normalizePath(id))
+  return match && match[1] !== "en" ? `locale-${match[1]}` : undefined
+}
+
+const vendorChunks: Record<string, readonly string[]> = {
+  "vendor-solid": ["solid-js", "@solid-primitives"],
+  "vendor-ui": ["@kobalte", "@floating-ui", "@corvu", "@solidjs", "solid-prevent-scroll", "solid-presence", "solid-list", "motion", "framer-motion", "motion-dom", "motion-utils"],
+  "vendor-toast": ["solid-sonner"],
+  "vendor-query": ["@tanstack"],
+  "vendor-markdown": ["marked", "dompurify", "morphdom", "hast-util-to-html", "property-information", "character-entities-html4", "character-entities-legacy", "stringify-entities", "remend", "comma-separated-tokens", "space-separated-tokens", "html-void-elements", "ccount", "zwitch"],
+}
+
+function vendorChunk(id: string, binding: AccountBindingBuildSelection): string | undefined {
+  const path = normalizePath(id)
+  if (!path.includes("/node_modules/")) return undefined
+  const chunks: Record<string, readonly string[]> = { ...vendorChunks, ...binding.manualChunks }
+  for (const [chunk, packages] of Object.entries(chunks)) {
+    if (packages.some((name) => path.includes(`/node_modules/${name}/`))) return chunk
+  }
+  return undefined
+}
+
+const appSourceRoots = [
+  fileURLToPath(new URL("./src/", import.meta.url)),
+  fileURLToPath(new URL("../ui/src/", import.meta.url)),
+  fileURLToPath(new URL("../account-contract/src/", import.meta.url)),
+  fileURLToPath(new URL("../agent-runtime-contract/src/", import.meta.url)),
+].map(normalizePath)
+
+/**
+ * The app's own modules, the kit's and the contracts' do nothing at load but
+ * declare (the app forbids module-level state; the kit's package.json names
+ * only its stylesheets as side effects; the contracts are tables and types), so
+ * a module none of an entry's imports use is left out of that entry's graph.
+ * Without this Rollup assigns every module reachable through a domain's
+ * index.ts to the chunk shared by both documents, and the signed-out document
+ * carried the consent and device screens, the server adapter's account modules
+ * with TanStack Query, the side panel controls and 44 kB of contract tables for
+ * an entry that renders one form. Stylesheets keep Vite's own marking.
+ */
+function moduleSideEffects(id: string): boolean {
+  const path = normalizePath(id)
+  if (path.endsWith(".css") || path.includes("?")) return true
+  return !appSourceRoots.some((root) => path.startsWith(root))
+}
+
+
 function claxedoWorkspaceSource(): Plugin {
   return {
     name: "claxedo-workspace-source",
@@ -36,8 +86,10 @@ function claxedoWorkspaceSource(): Plugin {
     resolveId(source) {
       const match = /^(@claxedo\/[^/]+)(\/.+)?$/.exec(source)
       if (!match) return null
-      const path = workspaceSourceExport(match[1], match[2] ? `.${match[2]}` : ".")
-      return path ? normalizePath(path) : null
+      const module = workspaceSourceExport(match[1], match[2] ? `.${match[2]}` : ".")
+      if (!module) return null
+      const id = normalizePath(module.path)
+      return module.sideEffects ? id : { id, moduleSideEffects: false }
     },
   }
 }
@@ -50,17 +102,13 @@ export function cloudConfig({ mode }: { mode: string }, binding?: AccountBinding
   const accountBinding = resolveAccountBindingSelection(
     binding ?? (env.VITE_CLAXEDO_AUTH_ADAPTER || process.env.VITE_CLAXEDO_AUTH_ADAPTER),
   )
-  // 2593 tracks DEFAULT_CLAXEDO_SERVER_PORT in claxedo-local-server
-  // (src/deployments/local/port.ts), the port the desktop's local server
-  // listens on.
-  // `CLAXEDO_DEV_PROXY_TARGET` names the server the dev proxy forwards to when
-  // the app's own origin is configured as its server (local signed web
-  // development: VITE_CLAXEDO_SERVER_URL is this dev server's HTTPS origin).
-  const backendTarget = process.env.CLAXEDO_DEV_PROXY_TARGET
-    || env.VITE_CLAXEDO_SERVER_URL
-    || "http://127.0.0.1:2593"
+  // The app reaches its server on its own origin, so the dev server forwards
+  // the server's routes to `CLAXEDO_DEV_PROXY_TARGET`, else to 2593, the
+  // DEFAULT_CLAXEDO_SERVER_PORT of claxedo-local-server
+  // (src/deployments/local/port.ts) the desktop's local server listens on.
+  const backendTarget = process.env.CLAXEDO_DEV_PROXY_TARGET || "http://127.0.0.1:2593"
   return {
-    plugins: [claxedoPluginBundles(), claxedoWorkspaceSource(), solidPlugin(), tailwindcss(), webContentSecurityPolicyPlugin(env.VITE_CLAXEDO_SERVER_URL)],
+    plugins: [claxedoPluginBundles(), claxedoWorkspaceSource(), solidPlugin(), tailwindcss(), webDocumentPlugin()],
     publicDir: "public",
     server: {
       host: "0.0.0.0",
@@ -86,6 +134,13 @@ export function cloudConfig({ mode }: { mode: string }, binding?: AccountBinding
     worker: {
       format: "es",
       plugins: () => [claxedoWorkspaceSource(), solidPlugin()],
+      // A worker build does not inherit the page build's `generatedCode:
+      // "es2015"`. Without it the markdown worker's shiki grammars and themes
+      // render `var` where @pierre/diffs' copies in the page build render
+      // `const`, so each lands twice under two hashes (336 chunks, 8.6 MB raw)
+      // and a reader who meets a language in a code block and in a diff
+      // fetches its grammar twice.
+      rollupOptions: { output: { generatedCode: "es2015" } },
     },
     optimizeDeps: {
       exclude: ["@pierre/diffs", "@pierre/theming"],
@@ -93,24 +148,27 @@ export function cloudConfig({ mode }: { mode: string }, binding?: AccountBinding
     build: {
       target: "esnext",
       outDir: "dist",
-      // PostHog Error Tracking symbolication (deploy-claxedo-app.yml).
+      // Two-pass terser writes the web entry graph 32,838 bytes raw and 21,197
+      // brotli smaller than esbuild (1,973,766 against 2,006,604 raw) for a build
+      // that takes 23 s instead of 13 s; the desktop renderer keeps esbuild in
+      // vite.renderer.ts.
+      minify: "terser",
+      terserOptions: { compress: { passes: 2 } },
       // "hidden" writes *.map files next to each chunk without adding a
-      // `//# sourceMappingURL` comment to the bundle, so nothing shipped to
-      // Cloudflare Pages ever points at a map file, while the maps still
-      // exist on disk for the deploy workflow's `posthog-cli sourcemap
-      // inject`/`upload` step to find before it deletes every *.map from
-      // the publish directory.
+      // `//# sourceMappingURL` comment to the bundle, so nothing the app
+      // Worker serves points at a map file; the deploy deletes every *.map
+      // from the publish directory (prepareBrowserArtifactsForWorkers) and
+      // the desktop release uploads its own maps to PostHog.
       sourcemap: "hidden",
       rollupOptions: {
         input: {
           main: fileURLToPath(new URL("./index.html", import.meta.url)),
+          login: fileURLToPath(new URL("./login.html", import.meta.url)),
           browserPreview: fileURLToPath(new URL("./browser-preview.html", import.meta.url)),
         },
+        treeshake: { moduleSideEffects },
         output: {
-          manualChunks: {
-            "vendor-solid": ["solid-js", "solid-js/web", "solid-js/store"],
-            ...accountBinding.manualChunks,
-          },
+          manualChunks: (id) => localeChunk(id) ?? vendorChunk(id, accountBinding),
         },
       },
     },

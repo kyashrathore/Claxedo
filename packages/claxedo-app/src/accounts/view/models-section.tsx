@@ -1,13 +1,14 @@
 import { useQuery } from "@tanstack/solid-query"
-import { createMemo, For, Show } from "solid-js"
+import { createMemo, For, Show, type Accessor } from "solid-js"
 import { createStore } from "solid-js/store"
 import { harnessDisplayLabel } from "@/lib/harness-catalog"
 import { connectionHarness, NATIVE_HARNESS_IDS, nativeHarness } from "@/lib/harness-selection"
+import { inCatalogOrder, primaryPlacement, useProjects } from "@/projects"
 import { useServer } from "@/server"
 import { SettingsIntro } from "@/settings"
 import { useAccountsText } from "../i18n"
 import { harnesses } from "../model"
-import { useSettingsPlacement } from "../model-sources"
+import { settingsPlacement, type SettingsPlacement } from "../settings-placement"
 import { useAccounts } from "../store"
 import { MachineScanStatus } from "./harness-accounts"
 import { HarnessSection, type HarnessTab, type ModelsHarness } from "./harness-section"
@@ -24,6 +25,16 @@ function useModelsHarnesses() {
     const catalog = connections.data
     const enabled = catalog?.status === "supported" ? catalog.connections.filter((row) => row.enabled) : []
     return [...NATIVE, ...enabled.map((row): ModelsHarness => ({ slug: `connection:${row.connectionId}`, label: row.label, selection: connectionHarness(row.connectionId), kind: "connection" }))]
+  })
+}
+
+function useSettingsPlacement(): Accessor<SettingsPlacement> {
+  const server = useServer()
+  const projects = useProjects()
+  return createMemo(() => {
+    const state = projects()
+    const ordered = state.kind === "ready" ? { kind: "ready" as const, data: inCatalogOrder(state.data) } : state
+    return settingsPlacement(ordered, (project) => primaryPlacement(server.placements.list(), project))
   })
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Marked } from "marked"
-import { markedTranscriptAutolink, transcriptLinkPrefixes } from "./marked"
+import { markedTranscriptAutolink, transcriptLinkPrefixes, transcriptLinkRunSource } from "./marked"
 
 const parser = new Marked(markedTranscriptAutolink, {
   renderer: {
@@ -62,5 +62,39 @@ describe("prose autolinking", () => {
     )
     expect(parse("mail dev@example.com back")).toContain('href="mailto:dev@example.com"')
     expect(parse("visit www.example.com today")).toContain('href="http://www.example.com"')
+  })
+})
+
+describe("long paragraphs", () => {
+  const unboundedStart = new RegExp(
+    transcriptLinkRunSource(transcriptLinkPrefixes.filter((prefix) => !prefix.startsWith("http"))),
+    "i",
+  )
+  const extension = markedTranscriptAutolink.extensions![0]
+  const reference = new Marked({ extensions: [{ ...extension, start: (src: string) => unboundedStart.exec(src)?.index }] })
+  const bounded = new Marked(markedTranscriptAutolink)
+  const filler = (length: number) => "word ".repeat(Math.ceil(length / 5)).slice(0, length)
+
+  const cases: Record<string, string> = {
+    "soft line breaks": Array.from({ length: 400 }, (_, index) => `line fixture_${index} status=${index % 5}`).join("\n"),
+    "a link past the scan limit": `${filler(5_000)} see file:///Users/dev/notes.md now ${filler(3_000)}`,
+    "a link across the scan limit": `${filler(1_020)}file:///Users/dev/notes.md ${filler(2_000)}`,
+    "a link after a long word": `${filler(40)} ${"x".repeat(3_000)}mailto:dev@example.com ${filler(2_000)}`,
+    "an email at the scan limit": `${filler(1_018)}dev.ops@example.com ${filler(2_000)}`,
+    "a hard break at the scan limit": `${filler(1_022)}  \n${filler(2_000)}`,
+    "a url and emphasis late in the paragraph": `${filler(4_000)} *open* https://example.com/a_b and __bold__ ${filler(900)}`,
+    "no whitespace at all": `${"y".repeat(2_500)}vscode://file/x${"z".repeat(2_500)}`,
+  }
+
+  for (const [name, markdown] of Object.entries(cases)) {
+    test(`lexes ${name} as an unbounded search does`, () => {
+      expect(bounded.lexer(markdown)).toEqual(reference.lexer(markdown))
+    })
+  }
+
+  test("still links what the reference links", () => {
+    expect(bounded.parse(cases["a link past the scan limit"], { async: false })).toContain('href="file:///Users/dev/notes.md"')
+    expect(bounded.parse(cases["a link across the scan limit"], { async: false })).toContain('href="file:///Users/dev/notes.md"')
+    expect(bounded.parse(cases["no whitespace at all"], { async: false })).toContain('href="vscode://file/x')
   })
 })

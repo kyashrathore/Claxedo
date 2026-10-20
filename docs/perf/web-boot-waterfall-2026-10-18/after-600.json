@@ -1,0 +1,123 @@
+{
+  "delayMs": 600,
+  "projects": 5,
+  "rowsAt": 1206,
+  "requests": [
+    {
+      "url": "/api/claxedo/agent-config/harness?workspaceId=dde3e1b1-b6e5-483e-9799-d40281e94605",
+      "start": -1792313263888,
+      "end": -1792313263889
+    },
+    {
+      "url": "/api/workspace/c138d178-2850-451e-94c2-7b30c3c39d05/connection",
+      "start": -1792313263888,
+      "end": -1792313263889
+    },
+    {
+      "url": "/api/workspace/dde3e1b1-b6e5-483e-9799-d40281e94605/connection",
+      "start": -1792313263888,
+      "end": -1792313263889
+    },
+    {
+      "url": "/api/workspace/0c39413e-5ba4-424f-aa49-90ed33b6da48/connection",
+      "start": -1792313263888,
+      "end": -1792313263889
+    },
+    {
+      "url": "/api/workspace/32511149-75cb-40c5-9a58-2c5312395aaf/connection",
+      "start": -1792313263888,
+      "end": -1792313263889
+    },
+    {
+      "url": "/api/workspace/c2fecc33-09fd-416e-bc17-cdc87958ff4e/connection",
+      "start": -1792313263888,
+      "end": -1792313263889
+    },
+    {
+      "url": "/api/claxedo/remote-access/devices",
+      "start": -1792313263888,
+      "end": -1792313263889
+    },
+    {
+      "url": "/api/claxedo/agent-config/connections",
+      "start": -1792313263888,
+      "end": -1792313263889
+    },
+    {
+      "url": "/api/claxedo/auth/descriptor",
+      "start": 711.472900390625,
+      "end": 1359.322900390625
+    },
+    {
+      "url": "/api/workspace/shared-sessions",
+      "start": 711.56494140625,
+      "end": 1358.27894140625
+    },
+    {
+      "url": "/api/claxedo/bootstrap",
+      "start": 712.34423828125,
+      "end": 1358.68123828125
+    },
+    {
+      "url": "/api/workspace?host=provisioner",
+      "start": 712.672119140625,
+      "end": 1377.5321191406251
+    },
+    {
+      "url": "/api/control/session-list?scope=projects&limit=5&sort=human_turn_desc&settled=active",
+      "start": 712.904052734375,
+      "end": 1383.623052734375
+    },
+    {
+      "url": "/api/auth/get-session",
+      "start": 713.032958984375,
+      "end": 1387.369958984375
+    },
+    {
+      "url": "/api/claxedo/remote-access/devices",
+      "start": 1403.025146484375,
+      "end": 2079.334146484375
+    },
+    {
+      "url": "/api/claxedo/agent-config/connections",
+      "start": 1403.906005859375,
+      "end": 2091.788005859375
+    },
+    {
+      "url": "/api/workspace/dde3e1b1-b6e5-483e-9799-d40281e94605/connection",
+      "start": 1405.77294921875,
+      "end": 2097.00894921875
+    },
+    {
+      "url": "/api/workspace/0c39413e-5ba4-424f-aa49-90ed33b6da48/connection",
+      "start": 1406.44384765625,
+      "end": 2110.64584765625
+    },
+    {
+      "url": "/api/workspace/32511149-75cb-40c5-9a58-2c5312395aaf/connection",
+      "start": 1406.492919921875,
+      "end": 2120.860919921875
+    },
+    {
+      "url": "/api/workspace/c138d178-2850-451e-94c2-7b30c3c39d05/connection",
+      "start": 1406.576904296875,
+      "end": 2131.585904296875
+    },
+    {
+      "url": "/api/workspace/c2fecc33-09fd-416e-bc17-cdc87958ff4e/connection",
+      "start": 1406.6318359375,
+      "end": 2142.1808359375
+    },
+    {
+      "url": "/api/claxedo/agent-config/harness?workspaceId=dde3e1b1-b6e5-483e-9799-d40281e94605",
+      "start": 1406.707763671875,
+      "end": 2527.488763671875
+    },
+    {
+      "url": "/api/claxedo/agent-config/providers?nativeHarness=pi&view=summary",
+      "start": 2515.131103515625,
+      "end": 3138.6611035156247
+    }
+  ],
+  "text": "warm reload: 23 API requests, 11 dependent wave(s), rail rows visible at 1206 ms (delay 600 ms per API request)\n-1792313263888→-1792313263889 w1  /api/claxedo/agent-config/harness?workspaceId=dde3e1b1-b6e5-483e-9799-d40281e94605\n-1792313263888→-1792313263889 w2  /api/workspace/c138d178-2850-451e-94c2-7b30c3c39d05/connection\n-1792313263888→-1792313263889 w3  /api/workspace/dde3e1b1-b6e5-483e-9799-d40281e94605/connection\n-1792313263888→-1792313263889 w4  /api/workspace/0c39413e-5ba4-424f-aa49-90ed33b6da48/connection\n-1792313263888→-1792313263889 w5  /api/workspace/32511149-75cb-40c5-9a58-2c5312395aaf/connection\n-1792313263888→-1792313263889 w6  /api/workspace/c2fecc33-09fd-416e-bc17-cdc87958ff4e/connection\n-1792313263888→-1792313263889 w7  /api/claxedo/remote-access/devices\n-1792313263888→-1792313263889 w8  /api/claxedo/agent-config/connections\n   711→1359   w9  /api/claxedo/auth/descriptor\n   712→1358   w9  /api/workspace/shared-sessions\n   712→1359   w9  /api/claxedo/bootstrap\n   713→1378   w9  /api/workspace?host=provisioner\n   713→1384   w9  /api/control/session-list?scope=projects&limit=5&sort=human_turn_desc&settled=active\n   713→1387   w9  /api/auth/get-session\n  1403→2079   w10  /api/claxedo/remote-access/devices\n  1404→2092   w10  /api/claxedo/agent-config/connections\n  1406→2097   w10  /api/workspace/dde3e1b1-b6e5-483e-9799-d40281e94605/connection\n  1406→2111   w10  /api/workspace/0c39413e-5ba4-424f-aa49-90ed33b6da48/connection\n  1406→2121   w10  /api/workspace/32511149-75cb-40c5-9a58-2c5312395aaf/connection\n  1407→2132   w10  /api/workspace/c138d178-2850-451e-94c2-7b30c3c39d05/connection\n  1407→2142   w10  /api/workspace/c2fecc33-09fd-416e-bc17-cdc87958ff4e/connection\n  1407→2527   w10  /api/claxedo/agent-config/harness?workspaceId=dde3e1b1-b6e5-483e-9799-d40281e94605\n  2515→3139   w11  /api/claxedo/agent-config/providers?nativeHarness=pi&view=summary"
+}

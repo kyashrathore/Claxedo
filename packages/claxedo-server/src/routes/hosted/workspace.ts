@@ -8,7 +8,7 @@
  * and routing requires assignment AND acked set AND a live lease. There is no
  * per-workspace challenge or signature — that grain is retired.
  *
- * `GET /:id/connection` is shared with the local server (`hostTunnelConnectionInfo`).
+ * `GET /:id/connection` reads a machine-placed workspace's link through `hostTunnelConnectionInfo` and a cloud one's through `hostedConnectionStatus`.
  */
 
 import { withAuthorityRowReachability } from "@claxedo/server-core/workspace/placement-reachability"
@@ -29,7 +29,6 @@ import { newWorkspaceId } from "../../platform/auth/workspace-id"
 import { hostedConnectionInfo, hostedConnectionStatus, hostedSessionConnection, hostedSessionHostConnection } from "../../connections/hosted-connection-info"
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
 import { apiError, captureWorkspaceTelemetry, missingBearerBody, parsedBody, signedOrError, type WorkspaceRouteOptions } from "../../workspace/route-support"
-import { asRecord } from "@claxedo/helpers/guards"
 import { isClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { contentfulStatus } from "../../platform/http/status"
 import { hostAssignmentHandlers } from "../../workspace/host-assignment-handlers"
@@ -255,7 +254,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
       })
       .get("/", async (c) => {
         const host = c.req.query("host")
-        if (host !== undefined && host !== "machine" && host !== "provisioner") {
+        if (host !== undefined && host !== "provisioner") {
           return c.json({ error: apiError("workspace_host_invalid", "workspace host is invalid") }, 400)
         }
         const authResult = await signedOrError(c.req.raw, authOptions(), services)
@@ -273,10 +272,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             const workspaces = await authority.listWorkspaces(auth)
             const rows = Array.isArray(workspaces) ? workspaces : []
             return c.json({
-              workspaces: await withAuthorityRowReachability(
-                services?.sandbox.sandboxManager,
-                host === "machine" ? rows.filter((item) => asRecord(item)?.backing === "local-worktree") : rows,
-              ),
+              workspaces: await withAuthorityRowReachability(services?.sandbox.sandboxManager, rows),
             })
           } catch (err) {
             if (err instanceof ControlPlaneAuthError)

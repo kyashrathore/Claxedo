@@ -26,8 +26,12 @@ type ViewContext = {
   readonly stops?: boolean
 }
 
+export function runsInBackground(entry: { readonly mode?: SubagentView["mode"]; readonly status?: string }): boolean {
+  return entry.mode === "background" && (entry.status === "running" || entry.status === "pending")
+}
+
 function stopCallOf(entry: SessionSubagent, stops: boolean | undefined): string | undefined {
-  if (!stops || entry.mode !== "background" || (entry.status !== "running" && entry.status !== "pending")) return undefined
+  if (!stops || !runsInBackground(entry)) return undefined
   return [...entry.toolCallEdges].find(([, role]) => role === "spawn")?.[0]
 }
 

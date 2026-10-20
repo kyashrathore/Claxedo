@@ -91,6 +91,19 @@ async function resolveHuman(database: D1Database, deploymentId: string, auth: Si
   return { userId: row.user_id, actorId: row.actor_id, actorKind: "human" }
 }
 
+/**
+ * The principal as the signed auth names it, before `requireHuman` has
+ * verified it, for a read started beside that verification: the
+ * verification refuses a principal whose identity row names another user or
+ * actor, so what the read keyed by these ids answers either joins a verified
+ * principal or is discarded with the refusal. A write never takes it.
+ */
+export function namedPrincipal(auth: SignedControlPlaneAuth): AccessPrincipal {
+  const principal = auth.principal
+  if (!principal) throw new ControlPlaneAuthError(503, "identity_provisioning", "Canonical application identity is required")
+  return { userId: principal.userId, actorId: principal.actorId }
+}
+
 export type D1AccessErrorCode =
   | "invalid_input"
   | "org_admin_required"

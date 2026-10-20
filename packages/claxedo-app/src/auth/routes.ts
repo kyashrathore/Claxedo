@@ -1,6 +1,6 @@
 import type { Component } from "solid-js"
 import { DeviceApprovalPage } from "./view/device-approval"
-import { LoginPage, OrgInvitationPage } from "./view/login"
+import { LoginPage, OrgInvitationPage } from "./view/login-page"
 import { OAuthConsentPage } from "./view/oauth-consent"
 
 export type AuthRoute = {

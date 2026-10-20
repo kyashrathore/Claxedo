@@ -6,6 +6,7 @@ import { placementId, projectId, sessionId } from "./ids"
 import type { Transport } from "./transport"
 import { cloudCatalog as listedCloudCatalog } from "./test-support/cloud-catalog"
 import { createWorkspaces } from "./workspaces"
+import { PUBLISHED_DEPLOYMENT_ELEMENT_ID } from "./published-deployment"
 import { queryKeys } from "./query-keys"
 import { invalidateFor } from "./queries"
 import { frameFromWire, serverEventFromFrame } from "./wire/frames"
@@ -120,5 +121,27 @@ test("a session in a workspace the catalog has not read yet is located only once
     expect(reads.length).toBe(rereads)
     workspaces.dispose()
     dispose()
+  })
+})
+
+test("a hosted deployment's bootstrap published into the shell is the catalog's declaration, read and re-read without a request", async () => {
+  await createRoot(async (dispose) => {
+    const reads: string[] = []
+    const hosted = { deployment: { serverKind: "hosted", issuesSessions: true, capabilities: ["documents"], connections: true } }
+    Object.defineProperty(globalThis, "document", {
+      configurable: true,
+      value: { getElementById: (id: string) => (id === PUBLISHED_DEPLOYMENT_ELEMENT_ID ? { textContent: JSON.stringify({ server: "http://127.0.0.1:1", bootstrap: hosted, authDescriptor: {} }) } : null) },
+    })
+    try {
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      const workspaces = createWorkspaces(transport(reads), queryClient)
+      expect((await workspaces.boot()).declaration).toMatchObject({ serverKind: "hosted", issuesSessions: true, connections: true })
+      await workspaces.refresh()
+      expect(reads).toEqual([])
+      workspaces.dispose()
+    } finally {
+      Reflect.deleteProperty(globalThis, "document")
+      dispose()
+    }
   })
 })

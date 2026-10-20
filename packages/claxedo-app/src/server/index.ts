@@ -31,6 +31,7 @@ export type * from "./mcp-app-types"
 export type { CatalogProvider, ProviderSource } from "./wire/provider-catalog"
 export type { PermissionModesRequest } from "./permission-modes"
 export type * from "./events"
+export type { SessionFirstPages } from "./session-list"
 export * from "./ids"
 export type { AccountEvents, ServerConfig } from "./config"
 export type { RunAppHostedOperation } from "./operations"
@@ -45,3 +46,4 @@ export { ServerProvider } from "./provider"
 
 
 export { piProviderAccountIds } from "./wire/accounts"
+export { PUBLISHED_DEPLOYMENT_ELEMENT_ID, publishedDeployment } from "./published-deployment"

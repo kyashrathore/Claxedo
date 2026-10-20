@@ -15,6 +15,15 @@ export type ChannelAdapterConfig = {
   botToken?: string
   /** `@chat-adapter/telegram` compares this against `x-telegram-bot-api-secret-token`. */
   secretToken?: string
+  /** `@chat-adapter/github` HMACs each delivery with this for `x-hub-signature-256`. */
+  webhookSecret?: string
+  /** `@chat-adapter/slack` verifies `x-slack-signature` with this. */
+  signingSecret?: string
+  /** `@chat-adapter/discord` verifies each interaction's Ed25519 signature against this. */
+  publicKey?: string
+  accessToken?: string
+  /** `@chat-adapter/whatsapp` HMACs each delivery with this for `x-hub-signature-256`. */
+  appSecret?: string
 }
 
 export type ChannelRegistration = {
@@ -51,6 +60,22 @@ export function createChannelRegistry(env: Env, options: { includeFake?: boolean
     botToken: firstConfigured(env, ["TELEGRAM_BOT_TOKEN", "CLAXEDO_CHANNEL_TELEGRAM_BOT_TOKEN"]),
     secretToken: firstConfigured(env, ["TELEGRAM_WEBHOOK_SECRET_TOKEN", "CLAXEDO_CHANNEL_TELEGRAM_WEBHOOK_SECRET_TOKEN"]),
   }
+  const github: ChannelAdapterConfig = {
+    webhookSecret: firstConfigured(env, ["GITHUB_WEBHOOK_SECRET", "CLAXEDO_CHANNEL_GITHUB_WEBHOOK_SECRET"]),
+  }
+  const slack: ChannelAdapterConfig = {
+    botToken: firstConfigured(env, ["SLACK_BOT_TOKEN"]),
+    signingSecret: firstConfigured(env, ["SLACK_SIGNING_SECRET"]),
+  }
+  const discord: ChannelAdapterConfig = {
+    botToken: firstConfigured(env, ["DISCORD_BOT_TOKEN", "CLAXEDO_CHANNEL_DISCORD_BOT_TOKEN"]),
+    publicKey: firstConfigured(env, ["DISCORD_PUBLIC_KEY", "CLAXEDO_CHANNEL_DISCORD_PUBLIC_KEY"]),
+  }
+  const whatsapp: ChannelAdapterConfig = {
+    accessToken: firstConfigured(env, ["WHATSAPP_ACCESS_TOKEN", "CLAXEDO_CHANNEL_WHATSAPP_ACCESS_TOKEN"]),
+    appSecret: firstConfigured(env, ["WHATSAPP_APP_SECRET", "CLAXEDO_CHANNEL_WHATSAPP_APP_SECRET"]),
+  }
+  const whatsappOfficialVerified = whatsappMode === "personal" || !!whatsapp.appSecret
   const registrations: ChannelRegistration[] = [
     {
       channel: "fake",
@@ -61,13 +86,16 @@ export function createChannelRegistry(env: Env, options: { includeFake?: boolean
     },
     {
       channel: "github",
-      enabled: truthy(env.CLAXEDO_CHANNEL_GITHUB_ENABLED) || any(env, [
+      enabled: (truthy(env.CLAXEDO_CHANNEL_GITHUB_ENABLED) || any(env, [
         "GITHUB_APP_ID",
         "CLAXEDO_CHANNEL_GITHUB_APP_ID",
-      ]),
+      ])) && !!github.webhookSecret,
       transport: "chat-sdk",
-      reason: "GitHub Chat SDK adapter",
+      reason: github.webhookSecret
+        ? "GitHub Chat SDK adapter"
+        : "GitHub Chat SDK adapter disabled until GITHUB_WEBHOOK_SECRET is set",
       webhookPath: "/github",
+      adapterConfig: github,
     },
     {
       channel: "telegram",
@@ -81,34 +109,42 @@ export function createChannelRegistry(env: Env, options: { includeFake?: boolean
     },
     {
       channel: "slack",
-      enabled: truthy(env.CLAXEDO_CHANNEL_SLACK_ENABLED) || any(env, [
+      enabled: (truthy(env.CLAXEDO_CHANNEL_SLACK_ENABLED) || any(env, [
         "SLACK_BOT_TOKEN",
         "SLACK_SIGNING_SECRET",
-      ]),
+      ])) && !!slack.signingSecret,
       transport: "chat-sdk",
-      reason: "Slack Chat SDK adapter",
+      reason: slack.signingSecret
+        ? "Slack Chat SDK adapter"
+        : "Slack Chat SDK adapter disabled until SLACK_SIGNING_SECRET is set",
       webhookPath: "/slack",
+      adapterConfig: slack,
     },
     {
       channel: "discord",
-      enabled: truthy(env.CLAXEDO_CHANNEL_DISCORD_ENABLED) || any(env, [
-        "DISCORD_BOT_TOKEN",
-        "CLAXEDO_CHANNEL_DISCORD_BOT_TOKEN",
-      ]),
+      enabled: (truthy(env.CLAXEDO_CHANNEL_DISCORD_ENABLED) || !!discord.botToken) && !!discord.publicKey,
       transport: "chat-sdk",
-      reason: "Discord Chat SDK adapter",
+      reason: discord.publicKey
+        ? "Discord Chat SDK adapter"
+        : "Discord Chat SDK adapter disabled until DISCORD_PUBLIC_KEY is set",
       webhookPath: "/discord",
+      adapterConfig: discord,
     },
     {
       channel: "whatsapp",
-      enabled: truthy(env.CLAXEDO_CHANNEL_WHATSAPP_ENABLED) || any(env, [
+      enabled: (truthy(env.CLAXEDO_CHANNEL_WHATSAPP_ENABLED) || any(env, [
         "WHATSAPP_ACCESS_TOKEN",
         "CLAXEDO_CHANNEL_WHATSAPP_ACCESS_TOKEN",
         "CLAXEDO_CHANNEL_WHATSAPP_BAILEYS_SECRET_ID",
-      ]),
+      ])) && whatsappOfficialVerified,
       transport: whatsappMode === "personal" ? "baileys" : "chat-sdk",
-      reason: whatsappMode === "personal" ? "WhatsApp personal Baileys adapter" : "WhatsApp official Chat SDK adapter",
+      reason: whatsappMode === "personal"
+        ? "WhatsApp personal Baileys adapter"
+        : whatsappOfficialVerified
+          ? "WhatsApp official Chat SDK adapter"
+          : "WhatsApp official Chat SDK adapter disabled until WHATSAPP_APP_SECRET is set",
       webhookPath: "/whatsapp",
+      ...(whatsappMode === "personal" ? {} : { adapterConfig: whatsapp }),
     },
   ]
   return {

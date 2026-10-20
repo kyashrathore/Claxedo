@@ -36,7 +36,7 @@
  * so TTL arithmetic is reproducible and testable.
  */
 import type { D1Database } from "@cloudflare/workers-types"
-import type { Attempts } from "@claxedo/connections"
+import type { AttemptOwnership, Attempts } from "@claxedo/connections"
 import { storedFields } from "../stored-columns"
 
 /** Mirrors the kit's `ttlMs` default: how long a pending attempt may be finished. */
@@ -57,19 +57,12 @@ export const HOSTED_ATTEMPT_SWEEP_LIMIT = 500
  */
 export const HOSTED_ATTEMPT_SWEEP_RATE = 0.05
 
-/**
- * The frozen owner and callback routing of ANY attempt row, terminal ones
- * included. `inspect` deliberately answers only for a live pending row, which
- * is right for a callback but wrong for the poll: an attempt that already
- * settled still has to be readable BY ITS OWNER and by no one else.
- */
-export type HostedAttemptOwnership = Readonly<{
-  owner: string | null
+/** The kit's ownership read plus the callback routing frozen beside the owner. */
+export type HostedAttemptOwnership = AttemptOwnership & Readonly<{
   routing?: Readonly<Record<string, string>>
 }>
 
-/** The durable store's own shape: the kit's port plus the ownership read above. */
-export type HostedConnectionAttempts = Attempts & {
+export type HostedConnectionAttempts = Omit<Attempts, "ownership"> & {
   ownership(state: string): Promise<HostedAttemptOwnership | undefined>
 }
 
@@ -240,7 +233,7 @@ export function createD1ConnectionAttempts(input: D1ConnectionAttemptsInput): Ho
         .first<{ owner: string | null; routing_json: string | null }>()
       if (!row) return undefined
       return {
-        owner: row.owner,
+        ...(row.owner === null ? {} : { owner: row.owner }),
         ...(row.routing_json === null ? {} : { routing: decodeRecord(row.routing_json)! }),
       }
     },

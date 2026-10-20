@@ -16,7 +16,7 @@ import { WorkspaceRuntimeTargetError } from "../authority/runtime-target"
 import { sessionHostMachineAccess, type SessionHostMachineAccess, type SessionHostMachineDeps } from "../authority/session-host-machine-access"
 import { holderAccountSources, spendsAccount } from "@claxedo/server-core/credentials/account-holder"
 import { createCredentialRefusals, type CredentialRefusals } from "../credentials/credential-refusals"
-import { ownerDirectDelivery, PI_DIRECT_PROVIDERS } from "../credentials/direct-rows"
+import { openDirectAccounts, PI_DIRECT_PROVIDERS, selectDirectAccounts, type SelectedDirectAccounts } from "../credentials/direct-rows"
 import { sessionLeasePrincipal } from "../session/runtime-session-proofs"
 import type { OwnerMachineStart } from "../workspace/cloud-workspace-start"
 import type { RuntimeSessionAuthorityOptions } from "./runtime-session-authority"
@@ -48,15 +48,92 @@ const deleteSchema = z.object({ sessionId: z.string().min(1) }).strict()
 
 const machineNotRunning = (error: unknown) => error instanceof WorkspaceRuntimeTargetError && error.status === 409
 
+export type TurnDeliveryRefusal = { code: "turn_delivery_denied"; status: 403 } | { code: "agent_plugins_unavailable"; status: 502 }
+
+/** Whose turn a delivery is: the workspace's owner, and the person whose accounts it spends (the session's creator, else that owner). */
+export type TurnDeliveryHolder = { owner: WorkspaceOwnerIdentity; holder: string }
+
+/** What `readTurnDelivery` gathered for a turn, with no secret opened; `assembleTurnDelivery` opens them once the lease is granted. */
+export type TurnDeliveryReads = TurnDeliveryHolder & {
+  accounts: SelectedDirectAccounts
+  plugins: RuntimeConfigSnapshotPlugins
+}
+
+/** Decided from the placement and the owner alone, before any lease is taken: a turn no owner answers for, or on a session the plane has no row for, gets no delivery. */
+export function turnDeliveryHolder(
+  turn: { orgId: string },
+  placement: SessionHostPlacement,
+  owner: WorkspaceOwnerIdentity | undefined,
+): TurnDeliveryHolder | TurnDeliveryRefusal {
+  if (!owner || owner.orgId !== turn.orgId || !placement.session) return { code: "turn_delivery_denied", status: 403 }
+  return { owner, holder: placement.session.creatorUserId ?? owner.userId }
+}
+
+/**
+ * The reads a session host's turn delivery is made of: the rows naming the
+ * holder's provider accounts and the workspace's plugins, none of them a
+ * secret. Neither depends on the turn's lease, so a turn being acquired reads
+ * them beside the lease it is taking and a caller the lease then refuses has
+ * caused no secret to be opened; a plugin read that fails refuses the
+ * delivery rather than hand the host a turn with none.
+ */
+export async function readTurnDelivery(
+  input: Pick<SessionHostDeliveryOptions, "credentials" | "plugins">,
+  workspaceId: string,
+  named: TurnDeliveryHolder,
+): Promise<TurnDeliveryReads | TurnDeliveryRefusal> {
+  const [accounts, plugins] = await Promise.all([
+    selectDirectAccounts(input.credentials(named.owner.orgId), PI_DIRECT_PROVIDERS),
+    input.plugins ? input.plugins(workspaceId).then((plugins) => ({ plugins }), (error: unknown) => ({ error })) : { plugins: { harnessLaunch: {}, mcp: {} } },
+  ])
+  if ("error" in plugins) {
+    console.error(`[session-host-delivery] the plugins of ${workspaceId} were not applied:`, plugins.error instanceof Error ? plugins.error.message : String(plugins.error))
+    return { code: "agent_plugins_unavailable", status: 502 }
+  }
+  return { ...named, accounts, plugins: plugins.plugins }
+}
+
+/**
+ * The delivery for one granted lease: the holder's accounts opened as the
+ * secrets themselves, living no longer than the lease or the shortest-lived
+ * account among them, and the first-party MCP server, under a bearer of the
+ * same life, only for the workspace owner driving their own session.
+ */
+export async function assembleTurnDelivery(
+  input: Pick<SessionHostDeliveryOptions, "credentials" | "sessionMcp">,
+  reads: TurnDeliveryReads,
+  turn: { actorId: string; workspaceId: string; sessionId: string; expiresAt: number },
+  placement: SessionHostPlacement,
+  origin: string,
+): Promise<TurnDelivery> {
+  const { owner, holder, plugins } = reads
+  const { direct, refused } = await openDirectAccounts(input.credentials(owner.orgId), holder, reads.accounts, { providers: PI_DIRECT_PROVIDERS })
+  const expiresAt = Math.min(turn.expiresAt, ...Object.values(direct).flatMap((row) => row.expiresAt === undefined ? [] : [row.expiresAt]))
+  const firstPartyMcp = holder === owner.userId && turn.actorId === owner.actorId
+    ? await input.sessionMcp?.issue({ origin, owner, workspaceId: turn.workspaceId, sessionId: turn.sessionId, expiresAt })
+    : undefined
+  const directory = placement.workspace.directory
+  return {
+    expiresAt,
+    auth: { machineOwnerUserId: owner.userId, accounts: Object.keys(refused).length ? { [holder]: refused } : {}, direct: { [holder]: direct } },
+    plugins,
+    providerDefinitions: [],
+    ...(firstPartyMcp ? { firstPartyMcp } : {}),
+    ...(directory ? { directory } : {}),
+  }
+}
+
 /**
  * The calls a session's Durable Object makes of the control plane, each
- * proven by the turn lease the session authority issued it: `/turn-delivery`
+ * proven by the turn lease the session authority issued it. `/turn-delivery`
  * hands it the provider accounts of the session's creator as direct secrets
  * and, for a turn the workspace owner drives in their own session, the
- * first-party MCP server with that turn's bearer; `/turn-execution` mints it
- * a session-scoped token for the workspace's machine, where its tools run,
- * and for a call that asks, starts a machine that is not running and answers
- * at once that it is starting, never waiting for it.
+ * first-party MCP server with that turn's bearer: what a turn's acquisition
+ * already handed over with its lease, asked here for a lease the host took
+ * over after a restart or whose accounts the vendor refused. `/turn-execution`
+ * mints it a session-scoped token for the workspace's machine, where its
+ * tools run, and for a call that asks, starts a machine that is not running
+ * and answers at once that it is starting, never waiting for it.
  * Both answer only that session's own host, only while its lease is the live
  * one, and only while the turn's actor may still send its turns.
  * `/turn-credential-refused` takes the vendor status and the revision of an
@@ -181,31 +258,11 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
       const admitted = await liveTurn(c)
       if (admitted instanceof Response) return admitted
       const { claims, placement } = admitted
-      const owner = await input.resolveWorkspaceOwner(claims.workspaceId)
-      if (!owner || owner.orgId !== claims.orgId) return denied(c)
-      const holder = placement.session!.creatorUserId ?? owner.userId
-      const { direct, refused } = await ownerDirectDelivery(input.credentials(owner.orgId), holder, { providers: PI_DIRECT_PROVIDERS })
-      let plugins: RuntimeConfigSnapshotPlugins = { harnessLaunch: {}, mcp: {} }
-      try {
-        if (input.plugins) plugins = await input.plugins(claims.workspaceId)
-      } catch (error) {
-        console.error(`[session-host-delivery] the plugins of ${claims.workspaceId} were not applied:`, error instanceof Error ? error.message : String(error))
-        return c.json({ error: { code: "agent_plugins_unavailable" } }, 502)
-      }
-      const expiresAt = Math.min(claims.expiresAt, ...Object.values(direct).flatMap((row) => row.expiresAt === undefined ? [] : [row.expiresAt]))
-      const firstPartyMcp = holder === owner.userId && claims.actorId === owner.actorId
-        ? await input.sessionMcp?.issue({ origin: new URL(c.req.url).origin, owner, workspaceId: claims.workspaceId, sessionId: claims.sessionId, expiresAt })
-        : undefined
-      const directory = placement.workspace.directory
-      const delivery: TurnDelivery = {
-        expiresAt,
-        auth: { machineOwnerUserId: owner.userId, accounts: Object.keys(refused).length ? { [holder]: refused } : {}, direct: { [holder]: direct } },
-        plugins,
-        providerDefinitions: [],
-        ...(firstPartyMcp ? { firstPartyMcp } : {}),
-        ...(directory ? { directory } : {}),
-      }
-      return c.json(delivery)
+      const named = turnDeliveryHolder(claims, placement, await input.resolveWorkspaceOwner(claims.workspaceId))
+      if ("code" in named) return c.json({ error: { code: named.code } }, named.status)
+      const reads = await readTurnDelivery(input, claims.workspaceId, named)
+      if ("code" in reads) return c.json({ error: { code: reads.code } }, reads.status)
+      return c.json(await assembleTurnDelivery(input, reads, claims, placement, new URL(c.req.url).origin))
     })
     .post("/turn-execution", bodyLimit({ maxSize: 16 * 1024 }), async (c) => {
       c.header("cache-control", "no-store")

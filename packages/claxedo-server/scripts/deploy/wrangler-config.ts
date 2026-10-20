@@ -2,6 +2,7 @@ import path from "node:path"
 
 import type { CertifiedHostedWorkerArtifact } from "../../src/deployments/hosted-workerd/certified-worker-artifacts"
 import { HOSTED_WORKER_BUNDLE_CONTRACT } from "./hosted-worker-bundle"
+import { controlPlaneRoutePatterns } from "./public-origin"
 
 const SERVER_ROOT = path.resolve(import.meta.dirname, "../..")
 
@@ -19,6 +20,8 @@ export type WorkerWranglerConfigInput = Readonly<{
   agentPluginsBucket?: string
   /** A cloud region in Wrangler's `placement.region` form; absent, placement is smart. */
   placementRegion?: string
+  /** The public origin's hostname, the app Worker's custom domain, on which the control plane's paths become its routes. */
+  publicOriginHost: string
   variables: Readonly<Record<string, string>>
 }>
 
@@ -89,8 +92,22 @@ new_sqlite_classes = ["SandboxProvisioner"]
 `,
       }
     : { binding: "", migration: "" }
+  // Simple routes: Wrangler resolves each pattern's zone from its hostname
+  // with the same zone access `wrangler deploy --domain` already uses for the
+  // app Worker, so a deployment names no zone of its own. The bundle contract
+  // below ends in the `[alias]` table, so these top-level keys come first.
+  const routes = controlPlaneRoutePatterns(input.publicOriginHost).map(quote).join(", ")
   return `name = ${quote(input.workerName)}
 main = ${quote(fromConfig(input.configDirectory, input.artifact.entrypointFromPackageRoot))}
+# The control plane answers its paths on the app's own host through Worker
+# routes, which "take precedence if configured on the same hostname" as the
+# app Worker's custom domain (developers.cloudflare.com/workers/configuration/
+# routing/routes/), so a request on them runs one Worker, not the app Worker
+# and a service binding. Measured against a custom domain of this Worker in a
+# simultaneous A/B on staging, a route is the same path: the same cold rate
+# (24 against 22 of 80) and the same answer times
+# (docs/perf/worker-cold-starts-2026-10-19).
+routes = [${routes}]
 ${HOSTED_WORKER_BUNDLE_CONTRACT}
 
 [version_metadata]
@@ -196,12 +213,29 @@ new_sqlite_classes = ["SessionDO"]
 `
 }
 
-export const APP_ASSETS_WORKER = path.join(SERVER_ROOT, "scripts/deploy/app-assets-worker.ts")
+export const APP_WORKER = path.join(SERVER_ROOT, "scripts/deploy/app-worker.ts")
 
-/** The static-assets Worker that serves the browser app on its own custom domain; its script answers only `/assets/*`. */
-export function renderAppWranglerConfig(input: Readonly<{ appWorkerName: string; browserDirectory: string }>) {
+/**
+ * The app Worker on the deployment's one public origin: the browser app's
+ * assets, with the relay bound as a service behind `/relay`, so it is
+ * published after the relay exists. It runs ahead of every asset: the relay's
+ * paths, the hashed chunks whose fallback it refuses, and the shell whose
+ * response names a signed-in boot's preloads. The control plane's paths never
+ * reach it on a deployed origin: they are the control plane's own routes on
+ * the same host (`renderWorkerWranglerConfig`). The assets serve a document
+ * only at its own path (`html_handling = "none"`): the Worker fetches
+ * `/login.html` by name for a signed-out visitor, and `/login` itself has no
+ * file, so a signed-in browser there gets the single-page fallback, the shell,
+ * as on every client route; `auto-trailing-slash` would have served the
+ * signed-out document to anyone at `/login` and redirected `/index.html`.
+ */
+export function renderAppWranglerConfig(input: Readonly<{
+  appWorkerName: string
+  relayWorkerName: string
+  browserDirectory: string
+}>) {
   return `name = ${quote(input.appWorkerName)}
-main = ${quote(APP_ASSETS_WORKER)}
+main = ${quote(APP_WORKER)}
 compatibility_date = "2025-05-01"
 workers_dev = false
 preview_urls = false
@@ -210,7 +244,11 @@ preview_urls = false
 directory = ${quote(path.resolve(input.browserDirectory))}
 binding = "ASSETS"
 not_found_handling = "single-page-application"
-html_handling = "auto-trailing-slash"
-run_worker_first = ["/assets/*"]
+html_handling = "none"
+run_worker_first = true
+
+[[services]]
+binding = "RELAY"
+service = ${quote(input.relayWorkerName)}
 `
 }

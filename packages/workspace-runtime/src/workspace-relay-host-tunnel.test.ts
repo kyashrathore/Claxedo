@@ -821,17 +821,14 @@ describe("workspace relay host tunnel client", () => {
     tunnel.close()
   })
 
-  test("closes upstream WebSocket channels when the pre-open queue exceeds its byte bound", async () => {
+  function preOpenChannel(bounds: { wsPreOpenQueueMaxFrames?: number; wsPreOpenQueueMaxBytes?: number }) {
     const sockets: FakeWebSocket[] = []
     const tunnel = startWorkspaceRelayHostTunnel({
       relayUrl: "http://relay.invalid",
       hostId: "host_1",
       workspaceIds: ["ws_1"],
       localBaseUrl: "http://runtime.invalid",
-      // Both bounds must be crossed to close, so a test that means to exercise
-      // the close path has to make the queued BYTES the binding constraint.
-      wsPreOpenQueueMaxFrames: 1,
-      wsPreOpenQueueMaxBytes: 8,
+      ...bounds,
       webSocket: class extends FakeWebSocket {
         constructor(url: string, options: { headers?: Record<string, string> }) {
           super(url, options)
@@ -849,36 +846,58 @@ describe("workspace relay host tunnel client", () => {
       path: "/api/ws",
       headers: {},
     }))
-    const upstream = sockets[1]
-
-    socket.receive(JSON.stringify({
+    const frame = (text: string) => socket.receive(JSON.stringify({
       type: "ws.frame",
       protocol: TUNNEL_PROTOCOL_VERSION,
       channel_id: "channel_1",
       binary: false,
-      data_base64: "Zmlyc3Q=",
+      data_base64: Buffer.from(text).toString("base64"),
     }))
-    socket.receive(JSON.stringify({
-      type: "ws.frame",
-      protocol: TUNNEL_PROTOCOL_VERSION,
-      channel_id: "channel_1",
-      binary: false,
-      data_base64: "c2Vjb25k",
-    }))
+    const closes = () => socket.sent.map((item) => JSON.parse(item) as { type: string }).filter((item) => item.type === "ws.close")
+    return { tunnel, socket, upstream: sockets[1], frame, closes }
+  }
 
-    const close = await waitForSent(socket, "ws.close")
+  const PRE_OPEN_LIMIT = "Host upstream WebSocket pre-open queue limit exceeded"
+
+  test("closes upstream WebSocket channels when the pre-open queue exceeds its byte bound", async () => {
+    const channel = preOpenChannel({ wsPreOpenQueueMaxBytes: 64 + 8 })
+    channel.frame("first")
+    channel.frame("second")
+
+    const close = await waitForSent(channel.socket, "ws.close")
     // The relay-facing ws.close FRAME keeps the protocol code (1013); the
     // local WebSocket.close() call is clamped to 1000 — WHATWG close() only
     // permits 1000/3000-4999 and undici throws InvalidAccessError otherwise
     // (an uncaught throw that killed the host process in production).
-    expect(upstream.closeCode).toBe(1000)
+    expect(channel.upstream.closeCode).toBe(1000)
     expect(close).toMatchObject({
       type: "ws.close",
       channel_id: "channel_1",
       code: 1000,
-      reason: "Host upstream WebSocket pre-open queue limit exceeded",
+      reason: PRE_OPEN_LIMIT,
     })
-    tunnel.close()
+    channel.tunnel.close()
+  })
+
+  test("closes the channel at its frame bound, however small the frames", async () => {
+    const channel = preOpenChannel({ wsPreOpenQueueMaxFrames: 2 })
+    channel.frame("")
+    channel.frame("")
+    expect(channel.closes()).toEqual([])
+    channel.frame("")
+
+    expect(await waitForSent(channel.socket, "ws.close")).toMatchObject({ reason: PRE_OPEN_LIMIT })
+    channel.tunnel.close()
+  })
+
+  test("charges every queued frame an overhead, so empty frames reach the byte bound", async () => {
+    const channel = preOpenChannel({ wsPreOpenQueueMaxFrames: 1_000_000, wsPreOpenQueueMaxBytes: 3 * 64 })
+    for (let index = 0; index < 3; index += 1) channel.frame("")
+    expect(channel.closes()).toEqual([])
+    channel.frame("")
+
+    expect(await waitForSent(channel.socket, "ws.close")).toMatchObject({ reason: PRE_OPEN_LIMIT })
+    channel.tunnel.close()
   })
 
   test("survives an error on the tunnel socket and reconnects instead of crashing", async () => {
@@ -1443,7 +1462,7 @@ describe("workspace relay host tunnel client", () => {
  * W6b.3 — the region hint the relay needs to place a workspace's Durable Object.
  *
  * The relay derives its DO location hint from a region on the very first request
- * (`relayRequestRegion` in workspace-relay/src/cloudflare.ts) and that placement
+ * (`relayRequestRegion` in workspace-relay/src/relay-location.ts) and that placement
  * is PERMANENT — a DO's location is fixed at creation and never migrates. The
  * relay reads the param; this is the side that sends it.
  *

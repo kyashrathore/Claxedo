@@ -13,6 +13,7 @@ export type PermissionFacts = {
   readonly inputFields: readonly PermissionInputField[]
   readonly agentText: readonly string[]
   readonly details?: string
+  readonly summarized: boolean
 }
 
 function record(value: unknown) {
@@ -50,14 +51,16 @@ export function permissionFacts(request: AgentPermission): PermissionFacts {
   const command = nonEmptyString(request.metadata.command) ?? nonEmptyString(input?.command)
   const reason = described ?? nonEmptyString(request.metadata.reason) ?? nonEmptyString(request.metadata.description)
   const directory = nonEmptyString(record(toolCall?.rawInput)?.cwd)
+  const fields = inputFields(input)
   const shown = details(toolCall, meta, input)
   return {
     tool: request.permission,
     ...(command ? { command } : {}),
     ...(reason ? { reason } : {}),
     ...(directory ? { directory } : {}),
-    inputFields: inputFields(input),
+    inputFields: fields,
     agentText: agentText(toolCall),
     ...(shown ? { details: shown } : {}),
+    summarized: Boolean(command) || fields.length > 0 || request.patterns.length > 0,
   }
 }

@@ -34,6 +34,8 @@ export const ClaxedoProviderCredentialTable = sqliteTable(
     source: text({ enum: CREDENTIAL_SOURCES }).notNull(),
     label: text(),
     account_id: text(),
+    /** `secretHint`: what the accounts list shows of a pasted key. Never part of the upsert identity, which stays `account_id`. */
+    secret_hint: text(),
     secure_ref: text(), // opaque backend reference — never contains raw secret material
     status: text({ enum: CREDENTIAL_STATUSES }).notNull().default("available"),
     health: text({ enum: CREDENTIAL_HEALTHS }),

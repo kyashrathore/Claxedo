@@ -13,7 +13,7 @@ const CATEGORY_KEY: Readonly<Record<TokenCategory, UsageKey>> = {
   reasoning: "usage.tokens.reasoning",
 }
 
-function MixGroup(props: { readonly title: string; readonly parts: readonly TokenShare[]; readonly children?: JSX.Element }): JSX.Element {
+function MixGroup(props: { readonly title: string; readonly parts: readonly TokenShare[] }): JSX.Element {
   const t = useTranslator(usageDictionary)
   const format = useUsageFormats()
   return (
@@ -33,7 +33,6 @@ function MixGroup(props: { readonly title: string; readonly parts: readonly Toke
           )}
         </For>
       </ul>
-      {props.children}
     </div>
   )
 }
@@ -44,15 +43,18 @@ export function TokenMix(props: { readonly totals: UsageTotals }): JSX.Element {
   const composition = createMemo(() => tokenComposition(props.totals))
   const incomplete = () => props.totals.unknownCategories > 0 || (props.totals.unavailableTurnCount ?? 0) > 0
   return (
-    <section class="usage-mix" aria-labelledby={titleId}>
-      <h3 id={titleId} class="usage-group-title">{t("usage.tokens")}</h3>
-      <MixGroup title={t("usage.tokens.context")} parts={composition().context}>
-        <p class="usage-hint">{t("usage.tokens.cacheExplained")}</p>
-      </MixGroup>
-      <MixGroup title={t("usage.tokens.generated")} parts={composition().generated} />
-      <Show when={incomplete()}>
-        <p class="usage-hint">{t("usage.tokens.incomplete")}</p>
-      </Show>
+    <section class="usage-section" aria-labelledby={titleId}>
+      <h3 id={titleId} class="usage-section-title">{t("usage.tokens")}</h3>
+      <div class="usage-mix-groups">
+        <MixGroup title={t("usage.tokens.context")} parts={composition().context} />
+        <MixGroup title={t("usage.tokens.generated")} parts={composition().generated} />
+      </div>
+      <ul class="usage-section-notes">
+        <li class="usage-hint">{t("usage.tokens.cacheExplained")}</li>
+        <Show when={incomplete()}>
+          <li class="usage-hint">{t("usage.tokens.incomplete")}</li>
+        </Show>
+      </ul>
     </section>
   )
 }

@@ -112,12 +112,12 @@ test("a Boat sandbox is handed a binding on the plane's broker and no edge secre
   expect(configApplied).toHaveBeenCalledTimes(2)
 })
 
-test("an owner on the team account gets a binding for the organization's key in place of their own, and loses it when the key is removed", async () => {
+test("an owner on the organization account gets a binding for the organization's key in place of their own, and loses it when the key is removed", async () => {
   const { store, signing, pushed } = await composition("boat")
   const team = await store.putCredential({ owner: null, provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-team-key", label: "Team" })
   await store.setAccountSources(["claude-sdk", "claude-acp", "anthropic"], "org", "org", "owner")
   const { snapshot, row } = await pushed()
-  if (!row || isProviderUnavailable(row)) throw new Error(`the team account was not delivered: ${JSON.stringify(row)}`)
+  if (!row || isProviderUnavailable(row)) throw new Error(`the organization account was not delivered: ${JSON.stringify(row)}`)
   expect(row.account).toEqual({ credentialId: team.id, providerId: "anthropic", label: "Team", revision: team.revision })
   expect(await verifyBrokerPlaceholder(row.placeholder!, signing)).toMatchObject({ userId: "org:org", credentialId: team.id, workspaceId: "ws-a" })
   expect(snapshot.auth.accounts.owner?.["claude-sdk"]).toEqual({ unavailable: true, reason: "org_account_unavailable" })
@@ -127,7 +127,7 @@ test("an owner on the team account gets a binding for the organization's key in 
   expect((await pushed()).row).toEqual({ unavailable: true, reason: "org_account_unavailable" })
 })
 
-test("an owner on the team account has a Cloudflare edge hold the organization's key, under the team account's own variable", async () => {
+test("an owner on the organization account has a Cloudflare edge hold the organization's key, under that account's own variable", async () => {
   const { store, pushed } = await composition("cloudflare")
   const team = await store.putCredential({ owner: null, provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-team-key" })
   await store.setAccountSources(["claude-sdk", "claude-acp", "anthropic"], "org", "org", "owner")

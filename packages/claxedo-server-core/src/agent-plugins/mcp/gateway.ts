@@ -11,7 +11,7 @@ function protocolHeaders(source: Headers, fixed: ReadonlySet<string>) {
 
 export class McpGatewayError extends Error {
   constructor(
-    readonly code: "invalid-resource" | "unsupported-method" | "upstream-redirect",
+    readonly code: "invalid-resource" | "unsupported-method" | "upstream-redirect" | "upstream-unreachable",
     message: string,
   ) {
     super(message)
@@ -48,11 +48,15 @@ export async function forwardMcpGatewayRequest(input: {
   }
   const headers = protocolHeaders(input.request.headers, REQUEST_HEADERS)
   headers.set("authorization", `${input.tokenType === "basic" ? "Basic" : "Bearer"} ${input.token}`)
+  // The injected fetch throws for a destination its address policy refuses as
+  // well as for a network failure; both are the caller's 502, not this route's 500.
   const upstream = await input.fetch(resource.toString(), {
     method: input.request.method,
     headers,
     redirect: "manual",
     ...(input.request.method === "GET" ? {} : { body: input.request.body, duplex: "half" } as RequestInit),
+  }).catch(() => {
+    throw new McpGatewayError("upstream-unreachable", "MCP resource could not be reached")
   })
   if ([301, 302, 303, 307, 308].includes(upstream.status)) {
     upstream.body?.cancel().catch(() => {})

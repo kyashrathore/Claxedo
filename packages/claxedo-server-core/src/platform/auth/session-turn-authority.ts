@@ -226,6 +226,12 @@ export class SessionTurnLeaseLostError extends Error {
  * exactly-one prompt admission and its fencing generation stay here.
  */
 export type SessionTurnAuthority = {
+  /**
+   * Admits the turn only for an actor who may send an agent turn on the
+   * session now, deciding that in the statement that writes the lease: the
+   * one owner of the write check a turn's acquisition makes, so a revocation
+   * cannot overtake an earlier read.
+   */
   acquireSessionTurn(input: AcquireSessionTurnInput): Promise<SessionTurnLease>
   renewSessionTurn(input: OwnedSessionTurnInput): Promise<SessionTurnLease>
   releaseSessionTurn(input: OwnedSessionTurnInput): Promise<ReleaseSessionTurnResult>

@@ -1,15 +1,4 @@
 :root {
-  --bp-sm: 640px;
-  --bp-md: 768px;
-  --bp-lg: 1024px;
-  --bp-xl: 1280px;
-  --bp-2xl: 1536px;
-  --bp-editor-wide: 1200px;
-  --bp-editor-compact: 900px;
-  --bp-xs: 420px;
-}
-
-:root {
   --z-modal: 300;
   --z-modal-popover: 320;
 }
@@ -152,13 +141,6 @@ body [data-component="menu-v2-content"][data-slot="select-v2-content"] {
 
 .long-dialog-container {
   --dialog-v2-fit-max-height: min(calc(100vh - 32px), 512px);
-}
-
-[data-component="dialog-v2"] .ui-dialog-container.install-sheet-container {
-  --dialog-v2-fit-max-height: min(calc(100vh - 32px), 600px);
-  width: min(calc(100vw - 32px), 800px);
-  align-self: flex-start;
-  margin-top: max(16px, calc(50vh - 300px));
 }
 
 body:has([data-slot="dialog-content"].command-palette-dialog) .ui-dialog-overlay {

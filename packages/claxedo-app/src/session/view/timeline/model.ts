@@ -80,7 +80,6 @@ export type TimelinePlatform = {
   readonly openLink: (url: string) => void
   readonly canReadLocalFiles?: boolean
   readonly openPath?: (path: string) => Promise<void>
-  readonly renderMermaid?: (source: string, theme?: Record<string, string>) => Promise<string>
 }
 
 export type TimelineFocus =

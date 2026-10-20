@@ -4,8 +4,7 @@ export type BetterAuthMethod = (typeof BETTER_AUTH_METHODS)[number]
 
 export type BetterAuthDeploymentConfigurationIdentity = {
   methods: readonly BetterAuthMethod[]
-  apiOrigin: string
-  appOrigin: string
+  origin: string
   googleClientId?: string
   githubClientId?: string
 }
@@ -13,8 +12,7 @@ export type BetterAuthDeploymentConfigurationIdentity = {
 export async function betterAuthDeploymentConfigurationId(configuration: BetterAuthDeploymentConfigurationIdentity) {
   const canonical = JSON.stringify({
     methods: [...configuration.methods].sort(),
-    apiOrigin: configuration.apiOrigin,
-    appOrigin: configuration.appOrigin,
+    origin: configuration.origin,
     googleClientId: configuration.googleClientId ?? null,
     githubClientId: configuration.githubClientId ?? null,
   })
@@ -41,8 +39,8 @@ export type BetterAuthConfiguration = {
   public: {
     adapter: "better-auth"
     methods: readonly BetterAuthMethod[]
-    apiOrigin: string
-    appOrigin: string
+    /** The deployment's one public origin (`BETTER_AUTH_URL`): the app's pages, the auth and API routes, and the relay under `/relay`. */
+    origin: string
     trustedOrigins: readonly [string]
     callbacks: Partial<Record<"google" | "github", string>>
     sendsEmail: boolean
@@ -185,8 +183,7 @@ export function resolveBetterAuthConfiguration(input: {
   emailedInvitationsEnabled?: boolean
 }): BetterAuthConfiguration {
   const methods = resolveBetterAuthMethodSelection(input.env.CLAXEDO_AUTH_METHODS)
-  const apiOrigin = exactHttpsOrigin(input.env.BETTER_AUTH_URL, "BETTER_AUTH_URL")
-  const appOrigin = exactHttpsOrigin(input.env.CLAXEDO_APP_ORIGIN, "CLAXEDO_APP_ORIGIN")
+  const origin = exactHttpsOrigin(input.env.BETTER_AUTH_URL, "BETTER_AUTH_URL")
   const sendsEmail = methods.includes("email-password") || input.emailedInvitationsEnabled === true
 
   if (sendsEmail && !input.emailSender) {
@@ -197,16 +194,15 @@ export function resolveBetterAuthConfiguration(input: {
   }
 
   const callbacks: BetterAuthConfiguration["public"]["callbacks"] = {}
-  if (methods.includes("google")) callbacks.google = `${apiOrigin}/api/auth/callback/google`
-  if (methods.includes("github")) callbacks.github = `${apiOrigin}/api/auth/callback/github`
+  if (methods.includes("google")) callbacks.google = `${origin}/api/auth/callback/google`
+  if (methods.includes("github")) callbacks.github = `${origin}/api/auth/callback/github`
 
   return {
     public: {
       adapter: "better-auth",
       methods,
-      apiOrigin,
-      appOrigin,
-      trustedOrigins: [appOrigin],
+      origin,
+      trustedOrigins: [origin],
       callbacks,
       sendsEmail,
     },

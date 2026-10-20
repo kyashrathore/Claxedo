@@ -1,0 +1,335 @@
+From 03ba0e4c3ef3afa9d70ef63bf0109a29af2b04cc Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sun, 18 Oct 2026 06:41:02 +0000
+Subject: [PATCH] A session's first read goes on the wire before its open view
+ and its queue read, since a runtime answers a session's reads one at a time
+ in arrival order and the first read, which resolved the session's home twice,
+ was sent last and waited behind both: startSessionReads resolves the home
+ once, sends the first read, then the open view and the central runtime read
+ (SessionReads.firstSent), and every snapshot read asks for the queue once
+ firstSent settles, so the open, gap and asleep paths no longer read the queue
+ beside it; a traced 1 MiB first visit on the Linux benchmark host gets its
+ first read's answer 25-31 ms after the press instead of 37-65 ms, first
+ visits go from 117.0 to 98.0 ms (1 MiB) and 132.3 to 103.2 ms (8 MiB) against
+ 05c70d3c over two alternating 6-repetition runs each, and the app's line
+ budget is the measured 107,826.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01QtZVtcNTgBwKhSN8i2v1w2
+---
+ packages/claxedo-app/scripts/checks/budget.ts |  2 +-
+ packages/claxedo-app/src/server/README.md     |  2 +-
+ .../claxedo-app/src/server/session-context.ts | 27 ++++++++++++---
+ .../src/server/session-reads.test.ts          | 11 +++++++
+ .../claxedo-app/src/server/session-reads.ts   | 33 ++++++++++---------
+ packages/claxedo-app/src/server/types.ts      |  1 +
+ packages/claxedo-app/src/session/README.md    |  2 +-
+ .../src/session/transcript/snapshot.test.ts   | 27 +++++++++++++++
+ .../src/session/transcript/snapshot.ts        |  6 ++--
+ .../src/session/transcript/store.ts           |  6 +---
+ .../test-support/transcript-server.ts         |  1 +
+ 11 files changed, 86 insertions(+), 32 deletions(-)
+
+diff --git a/packages/claxedo-app/scripts/checks/budget.ts b/packages/claxedo-app/scripts/checks/budget.ts
+index e0e0e8f6..3c38aefe 100644
+--- a/packages/claxedo-app/scripts/checks/budget.ts
++++ b/packages/claxedo-app/scripts/checks/budget.ts
+@@ -30,7 +30,7 @@ const parts: readonly Part[] = [
+   { name: "State-machine helper", budget: 100, folders: ["src/lib/machine.ts"] },
+   { name: "UI kit and transcript renderers", budget: 20000, folders: ["src/ui", "src/transcript"] },
+ ]
+-const totalBudget = 107772
++const totalBudget = 107826
+ 
+ function main(): never {
+   const appFiles = listFiles(packageRoot, ["src"], codeExtensions).filter((file) => !isTranslationFile(packageRoot, file))
+diff --git a/packages/claxedo-app/src/server/README.md b/packages/claxedo-app/src/server/README.md
+index c2a05e4c..3b0efd4e 100644
+--- a/packages/claxedo-app/src/server/README.md
++++ b/packages/claxedo-app/src/server/README.md
+@@ -8,7 +8,7 @@ The only module that knows today's server: its routes, its OpenCode-shaped paylo
+ 
+ - `SessionRef` belongs to `@claxedo/agent-runtime-contract` and identifies a session by `{ sessionId, workspaceId }`. `SessionLocation` is the app's navigation context: its placement id is the workspace id, with branded ids and separate project metadata. Plugins and Tasks exchange the canonical reference.
+ 
+-- Session first reads (`session-reads.ts`): a session opens from one first read that answers its row, its turn outline and the page its transcript draws first (`wire/first-read.ts`), asked for with the reader's viewport (`rows`, `cols`, `reasoning`). The open view's facts are a second read the first never waits for, and the status settles once both have landed, because a failed last turn on the row decides it. Both promise branches are observed immediately, including when placement lookup fails.
++- Session first reads (`session-reads.ts`): a session opens from one first read that answers its row, its turn outline and the page its transcript draws first (`wire/first-read.ts`), asked for with the reader's viewport (`rows`, `cols`, `reasoning`). The open view's facts are a second read the first never waits for, sent once the first is on the wire (`firstSent`, after the session's home is resolved once for every read), since a runtime answers a session's reads one at a time in the order they arrive: sent ahead of it, the open view and the queue read held the first read back by their own server time, and a traced 1 MiB first visit on the Linux benchmark host got its first read's answer 37-65 ms after the press instead of 25-31 ms. The status settles once both have landed, because a failed last turn on the row decides it. Both promise branches are observed immediately, including when placement lookup fails.
+ 
+ - The contract: `index.ts` (the public surface), `api.ts` (the APIs and `Server`), `types.ts` (sessions, projects, placements, status, capabilities), `harness-types.ts` (harness options, status and session config), `terminal-types.ts`, `git-types.ts`, `cloud-types.ts`, `account-types.ts`, `usage-types.ts`, `marketplace-types.ts`, `events.ts` and `ids.ts`. `api.ts` holds the contract rather than `index.ts` so the e2e program can typecheck the adapter without the provider's JSX.
+ - `ServerConfig` (`config.ts`): the server URL (explicit, else `VITE_CLAXEDO_SERVER_URL`, else the page's own origin when the daemon serves the app), the auth source (`none`, `basic`, `bearer`), on a signed desktop `account`, the account's `run` over Electron main (the daemon gets no user bearer, so its auth source stays `none`), and in a browser signed in with Better Auth `cookies: true`: requests carry the session cookie (`credentials: include`) and the account is the connected server; every 401 answer from that server is reported to `onSignInRefused`, the auth owner's session check (`src/app.tsx`), whatever the route, so a refused cookie ends the sign-in once instead of in each view.
+diff --git a/packages/claxedo-app/src/server/session-context.ts b/packages/claxedo-app/src/server/session-context.ts
+index 1395cbd3..ae3d1de1 100644
+--- a/packages/claxedo-app/src/server/session-context.ts
++++ b/packages/claxedo-app/src/server/session-context.ts
+@@ -4,7 +4,7 @@ import type { Transport, RuntimeRoute } from "./transport"
+ import type { StatusOwner } from "./status"
+ import type { SessionLocation } from "./types"
+ import { isRuntimeUnavailable } from "./wire/connection"
+-import type { Workspaces } from "./workspaces"
++import type { SessionHome, Workspaces } from "./workspaces"
+ 
+ export type SessionContext = {
+   readonly transport: Transport
+@@ -23,7 +23,16 @@ export async function onRuntime<T>(
+   live: (route: RuntimeRoute) => Promise<T>,
+   stopped: (workspaceId: string) => Promise<T>,
+ ): Promise<T> {
+-  const home = await context.workspaces.home(ref)
++  return runtimeAt(context, await context.workspaces.home(ref), ref, live, stopped)
++}
++
++export async function runtimeAt<T>(
++  context: SessionContext,
++  home: SessionHome,
++  ref: SessionLocation,
++  live: (route: RuntimeRoute) => Promise<T>,
++  stopped: (workspaceId: string) => Promise<T>,
++): Promise<T> {
+   if (!home.live) return stopped(home.route.workspaceId)
+   try {
+     return await live(home.route)
+@@ -42,8 +51,18 @@ export async function onHistory<T>(
+   stored: (workspaceId: string) => Promise<T>,
+   offline: (workspaceId: string) => Promise<T>,
+ ): Promise<T> {
+-  const home = await context.workspaces.home(ref)
+-  if (!home.central) return onRuntime(context, ref, live, offline)
++  return historyAt(context, await context.workspaces.home(ref), ref, live, stored, offline)
++}
++
++export async function historyAt<T>(
++  context: SessionContext,
++  home: SessionHome,
++  ref: SessionLocation,
++  live: (route: RuntimeRoute) => Promise<T>,
++  stored: (workspaceId: string) => Promise<T>,
++  offline: (workspaceId: string) => Promise<T>,
++): Promise<T> {
++  if (!home.central) return runtimeAt(context, home, ref, live, offline)
+   if (!home.live) return stored(home.route.workspaceId)
+   return live(home.route).catch((error: unknown) =>
+     isSessionMissing(error) || isRuntimeUnavailable(error) ? stored(home.route.workspaceId) : Promise.reject(error))
+diff --git a/packages/claxedo-app/src/server/session-reads.test.ts b/packages/claxedo-app/src/server/session-reads.test.ts
+index 51b096ec..e2e3f414 100644
+--- a/packages/claxedo-app/src/server/session-reads.test.ts
++++ b/packages/claxedo-app/src/server/session-reads.test.ts
+@@ -42,6 +42,17 @@ test("session reads: a machine session's first read lands while its open view is
+   }
+ })
+ 
++test("session reads: a machine session's first read is sent before its open view, so a runtime that answers in arrival order answers it first", async () => {
++  const server = fakeServer({
++    reachable: () => true,
++    machine: true,
++    runtime: (path) => (path === firstPath ? firstRead() : path === openPath ? openView() : Response.json([])),
++  })
++  const reads = startSessionReads(server.context, ref, shape)
++  await Promise.all([reads.first, reads.status, reads.requests])
++  expect(server.runtimeCalls).toEqual([firstPath, openPath])
++})
++
+ test("session reads: a failed first read rejects the first read and the status it settles, and a failed open view rejects only its facts", async () => {
+   const failure = new Error("unavailable")
+   const failing = (failed: "first" | "open") =>
+diff --git a/packages/claxedo-app/src/server/session-reads.ts b/packages/claxedo-app/src/server/session-reads.ts
+index 180dbb8e..c68564e6 100644
+--- a/packages/claxedo-app/src/server/session-reads.ts
++++ b/packages/claxedo-app/src/server/session-reads.ts
+@@ -2,7 +2,7 @@ import { isAgentSnapshotFileDiff, NO_BACKGROUND_WORK, type AgentSession } from "
+ import { readField } from "@claxedo/helpers/readers"
+ import { readCentralFirst, readCentralRow } from "./central-session"
+ import { responseError } from "./errors"
+-import { onHistory, onRuntime, sessionEndpoint, type SessionContext } from "./session-context"
++import { historyAt, runtimeAt, sessionEndpoint, type SessionContext } from "./session-context"
+ import { NO_GOAL } from "./session-goal"
+ import { withQuery, type RuntimeRoute } from "./transport"
+ import type { SessionStatus } from "./status-types"
+@@ -32,20 +32,20 @@ async function readOfflineFirst(context: SessionContext, workspaceId: string, re
+   return { row: await readCentralRow(context, workspaceId, ref), diff: [], outline: undefined, ...NO_FIRST_PAGE }
+ }
+ 
+-function readLiveSession(context: SessionContext, ref: SessionLocation): Promise<AgentSession | undefined> {
+-  return onRuntime(context, ref, async (route) => sessionFromWire(await context.transport.runtimeJson(route, sessionEndpoint(ref))), async () => undefined)
++function readLiveSession(context: SessionContext, home: SessionHome, ref: SessionLocation): Promise<AgentSession | undefined> {
++  return runtimeAt(context, home, ref, async (route) => sessionFromWire(await context.transport.runtimeJson(route, sessionEndpoint(ref))), async () => undefined)
+ }
+ 
+-async function readHeldFirst(context: SessionContext, homeRead: Promise<SessionHome>, ref: SessionLocation, held: HeldSessionReads): Promise<SessionFirstRead> {
+-  const home = await homeRead
+-  const live = home.central ? undefined : await readLiveSession(context, ref)
++async function readHeldFirst(context: SessionContext, home: SessionHome, ref: SessionLocation, held: HeldSessionReads): Promise<SessionFirstRead> {
++  const live = home.central ? undefined : await readLiveSession(context, home, ref)
+   const row = live ? runtimeRow(live, ref) : { row: await readCentralRow(context, home.route.workspaceId, ref), diff: [] }
+   return { ...row, outline: held.outline, transcript: held.latestTurn, latestTurn: held.latestTurn }
+ }
+ 
+-function readFirst(context: SessionContext, ref: SessionLocation, shape: PageShape): Promise<SessionFirstRead> {
+-  return onHistory(
++function readFirst(context: SessionContext, home: SessionHome, ref: SessionLocation, shape: PageShape): Promise<SessionFirstRead> {
++  return historyAt(
+     context,
++    home,
+     ref,
+     (route) => readRuntimeFirst(context, route, ref, shape),
+     (workspaceId) => readCentralFirst(context, workspaceId, ref, shape),
+@@ -53,10 +53,9 @@ function readFirst(context: SessionContext, ref: SessionLocation, shape: PageSha
+   )
+ }
+ 
+-async function readCentralRuntime(context: SessionContext, homeRead: Promise<SessionHome>, ref: SessionLocation): Promise<Pick<SessionFirstRead, "row" | "diff"> | undefined> {
+-  const home = await homeRead
++async function readCentralRuntime(context: SessionContext, home: SessionHome, ref: SessionLocation): Promise<Pick<SessionFirstRead, "row" | "diff"> | undefined> {
+   if (!home.central || !home.live) return undefined
+-  const live = await readLiveSession(context, ref)
++  const live = await readLiveSession(context, home, ref)
+   return live ? runtimeRow(live, ref) : undefined
+ }
+ 
+@@ -75,17 +74,19 @@ function todosOf(view: SessionOpenView) {
+ 
+ export function startSessionReads(context: SessionContext, ref: SessionLocation, shape: PageShape, held?: HeldSessionReads): SessionReads {
+   const { transport } = context
+-  const home = context.workspaces.home(ref)
+-  const first = held ? readHeldFirst(context, home, ref, held) : readFirst(context, ref, shape)
+-  const runtime = readCentralRuntime(context, home, ref)
+-  const opened = onRuntime<SessionOpenView | undefined>(
++  const sent = context.workspaces.home(ref).then((home) => ({ home, first: held ? readHeldFirst(context, home, ref, held) : readFirst(context, home, ref, shape) }))
++  const first = sent.then((issued) => issued.first)
++  const runtime = sent.then(({ home }) => readCentralRuntime(context, home, ref))
++  const opened = sent.then(({ home }) => runtimeAt<SessionOpenView | undefined>(
+     context,
++    home,
+     ref,
+     async (route) => sessionOpenFromWire(await transport.runtimeJson(route, withQuery(sessionEndpoint(ref), OPEN_VIEW))),
+     async () => undefined,
+-  )
++  ))
+   const fact = <T>(read: (view: SessionOpenView) => T, stopped: T) => opened.then((view) => (view ? read(view) : stopped))
+   return {
++    firstSent: sent,
+     first,
+     runtime,
+     status: Promise.all([first, opened, runtime]).then(([read, view, live]) =>
+diff --git a/packages/claxedo-app/src/server/types.ts b/packages/claxedo-app/src/server/types.ts
+index 769f39c6..503dbc04 100644
+--- a/packages/claxedo-app/src/server/types.ts
++++ b/packages/claxedo-app/src/server/types.ts
+@@ -190,6 +190,7 @@ export type SessionFirstRead = {
+ }
+ 
+ export type SessionReads = {
++  readonly firstSent: Promise<unknown>
+   readonly first: Promise<SessionFirstRead>
+   readonly runtime: Promise<Pick<SessionFirstRead, "row" | "diff"> | undefined>
+   readonly status: Promise<SessionStatus>
+diff --git a/packages/claxedo-app/src/session/README.md b/packages/claxedo-app/src/session/README.md
+index 7a972db3..2154d066 100644
+--- a/packages/claxedo-app/src/session/README.md
++++ b/packages/claxedo-app/src/session/README.md
+@@ -58,7 +58,7 @@ Fetched data never enters these stores and pushed data never enters the query ca
+ - A session whose cloud workspace goes asleep while the session is open (the catalog row turns stopped, from a stream's refusal or a `cloudWorkspaceChanged` notice) reads its snapshot and queue again (`rereadWhenAsleep`, `transcript/snapshot.ts`): a stopped workspace's reads come from the stored copy and answer no runtime fact, so a `session_not_found` read while its machine was being lost stops hiding the composer, whose placement notice says asleep and offers Wake, with why the server stopped it when the catalog names a reason (a runtime that stopped answering). Waking reads nothing here: the session's stream reconnects and raises its own gap.
+ - `turnSettlePending(userMessageId)` is true while a snapshot read is in flight and that id is the last user message.
+ - When the session's status turns idle, interrupted or failed (`settleEndedTurn`), the last turn is read once by its user message id (`?turn=<id>&coverage=1`) and merged through `mergePage`, retaining the authority’s part order and any already loaded tool bodies. A missed earlier live part must land before the final answer rather than being appended after it. A harness may end a turn without re-sending the assistant message with its completion time; the read also supplies that completion so the turn folds. A turn the runtime ends as interrupted or failed ends its open tools in its store without a part event, so this read is what turns their Running rows into the stored failure and its reason.
+-- `queue` reads the runtime's held prompts through the adapter, re-read on: own send accepted, `statusChanged`, a user `messageUpserted`, and a stream gap. No timer. The runtime also pushes the whole queue on every change it makes (`session.queue`, the adapter's `queueChanged`), which replaces the items at once: a row the runtime claims, refuses or runs after the turn ends raises no status event, so without it the row stayed as last read ("Awaiting harness acceptance" for good). A read asked before a pushed change and answered after it is dropped, since its rows are older. While the session's runtime is unreachable the adapter answers the queue as unknown, and the last read's items stay; that answer ends a failed read's notice, since asking again cannot reach a machine that is asleep. A queued record whose `messageId` matches an optimistic stub replaces the stub, so the prompt shows as queued and editable. `draining` is whether the queue holds a record the runtime will start on its own, one not held whose delivery is not yet claimed or is being dispatched; a held or refused record waits for the person. A send while it drains joins the queue, as one during a turn does: between a turn's end and the start of the record the runtime takes next the session reads idle, and a direct prompt there loses the turn lease to that record and is refused with session_turn_in_progress. `beginEdit(seq, editable)` refuses a record the composer cannot restore, otherwise holds it and sets `editing`. A refused replacement keeps the edit open with an error. `cancelEdit` releases an existing held record, or ends an edit whose record has gone. The session screen's `view/queue-edit.ts` owns the composer side of an edit: it forks the session's draft with the record's content, drops the fork when the edit ends, and when a read from the runtime no longer lists the edited record it joins the fork into the session's draft and ends the edit.
++- `queue` reads the runtime's held prompts through the adapter, re-read on: every snapshot read (the session's open, a stream gap, a workspace going asleep), sent once that read's first read is on the wire (`SessionReads.firstSent`), since a runtime answers a session's reads one at a time in the order they arrive and a queue read sent ahead of the first read delays the transcript; own send accepted; `statusChanged`; and a user `messageUpserted`. No timer. The runtime also pushes the whole queue on every change it makes (`session.queue`, the adapter's `queueChanged`), which replaces the items at once: a row the runtime claims, refuses or runs after the turn ends raises no status event, so without it the row stayed as last read ("Awaiting harness acceptance" for good). A read asked before a pushed change and answered after it is dropped, since its rows are older. While the session's runtime is unreachable the adapter answers the queue as unknown, and the last read's items stay; that answer ends a failed read's notice, since asking again cannot reach a machine that is asleep. A queued record whose `messageId` matches an optimistic stub replaces the stub, so the prompt shows as queued and editable. `draining` is whether the queue holds a record the runtime will start on its own, one not held whose delivery is not yet claimed or is being dispatched; a held or refused record waits for the person. A send while it drains joins the queue, as one during a turn does: between a turn's end and the start of the record the runtime takes next the session reads idle, and a direct prompt there loses the turn lease to that record and is refused with session_turn_in_progress. `beginEdit(seq, editable)` refuses a record the composer cannot restore, otherwise holds it and sets `editing`. A refused replacement keeps the edit open with an error. `cancelEdit` releases an existing held record, or ends an edit whose record has gone. The session screen's `view/queue-edit.ts` owns the composer side of an edit: it forks the session's draft with the record's content, drops the fork when the edit ends, and when a read from the runtime no longer lists the edited record it joins the fork into the session's draft and ends the edit.
+ - `goal` comes from the snapshot's goal read and `goalChanged` events, which are held during a read like the transcript's. A goal fact older than the one held is dropped: a different goal is ordered by `createdAt`, the same goal by `updatedAt`. A removal records the removed goal's `createdAt`, so a late update of that goal can't bring it back. `goalActions` are the actions the session's harness supports; `controlGoal` applies the server's answer.
+ - `status` and `row` are read from the list store, `requests` from the requests store: one home per fact.
+ 
+diff --git a/packages/claxedo-app/src/session/transcript/snapshot.test.ts b/packages/claxedo-app/src/session/transcript/snapshot.test.ts
+index 3ee27b63..5526163d 100644
+--- a/packages/claxedo-app/src/session/transcript/snapshot.test.ts
++++ b/packages/claxedo-app/src/session/transcript/snapshot.test.ts
+@@ -142,6 +142,33 @@ test("snapshot: a session its runtime no longer had reads again once its workspa
+   })
+ })
+ 
++test("snapshot: a read asks for the session's queue only once its first read is on the wire", async () => {
++  const { server: base, deps } = transcriptServer()
++  const sent = Promise.withResolvers<undefined>()
++  let queueReads = 0
++  const server = {
++    ...base,
++    sessions: {
++      ...base.sessions,
++      queue: async () => {
++        queueReads += 1
++        return []
++      },
++      read: () => ({ ...base.sessions.read(transcriptRef, deps.pageShape()), firstSent: sent.promise }),
++    },
++  } as unknown as Server
++  await createRoot(async (dispose) => {
++    const context = createTranscriptContext(server, transcriptRef, deps)
++    await readSnapshot(context)
++    await idle()
++    expect(queueReads, "the queue waits for the first read to be sent").toBe(0)
++    sent.resolve(undefined)
++    await idle()
++    expect(queueReads).toBe(1)
++    dispose()
++  })
++})
++
+ test("snapshot: a runtime read that fails for another reason is not a missing session", async () => {
+   const { server: base, deps } = transcriptServer()
+   const runtime = Promise.reject(new ServerError({ class: "network", message: "offline" }))
+diff --git a/packages/claxedo-app/src/session/transcript/snapshot.ts b/packages/claxedo-app/src/session/transcript/snapshot.ts
+index 48062d26..461bccc5 100644
+--- a/packages/claxedo-app/src/session/transcript/snapshot.ts
++++ b/packages/claxedo-app/src/session/transcript/snapshot.ts
+@@ -41,6 +41,7 @@ function landSide<T>(context: TranscriptContext, what: string, read: Promise<T>,
+ 
+ function landSides(context: TranscriptContext, reads: SessionReads, sentAt: number): void {
+   const { ref, deps } = context
++  void Promise.allSettled([reads.firstSent]).then(() => context.queue.reread())
+   reads.runtime.then(
+     () => context.setRuntimeMissing(false),
+     (cause) => context.setRuntimeMissing(isSessionMissing(cause)),
+@@ -103,9 +104,6 @@ async function readOnce(context: TranscriptContext, held?: HeldSessionReads): Pr
+ export function rereadWhenAsleep(context: TranscriptContext): void {
+   const asleep = () => isStoppedCloud(context.server.placements.byId(context.ref.placementId))
+   createEffect(on(asleep, (now, before) => {
+-    if (now && before === false) {
+-      void readSnapshot(context)
+-      void context.queue.reread()
+-    }
++    if (now && before === false) void readSnapshot(context)
+   }))
+ }
+diff --git a/packages/claxedo-app/src/session/transcript/store.ts b/packages/claxedo-app/src/session/transcript/store.ts
+index 55e10321..389d3205 100644
+--- a/packages/claxedo-app/src/session/transcript/store.ts
++++ b/packages/claxedo-app/src/session/transcript/store.ts
+@@ -99,7 +99,6 @@ export function createSessionTranscript(server: Server, ref: SessionLocation, de
+   onCleanup(server.attachPlacement(ref))
+   rereadWhenAsleep(context)
+   void readSnapshot(context, seed)
+-  void context.queue.reread()
+   return {
+     ...sessionView(context),
+     retained: () => retainedSession(context),
+@@ -107,9 +106,6 @@ export function createSessionTranscript(server: Server, ref: SessionLocation, de
+       applyServerEvent(context, event)
+       if (event.type === "statusChanged") void settleEndedTurn(context, event.status)
+     },
+-    gap: () => {
+-      void readSnapshot(context)
+-      void context.queue.reread()
+-    },
++    gap: () => void readSnapshot(context),
+   }
+ }
+diff --git a/packages/claxedo-app/src/session/transcript/test-support/transcript-server.ts b/packages/claxedo-app/src/session/transcript/test-support/transcript-server.ts
+index 2756a83a..ad6ad63b 100644
+--- a/packages/claxedo-app/src/session/transcript/test-support/transcript-server.ts
++++ b/packages/claxedo-app/src/session/transcript/test-support/transcript-server.ts
+@@ -44,6 +44,7 @@ export const firstReadOf = (transcript: TranscriptPage): SessionFirstRead => ({
+ export function transcriptServer(first: SessionFirstRead = firstReadOf(latest), pages: readonly TranscriptPage[] = [olderPage]) {
+   const olderReads: string[] = []
+   const reads = {
++    firstSent: Promise.resolve(undefined),
+     first: Promise.resolve(first),
+     runtime: Promise.resolve(undefined),
+     status: Promise.resolve({ kind: "idle" }),
+-- 
+2.43.0
+

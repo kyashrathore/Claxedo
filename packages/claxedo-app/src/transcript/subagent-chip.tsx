@@ -257,7 +257,11 @@ export function SubagentChipRow(props: {
                   </Show>
                 </Show>
                 <Show when={chip.stopCall}>
-                  {(call) => <SubagentStopControl parentSessionId={chip.parentSessionId} call={call()} name={chip.name} />}
+                  {(call) => (
+                    <Show when={data.stopBackgroundTask}>
+                      {(stop) => <SubagentStopControl stop={() => stop()(chip.parentSessionId, call())} name={chip.name} />}
+                    </Show>
+                  )}
                 </Show>
               </>
             )

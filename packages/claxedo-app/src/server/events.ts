@@ -70,6 +70,6 @@ export type ServerEvent =
 
 export type ConnectionState =
   | { readonly kind: "connecting" }
-  | { readonly kind: "connected" }
+  | { readonly kind: "connected"; readonly since?: string }
   | { readonly kind: "reconnecting"; readonly attempt: number; readonly afterLive: boolean }
   | { readonly kind: "offline"; readonly reason: string }

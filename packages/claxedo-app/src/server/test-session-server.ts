@@ -1,6 +1,7 @@
 import { QueryClient } from "@tanstack/solid-query"
 import { placementId, projectId, sessionId } from "./ids"
 import { sessionEndpoint } from "./session-context"
+import { createSnapshotCoverage } from "./snapshot-coverage"
 import { createStatusOwner } from "./status"
 import { withQuery, type RuntimeRoute, type Transport } from "./transport"
 import type { TranscriptPart } from "./types"
@@ -120,5 +121,5 @@ export function fakeServer(options: FakeServerOptions) {
   const calls: FakeCalls = { requests: [], runtimeCalls: [], hostedCalls: [], hostReads: [] }
   const transport = fakeTransport(options, calls)
   const workspaces = createWorkspaces(transport, new QueryClient())
-  return { context: { transport, workspaces, status: createStatusOwner(transport) }, ...calls }
+  return { context: { transport, workspaces, status: createStatusOwner(transport), coverage: createSnapshotCoverage(() => undefined) }, ...calls }
 }

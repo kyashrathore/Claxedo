@@ -15,8 +15,6 @@ export type SandboxRow = {
   readonly live?: CloudWorkspaceRow
 }
 
-export type SandboxFilter = "all" | "running"
-
 export type SandboxTotals = {
   readonly activeMs: number
   readonly cost: CostEstimate
@@ -24,7 +22,7 @@ export type SandboxTotals = {
   readonly hourly: CostEstimate
 }
 
-function estimate(amounts: readonly (number | undefined)[]): CostEstimate {
+export function estimate(amounts: readonly (number | undefined)[]): CostEstimate {
   const priced = amounts.filter((amount): amount is number => amount !== undefined)
   const usd = priced.reduce((total, amount) => total + amount, 0)
   if (amounts.length === 0) return { kind: "none" }
@@ -76,17 +74,6 @@ export function sandboxRows(time: MachineTime | undefined, live: readonly CloudW
   const timed = [...machinesById].map(([id, machines]) => rowOf(id, machines, liveById.get(id), liveLoaded))
   const starting = (live ?? []).filter((row) => !machinesById.has(row.id)).map((row) => rowOf(row.id, [], row, liveLoaded))
   return [...timed, ...starting].sort(byRunningThenRecent)
-}
-
-export type SandboxRowList =
-  | { readonly kind: "rows"; readonly rows: readonly SandboxRow[] }
-  | { readonly kind: "empty" }
-  | { readonly kind: "unknown" }
-
-export function listSandboxRows(rows: readonly SandboxRow[], filter: SandboxFilter, read: { readonly time: boolean; readonly live: boolean }): SandboxRowList {
-  const shown = filter === "running" ? rows.filter(isRunningRow) : rows
-  if (shown.length > 0) return { kind: "rows", rows: shown }
-  return read.time && read.live ? { kind: "empty" } : { kind: "unknown" }
 }
 
 export function sandboxTotals(rows: readonly SandboxRow[]): SandboxTotals {

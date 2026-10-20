@@ -26,6 +26,7 @@ import {
 } from "../session-access-policy"
 import { errorBody } from "./error-body"
 import { harnessUnavailableResponse } from "./session-harness-refusal"
+import { sessionOperationGuard } from "./session-operation-guard"
 import { rejectPermissionOverride } from "./session-permission-ceiling"
 import {
   after,
@@ -101,7 +102,18 @@ async function awaitReleaseOfEndedTurn(input: { opts: Opts; c: Ctx; directory: R
   await held.released(input.sessionId)
 }
 
-export async function acquireManagedPromptLease(input: {
+/**
+ * A prompt's authorization and, for a relay-replayed caller on a managed
+ * policy, its durable admission in the same decision: acquiring the lease is
+ * the authority's `agent_turn` answer for the actor, so the authority is asked
+ * once where a separate `prompt` question would ask it twice. A machine's own
+ * user, and a caller on a policy that admits no turns, is answered by the
+ * policy's `prompt` question alone. Before the decision the session is read
+ * for one thing, whether a lease this host holds on it is being released,
+ * which only delays the decision; everything a refused caller could learn
+ * from the session stays behind it.
+ */
+export async function admitPromptTurn(input: {
   opts: Opts
   c: Ctx
   directory: RuntimeDirectory
@@ -109,7 +121,10 @@ export async function acquireManagedPromptLease(input: {
   turnId?: string
   onLost: () => Promise<RecoveryOutcome> | RecoveryOutcome
 }): Promise<{ lease?: ActiveSessionTurnLease; rejected?: Response }> {
-  if (!managedSessionLifecycle(input.opts, input.c)) return {}
+  if (!managedSessionLifecycle(input.opts, input.c)) {
+    const refused = await sessionOperationGuard(input.opts, input.c, input.sessionId, "prompt")
+    return refused ? { rejected: refused } : {}
+  }
   if (!input.turnId) {
     return {
       rejected: Response.json(errorBody(
@@ -133,6 +148,11 @@ export async function acquireManagedPromptLease(input: {
     ...(input.opts.heldTurnLeases ? { held: input.opts.heldTurnLeases } : {}),
   })
   if (!acquired.acquired) return { rejected: sessionAccessDenied(acquired.decision) }
+  const refused = await input.opts.beforeSessionOperation?.(input.c, { sessionId: input.sessionId, operation: "prompt" })
+  if (refused) {
+    await acquired.lease.release().catch(() => undefined)
+    return { rejected: refused }
+  }
   return { lease: acquired.lease }
 }
 
@@ -245,19 +265,23 @@ export function steerAnswerStatus(steered: Exclude<SteerResult, { ok: true }>) {
 type PromptAdmission = { answer: Response; turn?: Promise<void>; failed?: { error: unknown } }
 
 /**
- * `prompt_async`'s admission, which a create's first prompt goes through too.
- * A prompt is deduplicated by message id and nothing more: the per-session
- * concurrency lease is the runtime host's. The checkpoint-freeze middleware
- * runs before these routes, so a 423 may preempt admission entirely. A live
- * entry is the owning request's pending answer: a resend that finds one joins
- * it instead of admitting the same prompt twice. A resend this instance holds
- * no entry for, after a restart or an evicted object, is answered from what
- * the session durably holds under that id, its transcript or its queue, so a
- * client whose answer was lost can send the same message again and it runs
- * once.
+ * `prompt_async`'s admission, which a create's first prompt goes through too,
+ * and the caller's authorization with it: a turn it starts is authorized by
+ * its lease (`admitPromptTurn`), and a queued delivery or a resend by the
+ * policy's `prompt` answer, each ahead of any read of the session it answers
+ * from. A prompt is deduplicated by message id and nothing more: the
+ * per-session concurrency lease is the runtime host's. The checkpoint-freeze
+ * middleware runs before these routes, so a 423 may preempt admission
+ * entirely. A live entry is the owning request's pending answer: a resend that
+ * finds one joins it instead of admitting the same prompt twice. A resend this
+ * instance holds no entry for, after a restart or an evicted object, is
+ * answered from what the session durably holds under that id, its transcript
+ * or its queue, so a client whose answer was lost can send the same message
+ * again and it runs once.
  */
 export function createPromptAdmission(opts: Opts, requestErrorResponse: (err: unknown, c: Ctx) => Response) {
-  const promptAdmissions = new Map<string, Map<string, Promise<Response>>>()
+  /** A live entry's answer, or nothing once the request that opened it was refused before admitting anything: a joiner then admits for itself. */
+  const promptAdmissions = new Map<string, Map<string, Promise<Response | undefined>>>()
   const releasePromptAdmission = (sessionId: string, messageId: string | undefined) => {
     if (!messageId) return
     const admitted = promptAdmissions.get(sessionId)
@@ -292,15 +316,26 @@ export function createPromptAdmission(opts: Opts, requestErrorResponse: (err: un
     input: { sessionId: string; directory: RuntimeDirectory; body: SessionPromptBody },
   ): Promise<PromptAdmission> => {
     const { sessionId: id, directory } = input
-    const body = await opts.transformPromptBody?.(c, { sessionId: id, directory, body: input.body }) ?? input.body
-    const permissionRefusal = await rejectPermissionOverride(opts, c, directory, id, body.permissionMode)
-    if (permissionRefusal) return { answer: permissionRefusal }
-    let settleAdmissionAnswer: ((response: Response) => void) | undefined
+    let body = input.body
+    // The ceiling's refusal names the session's modes, so it waits for the caller's authorization.
+    const prepare = async () => {
+      body = await opts.transformPromptBody?.(c, { sessionId: id, directory, body }) ?? body
+      return rejectPermissionOverride(opts, c, directory, id, body.permissionMode)
+    }
+    const guard = () => sessionOperationGuard(opts, c, id, "prompt")
+    let settleAdmissionAnswer: ((response: Response | undefined) => void) | undefined
     if (body.messageID) {
+      // A stored answer is the session's; the policy's `prompt` answer stands
+      // ahead of it for a joiner as it does for a resend of a held message.
       const pending = promptAdmissions.get(id)?.get(body.messageID)
-      if (pending) return { answer: (await pending).clone() }
-      const admissions = promptAdmissions.get(id) ?? new Map<string, Promise<Response>>()
-      admissions.set(body.messageID, new Promise<Response>((resolve) => {
+      if (pending) {
+        const refused = await guard()
+        if (refused) return { answer: refused }
+        const answer = await pending
+        if (answer) return { answer: answer.clone() }
+      }
+      const admissions = promptAdmissions.get(id) ?? new Map<string, Promise<Response | undefined>>()
+      admissions.set(body.messageID, new Promise<Response | undefined>((resolve) => {
         settleAdmissionAnswer = resolve
       }))
       promptAdmissions.set(id, admissions)
@@ -312,18 +347,23 @@ export function createPromptAdmission(opts: Opts, requestErrorResponse: (err: un
     let admittedForExecution = false
     let turn: Promise<void> | undefined
     let failed: { error: unknown } | undefined
+    // The runtime is resolved only for an authorized caller: on a machine,
+    // resolving it may apply the session's configuration and build an engine.
     const admit = async (): Promise<Response> => {
-      const runtime = await opts.runtime(c)
       const held = body.messageID ? opts.queuedPrompts?.heldDelivery(id, body.messageID) : undefined
       if (held) {
+        const refused = await guard()
+        if (refused) return refused
         admittedForExecution = true
         return held === "start" ? c.body(null, 204) : c.json({ delivery: held })
       }
       body.messageID ??= `msg_${crypto.randomUUID()}`
       if (body.delivery) {
+        const refused = await guard() ?? await prepare()
+        if (refused) return refused
         const delivery = body.delivery
         let delivered: Awaited<ReturnType<typeof admitQueuedDelivery>>
-        try { delivered = await admitQueuedDelivery(opts, c, runtime, { sessionId: id, body: { ...body, messageID: body.messageID, delivery } }) }
+        try { delivered = await admitQueuedDelivery(opts, c, await opts.runtime(c), { sessionId: id, body: { ...body, messageID: body.messageID, delivery } }) }
         catch (error) {
           if (isAgentRuntimeMessageIdConflictError(error)) return messageIdConflict(c)
           if (delivery === "queue") return c.json({ error: streamTurnErrorMessage(error) }, 503)
@@ -336,15 +376,23 @@ export function createPromptAdmission(opts: Opts, requestErrorResponse: (err: un
         return c.json({ ...delivered.steered, error: delivered.steered.message }, steerAnswerStatus(delivered.steered))
       }
       const lostTurn = captureTurnTarget((target) => opts.childSessions?.onTurnStarted(id, directory, target.turnId))
-      const turnAdmission = await acquireManagedPromptLease({
+      const turnAdmission = await admitPromptTurn({
         opts,
         c,
         directory,
         sessionId: id,
         turnId: body.messageID,
-        onLost: () => containLostTurn({ runtime: runtime.recovery, sessionId: id, target: lostTurn.get(), caller: recoveryCaller(c) }),
+        onLost: async () => containLostTurn({ runtime: (await opts.runtime(c)).recovery, sessionId: id, target: lostTurn.get(), caller: recoveryCaller(c) }),
       })
       if (turnAdmission.rejected) return turnAdmission.rejected
+      const unprepared = await readSession(opts, c, directory, id)
+        ? await prepare()
+        : c.json(errorBody("session_not_found", "Session not found"), 404)
+      if (unprepared) {
+        await turnAdmission.lease?.release().catch(() => undefined)
+        return unprepared
+      }
+      const runtime = await opts.runtime(c)
       let settleAdmission: ((error?: unknown) => void) | undefined
       const admission = new Promise<unknown>((resolve) => {
         settleAdmission = resolve
@@ -412,7 +460,7 @@ export function createPromptAdmission(opts: Opts, requestErrorResponse: (err: un
     }
     try {
       const answer = await admit()
-      settleAdmissionAnswer?.(answer.clone())
+      settleAdmissionAnswer?.(answer.status === 401 || answer.status === 403 ? undefined : answer.clone())
       return { answer, ...(turn ? { turn } : {}), ...(failed ? { failed } : {}) }
     } catch (error) {
       settleAdmissionAnswer?.(requestErrorResponse(error, c))

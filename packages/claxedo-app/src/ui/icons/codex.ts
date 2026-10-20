@@ -52,6 +52,7 @@ export const CODEX_ICON_ALIASES = {
   check: "codex-custom-check",
   "check-small": "codex-custom-check",
   checklist: "codex-20-139",
+  details: "codex-20-097",
   "chevron-double-left": "codex-20-001",
   "chevron-double-right": "codex-20-001",
   "chevron-down": "codex-20-001",

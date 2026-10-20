@@ -30,6 +30,10 @@ To add or switch a library:
 Codex's extracted assets use numbered IDs, so `codex.ts` contains the complete
 semantic-to-ID map. `manifest.ts` is the agent-facing index: each semantic name
 has only its glyph, a readable description, and an optional active-state icon.
+The kit's `sprite.svg` ships only the glyphs an alias table names, since the
+browser downloads it whole; every numbered glyph stays in its own
+`codex-20-NNN.svg` beside it, so aliasing a new one copies its `<symbol>` in.
+`codex-icon-map.test.ts` fails on a missing or an unnamed sprite glyph.
 Exact glyphs that are not in the numbered sprite—open folder, outline/filled
 pin, menus, and provider marks—live in the small local Codex sprite owned by
 `claxedo-icon.tsx`.

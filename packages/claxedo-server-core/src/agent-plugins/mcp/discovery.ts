@@ -196,12 +196,18 @@ async function safeFetch(
   throw new Error("discovery redirected too many times")
 }
 
-// Token POST bodies carry credentials bound to the retained endpoint, never a redirect recipient.
-export function createSafeEndpointFetch(fetcher: Fetch, resolve: McpOAuthAddressResolver): Fetch {
+/**
+ * A fetch for requests that carry a credential to a retained endpoint: a
+ * token exchange, or an MCP request bearing the upstream token. It refuses
+ * every redirect, since the credential is bound to that endpoint and never to
+ * a redirect recipient. `loopback` admits this machine's own addresses; a
+ * hosted plane passes false, because its loopback is the plane itself.
+ */
+export function createSafeEndpointFetch(fetcher: Fetch, resolve: McpOAuthAddressResolver, options: { loopback: boolean }): Fetch {
   return async (url, init) => {
-    const endpoint = safeEndpoint(url, { loopback: true })
-    if (!endpoint) throw new Error("MCP OAuth endpoint is unsafe")
-    return safeFetch(fetcher, endpoint, init, { loopback: true, resolve, redirect: "error" })
+    const endpoint = safeEndpoint(url, options)
+    if (!endpoint) throw new Error("MCP endpoint is unsafe")
+    return safeFetch(fetcher, endpoint, init, { ...options, resolve, redirect: "error" })
   }
 }
 
@@ -402,20 +408,22 @@ export async function discoverMcpOAuth(input: {
   resourceUrl: string
   fetch: Fetch
   resolve: McpOAuthAddressResolver
+  /** Whether the resource may be on this machine's loopback; false on a hosted plane, whose loopback is itself. */
+  loopback: boolean
   selectedIssuer?: string
   requiredScopes?: readonly string[]
   preRegistered?: Readonly<Record<string, { clientId: string; clientSecret?: string }>>
   clientIdMetadataDocumentUrl?: string
   dynamicRegistration?: McpOAuthDynamicRegistrationPort
 }): Promise<McpOAuthDiscoveryResult> {
-  const resource = safeEndpoint(input.resourceUrl, { loopback: true })
+  const resource = safeEndpoint(input.resourceUrl, { loopback: input.loopback })
   if (!resource) throw new McpOAuthDiscoveryError("invalid-resource", "MCP resource URL is unsafe")
   try {
     const probe = await safeFetch(input.fetch, resource, {
       method: "POST",
       headers: { accept: "application/json, text/event-stream", "content-type": "application/json" },
       body: JSON.stringify({ jsonrpc: "2.0", id: "claxedo-oauth-discovery", method: "initialize", params: { protocolVersion: "2026-07-28", capabilities: {}, clientInfo: { name: "Claxedo", version: "1" } } }),
-    }, { loopback: true, resolve: input.resolve })
+    }, { loopback: input.loopback, resolve: input.resolve })
     if (probe.status !== 401) {
       if (probe.ok) return { status: "public" }
       throw new Error(`MCP resource probe failed with ${probe.status}`)
@@ -426,7 +434,7 @@ export async function discoverMcpOAuth(input: {
       resolve: input.resolve,
     })
     if (!resourceMetadata) throw new Error("protected resource metadata is unavailable")
-    const canonicalResource = typeof resourceMetadata.raw.resource === "string" ? safeEndpoint(resourceMetadata.raw.resource, { loopback: true }) : undefined
+    const canonicalResource = typeof resourceMetadata.raw.resource === "string" ? safeEndpoint(resourceMetadata.raw.resource, { loopback: input.loopback }) : undefined
     if (!canonicalResource || !resourceIdentifies(canonicalResource, resource)) {
       throw new Error("protected resource metadata does not identify the MCP resource")
     }

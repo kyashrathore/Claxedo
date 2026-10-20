@@ -1,25 +1,22 @@
 import { guardedWaitUntil } from "@claxedo/server-core/platform/http/background-work"
 import type { RelayTargetLookup, RelayTargetResult } from "@claxedo/server-core/adapters/relay-port"
 import { Hono } from "hono"
-import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { ControlPlaneRequestTimeoutError } from "../../platform/runtime/timeout"
 import type { WorkspaceAuthority } from "../../authority/services"
 import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-crypto"
 import { asRecord } from "@claxedo/server-core/platform/json/index"
 import { trimToUndefined } from "@claxedo/helpers/string"
+import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 
+const log = Log.create({ service: "internal-relay-resolver" })
 
-function authorized(request: Request, expected: string | undefined) {
+function authorized(request: Request, expected: string) {
   const header = request.headers.get("authorization")
-  if (expected) {
-    if (!header) return false
-    const match = /^Bearer\s+(.+)$/i.exec(header.trim())
-    if (!match) return false
-    return timingSafeEqualStrings(match[1].trim(), expected)
-  }
-  // Without a configured token, only loopback callers may use the resolver routes.
-  return isLoopbackLocalRequest(request)
+  if (!header) return false
+  const match = /^Bearer\s+(.+)$/i.exec(header.trim())
+  if (!match) return false
+  return timingSafeEqualStrings(match[1].trim(), expected)
 }
 
 export type RuntimeAccessRevocationLookup = (args: {
@@ -40,11 +37,6 @@ export type RuntimeAccessRevocationLookup = (args: {
  */
 export type { RelayTargetLookup, RelayTargetResult } from "@claxedo/server-core/adapters/relay-port"
 
-export type LocalRelayTargetExists = (args: {
-  workspaceId: string
-  hostId: string
-}) => Promise<boolean>
-
 export type InternalRelayResolverOptions = {
   /**
    * Resolve the relay target for a `(workspaceId, hostId)` pair. Injected so the
@@ -55,12 +47,6 @@ export type InternalRelayResolverOptions = {
    */
   targetLookup?: RelayTargetLookup
   /**
-   * Loopback-only fallback used by `/internal/relay/revocation` to treat a
-   * locally-resolvable workspace target as active when signed-token storage has
-   * not recorded it yet. Injected (Node/local only); hosted deployments omit it.
-   */
-  localTargetExists?: LocalRelayTargetExists
-  /**
    * Lookup that returns the selected authority's runtime-token state:
    *   { active: true } | { active: false, code: string, reason: string }
    * When omitted, `authority` must be injected; otherwise revocation fails
@@ -68,7 +54,8 @@ export type InternalRelayResolverOptions = {
    */
   revocationLookup?: RuntimeAccessRevocationLookup
   authority?: WorkspaceAuthority
-  resolverToken?: string
+  /** The bearer the relay presents; a blank one refuses to compose. */
+  resolverToken: string
 }
 
 function defaultRevocationLookup(authority: WorkspaceAuthority): RuntimeAccessRevocationLookup {
@@ -80,7 +67,9 @@ function defaultRevocationLookup(authority: WorkspaceAuthority): RuntimeAccessRe
     })
 }
 
-export function InternalRelayResolverRoutes(options: InternalRelayResolverOptions = {}) {
+export function InternalRelayResolverRoutes(options: InternalRelayResolverOptions) {
+  const resolverToken = trimToUndefined(options.resolverToken)
+  if (!resolverToken) throw new Error("Internal relay resolver routes require a resolver token")
   const app = new Hono()
 
   const revocationLookup: RuntimeAccessRevocationLookup =
@@ -94,9 +83,9 @@ export function InternalRelayResolverRoutes(options: InternalRelayResolverOption
         }))
 
   app.use("/internal/relay/*", async (c, next) => {
-    if (!authorized(c.req.raw, trimToUndefined(options.resolverToken))) {
+    if (!authorized(c.req.raw, resolverToken)) {
       return c.json(
-        errorBody("relay_resolver_unauthorized", "Relay resolver requires loopback access or a matching bearer token"),
+        errorBody("relay_resolver_unauthorized", "Relay resolver requires a matching bearer token"),
         401,
       )
     }
@@ -184,29 +173,19 @@ export function InternalRelayResolverRoutes(options: InternalRelayResolverOption
       const result = await revocationLookup({ jti, workspaceId, hostId })
       // Pass through whatever the selected authority returned. If for any reason the shape
       // is unexpected we fall back to fail-closed.
-      if (result && typeof result === "object" && "active" in result) {
-        if (
-          result.active === false &&
-          (asRecord(result) ?? {}).code === "runtime_access_token_workspace_not_found" &&
-          !trimToUndefined(options.resolverToken) &&
-          isLoopbackLocalRequest(c.req.raw) &&
-          options.localTargetExists &&
-          await options.localTargetExists({ workspaceId, hostId })
-        ) {
-          return c.json({ active: true })
-        }
-        return c.json(result as Record<string, unknown>)
-      }
+      const record = asRecord(result)
+      if (record && "active" in record) return c.json(record)
       return c.json({
         active: false,
         code: "runtime_access_token_lookup_invalid",
         reason: "Runtime Access Token lookup returned an unexpected shape",
       })
-    } catch (err) {
+    } catch (error) {
+      log.error("runtime access token revocation lookup failed", { error, jti, workspaceId, hostId })
       return c.json({
         active: false,
         code: "runtime_access_token_lookup_failed",
-        reason: err instanceof Error ? err.message : "Runtime Access Token lookup failed",
+        reason: "Runtime Access Token lookup failed",
       })
     }
   })

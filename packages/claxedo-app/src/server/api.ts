@@ -3,7 +3,7 @@ import type { Accessor } from "solid-js"
 import type { QueryClient } from "@tanstack/solid-query"
 import type { SharedSessions } from "./shared-sessions"
 import type { StartupState } from "./startup"
-import type { RuntimeCommand } from "@claxedo/agent-runtime-contract"
+import type { HarnessId, RuntimeCommand } from "@claxedo/agent-runtime-contract"
 import type { Account, AccountsApi, AccountSources, EffectiveAccounts, MachineLogin, SandboxKeys } from "./account-types"
 import type { CloudCreateInput, CloudStopOutcome, CloudWorkspace, CodeHostRepositoryListing, WorkspaceRuntime, WorkspaceStartRun } from "./cloud-types"
 import type { HarnessOptions } from "./harness-types"
@@ -77,6 +77,7 @@ import type {
   SessionGoal,
   SessionListInput,
   SessionPage,
+  SessionPageQuery,
   SessionReader,
   SessionReads,
   SessionLocation,
@@ -84,12 +85,14 @@ import type {
   TranscriptPage,
   TranscriptPart,
 } from "./types"
+import type { SessionFirstPages } from "./session-list"
 import type { BackgroundTaskStop } from "./status-types"
 import type { AccountSpendReport, AccountSpendRequest, MachineTime, UsageRequest, UsageSummary } from "./usage-types"
 import type { LivePlugin } from "./live-plugin-types"
 
 export type SessionsApi = McpAppsApi & {
   readonly list: (input: SessionListInput) => Promise<SessionPage>
+  readonly firstPages: (input: SessionPageQuery) => SessionFirstPages
   readonly markSeen: (ref: SessionLocation, completedAt: number) => Promise<SessionReader>
   readonly settle: (ref: SessionLocation, write: { readonly settled: true; readonly through: number } | { readonly settled: false }) => Promise<SessionReader>
   readonly read: (ref: SessionLocation, shape: PageShape, held?: HeldSessionReads) => SessionReads
@@ -216,6 +219,7 @@ export type ServerQueries = {
   readonly providerCatalogs: ProviderCatalogQueries
   readonly harnesses: {
     readonly options: (placementId: PlacementId, harness: string) => FetchQuery<HarnessOptions>
+    readonly catalogOptions: (harness: HarnessId) => FetchQuery<HarnessOptions>
     readonly commands: (placementId: PlacementId, harness: string) => FetchQuery<readonly RuntimeCommand[]>
     readonly stopsBackgroundTasks: (ref: SessionLocation) => FetchQuery<boolean>
   }

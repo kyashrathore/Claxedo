@@ -1,5 +1,5 @@
 import type { Locator, Page } from "@playwright/test"
-import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI, watchPageWork, type ClaxedoApi, type SessionRow, type Stack, type Workspace } from "../harness"
+import { acpScriptToken, assistantText, expect, expectFieldRingUnclipped, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI, watchPageWork, type ClaxedoApi, type SessionRow, type Stack, type Workspace } from "../harness"
 
 type ListItem = { readonly sessionId: string; readonly title: string; readonly archivedAt?: number | null; readonly parentSessionId?: string | null }
 
@@ -77,10 +77,16 @@ test("10 session list: the project's rows, live status and rename, read back fro
   await liveStatus(stack, api, app, workspace.directory, bravo)
 
   await sessionAction(stack, app, workspace, charlie, "Rename")
-  const editor = app.locator("input:focus, [role=textbox]:focus").and(app.locator(":not([contenteditable])"))
+  const rename = app.getByRole("dialog", { name: "Rename" })
+  const editor = rename.getByRole("textbox", { name: "Session title" })
+  await expect(editor).toBeFocused()
   await expect(editor).toHaveValue("Charlie")
+  await expectFieldRingUnclipped(editor)
+  await editor.fill(" ")
+  await expect(rename.getByRole("button", { name: "Save", exact: true })).toBeDisabled()
   await editor.fill("Charlie renamed")
   await editor.press("Enter")
+  await expect(rename).toHaveCount(0)
   await expect(row(app, "Charlie renamed")).toBeVisible()
   await expect.poll(async () => (await api.session(workspace.directory, charlie.id)).title).toBe("Charlie renamed")
 

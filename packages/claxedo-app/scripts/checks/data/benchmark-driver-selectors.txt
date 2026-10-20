@@ -1,4 +1,5 @@
 [data-component="prompt-input"]
+[data-component="session-screen"]
 [data-component="text-part"]
 [data-slot="navigation-row-activate"]
 [data-slot="session-timeline-scroll"]

@@ -1,6 +1,6 @@
 /// <reference types="bun" />
 import { afterAll, afterEach, expect, spyOn, test } from "bun:test"
-import { createRelay } from "./relay"
+import { createRelay, type RelayLinkSiblings } from "./relay"
 import { createWorkspaceConnections } from "./transport"
 import { WORKSPACE_STOPPED } from "./wire/connection"
 
@@ -66,6 +66,15 @@ test("relay: a workspace a person's machine serves declares no region, so its ro
   await createRelay(server.read).fetch("ws_1", "/api/wr/health")
 
   expect(runtimeFetch.mock.calls[0]?.[0]).toBe("https://relay.test/workspaces/ws_1/api/wr/health")
+})
+
+test("relay: a session its own Durable Object serves declares no region; the relay places its room beside the object from the token", async () => {
+  const server = control({ backing: "durable-object", sessionId: "ses_pi", relayUrl: link.relayUrl, runtimeAccessToken: "rat", tokenExpiresAt: link.tokenExpiresAt })
+  runtimeFetch.mockResolvedValue(Response.json([]))
+
+  await createRelay(server.read).fetch("ws_1", "/session/ses_pi/outline", undefined, "ses_pi")
+
+  expect(runtimeFetch.mock.calls[0]?.[0]).toBe("https://relay.test/workspaces/ws_1/session/ses_pi/outline")
 })
 
 test("relay: a kept cloud link keeps its region across a reload", async () => {
@@ -171,6 +180,54 @@ test("relay: a signed-in person's link outlives a reload of the page, so reloads
   expect(server.calls, "another person's reload never reuses Ada's link").toHaveLength(2)
 })
 
+function siblings() {
+  const members: RelayLinkSiblings[] = []
+  return () => {
+    const member: RelayLinkSiblings = {
+      onmessage: null,
+      postMessage: (message: unknown) => {
+        for (const other of members) if (other !== member) other.onmessage?.call(other as BroadcastChannel, new MessageEvent("message", { data: structuredClone(message) }))
+      },
+    }
+    members.push(member)
+    return member
+  }
+}
+
+test("relay: a new tab takes the links its signed-in siblings hold, so opening tabs mints nothing for a workspace or session another tab reached", async () => {
+  const server = control({ relayUrl: link.relayUrl, runtimeAccessToken: "rat", tokenExpiresAt: link.tokenExpiresAt })
+  runtimeFetch.mockImplementation(Object.assign(async () => Response.json([]), { preconnect: fetch.preconnect }))
+  const join = siblings()
+  const first = createRelay(server.read, { scope: "usr_ada", storage: tab(), siblings: join() })
+  await first.fetch("ws_1", "/api/wr/health")
+  first.adopt({ ...link, workspaceId: "ws_2", runtimeAccessToken: "started" })
+  const second = createRelay(server.read, { scope: "usr_ada", storage: tab(), siblings: join() })
+  await second.fetch("ws_1", "/api/wr/health")
+  await second.fetch("ws_2", "/api/wr/health")
+  expect(server.calls).toEqual([{ path: "/api/workspace/ws_1/connection", method: undefined }])
+  expect(new Headers(runtimeFetch.mock.calls.at(-1)?.[1]?.headers).get("authorization")).toBe("Bearer started")
+})
+
+test("relay: a link one tab mints reaches the tabs already open, and a sibling's offer never replaces a newer link", async () => {
+  const minted: string[] = []
+  const relayFor = (storage: ReturnType<typeof tab>, join: () => RelayLinkSiblings) =>
+    createRelay(async (workspaceId, sessionId) => {
+      minted.push(`${workspaceId}:${sessionId ?? "workspace"}`)
+      return { kind: "ready", link: { ...link, workspaceId, sessionId, runtimeAccessToken: `mint-${minted.length}` } }
+    }, { scope: "usr_ada", storage, siblings: join() })
+  runtimeFetch.mockImplementation(Object.assign(async () => Response.json([]), { preconnect: fetch.preconnect }))
+  const join = siblings()
+  const [first, second] = [relayFor(tab(), join), relayFor(tab(), join)]
+  await first.fetch("ws_1", "/session/ses_pi", undefined, "ses_pi")
+  await second.fetch("ws_1", "/session/ses_pi", undefined, "ses_pi")
+  expect(minted).toEqual(["ws_1:ses_pi"])
+  second.adopt({ ...link, runtimeAccessToken: "newer", tokenExpiresAt: link.tokenExpiresAt + 60_000 })
+  first.adopt({ ...link, runtimeAccessToken: "older", tokenExpiresAt: link.tokenExpiresAt })
+  await second.fetch("ws_1", "/api/wr/health")
+  expect(new Headers(runtimeFetch.mock.calls.at(-1)?.[1]?.headers).get("authorization")).toBe("Bearer newer")
+  expect(minted).toEqual(["ws_1:ses_pi"])
+})
+
 test("relay: a kept link near its expiry is minted again on the next reload and kept in its place", async () => {
   const server = control({ relayUrl: link.relayUrl, runtimeAccessToken: "renewed", tokenExpiresAt: Date.now() + 3_600_000 })
   runtimeFetch.mockImplementation(Object.assign(async () => Response.json([]), { preconnect: fetch.preconnect }))
@@ -208,4 +265,21 @@ test("relay: a runtime the control plane couldn't reach for its settings fails t
 
   await expect(createRelay(createWorkspaceConnections(request).read).fetch("ws_1", "/api/wr/pty")).rejects.toMatchObject({ class: "runtime_unreachable", retryable: true })
   expect(runtimeFetch).not.toHaveBeenCalled()
+})
+
+test("relay: a client whose origin fronts the relay sends every room request and socket there, whatever URL the link names", async () => {
+  const server = control({ backing: "cloud-vm", homeRegion: "us-east", relayUrl: link.relayUrl, runtimeAccessToken: "rat", tokenExpiresAt: link.tokenExpiresAt })
+  runtimeFetch.mockResolvedValue(Response.json([]))
+  const relay = createRelay(server.read, undefined, "https://app.test/relay")
+  await relay.fetch("ws_1", "/api/wr/health")
+  expect(runtimeFetch.mock.calls[0]?.[0]).toBe("https://app.test/relay/workspaces/ws_1/api/wr/health?region=us-east")
+  const sockets: string[] = []
+  const original = globalThis.WebSocket
+  globalThis.WebSocket = function (url: string) { sockets.push(url) } as unknown as typeof WebSocket
+  try {
+    await relay.webSocket("ws_1", "/pty")
+  } finally {
+    globalThis.WebSocket = original
+  }
+  expect(sockets).toEqual(["wss://app.test/relay/workspaces/ws_1/pty?region=us-east"])
 })

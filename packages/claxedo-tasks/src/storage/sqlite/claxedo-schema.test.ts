@@ -7,10 +7,10 @@ import { ClaxedoDB, CLAXEDO_MIGRATION_JOURNAL, configureClaxedoSchema, queryRows
 import { TASKS_SQLITE_SCHEMA } from "./schema"
 
 /**
- * `claxedo.db` as the single host journal built it before the Tasks folders
- * moved into this package, recorded at 789ec97: every applied name in order,
- * and the sha256 of its `sqlite_master` rows (607 rows, ordered by type
- * then name, tab-separated `type, name, tbl_name, sql`). A desktop that already
+ * `claxedo.db` as the single host journal builds it while it still holds the
+ * Tasks folders, recorded from `dev` at 74370a8: every applied name in order,
+ * and the sha256 of its `sqlite_master` rows (163 rows, ordered by type then
+ * name, tab-separated `type, name, tbl_name, sql`). A desktop that already
  * applied these names applies nothing new, so its history stays byte-identical.
  */
 const RECORDED_NAMES = [
@@ -80,8 +80,9 @@ const RECORDED_NAMES = [
   "20261003000200_session_reads",
   "20261003000300_session_meta_archive_human_turn",
   "20261016000100_usage_turn_credential",
+  "20261018000100_credential_secret_hint",
 ]
-const RECORDED_SCHEMA_SHA256 = "95d81f97a39fe6ec2413bfcc87cb33c5473c34852798d2d6d6580800af0d8b4f"
+const RECORDED_SCHEMA_SHA256 = "8f534eccb4bebb0f17c61fc061d5ad0e84dba919a745a2fb54a99aba33fb0ce3"
 
 const previousDataDir = process.env.CLAXEDO_DATA_DIR
 const root = mkdtempSync(path.join(tmpdir(), "claxedo-schema-golden-"))

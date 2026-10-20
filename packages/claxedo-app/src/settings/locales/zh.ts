@@ -55,7 +55,6 @@ export default {
   "settings.appearance.theme.description": "自定义 Claxedo 的主题。",
   "settings.keybindings.palette": "命令面板",
   "settings.connections.reconnect": "重新连接",
-  "settings.connections.confirm": "确认",
   "settings.section.connections": "连接",
   "settings.section.machines": "机器",
   "settings.common.remove": "移除",

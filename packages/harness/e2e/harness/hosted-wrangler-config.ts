@@ -14,7 +14,7 @@ export type HostedWranglerConfig = {
   e2e: string
 }
 
-export function renderHostedE2eWranglerConfig(controlPlaneMigrationsDir: string): HostedWranglerConfig {
+export function renderHostedE2eWranglerConfig(controlPlaneMigrationsDir: string, publicOriginHost: string): HostedWranglerConfig {
   const production = renderWorkerWranglerConfig({
     workerName: "claxedo-hosted-e2e",
     artifact: certifiedHostedWorkerArtifact("user-deployed-better-auth-d1-agent-plugins-full-hosted"),
@@ -25,6 +25,7 @@ export function renderHostedE2eWranglerConfig(controlPlaneMigrationsDir: string)
     requestLimiterNamespaceId: "1930000001",
     documentsBucket: "claxedo-documents-e2e",
     agentPluginsBucket: "claxedo-agent-plugins-e2e",
+    publicOriginHost,
     variables: {
       CLAXEDO_ADAPTER_PROFILE: "better-auth-d1",
       CLAXEDO_PRODUCT_POSTURE: "user-deployed",
@@ -34,7 +35,7 @@ export function renderHostedE2eWranglerConfig(controlPlaneMigrationsDir: string)
   return { production, e2e: production }
 }
 
-export async function writeHostedE2eWranglerConfig() {
+export async function writeHostedE2eWranglerConfig(publicOriginHost: string) {
   const file = path.join(CONFIG_DIRECTORY, `.wrangler-hosted-e2e-${randomUUID()}.toml`)
   // The deployed baseline is rendered from every owner's, so the run applies a
   // staged copy rather than the host's own source directory.
@@ -42,7 +43,7 @@ export async function writeHostedE2eWranglerConfig() {
     configDirectory: CONFIG_DIRECTORY,
     stageInto: await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-hosted-e2e-migrations-")),
   })
-  const { e2e } = renderHostedE2eWranglerConfig(staged.migrationsDir)
+  const { e2e } = renderHostedE2eWranglerConfig(staged.migrationsDir, publicOriginHost)
   await fs.writeFile(file, e2e, { flag: "wx", mode: 0o600 })
   return file
 }

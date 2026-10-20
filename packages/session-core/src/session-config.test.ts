@@ -2,8 +2,20 @@ import { describe, expect, test } from "bun:test"
 import {
   normalizeSessionConfigUpdate,
   normalizeSessionCreateBody,
+  normalizeSessionCreateConfig,
   sessionCreateGroup,
 } from "./session-config"
+
+describe("normalizeSessionCreateConfig", () => {
+  test("carries the settings of the create's model shape, never the harness the body names", () => {
+    expect(normalizeSessionCreateConfig({
+      harness: { id: "codex", access: "native" },
+      model: { providerID: "openai", id: "gpt-5", variant: "high" },
+      agent: "build",
+    })).toEqual({ model: { providerID: "openai", modelID: "gpt-5" }, variant: "high", agent: "build" })
+    expect(normalizeSessionCreateConfig({ title: "Quiet", harness: { id: "scripted-acp", access: "connection" } })).toEqual({})
+  })
+})
 
 describe("normalizeSessionCreateBody", () => {
   test("keeps only the create fields the routes read", () => {

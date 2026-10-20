@@ -35,13 +35,13 @@ export {
   type SegmentedControlV2Props as SegmentedControlProps,
   type SegmentedControlItemV2Props as SegmentedControlItemProps,
 } from "@opencode-ai/ui/v2/segmented-control-v2"
+export { TabsV2 as Tabs, type TabsV2Props as TabsProps } from "@opencode-ai/ui/v2/tabs-v2"
 export { SelectV2 as Select, type SelectV2Props as SelectProps } from "@opencode-ai/ui/v2/select-v2"
 export { SemanticIcon, type SemanticIconConcept } from "./semantic-icon"
 export { ToastV2 as Toast, showToastV2 as showToast, toasterV2 as toaster, type ToastV2Action as ToastAction, type ToastV2Options as ToastOptions, type ToastV2RegionProps as ToastRegionProps } from "@opencode-ai/ui/v2/toast-v2"
 export type ToastVariant = NonNullable<import("@opencode-ai/ui/v2/toast-v2").ToastV2Options["variant"]>
 export { TooltipV2 as Tooltip, type TooltipV2Props as TooltipProps } from "@opencode-ai/ui/v2/tooltip-v2"
 export { Tag, type TagProps } from "@opencode-ai/ui/v2/badge-v2"
-export { TabsV2 as Tabs, type TabsV2Props as TabsProps } from "@opencode-ai/ui/v2/tabs-v2"
 export { Progress, type ProgressProps } from "@opencode-ai/ui/progress"
 export { Avatar, type AvatarProps } from "@opencode-ai/ui/v2/avatar-v2"
 export { Switch, type SwitchProps } from "@opencode-ai/ui/v2/switch-v2"
@@ -56,6 +56,7 @@ export { Drawer, FormDialog, FormDrawer, type FormSurfaceProps } from "./control
 export { TextareaV2 as Textarea, type TextareaV2Props as TextareaProps } from "@opencode-ai/ui/v2/textarea-v2"
 export { useTheme, type ColorScheme, type DesktopTheme, type ThemeVariant } from "@opencode-ai/ui/theme"
 export { oc2Theme } from "@opencode-ai/ui/theme/default-theme"
+export { codexTheme } from "@opencode-ai/ui/theme/codex-theme"
 export { AccordionV2 as Accordion, type AccordionV2Props as AccordionProps } from "@opencode-ai/ui/v2/accordion-v2"
 export { AnimatedNumber } from "@opencode-ai/ui/animated-number"
 export { Card, CardDescription } from "@opencode-ai/ui/card"

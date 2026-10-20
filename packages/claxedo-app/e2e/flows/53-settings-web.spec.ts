@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test"
-import { expect, test, UI, type SignedStack } from "../harness"
+import { expect, storeOwnerKey, test, UI, type SignedStack } from "../harness"
 import { hostedFetch, inviteHostedPerson } from "../../../harness/e2e/harness/hosted-auth"
-import { chooseSettings, openSection } from "./15-settings.navigation"
+import { chooseSettings, harnessSection, openSection } from "./15-settings.navigation"
 
 async function colleague(signed: SignedStack, name: string) {
   const person = await signed.signUp(name)
@@ -12,13 +12,19 @@ async function colleague(signed: SignedStack, name: string) {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token }),
   }, person.person)
   expect(accepted.status).toBe(200)
-  return { orgName }
+  return { orgName, person }
 }
 
 async function openSettings(page: Page, isMobile: boolean) {
   if (isMobile) await page.getByRole("button", { name: UI.openRail }).click()
   await chooseSettings(page)
   await expect(page.getByTestId("settings-page")).toBeVisible()
+}
+
+async function openModelsWithoutProjects(signed: SignedStack, page: Page) {
+  await page.goto(`${signed.url}/settings/models`)
+  await expect(page.getByTestId("settings-page")).toBeVisible()
+  await expect(page.getByRole("heading", { level: 1, name: "Models" })).toBeVisible()
 }
 
 test("53 settings on the web: the signed-in person's organization, usage limits, sandbox and AI usage, models, connections and a project's Where it runs say only what applies on the web, at phone width too", async ({ signed, page, isMobile }, testInfo) => {
@@ -72,7 +78,8 @@ test("53 settings on the web: the signed-in person's organization, usage limits,
   await expect(claude.getByRole("button", { name: "Add an account" })).toHaveCount(1)
   await expect(claude.getByRole("tab")).toHaveCount(0)
   await page.screenshot({ path: testInfo.outputPath("models-accountless.png") })
-  await expect(page.getByText(/^(Local and cloud|Local only)$/)).toHaveCount(0)
+  await expect(page.getByText(/^(This computer|This computer's login|Rescan|Scanned .+)$/)).toHaveCount(0)
+  await expect(page.getByRole("checkbox", { name: "Cloud workspaces" })).toHaveCount(0)
 
   await openSection(page, isMobile, "Connections")
   await expect(page.getByText("Agent connections", { exact: true })).toHaveCount(0)
@@ -81,6 +88,19 @@ test("53 settings on the web: the signed-in person's organization, usage limits,
   await expect(integrations.getByText(/^Lets agents .+\.$/).first()).toBeVisible()
   await expect(integrations.getByRole("button", { name: /^(Connect…|Add another…)$/ }).first()).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await integrations.locator('[data-integration="github"]').getByRole("button", { name: /^(Connect…|Add another…)$/ }).click()
+  const connect = page.getByRole("dialog", { name: "Connect GitHub" })
+  await expect(connect.getByText("Lets agents clone your repositories into cloud workspaces and read the issues you give them.", { exact: true })).toBeVisible()
+  const connectBox = await connect.boundingBox()
+  const viewport = page.viewportSize()
+  if (!connectBox || !viewport) throw new Error("The connect drawer is not laid out")
+  expect(connectBox.x + connectBox.width, "Connect is a drawer at the right edge").toBeCloseTo(viewport.width, 0)
+  await expect(connect.getByRole("tablist")).toHaveCount(0)
+  await expect(connect.getByLabel("Fine-grained personal access token")).toBeVisible()
+  await expect(connect.getByRole("button", { name: "Connect", exact: true })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath("connect-github.png") })
+  await connect.getByRole("button", { name: "Cancel", exact: true }).click()
+  await expect(connect).toHaveCount(0)
 
   await openSection(page, isMobile, "Projects")
   await page.getByRole("link", { name: /Settings project/ }).click()
@@ -107,4 +127,59 @@ test("53 settings on the web: the signed-in person's organization, usage limits,
   const text = await listed.text()
   expect(JSON.parse(text)).toEqual({ names: ["API_URL"], editable: true })
   expect(text).not.toContain("secret.example.test")
+})
+
+test("53 settings on the web: a member chooses the organization account but neither adds, checks nor removes it, and the cloud choice is explained beside Accounts", async ({ signed, page }) => {
+  const { person: member } = await colleague(signed, "Grace Member")
+  const put = (person: typeof member.person, body: unknown) =>
+    hostedFetch(signed.hosted, "/api/claxedo/credentials", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }, person)
+  expect((await put(signed.owner.person, { provider_id: "cursor", kind: "api_key", source: "managed", owner: "org", label: "Acme Cursor", secret: "key_org_cursor" })).status).toBe(200)
+  expect((await put(member.person, { provider_id: "cursor-sdk", kind: "api_key", source: "managed", label: "Grace Cursor", secret: "key_grace_cursor" })).status).toBe(200)
+  const sources = await hostedFetch(signed.hosted, "/api/claxedo/credentials/account-sources", {}, member.person)
+  expect(await sources.json()).toMatchObject({ can_manage_org_accounts: false, org: [expect.objectContaining({ label: "Acme Cursor" })] })
+  await signed.signIn(page, member)
+  await openModelsWithoutProjects(signed, page)
+  const section = page.locator("section").filter({ has: page.getByRole("heading", { level: 2, name: "Cursor", exact: true }) }).last()
+  const cursor = page.getByRole("radiogroup", { name: "Cursor", exact: true })
+  const org = cursor.locator('[data-slot="account-row"][data-account="org"]')
+  await expect(org).toContainText("Acme Cursor")
+  await expect(org.getByRole("button", { name: "Check now" })).toHaveCount(0)
+  await expect(org.getByRole("button", { name: "Remove" })).toHaveCount(0)
+  const own = cursor.locator('[data-slot="account-row"]').filter({ hasText: "Grace Cursor" })
+  await expect(own.getByRole("radio")).toHaveAccessibleName(/^Grace Cursor API key · key_•••••rsor/)
+  await expect(section.getByText(/^(This computer|This computer's login)$/)).toHaveCount(0)
+  await expect(section.getByRole("checkbox", { name: "Cloud workspaces" })).toHaveCount(0)
+  await expect(section.getByRole("radio", { name: / login on / })).toHaveCount(0)
+  await expect(section.getByText(/^Cloud workspaces use the Cursor account/)).toHaveCount(0)
+  const help = section.getByRole("button", { name: "How cloud workspaces choose a Cursor account", exact: true })
+  await help.click()
+  const explanation = page.getByRole("dialog", { name: "One Cursor account in cloud workspaces" })
+  await expect(explanation.getByText("Cloud workspaces use the Cursor account you chose most recently.", { exact: true })).toBeVisible()
+  await expect(explanation.getByText("Only Cursor uses it.", { exact: true })).toBeVisible()
+  await expect(explanation).not.toContainText("Pi")
+  await page.keyboard.press("Escape")
+  await expect(explanation).toHaveCount(0)
+  await expect(help).toBeFocused()
+  await help.press("Enter")
+  await expect(explanation).toBeVisible()
+  await page.keyboard.press("Escape")
+  await expect(explanation).toHaveCount(0)
+  await org.getByText("Acme Cursor", { exact: true }).click()
+  await expect(org.getByRole("radio")).toBeChecked()
+  await section.getByRole("button", { name: "Add an account" }).click()
+  const drawer = page.getByRole("dialog", { name: "Connect Cursor" })
+  await expect(drawer.getByRole("textbox", { name: "Cursor API key" })).toBeVisible()
+  await expect(drawer.getByRole("radio", { name: /^For the organization/ })).toHaveCount(0)
+  await drawer.getByRole("button", { name: "Cancel", exact: true }).click()
+  await expect(drawer).toHaveCount(0)
+})
+
+test("53 settings on the web: Claude Code's Models tab lists the account's models from the hosted plane and says nothing of a computer, its folders or its CLI", async ({ signed, page }) => {
+  await storeOwnerKey(signed, "claude-sdk", "sk-ant-api03-owner")
+  await signed.signIn(page, signed.owner)
+  await openModelsWithoutProjects(signed, page)
+  const claude = harnessSection(page, "Claude Code")
+  await claude.getByRole("tab", { name: "Models" }).click()
+  for (const model of ["Opus", "Sonnet", "Haiku"]) await expect(claude.getByRole("switch", { name: model, exact: true })).toBeVisible()
+  await expect(claude, "the web's Models tab says nothing that applies only to a desktop").not.toHaveText(/this computer|this machine|Login on|installed|folder|\bCLI\b/i)
 })

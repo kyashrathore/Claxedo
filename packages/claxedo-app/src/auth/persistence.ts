@@ -1,7 +1,7 @@
 const LAST_USER_ID_KEY = "claxedo:auth:lastUserId"
 const PREFERENCE_PREFIX = "claxedo:"
 
-export function clearPersistedAuthState() {
+function clearPersistedAuthState() {
   for (const key of Object.keys(localStorage)) {
     if (key === LAST_USER_ID_KEY || !key.startsWith(PREFERENCE_PREFIX)) continue
     localStorage.removeItem(key)
@@ -9,6 +9,19 @@ export function clearPersistedAuthState() {
   for (const key of Object.keys(sessionStorage)) {
     if (key.startsWith(PREFERENCE_PREFIX)) sessionStorage.removeItem(key)
   }
+}
+
+export function forgetAuthIdentity() {
+  clearPersistedAuthState()
+  localStorage.removeItem(LAST_USER_ID_KEY)
+}
+
+export function watchOtherTabIdentity(changed: (userId: string | undefined) => void): () => void {
+  const listener = (event: StorageEvent) => {
+    if (event.key === LAST_USER_ID_KEY || event.key === null) changed(event.newValue ?? undefined)
+  }
+  window.addEventListener("storage", listener)
+  return () => window.removeEventListener("storage", listener)
 }
 
 export function recordAuthIdentity(userId: string | null | undefined) {

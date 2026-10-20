@@ -7,6 +7,7 @@ import { placementId } from "./ids"
 import { createSessionProjection } from "./session-projection"
 import { RESERVATION_HEADER } from "./session-reservation"
 import { createSessionsApi } from "./sessions"
+import { createSnapshotCoverage } from "./snapshot-coverage"
 import { createStatusOwner } from "./status"
 import type { ProductTelemetry } from "./telemetry"
 import { bootstrap } from "./test-session-server"
@@ -72,7 +73,7 @@ test("sessions: a create the control plane reserves in its own host connects the
   const transport = createTransport({ serverUrl: origin, cookies: true })
   const account = createBrowserHostedAccount(transport)
   const workspaces = createWorkspaces(transport, new QueryClient())
-  const sessions = createSessionsApi(transport, workspaces, createStatusOwner(transport), createWorkspaceWakes(transport, workspaces, () => () => undefined), createSessionProjection(workspaces, account), telemetry, account)
+  const sessions = createSessionsApi(transport, workspaces, createStatusOwner(transport), createSnapshotCoverage(() => undefined), createWorkspaceWakes(transport, workspaces, () => () => undefined), createSessionProjection(workspaces, account), telemetry, account)
 
   const row = await sessions.create({ placementId: placementId("ws_cloud"), harness: "pi" })
   const id = String(row.ref.sessionId)
@@ -94,7 +95,7 @@ test("sessions: a draft reserved under Codex that switches to Pi before it lands
   const transport = createTransport({ serverUrl: origin, cookies: true })
   const account = createBrowserHostedAccount(transport)
   const workspaces = createWorkspaces(transport, new QueryClient())
-  const sessions = createSessionsApi(transport, workspaces, createStatusOwner(transport), createWorkspaceWakes(transport, workspaces, () => () => undefined), createSessionProjection(workspaces, account), telemetry, account)
+  const sessions = createSessionsApi(transport, workspaces, createStatusOwner(transport), createSnapshotCoverage(() => undefined), createWorkspaceWakes(transport, workspaces, () => () => undefined), createSessionProjection(workspaces, account), telemetry, account)
   let held: SessionReservation | undefined
   const reservation = { held: () => held, hold: (next: SessionReservation) => { held = next } }
 
@@ -120,7 +121,7 @@ test("sessions: a create the control plane places in the workspace's runtime min
   const transport = createTransport({ serverUrl: origin, cookies: true })
   const account = createBrowserHostedAccount(transport)
   const workspaces = createWorkspaces(transport, new QueryClient())
-  const sessions = createSessionsApi(transport, workspaces, createStatusOwner(transport), createWorkspaceWakes(transport, workspaces, () => () => undefined), createSessionProjection(workspaces, account), telemetry, account)
+  const sessions = createSessionsApi(transport, workspaces, createStatusOwner(transport), createSnapshotCoverage(() => undefined), createWorkspaceWakes(transport, workspaces, () => () => undefined), createSessionProjection(workspaces, account), telemetry, account)
   await expect(sessions.create({ placementId: placementId("ws_cloud"), harness: "codex" })).rejects.toMatchObject({ message: "/workspaces/ws_cloud/session" })
   expect(reservations).toEqual([expect.objectContaining({ harness: { id: "codex", access: "native" } })])
   expect(minted).toEqual([])
@@ -142,7 +143,7 @@ test("sessions: a Pi create on a sleeping cloud workspace wakes nothing: it is r
   const transport = createTransport({ serverUrl: origin, cookies: true })
   const account = createBrowserHostedAccount(transport)
   const workspaces = createWorkspaces(transport, new QueryClient())
-  const sessions = createSessionsApi(transport, workspaces, createStatusOwner(transport), recordedWakes(woke), createSessionProjection(workspaces, account), telemetry, account)
+  const sessions = createSessionsApi(transport, workspaces, createStatusOwner(transport), createSnapshotCoverage(() => undefined), recordedWakes(woke), createSessionProjection(workspaces, account), telemetry, account)
 
   const row = await sessions.create({ placementId: placementId("ws_cloud"), harness: "pi" })
   const id = String(row.ref.sessionId)
@@ -162,7 +163,7 @@ test("sessions: a create the control plane places in a sleeping workspace's runt
   const transport = createTransport({ serverUrl: origin, cookies: true })
   const account = createBrowserHostedAccount(transport)
   const workspaces = createWorkspaces(transport, new QueryClient())
-  const sessions = createSessionsApi(transport, workspaces, createStatusOwner(transport), recordedWakes(woke), createSessionProjection(workspaces, account), telemetry, account)
+  const sessions = createSessionsApi(transport, workspaces, createStatusOwner(transport), createSnapshotCoverage(() => undefined), recordedWakes(woke), createSessionProjection(workspaces, account), telemetry, account)
   await expect(sessions.create({ placementId: placementId("ws_cloud"), harness: "codex" })).rejects.toBeDefined()
   expect(reservations).toEqual([expect.objectContaining({ harness: { id: "codex", access: "native" } })])
   expect(woke).toEqual(["ws_cloud"])

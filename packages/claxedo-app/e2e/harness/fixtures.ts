@@ -7,7 +7,7 @@ import { ensureDesktopBuilt, type DesktopBuild } from "./desktop-build"
 import type { DesktopRenderer } from "./desktop-renderer"
 import { unexpectedEgress, type EgressAttempt } from "../../../harness/e2e/harness/egress-guard"
 import { releasePort, reservePort } from "../../../harness/e2e/harness/ports"
-import { signedOrigin, startSignedStack, type SignedStack } from "./signed-stack"
+import { startSignedStack, type SignedStack } from "./signed-stack"
 import { redRun, startStack, type Stack } from "./stack"
 
 export type HarnessFixtures = {
@@ -84,7 +84,7 @@ export const test = base.extend<HarnessFixtures, HarnessWorkerFixtures>({
       const frontPort = await reservePort()
       const relayPort = await reservePort()
       try {
-        const build = await ensureAppBuilt({ serverUrl: signedOrigin(frontPort), outDir: signedDistDir(), relayOrigins: [`http://127.0.0.1:${relayPort}`] })
+        const build = await ensureAppBuilt({ outDir: signedDistDir() })
         await use({ ...build, frontPort, relayPort })
       } finally {
         releasePort(frontPort)

@@ -15,3 +15,4 @@ export { AgentConfigurationPicker, type AgentConfigurationPickerProps } from "./
 export type { AgentConfiguration, AgentPlacement } from "./agent-configuration/model"
 export { modelGroupKey, useModelVisibility } from "./harness/model-visibility"
 export type { ComposerRecovery } from "./recovery"
+export { composerEnglishDictionaries as composerDictionary } from "./i18n"

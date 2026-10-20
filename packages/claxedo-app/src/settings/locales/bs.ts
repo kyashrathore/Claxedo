@@ -53,7 +53,6 @@ export default {
   "settings.appearance.theme.description": "Prilagodi temu Claxedo-a.",
   "settings.keybindings.palette": "Paleta komandi",
   "settings.connections.reconnect": "Ponovo poveži",
-  "settings.connections.confirm": "Potvrdi",
   "settings.alerts.agent": "agent",
   "settings.section.connections": "Veze",
   "settings.section.machines": "Mašine",

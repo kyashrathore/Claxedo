@@ -1,0 +1,55 @@
+$ node --conditions=development --import tsx e2e/latency/run.ts --scenario "relay-warm,cp-slow" --turns "6" --out "/private/tmp/claude-501/-Users-yashvardhansingh-test-opencode/f07b4ac1-8a7c-4f32-8af7-877e6dd4e80b/scratchpad/rig-after"
+  control plane: session-authorize:turn_acquire@246 session-rows@564 session-authorize:usage_report@1935 session-rows@1935 session-authorize:turn_release@2005
+relay-warm turn 1: accepted 459 first delta 1197 (object 1032, vendor 909) idle 2051
+relay-warm turn 2: accepted 460 first delta 1201 (object 1035, vendor 915) idle 2040
+relay-warm turn 3: accepted 427 first delta 1164 (object 995, vendor 879) idle 1985
+relay-warm turn 4: accepted 681 first delta 1412 (object 1248, vendor 1134) idle 2232
+relay-warm turn 5: accepted 404 first delta 1135 (object 971, vendor 856) idle 1961
+relay-warm turn 6: accepted 406 first delta 1143 (object 981, vendor 867) idle 1970
+  control plane: session-authorize:turn_acquire@601 session-rows@1271
+cp-slow turn 1: accepted 822 first delta 1551 (object 1387, vendor 1269) idle 2585
+cp-slow turn 2: accepted 791 first delta 1539 (object 1373, vendor 1242) idle 2488
+cp-slow turn 3: accepted 1387 first delta 2122 (object 1956, vendor 1840) idle 3046
+cp-slow turn 4: accepted 755 first delta 1485 (object 1322, vendor 1208) idle 2407
+cp-slow turn 5: accepted 778 first delta 1520 (object 1355, vendor 1232) idle 2457
+cp-slow turn 6: accepted 1372 first delta 2102 (object 1937, vendor 1824) idle 3032
+== relay-warm (relay; links {"clientEdgeMs":50,"roomDoMs":110,"doCpMs":5,"cpMs":50,"vendorMs":10})
+press -> accepted          p50    459  mean    473  p95    681  sd  95.8  n 6
+press -> room sent prompt  p50   54.8  mean    100  p95    328  sd   102  n 6
+press -> object answered   p50    285  mean    309  p95    519  sd  96.0  n 6
+press -> vendor request    p50    285  mean    309  p95    519  sd  96.0  n 6
+press -> vendor first byte p50    909  mean    927  p95   1134  sd  94.9  n 6
+press -> object first delta p50   1032  mean   1044  p95   1248  sd  94.6  n 6
+press -> client first delta p50   1197  mean   1209  p95   1412  sd  94.2  n 6
+inter-delta at vendor      p50   25.8  mean   21.8  p95   27.8  sd   9.9  n 252
+inter-delta at object      p50    104  mean    103  p95    111  sd   8.8  n 48
+inter-delta at client      p50    104  mean    103  p95    111  sd   8.4  n 48
+jitter (sd) at object      p50    6.6  mean    8.0  p95   14.9  sd   3.4  n 6
+jitter (sd) at client      p50    6.6  mean    7.7  p95   14.7  sd   3.3  n 6
+last delta -> idle         p50   10.9  mean   11.1  p95   13.4  sd   1.3  n 6
+press -> idle              p50   2040  mean   2040  p95   2232  sd  92.6  n 6
+event stream open          p50    433  mean    433  p95    433  sd   0.0  n 1
+control-plane calls {"session-authorize:start":1,"session-authorize:register":1,"session-authorize:read":4,"session-authorize:turn_acquire":6,"session-rows":13,"session-authorize:usage_report":6,"session-authorize:turn_release":6}
+relay resolver calls {"/internal/relay/target":1,"/internal/relay/revocation":2}
+
+== cp-slow (relay; links {"clientEdgeMs":50,"roomDoMs":110,"doCpMs":5,"cpMs":400,"vendorMs":10})
+press -> accepted          p50    822  mean    984  p95   1387  sd   280  n 6
+press -> room sent prompt  p50   62.0  mean    263  p95    676  sd   291  n 6
+press -> object answered   p50    656  mean    820  p95   1226  sd   283  n 6
+press -> vendor request    p50    656  mean    820  p95   1225  sd   282  n 6
+press -> vendor first byte p50   1269  mean   1436  p95   1840  sd   281  n 6
+press -> object first delta p50   1387  mean   1555  p95   1956  sd   278  n 6
+press -> client first delta p50   1551  mean   1720  p95   2122  sd   278  n 6
+inter-delta at vendor      p50   26.0  mean   22.4  p95   28.9  sd   9.6  n 276
+inter-delta at object      p50    104  mean    104  p95    128  sd  18.4  n 54
+inter-delta at client      p50    105  mean    104  p95    125  sd  18.0  n 54
+jitter (sd) at object      p50   14.4  mean   14.9  p95   33.8  sd  10.3  n 6
+jitter (sd) at client      p50   13.3  mean   14.6  p95   33.5  sd  10.0  n 6
+last delta -> idle         p50   10.4  mean   13.4  p95   30.7  sd   7.8  n 6
+press -> idle              p50   2585  mean   2669  p95   3046  sd   267  n 6
+event stream open          p50    777  mean    777  p95    777  sd   0.0  n 1
+control-plane calls {"session-authorize:start":1,"session-authorize:register":1,"session-authorize:read":5,"session-authorize:turn_acquire":6,"session-rows":12,"session-authorize:usage_report":5,"session-authorize:turn_release":5}
+relay resolver calls {"/internal/relay/target":1,"/internal/relay/revocation":3}
+
+wrote /private/tmp/claude-501/-Users-yashvardhansingh-test-opencode/f07b4ac1-8a7c-4f32-8af7-877e6dd4e80b/scratchpad/rig-after/relay-warm+cp-slow-2026-10-18T10-43-43.521Z.json
+exit 0

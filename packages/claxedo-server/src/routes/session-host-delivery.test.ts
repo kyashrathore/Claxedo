@@ -81,7 +81,7 @@ describe("a session placed in its own host answers to that host alone", () => {
     const proof = await vmProof("rat_vm_on_hosted")
     for (const body of [
       { action: "read", sessionId: ROOT },
-      { action: "turn_acquire", sessionId: ROOT, turnId: "turn_vm" },
+      { action: "turn_acquire", sessionId: ROOT, turnId: "turn_vm", writeClass: "agent_turn" },
       { action: "turn_grant", sessionId: ROOT, intent: "queued_prompt", turnId: "turn_vm_grant" },
     ]) {
       const answer = await plane.post("/session-authorize", body, proof)
@@ -132,6 +132,7 @@ describe("a session placed in its own host answers to that host alone", () => {
 describe("/turn-delivery", () => {
   test("hands the session's own host the owner's Pi accounts as direct secrets and nothing else", async () => {
     const proof = await hostProof("rat_delivery")
+    const readsBefore = pluginReads.length
     const lease = await plane.acquire(proof, ROOT, "turn_delivery")
     const answer = await plane.post("/turn-delivery", { turnLease: lease.leaseId })
     expect(answer.status).toBe(200)
@@ -139,7 +140,10 @@ describe("/turn-delivery", () => {
     const delivery = parseTurnDelivery(await answer.json())
     const ownerId = plane.owner.principal!.userId
     expect(delivery).toMatchObject({ auth: { machineOwnerUserId: ownerId, accounts: {} }, plugins: PI_PLUGINS, providerDefinitions: [] })
-    expect(pluginReads).toEqual([WORKSPACE_ID])
+    expect(pluginReads.slice(readsBefore)).toEqual([WORKSPACE_ID, WORKSPACE_ID])
+    const acquired = parseTurnDelivery(lease.delivery)!
+    expect({ ...acquired, firstPartyMcp: undefined }).toEqual({ ...delivery!, firstPartyMcp: undefined })
+    expect(acquired.firstPartyMcp?.url).toBe(delivery!.firstPartyMcp?.url)
     expect(delivery!.auth.direct).toEqual({
       [ownerId]: { anthropic: expect.objectContaining({ delivery: "direct", baseUrl: "https://api.anthropic.com", secret: "sk-ant-api03-owner", authKind: "api-key" }) },
     })
@@ -200,7 +204,7 @@ describe("/turn-delivery", () => {
     expect((await plane.post("/turn-delivery", { turnLease: leaseId })).status).toBe(200)
   })
 
-  test("a machine that cannot apply the owner's plugins fails the turn with a typed answer", async () => {
+  test("a machine that cannot apply the owner's plugins fails the turn with a typed answer, and an acquisition it fails releases the lease it took", async () => {
     const root = "ses_pi_plugins_unapplied"
     const proof = await plane.createHostedSession(root)
     const lease = await plane.acquire(proof, root, "turn_plugins_unapplied")
@@ -209,9 +213,14 @@ describe("/turn-delivery", () => {
       const answer = await plane.post("/turn-delivery", { turnLease: lease.leaseId })
       expect(answer.status).toBe(502)
       expect(await answer.json()).toEqual({ error: { code: "agent_plugins_unavailable" } })
+      await release(proof, root, lease)
+      const refused = await plane.post("/session-authorize", { action: "turn_acquire", sessionId: root, turnId: "turn_plugins_refused", writeClass: "agent_turn" }, proof)
+      expect(refused.status).toBe(502)
+      expect(await plane.database.prepare("select turn_id from session_turn_leases where session_id = ? and released_at is null").bind(root).all().then((rows) => rows.results)).toEqual([])
     } finally {
       pluginFailure = undefined
     }
+    expect((await plane.acquire(proof, root, "turn_plugins_after")).delivery).toBeDefined()
   })
 
   test("refuses an expired, forged or malformed lease", async () => {

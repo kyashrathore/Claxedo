@@ -36,11 +36,12 @@ describe("cors origin patterns", () => {
     expect(matcher("https://localhost:3000")).toBe(false)
   })
 
-  test("default list allows Claxedo product and localhost origins", () => {
+  test("default list allows Claxedo product origins and no loopback origin", () => {
     const matcher = createOriginMatcher(DEFAULT_RELAY_APP_ORIGINS)
     expect(matcher("https://claxedo.com")).toBe(true)
     expect(matcher("https://app.claxedo.com")).toBe(true)
-    expect(matcher("http://localhost:4444")).toBe(true)
+    expect(matcher("http://localhost:4444")).toBe(false)
+    expect(matcher("http://127.0.0.1:5173")).toBe(false)
     expect(matcher("https://evilclaxedo.com")).toBe(false)
     expect(matcher("https://claxedo.com.evil.io")).toBe(false)
   })

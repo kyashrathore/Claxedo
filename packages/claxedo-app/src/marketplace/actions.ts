@@ -68,6 +68,7 @@ function confirmDisable(dialog: ReturnType<typeof useDialog>, t: Translate, plug
     body: t(builtIn ? "marketplace.confirm.builtInBody" : "marketplace.confirm.disableBody"),
     confirmLabel: t(builtIn ? "marketplace.confirm.turnOff" : "marketplace.action.disable"),
     cancelLabel: t("marketplace.cancel"),
+    destructive: false,
   })
 }
 

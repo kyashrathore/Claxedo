@@ -26,7 +26,6 @@ import {
   createIntegrationRegistry,
   createIntegrationsRoutes,
   linearIntegration,
-  type ConnectionsService,
   type IntegrationCapability,
   type IntegrationDeclaration,
   type IntegrationImpl,
@@ -45,6 +44,7 @@ import { signedOrError, type RepositoryConnectionAccess } from "../../workspace/
 import { cloudRootPrivateRepository } from "../../workspace/cloud-root-backing"
 import type { HostedRepositoryClone } from "../../workspace/repository-clone"
 import { createCredentialStoreAdapter } from "../credential-store-adapter"
+import { readableCodeHostRepository } from "../repository-access"
 import { githubIntegrationForEnv } from "../github-oauth"
 import { createD1ConnectionAttempts, HOSTED_ATTEMPT_SWEEP_RATE, type HostedConnectionAttempts } from "./attempts"
 import { createD1ConnectionStore } from "./connection-store"
@@ -149,19 +149,15 @@ export function createHostedD1ConnectionsSetup(input: HostedD1ConnectionsSetupIn
     if (denied) return c.json(denied.body, denied.status)
 
     const attempts = input.attempts ?? d1Attempts(input)
-    // `GET /attempts/:state` is served from the CALLER's partitions, so the
-    // attempt it names must belong to them. The kit's route cannot check this:
-    // it knows nothing about orgs. Without the check a signed caller holding
-    // any state token reads another tenant's attempt — and, for a device grant,
-    // POLLING IS WHAT ADVANCES IT, so the poll would drive a stranger's grant
-    // to completion. Same frozen owner/routing agreement `hostedCallback`
-    // requires, and the same 404 the kit answers for an unknown state, so a
-    // prober cannot tell "not yours" from "not there".
+    // The kit's `GET /attempts/:state` refuses an attempt whose owner is not
+    // one of the caller's partition keys, but a personal `user:` key is the
+    // same in every org the user belongs to. The routing frozen at start names
+    // the org, so an attempt begun under another org is refused here with the
+    // kit's own 404, and a prober cannot tell "not yours" from "not there".
     const attemptState = /^\/attempts\/([^/]+)$/.exec(subpath)?.[1]
     if (attemptState !== undefined) {
       const frozen = await attempts.ownership(decodeURIComponent(attemptState))
-      const owned = frozen?.owner === `user:${membership.userId}` || frozen?.owner === `org:${membership.orgId}`
-      if (!frozen || !owned || frozen.routing?.org_id !== membership.orgId) {
+      if (frozen?.routing?.org_id !== membership.orgId) {
         return c.json({ code: "attempt_not_found" }, 404)
       }
     }
@@ -246,13 +242,10 @@ async function hostedCallback(input: HostedD1ConnectionsSetupInput, c: Context, 
 
 /**
  * Which of the signed caller's code-host connections, their own or their
- * organization's, can read `fullName`, for the hosted workspace-create route:
- * the one they picked, or with none picked the first that lists the
- * repository readable, their own before their organization's as capability
- * resolution orders them. A listing that failed outranks a plain "not
- * listed", since that connection may still have been the one. The clone
- * token is minted at each boot instead (`createHostedRepositoryClone`).
- * A fresh per-request service, like `handle` above — connection metadata and
+ * organization's, reads `fullName` for the hosted workspace-create route, as
+ * `readableCodeHostRepository` chooses among them. The clone token is minted
+ * at each boot instead (`createHostedRepositoryClone`). A fresh per-request
+ * service, like `handle` above — connection metadata and
  * credentials are org-scoped reads, not process state.
  */
 export function createHostedRepositoryAccess(input: HostedD1ConnectionsSetupInput) {
@@ -262,31 +255,12 @@ export function createHostedRepositoryAccess(input: HostedD1ConnectionsSetupInpu
     if (!membership) return { ok: false, status: 403, code: "connections_org_membership_required" }
     const service = await hostedConnectionsService(input, { ownerUserId: membership.userId, orgId: membership.orgId })
     try {
-      const candidates = (await service.list({ owner: `user:${membership.userId}`, orgOwner: `org:${membership.orgId}` }))
-        .filter((connection) => connectionId === undefined
-          ? connection.grantedCapabilities.includes("code-host") && connection.status !== "broken"
-          : connection.id === connectionId)
-        .sort((a, b) => Number(b.scope === "personal") - Number(a.scope === "personal"))
-      const answers = await Promise.all(candidates.map((connection) => readableThrough(service, connection.id, fullName)))
-      return answers.find((answer) => answer.ok)
-        ?? answers.find((answer) => !answer.ok && answer.status >= 500)
-        ?? answers.find((answer) => !answer.ok && answer.code === "repository_read_required")
-        ?? answers[0]
-        ?? { ok: false, status: 404, code: "connection_not_found" }
+      const connections = await service.list({ owner: `user:${membership.userId}`, orgOwner: `org:${membership.orgId}` })
+      return await readableCodeHostRepository(service, connections, connectionId, fullName)
     } finally {
       service.dispose()
     }
   }
-}
-
-async function readableThrough(service: ConnectionsService, connectionId: string, fullName: string): Promise<RepositoryConnectionAccess> {
-  const listed = await service.listRepositories(connectionId)
-  if (!listed.ok) return listed
-  const wanted = fullName.toLowerCase()
-  const repository = listed.repositories.find((item) => item.fullName.toLowerCase() === wanted)
-  if (!repository) return { ok: false, status: 404, code: "repository_not_found" }
-  if (!repository.permissions.read) return { ok: false, status: 403, code: "repository_read_required" }
-  return { ok: true, repository, connectionId }
 }
 
 /**

@@ -149,7 +149,7 @@ export class OpenCodeSdkTransport implements HarnessTransport {
     const entry = context.sessionId ? this.entries.get(context.sessionId) : undefined
     if (entry) return openCodeCapabilities(await this.runtime.catalog.models(entry.scope))
     if (context.draft) return openCodeCapabilities(await this.readAsDraft(context.draft, (scope) => this.runtime.catalog.models(scope)))
-    return openCodeCapabilities(await this.runtime.catalog.models(catalogScope(context.directory)))
+    return openCodeCapabilities([])
   }
 
   async prepare(directory: string) {

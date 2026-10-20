@@ -15,7 +15,7 @@ export type TraceSummary = {
   readonly totals: Record<string, number>
 }
 
-type Mapper = { readonly map: (file: string, line: number, column: number) => string }
+export type Mapper = { readonly map: (file: string, line: number, column: number) => string }
 
 export function createSourceMapper(distDir: string): Mapper {
   const consumers = new Map<string, SourceMapConsumer | null>()
@@ -39,7 +39,7 @@ export function createSourceMapper(distDir: string): Mapper {
   }
 }
 
-function describe(event: TraceEvent, mapper: Mapper): string {
+export function describeTraceEvent(event: TraceEvent, mapper: Mapper): string {
   const data = event.args?.data ?? {}
   const ms = ((event.dur ?? 0) / 1000).toFixed(1)
   if (event.name === "FunctionCall") {
@@ -73,7 +73,7 @@ export function summarizeTrace(events: readonly TraceEvent[], mapper: Mapper): T
       direct.push(event)
     }
     const children = direct.flatMap((child) => {
-      const line = describe(child, mapper)
+      const line = describeTraceEvent(child, mapper)
       if (child.name !== "FunctionCall" && child.name !== "EventDispatch" && child.name !== "TimerFire") return [line]
       const childEnd = child.ts + (child.dur ?? 0)
       const nested = inside.filter((event) => event !== child && event.ts >= child.ts && event.ts + (event.dur ?? 0) <= childEnd && (event.dur ?? 0) >= 1000 && ["FunctionCall", "Layout", "UpdateLayoutTree", "Paint", "PrePaint", "HitTest", "ParseHTML", "Microtasks"].includes(event.name))
@@ -83,7 +83,7 @@ export function summarizeTrace(events: readonly TraceEvent[], mapper: Mapper): T
         if (previous && event.ts < previous.ts + (previous.dur ?? 0)) continue
         kept.push(event)
       }
-      return [line, ...kept.slice(0, 8).map((event) => `    ${describe(event, mapper)}`)]
+      return [line, ...kept.slice(0, 8).map((event) => `    ${describeTraceEvent(event, mapper)}`)]
     })
     return { startMs: (task.ts - input) / 1000, durMs: (task.dur ?? 0) / 1000, children }
   })

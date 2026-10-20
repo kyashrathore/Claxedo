@@ -26,6 +26,7 @@ function SurfaceReplyBody(props: { readonly spec: SurfaceSpec; readonly surfaceI
       body: i18n.t("transcript.surfaceReply.confirm.body", { title: spec.title }),
       confirmLabel: i18n.t("transcript.surfaceReply.confirm.send"),
       cancelLabel: i18n.t("transcript.surfaceReply.confirm.cancel"),
+      destructive: false,
     })
     if (!confirmed) return
     reply.send({ type: "started" })

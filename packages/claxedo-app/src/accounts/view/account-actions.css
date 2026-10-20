@@ -1,0 +1,9 @@
+[data-action="agent-account-check"][aria-busy="true"] {
+  animation: agent-account-check-spin 0.9s linear 34;
+}
+
+@keyframes agent-account-check-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

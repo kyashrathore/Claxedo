@@ -14,11 +14,11 @@ import type {
 import type { BrowserRegistry } from "./browser/registry"
 import { isOpenableLinkUrl } from "./navigation-guard"
 import { openIn } from "./open-in"
-import { readLocalFileContent } from "./local-file-content"
+import { desktopPrivateLocations, readLocalFileContent } from "./local-file-content"
 import { persistedServerUrlVerdict } from "./server-url"
 import { clampZoomFactor } from "../shared/zoom-factor"
 import { getStore } from "./store"
-import { assertStoreKey, assertStoreValue } from "./store-policy"
+import { assertRendererStoreKey, assertStoreValue } from "./store-policy"
 
 const PNG = "image/png"
 
@@ -41,7 +41,6 @@ type Deps = {
   restart: (reload: () => void) => void
   getStartAtLogin: () => boolean
   setStartAtLogin: (enabled: boolean) => void
-  renderMermaid?: (source: string, theme?: Record<string, string>) => Promise<string>
   /** Optional; only provided when the browser-tab feature flag is set. */
   browser?: BrowserRegistry
 }
@@ -82,27 +81,20 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("set-start-at-login", (_event: IpcMainInvokeEvent, enabled: unknown) =>
     deps.setStartAtLogin(enabled === true),
   )
-  const renderMermaid = deps.renderMermaid
-  if (renderMermaid) {
-    ipcMain.handle(
-      "render-mermaid",
-      (_event: IpcMainInvokeEvent, source: string, theme?: Record<string, string>) => renderMermaid(source, theme),
-    )
-  }
   ipcMain.handle("store-get", (_event: IpcMainInvokeEvent, name: string, key: string) => {
-    assertStoreKey(key)
+    assertRendererStoreKey(name, key)
     const store = getStore(name)
     const value = store.get(key)
     if (value === undefined || value === null) return null
     return typeof value === "string" ? value : JSON.stringify(value)
   })
   ipcMain.handle("store-set", (_event: IpcMainInvokeEvent, name: string, key: string, value: string) => {
-    assertStoreKey(key)
+    assertRendererStoreKey(name, key)
     assertStoreValue(value)
     getStore(name).set(key, value)
   })
   ipcMain.handle("store-delete", (_event: IpcMainInvokeEvent, name: string, key: string) => {
-    assertStoreKey(key)
+    assertRendererStoreKey(name, key)
     getStore(name).delete(key)
   })
   ipcMain.handle("store-clear", (_event: IpcMainInvokeEvent, name: string) => {
@@ -166,7 +158,9 @@ export function registerIpcHandlers(deps: Deps) {
 
   // `open-in.ts` decides which of these four the request is; this only binds
   // each to its electron call.
-  ipcMain.handle("read-file-content", (_event: IpcMainInvokeEvent, path: string) => readLocalFileContent(path))
+  ipcMain.handle("read-file-content", (_event: IpcMainInvokeEvent, path: string) =>
+    readLocalFileContent(path, desktopPrivateLocations(app.getPath("userData"))),
+  )
   ipcMain.handle("open-path", (event: IpcMainInvokeEvent, path: string, app?: string) =>
     openIn(
       { path, app },

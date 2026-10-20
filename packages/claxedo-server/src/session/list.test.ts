@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest"
 import type { ControlPlaneServices } from "../authority/services"
-import { parseSessionListQuery, sessionListErrorResponse, signedSessionList } from "./list"
+import { parseSessionListQuery, sessionListErrorResponse, signedProjectSessionPages, signedSessionList } from "./list"
+import { encodeSessionListAfter } from "@claxedo/server-core/session/navigation-list"
 
 const signed = {
   mode: "signed" as const,
@@ -69,6 +70,31 @@ describe("signedSessionList", () => {
       limit: 2,
       after: { updatedAt: 2, createdAt: 1, lastHumanTurnAt: 9, sessionRef: "workspace:ws_1:session:ses_a" },
     })
+  })
+
+  test("the projects scope reads every project's first page in one authority batch, each cut as a project page, and takes no cursor", async () => {
+    const listProjectSessionPages = vi.fn(async () => [
+      { projectId: "prj_1", sessions: [row("ses_a", "ws_1", 9), row("ses_b", "ws_1", 5), row("ses_c", "ws_1", 1)] },
+      { projectId: "prj_2", sessions: [] },
+    ])
+    const response = await signedProjectSessionPages(
+      services({ listProjectSessionPages }),
+      signed,
+      query("scope=projects&sort=human_turn_desc&limit=2&settled=active"),
+    )
+
+    expect(listProjectSessionPages).toHaveBeenCalledWith(signed, { sort: "human_turn_desc", archived: "active", settled: "active", limit: 3 })
+    expect(response.view).toEqual({ scope: "projects", sort: "human_turn_desc", limit: 2 })
+    expect(response.pages.map((page) => [page.projectId, page.items.map((item) => item.sessionRef), page.nextAfter !== undefined])).toEqual([
+      ["prj_1", ["workspace:ws_1:session:ses_a", "workspace:ws_1:session:ses_b"], true],
+      ["prj_2", [], false],
+    ])
+
+    const after = encodeSessionListAfter({ updatedAt: 2, createdAt: 1, lastHumanTurnAt: 5, sessionRef: "workspace:ws_1:session:ses_b" })
+    const refused = await signedProjectSessionPages(services({ listProjectSessionPages }), signed, query(`scope=projects&limit=2&after=${after}`))
+      .then(() => undefined, (err: unknown) => err)
+    expect(sessionListErrorResponse(refused)?.status).toBe(400)
+    expect(listProjectSessionPages).toHaveBeenCalledTimes(1)
   })
 
   test("refuses a list that names neither a project nor a workspace", async () => {

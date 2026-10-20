@@ -4,7 +4,8 @@ import { claudeBundledOptions } from "@claxedo/harness/claude-models"
 import { codexBundledOptions } from "@claxedo/harness/codex-models"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneCredentials } from "../../authority/services"
-import { CursorModelsError, hostedMachineHarnessLaunch, type MachineHarnessDraft } from "./native-launch"
+import { CursorModelsError } from "@claxedo/server-core/credentials/harness-model-list"
+import { hostedMachineHarnessLaunch, type MachineHarnessDraft } from "./native-launch"
 
 const auth = { mode: "signed", user: { subject: "user_a", tokenIdentifier: "issuer|user_a", issuer: "issuer", orgId: "org_a" } } as SignedControlPlaneAuth
 const account = { credentialId: "cred_cursor", providerId: "cursor-sdk" }

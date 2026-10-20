@@ -2,6 +2,8 @@
 import type { D1Database } from "@cloudflare/workers-types"
 import { Miniflare } from "miniflare"
 import { afterEach, describe, expect, test } from "vitest"
+import { readFile } from "node:fs/promises"
+import { fileURLToPath } from "node:url"
 
 import {
   userDeployedOwnerBootstrapClaimHash,
@@ -60,12 +62,12 @@ describe("claim-owner", () => {
     const claim = generateCanonicalOwnerClaim()
     const provisioning = await ownerClaimProvisioning({
       deploymentId: "claxedo",
-      apiOrigin: "https://api.example.com",
+      origin: "https://app.example.com",
       subject: "user_123",
       claim,
       now: new Date(1_000),
     })
-    const identity = { adapter: "better-auth" as const, issuer: "https://api.example.com/api/auth", subject: "user_123" }
+    const identity = { adapter: "better-auth" as const, issuer: "https://app.example.com/api/auth", subject: "user_123" }
     expect(provisioning).toEqual({
       deploymentId: "claxedo",
       identity,
@@ -80,7 +82,7 @@ describe("claim-owner", () => {
   test("a re-run replaces an unredeemed claim and never a redeemed one", async () => {
     const target = await controlPlane()
     const provision = (claim: string) =>
-      ownerClaimProvisioning({ deploymentId: "claxedo", apiOrigin: "https://api.example.com", subject: "user_123", claim })
+      ownerClaimProvisioning({ deploymentId: "claxedo", origin: "https://app.example.com", subject: "user_123", claim })
 
     const first = await provision(generateCanonicalOwnerClaim())
     await target.prepare(ownerClaimMutationSql(first)).run()
@@ -95,7 +97,7 @@ describe("claim-owner", () => {
     await target
       .prepare(
         `update user_deployed_owner_bootstrap_claims
-         set consumed_at = 1, consumed_adapter = 'better-auth', consumed_issuer = 'https://api.example.com/api/auth',
+         set consumed_at = 1, consumed_adapter = 'better-auth', consumed_issuer = 'https://app.example.com/api/auth',
              consumed_subject = 'user_123' where deployment_id = 'claxedo'`,
       )
       .run()
@@ -111,14 +113,39 @@ describe("claim-owner", () => {
     expect(signedInSubjectSql("O'Brien@example.com")).toContain(`lower('O''Brien@example.com')`)
     expect(signedInSubject(d1Output([{ id: "user_123" }]), "me@example.com", "https://app.example.com")).toBe("user_123")
     expect(() => signedInSubject(d1Output([]), "me@example.com", "https://app.example.com")).toThrow(
-      /sign in at https:\/\/app.example.com first/,
+      /sign in at https:\/\/app.example.com and verify that email first/,
     )
+  })
+
+  test("binds only to an account whose email is verified, so a pre-registered unverified address never becomes owner", async () => {
+    const instance = new Miniflare({
+      modules: true,
+      script: "export default { fetch() { return new Response('ok') } }",
+      compatibilityDate: "2025-05-01",
+      d1Databases: ["AUTH_DB"],
+    })
+    active.push(instance)
+    const auth = await instance.getD1Database("AUTH_DB")
+    const schema = await readFile(fileURLToPath(new URL("../../migrations/auth/0001_better_auth.sql", import.meta.url)), "utf8")
+    const userTable = schema.replace(/^\s*--.*$/gm, "").split(/;\s*\n/).find((statement) => statement.trim().startsWith(`create table "user"`))
+    if (!userTable) throw new Error("the auth migration defines no user table")
+    await auth.prepare(userTable).run()
+    const insert = (id: string, email: string, verified: number) => auth
+      .prepare(`insert into "user" ("id", "name", "email", "emailVerified", "createdAt", "updatedAt") values (?, ?, ?, ?, 0, 0)`)
+      .bind(id, id, email, verified).run()
+    await insert("attacker", "operator@example.com", 0)
+    await insert("operator", "Owner@example.com", 1)
+    const lookup = async (email: string) =>
+      signedInSubject(d1Output((await auth.prepare(signedInSubjectSql(email)).all()).results), email, "https://app.example.com")
+
+    await expect(lookup("operator@example.com")).rejects.toThrow(/verify that email first/)
+    await expect(lookup("owner@example.com")).resolves.toBe("operator")
   })
 
   test("prints a redemption that posts the claim header to the bootstrap-owner route with the session", () => {
     const claim = generateCanonicalOwnerClaim(() => new Uint8Array(32).fill(1))
-    const line = ownerClaimRedemption("https://api.example.com", claim)
-    expect(line).toContain('"https://api.example.com/api/claxedo/auth/bootstrap-owner"')
+    const line = ownerClaimRedemption("https://app.example.com", claim)
+    expect(line).toContain('"https://app.example.com/api/claxedo/auth/bootstrap-owner"')
     expect(line).toContain('credentials: "include"')
     expect(line).toContain(`"x-claxedo-bootstrap-owner-claim": "${claim}"`)
   })

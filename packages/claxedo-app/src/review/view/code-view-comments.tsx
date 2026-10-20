@@ -50,7 +50,7 @@ type OwnerInput = CodeViewCommentsInput & {
 function previewFor(diffs: readonly DiffSource[], file: string, range: SelectedLineRange): string | undefined {
   const diff = diffs.find((item) => item.file === file)
   if (!diff) return undefined
-  const contents = text({ fileDiff: resolveFileDiff(diff) }, selectionSide(range))
+  const contents = text(resolveFileDiff(diff), selectionSide(range))
   return contents.length === 0 ? undefined : previewSelectedLines(contents, range)
 }
 

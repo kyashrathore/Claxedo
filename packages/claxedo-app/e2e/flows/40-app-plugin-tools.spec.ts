@@ -121,18 +121,19 @@ for (const harness of ["codex", "opencode", "pi"] as const) {
     const model = harness === "opencode" ? { providerId: "anthropic", modelId: "scripted" } : await api.defaultModel(workspace.directory, harness)
     const session = await api.createSession(workspace.directory, { title: `${harness} plugin guide`, harness: { id: harness, access: "native" }, model })
     const token = `GUIDE_${harness.toUpperCase()}`
+    const guideTool = harness === "opencode" ? "app_plugin_guide" : `${TOOL_PREFIX}app_plugin_guide`
     stack.scripted.scriptTool(harness === "codex" ? {
       name: "exec",
       namespace: "functions",
       format: "custom",
       input: 'const tool = ALL_TOOLS.find((tool) => tool.name.endsWith("__app_plugin_guide")); if (!tool) throw new Error("Claxedo app plugin guide is unavailable"); text(await tools[tool.name]({}));',
       whenPromptIncludes: token,
-    } : { name: `${TOOL_PREFIX}app_plugin_guide`, input: {}, whenPromptIncludes: token })
+    } : { name: guideTool, input: {}, whenPromptIncludes: token })
     await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
     await sendPrompt(app, `Read the app plugin guide. Reply with exactly this one token: ${token}`)
     await expect.poll(async () => assistantText(await api.messages(workspace.directory, session.id)), { timeout: 45_000 }).toContain(token)
     await expect(app.getByText(token, { exact: true }).last()).toBeVisible()
-    expect(stack.scripted.requests.flatMap((request) => request.tools.map((tool) => tool.name))).toContain(harness === "codex" ? "functions.exec" : `${TOOL_PREFIX}app_plugin_guide`)
+    expect(stack.scripted.requests.flatMap((request) => request.tools.map((tool) => tool.name))).toContain(harness === "codex" ? "functions.exec" : guideTool)
     expect(JSON.stringify(await api.messages(workspace.directory, session.id))).toContain("## Only when the person asked")
   })
 }

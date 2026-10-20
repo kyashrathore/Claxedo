@@ -14,7 +14,7 @@ export type PanelFocus =
   | { readonly kind: "review"; readonly path?: string }
   | { readonly kind: "file"; readonly path: string; readonly line?: number; readonly col?: number }
   | { readonly kind: "browser"; readonly url?: string }
-  | { readonly kind: "context"; readonly sessionId: string }
+  | { readonly kind: "context" }
   | {
       readonly kind: "subagent"
       readonly sessionId: string
@@ -91,7 +91,7 @@ export function applyFocus(set: WorkingSet, focus: PanelFocus, effects: FocusEff
         }),
       )
     case "context":
-      return withTabs(set, openContextWorkspaceTab({ tabs: set.tabs, sessionId: focus.sessionId }))
+      return withTabs(set, openContextWorkspaceTab({ tabs: set.tabs }))
     case "subagent":
       return withTabs(set, openSubagentWorkspaceTab({ tabs: set.tabs, ...focus }))
     case "plan":

@@ -4,6 +4,24 @@ import type { ControlPlaneServices } from "../authority/services"
 import { requireAuthority, type WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { apiError, txt, workspaceOrgId } from "./route-support"
 import { asRecord } from "@claxedo/server-core/platform/json/index"
+import { resolveRuntimeActor, type RuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
+
+export type SettledActor = { actor: RuntimeActor } | { failed: unknown }
+
+/**
+ * The caller's actor, read beside the request's first authority round and
+ * held until the answer says a token is minted: a request that is refused or
+ * answers a sandbox still provisioning never fails on the actor read, and a
+ * start in flight is never abandoned by it.
+ */
+export function settledActor(authority: Pick<WorkspaceAuthority, "usersMe">, auth: SignedControlPlaneAuth): Promise<SettledActor> {
+  return resolveRuntimeActor(authority, auth).then((actor) => ({ actor }), (failed: unknown) => ({ failed }))
+}
+
+export function resolvedActor(settled: SettledActor): RuntimeActor {
+  if ("failed" in settled) throw settled.failed
+  return settled.actor
+}
 
 export async function runtimeTokenOrgId(
   authority: WorkspaceAuthority,

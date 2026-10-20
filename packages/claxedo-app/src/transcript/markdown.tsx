@@ -22,6 +22,7 @@ import { disposeStreamingCode } from "./markdown-worker"
 import { markdownBlockKey } from "./markdown-worker-protocol"
 import { sameRenderedCode, sameToken, shouldResetCodeTokens, type RenderedCodeState } from "./markdown-code-state"
 import { getCachedMermaidSvg, sanitizeSvg, touchCachedMermaidSvg } from "./markdown-cache"
+import { renderMermaidSvg } from "./mermaid"
 import {
   blockHash,
   enhanceTextBlock,
@@ -145,24 +146,19 @@ function disposeMarkdownControls(root: Element) {
   disposeViewButtons(root)
 }
 
-let mermaidRenderer: ((source: string) => Promise<string>) | undefined
 let mermaidViewer: ((source: string) => void) | undefined
 const mermaidInFlight = new Map<string, Promise<string>>()
 
 function renderMermaidSource(source: string): Promise<string> {
   const pending = mermaidInFlight.get(source)
   if (pending) return pending
-  const started = mermaidRenderer!(source).finally(() => {
+  const started = renderMermaidSvg(source).finally(() => {
     if (mermaidInFlight.get(source) === started) mermaidInFlight.delete(source)
   })
   mermaidInFlight.set(source, started)
   return started
 }
 let markdownTableViewer: ((table: HTMLTableElement) => void) | undefined
-
-export function setMermaidRenderer(fn: ((source: string) => Promise<string>) | undefined) {
-  mermaidRenderer = fn
-}
 
 export function setMermaidViewer(fn: ((source: string) => void) | undefined) {
   mermaidViewer = fn
@@ -253,7 +249,6 @@ function commitMermaidDiagram(wrapper: HTMLElement, source: string, svg: string)
 }
 
 function renderMermaidBlocks(root: HTMLElement) {
-  if (!mermaidRenderer) return
   const wrappers = Array.from(root.querySelectorAll('[data-component="markdown-code"]'))
   for (const wrapper of wrappers) {
     if (!(wrapper instanceof HTMLElement)) continue

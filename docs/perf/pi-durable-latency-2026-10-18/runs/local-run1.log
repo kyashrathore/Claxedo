@@ -1,0 +1,18 @@
+local turn 1: accepted 14.2 first delta 1168 (vendor 935) idle 2189
+local turn 2: accepted 8.8 first delta 971 (vendor 739) idle 2007
+local turn 3: accepted 18.3 first delta 979 (vendor 755) idle 2001
+local turn 4: accepted 20.4 first delta 997 (vendor 763) idle 2015
+local turn 5: accepted 15.7 first delta 983 (vendor 756) idle 2002
+local turn 6: accepted 15.5 first delta 979 (vendor 752) idle 2001
+== local (daemon on loopback; vendor one way 120 ms, ttft 600 ms, 40 chunks every 25 ms)
+press -> accepted          p50   15.7  mean   15.5  p95   20.4  sd   3.6  n 6
+press -> vendor request    p50   26.1  mean   52.0  p95    199  sd  65.7  n 6
+press -> vendor first byte p50    756  mean    783  p95    935  sd  68.3  n 6
+press -> client first delta p50    983  mean   1013  p95   1168  sd  69.6  n 6
+inter-delta at vendor      p50   27.5  mean   28.1  p95   34.9  sd   6.3  n 238
+inter-delta at client      p50    112  mean    112  p95    131  sd  15.4  n 55
+jitter (sd) at client      p50    9.7  mean   12.5  p95   27.5  sd   7.1  n 6
+last delta -> idle         p50    0.0  mean    0.0  p95    0.0  sd   0.0  n 6
+press -> idle              p50   2007  mean   2036  p95   2189  sd  68.8  n 6
+wrote /private/tmp/claude-501/-Users-yashvardhansingh-test-opencode/f07b4ac1-8a7c-4f32-8af7-877e6dd4e80b/scratchpad/runs/local-2026-10-18T08-52-17.491Z.json
+exit 0

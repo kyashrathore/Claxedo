@@ -1,10 +1,11 @@
-import { type JSX, type ParentProps } from "solid-js"
+import { onMount, type JSX, type ParentProps } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { useServer } from "@/server"
 import { SidePanel, SidePanelArea } from "@/ui"
 import { panelDictionary } from "../i18n"
 import { usePanel } from "../store"
-import { PanelBody } from "./panel-body"
+import { prefetchWhenSettled } from "@/lib/prefetch"
+import { loadPanelBody, PanelBody } from "./panel-body-lazy"
 import { PanelHeader } from "./panel-header"
 import { createWorkspaceResize } from "./resize-handle"
 import { maxPanelWidth, PANEL_MIN_WIDTH } from "../width"
@@ -18,11 +19,15 @@ function WorkspacePanel(): JSX.Element {
     return placementId ? (server.placements.byId(placementId)?.path ?? "") : ""
   }
   const resize = createWorkspaceResize(() => undefined)
+  const prefetchFailure = "The panel views could not be fetched ahead; they load when the panel opens"
+  if (panel.open()) onMount(() => void loadPanelBody().catch((error: unknown) => console.warn(prefetchFailure, { error })))
+  else prefetchWhenSettled(loadPanelBody, prefetchFailure)
   return (
     <SidePanel
       open={panel.open()}
       width={panel.width()}
       label={t("panel.label")}
+      borderless={panel.activeTab().kind === "context"}
       onAvailable={panel.setAvailable}
       data-testid="workspace-panel-shell"
       data-state-open={panel.open() ? "true" : "false"}

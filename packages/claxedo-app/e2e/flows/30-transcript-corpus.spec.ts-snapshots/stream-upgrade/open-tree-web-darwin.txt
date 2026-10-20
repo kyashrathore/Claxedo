@@ -2,14 +2,14 @@ scrollTop: 0
 background subagents:
 (none)
 row 0:
-- text: Say hello first. acp-script:stream-upgrade-0 Build · <time>
+- text: Say hello first. acp-script:stream-upgrade-0 Scripted Acp · <time>
 - button "Copy message"
 row 1:
 - paragraph: Hello, ready to stream.
 - button "Copy response"
-- text: Build · <duration>
+- text: <duration>
 row 2:
-- text: Stream the math. acp-script:stream-upgrade-1 Build · <time>
+- text: Stream the math. acp-script:stream-upgrade-1 Scripted Acp · <time>
 - button "Copy message"
 row 3:
 

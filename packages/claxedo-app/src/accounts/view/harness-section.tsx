@@ -1,16 +1,19 @@
 import { ProviderIcon } from "@/ui"
-import { createMemo, createSignal, For, Match, Show, Switch, type JSX } from "solid-js"
+import { createMemo, createSignal, For, Match, Show, Switch, type Accessor, type JSX } from "solid-js"
 import { createProviderCatalog, useModelVisibility } from "@/composer"
 import type { HarnessSelection } from "@/lib/harness-selection"
 import { SettingsEmpty, SettingsListSkeleton } from "@/settings"
 import { useServer } from "@/server"
 import { useAccountsText } from "../i18n"
-import { useModelSource, groupContext, modelKeyOf, type SettingsPlacement } from "../model-sources"
+import { groupContext, modelKeyOf, useAccountModelSource, useCatalogModelSource, useConnectionModelSource, type ModelSource } from "../model-sources"
+import { readyPlacement, type SettingsPlacement } from "../settings-placement"
 import { harnessHasAccount, type Harness } from "../model"
 import type { Accounts } from "../store"
+import { CloudChoiceHelp } from "./cloud-choice-help"
 import { AgentHarnessAccounts } from "./harness-accounts"
-import { createHarnessProviders, HarnessProvidersSection } from "./harness-providers"
-import { enabledCount, ModelsTab, soleSelfGroup } from "./models-tab"
+import { createHarnessProviders } from "../harness-providers-state"
+import { HarnessProvidersSection } from "./harness-providers"
+import { enabledCount, ModelsTab, PlacementNote, soleSelfGroup } from "./models-tab"
 
 export type HarnessTab = "accounts" | "models"
 
@@ -20,25 +23,28 @@ const TABS: readonly HarnessTab[] = ["accounts", "models"]
 
 const LINK = "min-h-8 rounded-md border-none bg-transparent px-1 py-0.5 text-12-regular text-text-interactive-base"
 
-function HarnessTabs(props: { readonly tab: HarnessTab; readonly onTab: (tab: HarnessTab) => void; readonly actions: JSX.Element }) {
+function HarnessTabs(props: { readonly tab: HarnessTab; readonly onTab: (tab: HarnessTab) => void; readonly accountsHint?: JSX.Element; readonly actions: JSX.Element }) {
   const t = useAccountsText()
   return (
-    <div class="flex items-center gap-1" role="tablist">
-      <For each={TABS}>
-        {(value) => (
-          <button
-            type="button"
-            role="tab"
-            aria-selected={props.tab === value}
-            class="min-h-8 rounded-md px-2.5 py-1 text-13-regular"
-            classList={{ "text-text-strong bg-surface-base": props.tab === value, "text-text-weak": props.tab !== value }}
-            data-action={`settings-models-tab-${value}`}
-            onClick={() => props.onTab(value)}
-          >
-            {t(value === "accounts" ? "settings.models.tab.accounts" : "settings.models.tab.models")}
-          </button>
-        )}
-      </For>
+    <div class="flex items-center gap-1">
+      <div class="flex items-center gap-1" role="tablist">
+        <For each={TABS}>
+          {(value) => (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={props.tab === value}
+              class="min-h-8 rounded-md px-2.5 py-1 text-13-regular"
+              classList={{ "text-text-strong bg-surface-base": props.tab === value, "text-text-weak": props.tab !== value }}
+              data-action={`settings-models-tab-${value}`}
+              onClick={() => props.onTab(value)}
+            >
+              {t(value === "accounts" ? "settings.models.tab.accounts" : "settings.models.tab.models")}
+            </button>
+          )}
+        </For>
+      </div>
+      <Show when={props.tab === "accounts"}>{props.accountsHint}</Show>
       <span class="flex-1" />
       {props.actions}
     </div>
@@ -64,25 +70,59 @@ function AccountsTab(props: { readonly harness: ModelsHarness; readonly accounts
   )
 }
 
-function HarnessModels(props: { readonly harness: ModelsHarness; readonly placement: SettingsPlacement }) {
+function HarnessModels(props: { readonly harness: ModelsHarness; readonly read: () => Accessor<ModelSource>; readonly workspace?: string }) {
   const t = useAccountsText()
+  const source = props.read()
   const visibility = useModelVisibility()
-  const source = useModelSource(props.harness.selection, () => props.placement)
   const count = createMemo(() => enabledCount(source(), (item, group) => visibility.visible(modelKeyOf(item), groupContext(group, item))))
   return (
     <>
-      <div class="flex items-center justify-between gap-4">
-        <span class="text-12-regular text-text-weak tabular-nums">{t("settings.models.enabled.count", { count: String(count()) })}</span>
-        <Show when={soleSelfGroup(source(), props.harness.slug)}>
-          {(group) => (
-            <button type="button" class={LINK} data-action="settings-models-group-toggle-all" onClick={() => visibility.setGroupVisibility(group().groupKey, count() === 0, group().items.map(modelKeyOf))}>
-              {t(count() === 0 ? "settings.models.group.enableAll" : "settings.models.group.disableAll")}
-            </button>
-          )}
-        </Show>
-      </div>
-      <ModelsTab source={source()} harness={props.harness.slug} harnessLabel={props.harness.label} workspace={props.placement.label} />
+      <Show when={source().kind === "ready"}>
+        <div class="flex items-center justify-between gap-4">
+          <span class="text-12-regular text-text-weak tabular-nums">{t("settings.models.enabled.count", { count: String(count()) })}</span>
+          <Show when={soleSelfGroup(source(), props.harness.slug)}>
+            {(group) => (
+              <button type="button" class={LINK} data-action="settings-models-group-toggle-all" onClick={() => visibility.setGroupVisibility(group().groupKey, count() === 0, group().items.map(modelKeyOf))}>
+                {t(count() === 0 ? "settings.models.group.enableAll" : "settings.models.group.disableAll")}
+              </button>
+            )}
+          </Show>
+        </div>
+      </Show>
+      <ModelsTab source={source()} harness={props.harness.slug} harnessLabel={props.harness.label} {...(props.workspace ? { workspace: props.workspace } : {})} />
     </>
+  )
+}
+
+function catalogHarnessOf(harness: ModelsHarness): "pi" | "opencode" | undefined {
+  const selection = harness.selection
+  return selection.kind === "native" && (selection.harnessId === "pi" || selection.harnessId === "opencode") ? selection.harnessId : undefined
+}
+
+function CatalogModels(props: { readonly harness: ModelsHarness; readonly catalog: "pi" | "opencode"; readonly onMachine: boolean }) {
+  const t = useAccountsText()
+  return (
+    <>
+      <HarnessModels harness={props.harness} read={() => useCatalogModelSource(props.catalog)} />
+      <Show when={props.catalog === "opencode" && props.onMachine}>
+        <p class="text-12-regular text-text-weak">{t("settings.models.opencode.machineProviders")}</p>
+      </Show>
+    </>
+  )
+}
+
+function HarnessModelsTab(props: { readonly harness: ModelsHarness; readonly placement: SettingsPlacement; readonly onMachine: boolean }) {
+  return (
+    <Switch
+      fallback={
+        <Show when={readyPlacement(props.placement)} fallback={<PlacementNote placement={props.placement} harnessLabel={props.harness.label} />}>
+          {(placement) => <HarnessModels harness={props.harness} read={() => useConnectionModelSource(props.harness.selection, placement)} workspace={placement().label} />}
+        </Show>
+      }
+    >
+      <Match when={props.harness.cli}>{(cli) => <HarnessModels harness={props.harness} read={() => useAccountModelSource(cli().id)} />}</Match>
+      <Match when={catalogHarnessOf(props.harness)}>{(catalog) => <CatalogModels harness={props.harness} catalog={catalog()} onMachine={props.onMachine} />}</Match>
+    </Switch>
   )
 }
 
@@ -115,7 +155,7 @@ function AddAccountAction(props: { readonly slug: string; readonly open: (() => 
   )
 }
 
-type SectionProps = { readonly harness: ModelsHarness; readonly accounts: Accounts; readonly placement?: SettingsPlacement; readonly tab: HarnessTab; readonly onTab: (tab: HarnessTab) => void }
+type SectionProps = { readonly harness: ModelsHarness; readonly accounts: Accounts; readonly placement: SettingsPlacement; readonly tab: HarnessTab; readonly onTab: (tab: HarnessTab) => void }
 
 function CatalogHarnessSection(props: SectionProps) {
   const server = useServer()
@@ -162,18 +202,20 @@ export function HarnessSection(props: SectionProps) {
 }
 
 function HarnessWithTabs(props: SectionProps) {
-  const t = useAccountsText()
   const [addAccount, setAddAccount] = createSignal<() => void>()
   const actions = <Show when={props.tab === "accounts"}><AddAccountAction slug={props.harness.slug} open={addAccount()} /></Show>
   return (
     <section class="flex flex-col gap-4">
       <HarnessTitle harness={props.harness} />
       <div class="flex flex-col gap-4">
-        <HarnessTabs tab={props.tab} onTab={props.onTab} actions={actions} />
+        <HarnessTabs
+          tab={props.tab}
+          onTab={props.onTab}
+          accountsHint={<Show when={props.harness.cli}>{(cli) => <CloudChoiceHelp harness={cli()} accounts={props.accounts} />}</Show>}
+          actions={actions}
+        />
         <Show when={props.tab === "models"} fallback={<AccountsTab harness={props.harness} accounts={props.accounts} onAddRef={(open) => setAddAccount(() => open)} />}>
-          <Show when={props.placement} fallback={<SettingsEmpty><span>{t("settings.models.workspace.required")}</span></SettingsEmpty>}>
-            {(placement) => <HarnessModels harness={props.harness} placement={placement()} />}
-          </Show>
+          <HarnessModelsTab harness={props.harness} placement={props.placement} onMachine={props.accounts.onMachine()} />
         </Show>
       </div>
     </section>

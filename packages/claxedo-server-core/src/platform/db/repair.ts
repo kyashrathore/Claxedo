@@ -409,6 +409,10 @@ function ensureProviderCredentialColumns(db: SqliteInstance, out: string[]) {
     db.exec("ALTER TABLE `claxedo_provider_credential` ADD COLUMN `usage_windows` text")
     out.push("claxedo_provider_credential.usage_windows")
   }
+  if (!hasColumn(db, "claxedo_provider_credential", "secret_hint")) {
+    db.exec("ALTER TABLE `claxedo_provider_credential` ADD COLUMN `secret_hint` text")
+    out.push("claxedo_provider_credential.secret_hint")
+  }
   if (!hasColumn(db, "claxedo_provider_credential", "usage_at")) {
     db.exec("ALTER TABLE `claxedo_provider_credential` ADD COLUMN `usage_at` integer")
     out.push("claxedo_provider_credential.usage_at")

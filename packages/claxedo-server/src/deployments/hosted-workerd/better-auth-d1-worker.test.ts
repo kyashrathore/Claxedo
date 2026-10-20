@@ -11,7 +11,7 @@ vi.mock("../../authority/adapters/worker/better-auth-d1-compose", () => ({
 }))
 vi.mock("../../platform/auth/better-auth-configuration", () => ({
   resolveBetterAuthConfiguration: () => ({
-    public: { apiOrigin: "https://api.example.test", appOrigin: "https://app.example.test", methods: ["github"] },
+    public: { origin: "https://api.example.test", methods: ["github"] },
     private: { socialProviders: { github: { clientId: "client" } } },
   }),
 }))
@@ -35,7 +35,6 @@ function env() {
     CF_VERSION_METADATA: { id: "11111111-1111-1111-1111-111111111111", tag: "claxedo-0123abcd" },
     CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID: "org_deployment",
     CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME: "My deployment",
-    CLAXEDO_APP_ORIGIN: "https://app.example.test",
   }
 }
 
@@ -91,32 +90,17 @@ describe("Better Auth D1 Worker", () => {
     expect(mocks.compose).not.toHaveBeenCalled()
   })
 
-  test("a composition failure answers the app origin with CORS so the browser can read the 503", async () => {
+  test("a composition failure answers 503 with its code and no CORS grant, since the browser shares the origin", async () => {
     mocks.compose.mockImplementation(() => {
       throw new Error("CLAXEDO_AUTH_CONFIGURATION_ID is required")
     })
     const response = await worker.fetch(
-      new Request("https://api.example.test/api/claxedo/mode", { headers: { origin: "https://app.example.test" } }),
+      new Request("https://api.example.test/api/claxedo/mode", { headers: { origin: "https://api.example.test" } }),
       env(),
     )
     expect(response.status).toBe(503)
-    expect(response.headers.get("access-control-allow-origin")).toBe("https://app.example.test")
-    expect(response.headers.get("access-control-allow-credentials")).toBe("true")
-
-    const preflight = await worker.fetch(
-      new Request("https://api.example.test/api/claxedo/mode", {
-        method: "OPTIONS",
-        headers: { origin: "https://app.example.test" },
-      }),
-      env(),
-    )
-    expect(preflight.status).toBe(204)
-
-    const foreign = await worker.fetch(
-      new Request("https://api.example.test/api/claxedo/mode", { headers: { origin: "https://evil.example.test" } }),
-      env(),
-    )
-    expect(foreign.headers.get("access-control-allow-origin")).toBeNull()
+    expect(await response.json()).toEqual({ error: { code: "deployment_candidate_unavailable" } })
+    expect(response.headers.get("access-control-allow-origin")).toBeNull()
   })
 
   test("refuses to compose without the one-organization identity", () => {

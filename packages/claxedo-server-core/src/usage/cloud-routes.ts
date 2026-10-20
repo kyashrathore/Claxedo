@@ -24,7 +24,7 @@ function cloudUsageError(c: Context, status: 400 | 401 | 403 | 422 | 503, code: 
 /**
  * The signed account's own cloud reads: its cloud turns, which a signed desktop hands to its sidecar, its spend per
  * credential, and its cloud workspaces' machine time. Each is keyed by the caller's organization and person, never by
- * anything in the request; the organization's team-key spend answers its owners and admins alone.
+ * anything in the request; the organization accounts' spend answers the organization's owners and admins alone.
  */
 export function CloudUsageRoutes(input: {
   ledger: UsageProjectionLedger
@@ -65,7 +65,7 @@ export function CloudUsageRoutes(input: {
     if (!scope) return cloudUsageError(c, 400, "invalid_usage_scope", "scope must be mine or org")
     if (!input.ledger.credentialSpend) return cloudUsageError(c, 503, "usage_projection_unavailable", "Cloud usage is not stored here")
     const rows = await input.ledger.credentialSpend({ ...identity, scope, since, until })
-    if (!rows) return cloudUsageError(c, 403, "usage_scope_forbidden", "Only an owner or admin of the organization can see its team accounts' spend.")
+    if (!rows) return cloudUsageError(c, 403, "usage_scope_forbidden", "Only an owner or admin of the organization can see its organization accounts' spend.")
     const members = scope === "org" ? await input.orgMembers(c.req.raw) : []
     return c.json({ since, until, scope, credentials: await credentialSpend(input.pricing, rows, members) } satisfies CredentialSpendResponse)
   }))

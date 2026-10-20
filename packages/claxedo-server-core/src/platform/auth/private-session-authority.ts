@@ -85,6 +85,8 @@ export type SessionPageScope = { projectId: string } | { workspaceId: string } |
 
 export type SessionPageQuery = SessionListKeysetPage & SessionPageScope
 
+export type ProjectSessionPage = { projectId: string; sessions: PrivateSessionInventoryRow[] }
+
 /** The page a list query names, with the workspace a caller resolved for a workspace scope; nothing when it names none. */
 export function sessionPageScope(query: SessionListQuery, workspaceId: string | undefined = query.workspaceId): SessionPageScope | undefined {
   if (query.scope === "all") return { everyReadable: true }
@@ -296,6 +298,12 @@ export type PrivateSessionAuthority = {
     input: { workspaceId: string },
   ) => Promise<PrivateSessionInventoryRow[]>
   listSessionPage: (auth: SignedControlPlaneAuth, input: SessionPageQuery) => Promise<PrivateSessionInventoryRow[]>
+  /**
+   * The first page of every project the caller may open a workspace in, each
+   * the page `listSessionPage` reads for that project: one batched read, so a
+   * reader needs no project ids before it asks.
+   */
+  listProjectSessionPages: (auth: SignedControlPlaneAuth, input: SessionListKeysetPage) => Promise<ProjectSessionPage[]>
   /** The page a workspace's owner reads, for a caller the plane already verified as that owner: a session host's first-party MCP bearer. */
   listOwnerSessionPage: (owner: { userId: string; actorId: string }, input: SessionPageQuery) => Promise<PrivateSessionInventoryRow[]>
   resolveSession: (auth: SignedControlPlaneAuth, input: { sessionId: string }) => Promise<unknown>
@@ -353,6 +361,7 @@ export const PRIVATE_SESSION_AUTHORITY_METHODS = [
   "authorizeRuntimeSessionStartStatus",
   "listSessions",
   "listSessionPage",
+  "listProjectSessionPages",
   "listOwnerSessionPage",
   "resolveSession",
   "readSessionMessages",

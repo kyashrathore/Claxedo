@@ -64,10 +64,10 @@ import { isOptimisticMessage, isRuntimeMessage } from "../../transcript/merge"
 import {
   timelineInitialRevealShouldScroll,
   timelineInitialRevealVisibility,
-  timelineInteractionPlan,
   timelineVirtualEntry,
 } from "./timeline-view-state"
 import { createTimelinePrependAnchor } from "./timeline-prepend-anchor"
+import { createTimelineReaderInteraction } from "./timeline-reader-interaction"
 import { timelineRenderIndexes } from "./timeline-render-range"
 import {
   createTimelineResizeAnchor,
@@ -157,7 +157,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const [toolOpen, setToolOpen] = createStore<Record<string, boolean | undefined>>(cached?.toolOpen ?? {})
   const [groupOpen, setGroupOpen] = createStore<Record<string, boolean | undefined>>(cached?.groupOpen ?? {})
   const toggleTool = (partId: string, open: boolean) => {
-    props.onReaderToggle()
+    reader.toggled()
     setToolOpen(partId, open)
   }
   const [toolRevealed, setToolRevealed] = createStore<Record<string, boolean | undefined>>(cached?.toolRevealed ?? {})
@@ -165,7 +165,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
     props.onMarkScrollGesture()
     setToolRevealed(partId, revealed)
   }
-  installTimelineMermaid(host.platform.renderMermaid)
+  installTimelineMermaid()
   installTimelineTables()
 
   const openSubagent = (input: { childSessionId: string; label?: string; description?: string }) => {
@@ -507,26 +507,18 @@ export function MessageTimeline(props: MessageTimelineProps) {
   })
   onCleanup(prepend.clear)
   const initialRowCount = timelineRows().length
-  const [renderOverscan, setRenderOverscan] = createSignal(1)
+  const reader = createTimelineReaderInteraction({
+    prepend,
+    hasScrollGesture: () => props.hasScrollGesture(),
+    expandInitialTurn: () => setInitialTurnExpanded(true),
+    onReaderToggle: () => props.onReaderToggle(),
+  })
   const [initialRevealReady, setInitialRevealReady] = createSignal(warmMeasurements || initialRowCount === 0)
   const [progressiveReady, setProgressiveReady] = createSignal(warmMeasurements || initialRowCount === 0)
   const messageNavMountReady = createMemo<boolean>((mounted) => mounted || (props.active() && initialRevealReady() && messageNavGutterVisible()), false)
   holdPaneReveal(() => !initialRevealReady())
   let initialRowsScheduled = initialRowCount > 0
   let cancelFirstFoldReveal: (() => void) | undefined
-  const prepareScrollOverscan = () => {
-    if (!initialTurnExpanded()) setInitialTurnExpanded(true)
-    if (renderOverscan() < 6) setRenderOverscan(6)
-  }
-  const prepareInteractionScroll = () => {
-    const plan = timelineInteractionPlan({
-      prependLoading: prepend.loading(),
-      hasScrollGesture: props.hasScrollGesture(),
-    })
-    if (plan.prepareOverscan) prepareScrollOverscan()
-    if (plan.settlePrependAnchor) prepend.settle()
-    return plan
-  }
   let virtualContent: HTMLDivElement | undefined
   const resizeAnchor = createTimelineResizeAnchor()
   const rowKeys = createMemo(() => {
@@ -573,12 +565,12 @@ export function MessageTimeline(props: MessageTimelineProps) {
     get scrollEndThreshold() {
       return resizeAnchor.held() || props.hasScrollGesture() ? -1 : 80
     },
-    get overscan() { return renderOverscan() },
+    get overscan() { return reader.overscan() },
     paddingEnd: 64,
     get rangeExtractor() {
       const rows = timelineRows()
       const activeId = activeMessageId()
-      const overscan = renderOverscan()
+      const overscan = reader.overscan()
       const pinned = resizeAnchor.pinnedIndexes()
       return (range: Range) => timelineRenderIndexes({ rows, activeMessageId: activeId, pinned, range, overscan })
     },
@@ -766,7 +758,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
 
   const listGestures = createTimelineListGestures({
     props,
-    prepareInteractionScroll,
+    prepareInteractionScroll: reader.prepareInteractionScroll,
     prepend,
     updateViewportMessage,
     captureScroll: () => scrollMemory.capture(),
@@ -844,7 +836,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
           parts={Timeline.memberTools(members())}
           open={groupOpen[row().group.key] ?? false}
           onOpenChange={(open) => {
-            props.onReaderToggle()
+            reader.toggled()
             setGroupOpen(row().group.key, open)
           }}
           busy={
@@ -903,7 +895,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
           parts={Timeline.memberTools(members())}
           open={groupOpen[row().group.key] ?? false}
           onOpenChange={(open) => {
-            props.onReaderToggle()
+            reader.toggled()
             setGroupOpen(row().group.key, open)
           }}
           busy={
@@ -1131,7 +1123,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
                 cost={turnFoldRow().cost}
                 showTokens={host.settings.timelineShowTurnTokens()}
                 onToggle={() => {
-                  props.onReaderToggle()
+                  reader.toggled()
                   turnFold.setFolded(turnFoldRow().userMessageId, !turnFoldRow().folded)
                   onSizeChange?.()
                 }}

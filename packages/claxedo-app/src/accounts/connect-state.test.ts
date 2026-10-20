@@ -17,3 +17,15 @@ test("connect form: editing the pasted value or the code drops the refusal the p
     dispose()
   })
 })
+
+test("connect form: switching who an account is for drops the method and anything typed for it, and keeps the label", () => {
+  createRoot((dispose) => {
+    const state = createConnectState()
+    state.pickMethod(0)
+    state.setValue("sk-ant-api03-x")
+    state.setStore("label", "Acme")
+    state.pickAudience("org")
+    expect([state.store.audience, state.store.methodIndex, state.store.value, state.store.label]).toEqual(["org", undefined, "", "Acme"])
+    dispose()
+  })
+})

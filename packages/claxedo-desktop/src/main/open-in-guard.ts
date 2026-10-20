@@ -96,9 +96,12 @@ export function openInPathVerdict(target: string, platform: NodeJS.Platform): { 
 }
 
 /**
- * Names whose OS handler runs the file rather than displaying it. `.app` is a
- * directory to `lstat` and a program to Launch Services, which is why the
- * extension is consulted for directories too.
+ * Names whose OS handler runs the file, or launches what it points at, rather
+ * than displaying it. Bundles such as `.app`, `.workflow` and `.prefpane` are
+ * directories to `lstat` and programs to Launch Services, which is why the
+ * extension is consulted for directories too. Entries are lowercase because
+ * the lookup lowercases, matching the case-insensitive default filesystems of
+ * Windows and macOS.
  */
 const EXECUTABLE_EXTENSIONS: ReadonlySet<string> = new Set([
   ".command",
@@ -113,12 +116,32 @@ const EXECUTABLE_EXTENSIONS: ReadonlySet<string> = new Set([
   ".msi",
   ".scr",
   ".vbs",
+  ".vbe",
+  ".js",
+  ".jse",
   ".wsf",
+  ".wsh",
   ".hta",
+  ".lnk",
+  ".url",
+  ".pif",
+  ".cpl",
+  ".msc",
+  ".reg",
+  ".appref-ms",
+  ".library-ms",
+  ".settingcontent-ms",
   ".app",
   ".scpt",
   ".jar",
   ".pkg",
+  ".terminal",
+  ".workflow",
+  ".fileloc",
+  ".webloc",
+  ".inetloc",
+  ".prefpane",
+  ".desktop",
 ])
 
 function executableName(target: string, platform: NodeJS.Platform) {

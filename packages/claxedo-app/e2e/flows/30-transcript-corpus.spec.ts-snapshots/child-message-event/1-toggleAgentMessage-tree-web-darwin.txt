@@ -2,15 +2,29 @@ scrollTop: 0
 background subagents:
 (none)
 row 0:
-- text: "Start a background agent, then reply with exactly this one token: CHILDEVENTPARENT Build · default · <time>"
+- text: "Start a background agent, then reply with exactly this one token: CHILDEVENTPARENT Claude Code · default · <time>"
 - button "Copy message"
 row 1:
-- button "Worked for <duration>"
+- link "general-purpose, done":
+  - /url: /s/<id>
+  - text: general-purpose event-reviewer · Background · continues independently done
 row 2:
-- note: CHILDREADY
-row 3:
-- group: Message from general-purpose CHILDREPORT
-row 4:
 - paragraph: CHILDREADY
 - button "Copy response"
-- text: Build · default · <duration>
+- text: default · <duration>
+row 3:
+- note: CHILDREADY
+row 4:
+- group: Message from Claude Code
+row 5:
+- group: Message from general-purpose CHILDREPORT
+row 6:
+- paragraph: CHILDREADY
+- button "Copy response"
+- text: default · <duration>
+row 7:
+- group: Message from Claude Code
+row 8:
+- paragraph: CHILDREADY
+- button "Copy response"
+- text: default · <duration>

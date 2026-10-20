@@ -173,7 +173,7 @@ export type UnifiedUsageResponse = {
 
 /**
  * What paid for a turn: `personal`, an account of the reader's own; `org`, the
- * organization's team key; `other_member`, another person's own account the
+ * organization's own account; `other_member`, another person's own account the
  * reader's turns spent on a session shared with them, named by nothing of
  * theirs; `machine`, a harness's own login, which is no credential Claxedo
  * holds; `unresolved`, a stored account the turn could not have spent or that
@@ -182,7 +182,7 @@ export type UnifiedUsageResponse = {
 export type CredentialSpendSource = "personal" | "org" | "other_member" | "machine" | "unresolved" | "unreported"
 
 /**
- * One member's turns on a team key. `name` is the one the organization's members list gives them, absent when it has
+ * One member's turns on an organization account. `name` is the one the organization's members list gives them, absent when it has
  * none; `former` marks a member who has since left the organization.
  */
 export type CredentialMemberSpend = UsageTotals & {
@@ -212,7 +212,7 @@ export type CredentialSpend = UsageTotals & {
 /**
  * Cloud turns' spend per credential in [since, until]. `mine`: every turn on
  * the reader's own accounts, whoever sent it, and the reader's own turns on
- * anything else. `org`: every member's turns on the organization's team keys,
+ * anything else. `org`: every member's turns on the organization's accounts,
  * answered to its owners and admins alone.
  */
 export type CredentialSpendResponse = {

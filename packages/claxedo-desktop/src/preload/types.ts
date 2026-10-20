@@ -137,7 +137,6 @@ export type DaemonRecoveryBridge = {
 }
 
 export type ElectronAPI = {
-  renderMermaid: (source: string, theme?: Record<string, string>) => Promise<string>
   awaitInitialization: (onStep: (step: InitStep) => void) => Promise<ServerReadyData>
   getDefaultServer: () => Promise<string | null>
   setDefaultServer: (url: string | null) => Promise<void>

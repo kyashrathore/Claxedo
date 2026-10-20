@@ -111,7 +111,7 @@ const lease = async (connectionId: string) => {
 }
 
 describe("a member reaching an organization row's secret through a connection", () => {
-  test("the member can read the team key's id, but saving it as a connection secret is refused, as is a sandbox key's, another person's or their own model account", async () => {
+  test("the member can read the organization account's id, but saving it as a connection secret is refused, as is a sandbox key's, another person's or their own model account", async () => {
     const listed = await (await accounts().request("https://cp.test/api/claxedo/credentials/account-sources", { headers: { authorization: "Bearer member" } })).json() as { org: Array<{ id: string }> }
     expect(listed.org.map((row) => row.id)).toEqual([ids.team])
 

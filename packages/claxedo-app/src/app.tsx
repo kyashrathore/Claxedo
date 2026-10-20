@@ -1,8 +1,9 @@
 import { accountBinding } from "#account-binding"
-import { createMemo, Show, type JSX, type ParentProps } from "solid-js"
-import { AuthProvider, useAuth, type Auth } from "@/auth"
-import { I18nProvider } from "@/i18n"
+import { createMemo, onCleanup, Show, type JSX, type ParentProps } from "solid-js"
+import { AuthProvider, relayUrl, useAuth, type Auth } from "@/auth"
+import { I18nProvider, useI18n } from "@/i18n"
 import { ClockProvider } from "@/lib/clock"
+import { PrefetchProvider } from "@/lib/prefetch"
 import { tabStorage } from "@/lib/persisted"
 import { ProjectListProvider } from "@/projects"
 import { CompactSwitcher, MainSidebar } from "@/rail"
@@ -11,8 +12,8 @@ import { SessionStoresProvider } from "@/session"
 import { AttentionAlerts } from "@/notifications"
 import { PreferencesProvider, usePreferences } from "@/settings"
 import { AppShell, createShellRegistries, ShellRegistriesContext, ShellRouter, type ShellRouterComponent } from "@/shell"
-import { firstParty } from "./registry"
-import { DialogProvider, syncIconLibraryWithTheme, ThemeProvider } from "@/ui"
+import { firstParty, firstPartyDictionaries } from "./registry"
+import { codexTheme, DialogProvider, syncIconLibraryWithTheme, ThemeProvider } from "@/ui"
 
 export type AppProps = { readonly router?: ShellRouterComponent; readonly serverUrl?: string }
 
@@ -21,15 +22,21 @@ function principalOf(auth: Auth): string | undefined {
   return state.kind === "signedIn" ? state.user.id : auth.restoringUserId()
 }
 
-type ServerAccess = Pick<ServerConfig, "account" | "accountEvents" | "cookies" | "onSignInRefused" | "relayLinks">
+type ServerAccess = Pick<ServerConfig, "account" | "accountEvents" | "cookies" | "onSignInRefused" | "relayLinks" | "relayUrl">
+
+function relayLinks(principal: string): Pick<ServerConfig, "relayLinks"> {
+  const storage = tabStorage()
+  if (!storage) return {}
+  const siblings = typeof BroadcastChannel === "function" ? new BroadcastChannel(`claxedo:relay-links:${principal}`) : undefined
+  if (siblings) onCleanup(() => siblings.close())
+  return { relayLinks: { scope: principal, storage, ...(siblings ? { siblings } : {}) } }
+}
 
 function serverAccess(auth: Auth, principal: string | undefined): ServerAccess {
   if (principal === undefined) return {}
   const access = auth.controlPlane
-  const storage = tabStorage()
-  const relayLinks = storage ? { relayLinks: { scope: principal, storage } } : {}
-  if (access.kind === "port") return { account: access.run, accountEvents: access.events, ...relayLinks }
-  return { cookies: true, onSignInRefused: () => void auth.refresh(), ...relayLinks }
+  if (access.kind === "port") return { account: access.run, accountEvents: access.events, ...relayLinks(principal) }
+  return { cookies: true, relayUrl: relayUrl(), onSignInRefused: () => void auth.refresh(), ...relayLinks(principal) }
 }
 
 function ServerScope(props: ParentProps<{ readonly access: ServerAccess; readonly serverUrl?: string }>): JSX.Element {
@@ -48,6 +55,11 @@ function ServerScope(props: ParentProps<{ readonly access: ServerAccess; readonl
 function Alerts(props: ParentProps): JSX.Element {
   const preferences = usePreferences()
   return <AttentionAlerts preferences={preferences.alerts}>{props.children}</AttentionAlerts>
+}
+
+function LocaleReady(props: ParentProps): JSX.Element {
+  const i18n = useI18n()
+  return <Show when={i18n.ready()}>{props.children}</Show>
 }
 
 function SignedServer(props: ParentProps<{ readonly serverUrl?: string }>): JSX.Element {
@@ -69,15 +81,19 @@ export function App(props: AppProps): JSX.Element {
   return (
     <AuthProvider binding={accountBinding}>
       <ShellRegistriesContext.Provider value={registries}>
-        <I18nProvider>
-          <ThemeProvider defaultTheme="codex" onThemeApplied={syncIconLibraryWithTheme}>
+        <I18nProvider dictionaries={firstPartyDictionaries}>
+          <ThemeProvider defaultTheme={codexTheme} onThemeApplied={syncIconLibraryWithTheme}>
             <PreferencesProvider>
               <ClockProvider>
                 <ShellRouter router={props.router}>
                   <SignedServer serverUrl={props.serverUrl}>
-                    <Alerts>
-                      <AppShell mainSidebar={<MainSidebar />} compactTabs={<CompactSwitcher />} />
-                    </Alerts>
+                    <LocaleReady>
+                      <Alerts>
+                        <PrefetchProvider>
+                          <AppShell mainSidebar={<MainSidebar />} compactTabs={<CompactSwitcher />} />
+                        </PrefetchProvider>
+                      </Alerts>
+                    </LocaleReady>
                   </SignedServer>
                 </ShellRouter>
               </ClockProvider>

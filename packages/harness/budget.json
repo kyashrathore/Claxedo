@@ -10,7 +10,7 @@
   "transports/codex-app-server": 3626,
   "transports/cursor-sdk": 1888,
   "transports/acp": 3149,
-  "transports/pi-durable": 2004,
+  "transports/pi-durable": 2009,
   "transports/opencode-sdk": 3205,
   "compose.ts": 62
 }

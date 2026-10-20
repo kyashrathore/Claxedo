@@ -20,7 +20,7 @@
  */
 
 import type { AccountScope } from "@claxedo/account-contract/vocabulary"
-import { createHash, randomUUID } from "crypto"
+import { randomUUID } from "crypto"
 import { eq, and, asc, desc, inArray, sql } from "drizzle-orm"
 import { ClaxedoDB } from "../platform/db"
 import { ClaxedoProviderCredentialTable } from "./provider-credential.sql"
@@ -42,6 +42,7 @@ import {
 } from "./types"
 import { credentialLastError, credentialStatusForHealth, isRefusedHealth } from "./health"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
+import { pastedAccountId, secretHint } from "./pasted-key"
 import { storedCredentialKind } from "./secret-material"
 import { parseUsageWindows, serializeUsageWindows } from "./usage-windows"
 
@@ -102,26 +103,6 @@ export type CredentialRead = { onOutage: RegistryOutage }
 
 function readWithPolicy<T>(label: string, onOutage: RegistryOutage, empty: T, read: () => T): T {
   return onOutage === "throw" ? read() : safeRead(label, empty, read)
-}
-
-/**
- * The identity a pasted key carries when the provider gives none.
- *
- * The upsert key includes `account_id`, so two keys saved without one are the
- * same row: hashing the secret makes them two rows, and the same key saved
- * twice idempotent. The trailing characters are the ones the provider's own
- * dashboard shows, so the row is recognisable in the accounts list without ever
- * revealing the key.
- *
- * Keyed on the caller's kind rather than the stored one: a pasted setup token
- * settles under `oauth_token` and still names no account. Logins that arrive
- * from an OAuth flow carry the provider's account id already, and everything
- * that is not harness auth (sandbox drivers, `integration:` and `channel:`
- * secrets) has one row per provider by design.
- */
-function pastedAccountId(input: CredentialWrite): string | undefined {
-  if (input.kind !== "api_key" || !fanoutEligibleAuth(input.kind, input.provider_id)) return undefined
-  return `fp_${createHash("sha256").update(input.secret).digest("hex").slice(0, 8)}…${input.secret.slice(-4)}`
 }
 
 /** Create or update a credential with its secret stored in the backend. */
@@ -207,6 +188,7 @@ export async function putCredential(
     source: input.source,
     label: input.label ?? null,
     account_id: accountId ?? null,
+    secret_hint: secretHint(input) ?? null,
     secure_ref: ref,
     status: "available" as const,
     health: null,

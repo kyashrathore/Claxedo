@@ -4,9 +4,9 @@ import { createWorkspaceRuntimeJwtManagementAuth, loadWorkspaceRuntimeManagement
 
 afterEach(() => mock.restore())
 
-async function signedToken(key: CryptoKey) {
+async function signedToken(key: CryptoKey, alg = "EdDSA") {
   return new SignJWT({ workspace_id: "ws_a", host_id: "host_a", action: "runtime.config.apply" })
-    .setProtectedHeader({ alg: "EdDSA", kid: "management" })
+    .setProtectedHeader({ alg, kid: "management" })
     .setIssuer("control-plane").setAudience("runtime").setSubject("supervisor")
     .setIssuedAt().setExpirationTime("1m").sign(key)
 }
@@ -40,6 +40,17 @@ test("a configured HTTPS trust anchor validates its own key and refuses another 
   expect(fetch).toHaveBeenCalledTimes(1)
   expect(fetch.mock.calls[0]?.[0]).toBe("https://keys.example.test/jwks")
   expect(fetch.mock.calls[0]?.[1]).toMatchObject({ redirect: "manual" })
+})
+
+test("a management key set that also publishes a non-EdDSA key does not accept a token signed with it", async () => {
+  const trusted = await generateKeyPair("EdDSA", { extractable: true })
+  const ecdsa = await generateKeyPair("ES256", { extractable: true })
+  spyOn(globalThis, "fetch").mockResolvedValue(Response.json({
+    keys: [{ ...await exportJWK(trusted.publicKey), kid: "management" }, { ...await exportJWK(ecdsa.publicKey), kid: "management" }],
+  }))
+  const key = await loadWorkspaceRuntimeManagementVerificationKey({ WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL: "https://keys.example.test/jwks" })
+  expect(await verify(key, await signedToken(trusted.privateKey))).toMatchObject({ ok: true })
+  expect(await verify(key, await signedToken(ecdsa.privateKey, "ES256"))).toMatchObject({ ok: false, status: 401 })
 })
 
 test("a JWKS redirect cannot replace the trust anchor", async () => {

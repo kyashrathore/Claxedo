@@ -20,10 +20,15 @@ type Input = {
   relayUrl: string
   signingPrivateKey: string
   signingPublicKey: string
-  apiOrigin: string
-  appOrigin: string
+  origin: string
   emailPassword: boolean
+  /** Worker variables the caller sets over the fixture's own, such as a measurement's raised request ceilings. */
+  workerEnv: Record<string, string>
+  /** Replaces the per-minute limit of every rate-limit binding the certified config declares; absent, the config's own 600 holds. */
+  requestLimit: number | undefined
 }
+
+type RateLimitBinding = { namespace_id: string; simple: { limit: number; period: number } }
 
 const serverRoot = path.resolve(import.meta.dirname, "../..")
 const HOSTED_E2E_ANALYTICS_HOST = "analytics.hosted-e2e.test"
@@ -48,7 +53,7 @@ async function main(input: Input) {
   const converted = unstable_getMiniflareWorkerOptions(input.config)
   if (!converted.main) throw new Error("certified config has no Worker main")
   const bundle = path.join(bundleDir, path.basename(converted.main).replace(/\.ts$/, ".js"))
-  const apiOrigin = input.apiOrigin
+  const origin = input.origin
   const env: Record<string, string> = {
     CLAXEDO_ADAPTER_PROFILE: "better-auth-d1",
     CLAXEDO_PRODUCT_POSTURE: "user-deployed",
@@ -58,8 +63,7 @@ async function main(input: Input) {
     CLAXEDO_DEPLOYMENT_MODE: "hosted",
     CLAXEDO_DEPLOYMENT_ID: "hosted-e2e-deployment",
     CLAXEDO_AUTH_METHODS: input.emailPassword ? "github,email-password" : "github",
-    BETTER_AUTH_URL: apiOrigin,
-    CLAXEDO_APP_ORIGIN: input.appOrigin,
+    BETTER_AUTH_URL: origin,
     BETTER_AUTH_SECRET: "hosted-e2e-better-auth-secret-at-least-32-characters",
     CLAXEDO_AUTH_INTROSPECTION_SECRET: "hosted-e2e-introspection-secret-at-least-32-characters",
     GITHUB_CLIENT_ID: "hosted-e2e-github-client",
@@ -71,7 +75,7 @@ async function main(input: Input) {
     CLAXEDO_RELAY_HOST_VERIFY_PEM: input.signingPublicKey,
     CLAXEDO_CREDENTIALS_KEK: Buffer.alloc(32, 7).toString("base64"),
     CLAXEDO_HOSTED_CREDENTIALS_ENABLED: "1",
-    CLAXEDO_PUBLIC_URL: apiOrigin,
+    CLAXEDO_PUBLIC_URL: origin,
     CLAXEDO_AGENT_PLUGINS_MCP_GATEWAY_URL: "https://gateway.hosted-e2e.test/",
     CLAXEDO_MCP_OAUTH_CLIENTS: JSON.stringify({ "https://auth.hosted-e2e.test": { clientId: "hosted-e2e-mcp-client" } }),
     CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID: "hosted-e2e-organization",
@@ -82,15 +86,20 @@ async function main(input: Input) {
     CLAXEDO_POSTHOG_HOST: `https://${HOSTED_E2E_ANALYTICS_HOST}`,
   }
   env.CLAXEDO_AUTH_CONFIGURATION_ID = await betterAuthDeploymentConfigurationId({
-    methods: input.emailPassword ? ["github", "email-password"] : ["github"], apiOrigin, appOrigin: input.appOrigin, githubClientId: env.GITHUB_CLIENT_ID,
+    methods: input.emailPassword ? ["github", "email-password"] : ["github"], origin, githubClientId: env.GITHUB_CLIENT_ID,
   })
   const outbox = recordedEmailOutbox({ stdout: process.stdout, stderr: process.stderr })
+  const declared: Record<string, RateLimitBinding> = (converted.workerOptions as { ratelimits?: Record<string, RateLimitBinding> }).ratelimits ?? {}
+  const limit = input.requestLimit
+  const ratelimits = limit === undefined ? declared : Object.fromEntries(Object.entries(declared).map(([name, binding]) => [name, { ...binding, simple: { ...binding.simple, limit } }]))
   const mf = new Miniflare({
     ...converted.workerOptions,
+    ratelimits,
     versionMetadata: undefined,
     bindings: {
       ...converted.workerOptions.bindings,
       ...env,
+      ...input.workerEnv,
       CF_VERSION_METADATA: { id: "11111111-1111-4111-8111-111111111111", tag: "hosted-e2e-release" },
     },
     modules: [{ type: "ESModule", path: "worker.js", contents: readFileSync(bundle, "utf8") }],
@@ -123,7 +132,7 @@ async function main(input: Input) {
   try {
     const auth = await mf.getD1Database("AUTH_DB")
     const control = await mf.getD1Database("CONTROL_PLANE_DB")
-    await provisionBetterAuthNativeClients(auth, apiOrigin, env.BETTER_AUTH_SECRET, env.CLAXEDO_AUTH_INTROSPECTION_SECRET)
+    await provisionBetterAuthNativeClients(auth, origin, env.BETTER_AUTH_SECRET, env.CLAXEDO_AUTH_INTROSPECTION_SECRET)
     await mf.ready
     process.on("message", (message: unknown) => {
       if (!message || typeof message !== "object" || !("id" in message) || typeof message.id !== "number") return
@@ -139,7 +148,7 @@ async function main(input: Input) {
       void (async () => {
         try {
           const claim = generateCanonicalOwnerClaim()
-          const identity = { adapter: "better-auth" as const, issuer: `${apiOrigin}/api/auth`, subject }
+          const identity = { adapter: "better-auth" as const, issuer: `${origin}/api/auth`, subject }
           const provisioning = {
             deploymentId: env.CLAXEDO_DEPLOYMENT_ID,
             identity,
@@ -161,6 +170,23 @@ async function main(input: Input) {
     await mf.dispose()
     throw error
   }
+}
+
+function workerEnvOf(value: unknown): Record<string, string> {
+  if (value === undefined) return {}
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("hosted Miniflare workerEnv must be an object of strings")
+  const env: Record<string, string> = {}
+  for (const [key, entry] of Object.entries(value)) {
+    if (typeof entry !== "string") throw new Error(`hosted Miniflare workerEnv ${key} must be a string`)
+    env[key] = entry
+  }
+  return env
+}
+
+function requestLimitOf(value: unknown): number | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) throw new Error("hosted Miniflare requestLimit must be a positive integer")
+  return value
 }
 
 if (import.meta.main) {
@@ -187,8 +213,9 @@ if (import.meta.main) {
     relayUrl: required("relayUrl"),
     signingPrivateKey: required("signingPrivateKey"),
     signingPublicKey: required("signingPublicKey"),
-    apiOrigin: required("apiOrigin"),
-    appOrigin: required("appOrigin"),
+    origin: required("origin"),
     emailPassword: field("emailPassword") === true,
+    workerEnv: workerEnvOf(field("workerEnv")),
+    requestLimit: requestLimitOf(field("requestLimit")),
   })
 }

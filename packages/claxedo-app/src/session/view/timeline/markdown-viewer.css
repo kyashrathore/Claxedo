@@ -221,6 +221,7 @@
 }
 
 [data-slot="mermaid-viewer-content"][data-state="ready"] svg {
+  --pele-bg: var(--background-base);
   display: block;
   pointer-events: none;
   user-select: none;

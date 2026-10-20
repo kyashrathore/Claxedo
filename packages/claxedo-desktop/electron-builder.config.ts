@@ -189,11 +189,6 @@ const getBase = (): Configuration => ({
       to: "opencode-sdk-inventory.json",
     },
     {
-      from: `resources/mermaid/${targetOsArch}/`,
-      to: "mermaid/",
-      filter: [targetOsArch.startsWith("win32-") ? "claxedo-mermaid-renderer.exe" : "claxedo-mermaid-renderer"],
-    },
-    {
       // The separately fingerprinted Host Connector runs as a child process
       // beside app.asar; neither main nor renderer imports its implementation.
       ...HOST_CONNECTOR_EXTRA_RESOURCE,

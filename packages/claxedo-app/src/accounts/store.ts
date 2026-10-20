@@ -3,9 +3,9 @@ import { useQuery } from "@tanstack/solid-query"
 import { toAppError, useServer, type Account, type AppError, type EffectiveAccounts, type MachineLogin, type Server } from "@/server"
 import { showToast } from "@/ui"
 import { useAccountsText } from "./i18n"
-import { harnesses, harnessRunnable, MACHINE_LOGIN_KEY, ORG_ACCOUNT_KEY, type AccountsSnapshot, type Harness, type LiveCheck } from "./model"
+import { harnesses, harnessRunnable, machineCheckKey, MACHINE_LOGIN_KEY, ORG_ACCOUNT_KEY, type AccountsSnapshot, type Harness, type LiveCheck } from "./model"
 
-export type AccountActivity = { readonly kind: "selecting" | "checking" | "removing" | "scoping"; readonly key: string }
+export type AccountActivity = { readonly kind: "selecting" | "removing" | "scoping"; readonly key: string }
 
 export type AccountsLoad =
   | { readonly kind: "loading" }
@@ -19,6 +19,7 @@ export type Accounts = {
   readonly opened: Accessor<boolean>
   readonly scanning: Accessor<boolean>
   readonly activity: Accessor<AccountActivity | undefined>
+  readonly checking: (key: string) => boolean
   readonly liveChecks: Accessor<Readonly<Record<string, LiveCheck>>>
   readonly scopeErrors: Accessor<Readonly<Record<string, string>>>
   readonly runnable: Accessor<boolean>
@@ -55,20 +56,44 @@ function useAccountReads(server: Server) {
   return { load, onMachine, machineName, opened: () => load().kind !== "loading", fetching: () => queries.some((query) => query.isFetching) }
 }
 
-function useActivity() {
+function useFailureToast() {
   const t = useAccountsText()
+  return (error: unknown) => showToast({ title: t("common.requestFailed"), description: toAppError(error).message })
+}
+
+function useActivity() {
+  const fail = useFailureToast()
   const [activity, setActivity] = createSignal<AccountActivity>()
   const run = async (kind: AccountActivity["kind"], key: string, task: () => Promise<unknown>) => {
     setActivity({ kind, key })
     try {
       await task()
     } catch (error) {
-      showToast({ title: t("common.requestFailed"), description: toAppError(error).message })
+      fail(error)
     } finally {
       setActivity(undefined)
     }
   }
   return { activity, setActivity, run }
+}
+
+function usePendingChecks() {
+  const fail = useFailureToast()
+  const [pending, setPending] = createSignal<ReadonlySet<string>>(new Set())
+  const settle = (key: string) =>
+    setPending((previous) => new Set([...previous].filter((entry) => entry !== key)))
+  const track = async (key: string, task: () => Promise<unknown>) => {
+    if (pending().has(key)) return
+    setPending((previous) => new Set([...previous, key]))
+    try {
+      await task()
+    } catch (error) {
+      fail(error)
+    } finally {
+      settle(key)
+    }
+  }
+  return { checking: (key: string) => pending().has(key), track }
 }
 
 async function selectAccount(server: Server, harness: Harness, key: string, ids: readonly string[]) {
@@ -98,14 +123,32 @@ function anyHarnessRunnable(load: AccountsLoad, liveChecks: Readonly<Record<stri
   return load.kind === "ready" && harnesses.some((harness) => harnessRunnable(harness, load.snapshot, liveChecks))
 }
 
+function useRescan(server: Server, onMachine: Accessor<boolean>, forget: () => void) {
+  const fail = useFailureToast()
+  const [rescanning, setRescanning] = createSignal(false)
+  const rescan = async () => {
+    setRescanning(true)
+    forget()
+    try {
+      await (onMachine() ? server.accounts.rescan() : server.accounts.refresh())
+    } catch (error) {
+      fail(error)
+    } finally {
+      setRescanning(false)
+    }
+  }
+  return { rescanning, rescan }
+}
+
 export function useAccounts(): Accounts {
   const server = useServer()
   const reads = useAccountReads(server)
   const { activity, setActivity, run } = useActivity()
+  const checks = usePendingChecks()
   const consent = useCloudConsent(server, activity, setActivity)
-  const [rescanning, setRescanning] = createSignal(false)
   const [liveChecks, setLiveChecks] = createSignal<Readonly<Record<string, LiveCheck>>>({})
   const remember = (id: string, check: LiveCheck) => setLiveChecks((previous) => ({ ...previous, [id]: check }))
+  const { rescanning, rescan } = useRescan(server, reads.onMachine, () => setLiveChecks({}))
   return {
     load: reads.load,
     onMachine: reads.onMachine,
@@ -113,22 +156,19 @@ export function useAccounts(): Accounts {
     opened: reads.opened,
     scanning: () => rescanning() || reads.fetching(),
     activity,
+    checking: checks.checking,
     liveChecks,
     scopeErrors: consent.scopeErrors,
     runnable: () => anyHarnessRunnable(reads.load(), liveChecks()),
-    rescan: () => run("checking", "", async () => {
-      setRescanning(true)
-      setLiveChecks({})
-      await (reads.onMachine() ? server.accounts.rescan() : server.accounts.refresh()).finally(() => setRescanning(false))
-    }),
+    rescan,
     select: (harness, key, ids) => void run("selecting", key, () => selectAccount(server, harness, key, ids)),
     remove: (ids) => run("removing", ids[0] ?? "", () => server.accounts.remove(ids)),
     check: (id) =>
-      void run("checking", id, async () => {
+      void checks.track(id, async () => {
         const check = await server.accounts.check(id).catch((error: unknown) => ({ verdict: "unknown" as const, reason: toAppError(error).message }))
         remember(id, { at: Date.now(), ...check })
       }),
-    checkMachine: (harness) => void run("checking", MACHINE_LOGIN_KEY, () => server.accounts.checkMachineLogin(harness.id)),
+    checkMachine: (harness) => void checks.track(machineCheckKey(harness), () => server.accounts.checkMachineLogin(harness.id)),
     allowInCloud: consent.allowInCloud,
   }
 }

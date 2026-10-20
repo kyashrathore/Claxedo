@@ -218,7 +218,7 @@ export function createTransport(config: ServerConfig): Transport {
   const hosts = sessionHostSignals()
   const image = runtimeImageSignals()
   const read = connectionReader(connections, hosts, image)
-  const relay = createRelay(read, config.relayLinks)
+  const relay = createRelay(read, config.relayLinks, config.relayUrl)
   const daemonProxy = loopback && config.account === undefined
   const { runtime, runtimeSocket } = runtimeRoutes(serverUrl, request, relay, daemonProxy)
   const label = (path: string, init?: RequestInit) => `${init?.method ?? "GET"} ${path}`

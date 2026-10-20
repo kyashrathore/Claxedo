@@ -45,6 +45,7 @@ import { D1AgentPluginSourceStore } from "./sources/d1-store"
 import { githubEdgeCachedFetch, type EdgeCache } from "./sources/github-edge-cache"
 import { oauthMetadataEdgeCachedFetch } from "./mcp/oauth-metadata-edge-cache"
 import { dohAddressResolver } from "@claxedo/server-core/agent-plugins/mcp/dns-resolver"
+import { createSafeEndpointFetch } from "@claxedo/server-core/agent-plugins/mcp/discovery"
 import { HostedAgentPluginSourceRoutes } from "./sources/routes"
 import { createHostedAgentPluginRuntimeProvisioner, desiredAgentPluginSelections } from "./runtime/provision"
 import { createBuiltinGroupReader, createCloudRootEnvironment, createCloudRootToolGroups } from "./runtime/cloud-root-environment"
@@ -426,7 +427,7 @@ export function createHostedAgentPluginsComposition(input: {
       connectionId,
       capability: "mcp",
     }),
-    fetch: (url, init) => fetch(url, init),
+    fetch: createSafeEndpointFetch((url, init) => fetch(url, init), oauth.resolve, { loopback: false }),
   })
   const module = hostedAgentPluginsModule({
     services,

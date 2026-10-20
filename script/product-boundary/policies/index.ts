@@ -11,7 +11,8 @@ import { hostConnector } from "./host-connector.ts"
 import { serverWorkerd } from "./server.ts"
 import { tasksApp } from "./tasks.ts"
 import { documentsApp } from "./documents.ts"
-import { desktopAccountComposition, desktopMainComposition, desktopRenderer } from "./desktop.ts"
+import { desktopAccountComposition, desktopMainComposition } from "./desktop.ts"
+import { desktopRenderer } from "./desktop-renderer.ts"
 
 export const POLICIES: Policy[] = [
   localServer,

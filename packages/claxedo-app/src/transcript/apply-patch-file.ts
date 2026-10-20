@@ -1,4 +1,4 @@
-import { normalize, type ViewDiff } from "./session-diff"
+import { normalize, type ViewDiff } from "./diff-source"
 
 type Kind = "add" | "update" | "delete" | "move"
 

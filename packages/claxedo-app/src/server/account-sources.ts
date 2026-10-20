@@ -37,7 +37,7 @@ export function createAccountSourceWrites(transport: Transport, write: AccountWr
         const named = label.trim() ? { label: label.trim() } : {}
         const body = { provider_id: providerId, kind: "api_key", source: "managed", owner: "org", ...named, secret }
         const saved = accountFromWire(asRecord(await transport.json(CREDENTIALS_PATH, jsonInit("PUT", body)))?.credential)
-        if (!saved) throw contractMismatch("team account")
+        if (!saved) throw contractMismatch("organization account")
         return saved
       }),
   }

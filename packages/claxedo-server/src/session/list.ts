@@ -2,8 +2,10 @@
 // with the desktop-local product and therefore owned by server-core.
 export * from "@claxedo/server-core/session/navigation-list"
 import {
+  buildSessionListProjectPages,
   buildSessionListResponse,
   sessionListKeysetPage,
+  type SessionListProjectPagesResponse,
   type SessionListQuery,
   type SessionListResponse,
 } from "@claxedo/server-core/session/navigation-list"
@@ -13,7 +15,7 @@ import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { sessionPageScope, type PrivateSessionAuthority } from "@claxedo/server-core/platform/auth/private-session-authority"
 import type { ControlPlaneServices } from "../authority/services"
 
-type SessionListRequestErrorCode = "session_list_scope_required"
+type SessionListRequestErrorCode = "session_list_scope_required" | "session_list_projects_first_page_only"
 
 export class SessionListRequestError extends ClaxedoError<SessionListRequestErrorCode> {
   constructor(code: SessionListRequestErrorCode, message: string) {
@@ -30,8 +32,11 @@ export function sessionInventoryResponse(sessions: unknown) {
  * The signed session-list read, as one implementation.
  *
  * `GET /api/control/session-list` pages a project's sessions, one
- * workspace's, or every session the caller may read (`scope=all`: the
- * workspaces it owns and the sessions shared to it), across every workspace
+ * workspace's, every session the caller may read (`scope=all`: the
+ * workspaces it owns and the sessions shared to it), or the first page of
+ * each project the caller holds a workspace in (`scope=projects`, one
+ * batched read with no cursor, so a boot reads the rail beside the
+ * catalog), across every workspace
  * the registry holds rows for: cloud
  * workspaces, whose sessions it registers, and workspaces placed on machines,
  * whose sessions those machines publish. The hosted roots need this read
@@ -50,6 +55,17 @@ export async function signedSessionList(
   if (!scope) throw new SessionListRequestError("session_list_scope_required", "Name a project, a workspace or every session")
   const sessions = await requireAuthority(services).listSessionPage(auth, { ...sessionListKeysetPage(query), ...scope })
   return buildSessionListResponse({ query, sessions, cursorApplied: true })
+}
+
+/** `scope=projects`: the first page of every project the caller holds a workspace in, as one authority batch. */
+export async function signedProjectSessionPages(
+  services: ControlPlaneServices,
+  auth: SignedControlPlaneAuth,
+  query: SessionListQuery,
+): Promise<SessionListProjectPagesResponse> {
+  if (query.after || query.cursor) throw new SessionListRequestError("session_list_projects_first_page_only", "The projects scope reads first pages; read a project's next page with scope=project")
+  const pages = await requireAuthority(services).listProjectSessionPages(auth, sessionListKeysetPage(query))
+  return buildSessionListProjectPages({ query, pages })
 }
 
 /**

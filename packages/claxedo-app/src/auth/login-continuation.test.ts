@@ -1,7 +1,14 @@
-import { expect, test } from "bun:test"
-import { createOrgInvitationFlow, loginDestination, loginOAuthContinuation } from "./login-continuation"
+import { afterEach, beforeEach, expect, test } from "bun:test"
+import {
+  createOrgInvitationFlow,
+  loginDestination,
+  loginOAuthContinuation,
+  markAuthorizationSignInStarted,
+  takeAuthorizationSignInStarted,
+} from "./login-continuation"
 import type { Auth } from "./store"
 import type { AuthState } from "./model"
+import { stubGlobal } from "@/lib/stub-global"
 
 function setup() {
   let state: AuthState = { kind: "signedOut" }
@@ -25,6 +32,55 @@ function setup() {
   }
   return { auth, operations, calls }
 }
+
+let restoreStorage: () => void
+
+beforeEach(() => {
+  const items = new Map<string, string>()
+  restoreStorage = stubGlobal("sessionStorage", { getItem: (key: string) => items.get(key) ?? null, setItem: (key: string, value: string) => void items.set(key, value), removeItem: (key: string) => void items.delete(key) })
+})
+
+afterEach(() => restoreStorage())
+
+function signedInSetup() {
+  const calls: unknown[] = []
+  const auth = { state: () => ({ kind: "signedIn", user: { id: "u1" } }), signIn: async () => {}, signUp: async () => {} } as unknown as Auth
+  const accept = async (token: string) => {
+    calls.push(["org.invitations.accept", { token }])
+    return { role: "member" }
+  }
+  return { auth, accept, calls }
+}
+
+test("opening an invitation link while already signed in does not join without the person's click", async () => {
+  const { auth, accept, calls } = signedInSetup()
+  const flow = createOrgInvitationFlow(auth, accept, "token")
+
+  expect(await flow.resume()).toBeUndefined()
+  expect(calls).toEqual([])
+  await flow.accept()
+  expect(calls).toEqual([["org.invitations.accept", { token: "token" }]])
+})
+
+test("returning from a sign-in this tab started for the invitation joins once", async () => {
+  const { auth, accept, calls } = signedInSetup()
+  await createOrgInvitationFlow({ ...auth, state: () => ({ kind: "signedOut" }) } as unknown as Auth, accept, "token").authenticate({ method: "google" }, "signIn")
+
+  const returned = createOrgInvitationFlow(auth, accept, "token")
+  await returned.resume()
+  await createOrgInvitationFlow(auth, accept, "token").resume()
+
+  expect(calls).toEqual([["org.invitations.accept", { token: "token" }]])
+})
+
+test("a sign-in started for one invitation never joins another", async () => {
+  const { auth, accept, calls } = signedInSetup()
+  await createOrgInvitationFlow({ ...auth, state: () => ({ kind: "signedOut" }) } as unknown as Auth, accept, "first").authenticate({ method: "google" }, "signIn")
+
+  await createOrgInvitationFlow(auth, accept, "second").resume()
+
+  expect(calls).toEqual([])
+})
 
 test("an invitation sign-up preserves its token and ends in the canonical accept operation", async () => {
   const { auth, operations, calls } = setup()
@@ -50,8 +106,7 @@ test("accepting signed out never sends an API request", async () => {
 test("a sign-in that continues an authorization request loads the authorize route even when the API shares the app's origin", () => {
   const origin = "https://claxedo.example"
   const continuation = loginOAuthContinuation({
-    appOrigin: origin,
-    apiOrigin: origin,
+    origin,
     pathname: "/login",
     search: "?response_type=code&client_id=claxedo-desktop&redirect_uri=http%3A%2F%2F127.0.0.1%3A5%2Fcb&state=s",
   })
@@ -61,5 +116,35 @@ test("a sign-in that continues an authorization request loads the authorize rout
 })
 
 test("a plain sign-in stays in the app at its home", () => {
-  expect(loginDestination(loginOAuthContinuation({ appOrigin: "https://claxedo.example", apiOrigin: "https://api.example", pathname: "/login", search: "" }))).toEqual({ navigate: "/" })
+  expect(loginDestination(loginOAuthContinuation({ origin: "https://claxedo.example", pathname: "/login", search: "" }))).toEqual({ navigate: "/" })
+})
+
+const AUTHORIZE_SEARCH = "?response_type=code&client_id=claxedo-cli&redirect_uri=http%3A%2F%2F127.0.0.1%3A5%2Fcb&state=s"
+
+function continuationFor(extra: string) {
+  const continuation = loginOAuthContinuation({ origin: "https://claxedo.example", pathname: "/login", search: `${AUTHORIZE_SEARCH}${extra}` })
+  if (!continuation) throw new Error("expected an authorization continuation")
+  return continuation
+}
+
+test("an authorization request asking to sign in again waits for a fresh sign-in and then forwards without the satisfied prompt", () => {
+  expect(continuationFor("").requiresFreshSignIn).toBe(false)
+  const relogin = continuationFor("&prompt=login%20consent&max_age=0&exp=1&sig=x")
+  expect(relogin.requiresFreshSignIn).toBe(true)
+  const forwarded = new URL(relogin.authorizationUrl).searchParams
+  expect(forwarded.get("prompt")).toBe("consent")
+  expect(forwarded.has("max_age")).toBe(false)
+  expect(forwarded.get("state")).toBe("s")
+  expect(new URL(continuationFor("&prompt=create").authorizationUrl).searchParams.has("prompt")).toBe(false)
+  expect(continuationFor("&max_age=300").requiresFreshSignIn).toBe(true)
+})
+
+test("only a sign-in this tab started for the same authorization request counts as fresh, once", () => {
+  const relogin = continuationFor("&prompt=login")
+  expect(takeAuthorizationSignInStarted(relogin)).toBe(false)
+  markAuthorizationSignInStarted(continuationFor("&prompt=login&state=other"))
+  expect(takeAuthorizationSignInStarted(relogin)).toBe(false)
+  markAuthorizationSignInStarted(relogin)
+  expect(takeAuthorizationSignInStarted(relogin)).toBe(true)
+  expect(takeAuthorizationSignInStarted(relogin)).toBe(false)
 })

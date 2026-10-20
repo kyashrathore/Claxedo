@@ -134,8 +134,11 @@ jobs:
             echo "current=false" >> "$GITHUB_OUTPUT"
             echo "$WORKER records inputs ${DEPLOYED:-none}; deploying $INPUTS."
           fi
-      # The idle stop calls the control plane at CONTROL_PLANE_URL; a Worker
-      # without it refuses to start runtimes, so an empty value fails here.
+      # The idle stop calls the control plane at CONTROL_PLANE_URL, the public
+      # origin whose app Worker forwards /api to it; a Worker without it refuses
+      # to start runtimes, so an empty value fails here. The variable is not in
+      # DEPLOY_INPUTS, so a changed origin reaches the Worker only through a
+      # dispatch of the `sandbox-image` component, which deploys unconditionally.
       # The runtime build identity comes from the bundle the image copies, so
       # the Worker checks every container's runtime against its own image's.
       - name: Deploy (build image in CI -> push to Cloudflare registry -> deploy worker)
@@ -143,10 +146,10 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CONTROL_PLANE_URL: ${{ vars.CLAXEDO_STAGING_API_ORIGIN }}
+          CONTROL_PLANE_URL: ${{ vars.CLAXEDO_STAGING_APP_ORIGIN }}
           WRANGLER_LOG: debug
         run: |
-          [ -n "$CONTROL_PLANE_URL" ] || { echo "::error::CLAXEDO_STAGING_API_ORIGIN is not configured in the staging environment"; exit 1; }
+          [ -n "$CONTROL_PLANE_URL" ] || { echo "::error::CLAXEDO_STAGING_APP_ORIGIN is not configured in the staging environment"; exit 1; }
           INFO=../.build/build-info.json
           BUILD_ID="$(jq -er .buildId "$INFO")" && RUNTIME_VERSION="$(jq -er .coreVersion "$INFO")" && RUNTIME_DIGEST="$(jq -er .runtimeDigest "$INFO")" \
             || { echo "::error::$INFO names no buildId, coreVersion and runtimeDigest"; exit 1; }

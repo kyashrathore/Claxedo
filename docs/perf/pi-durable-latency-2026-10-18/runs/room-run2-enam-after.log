@@ -1,0 +1,74 @@
+$ node --conditions=development --import tsx e2e/latency/run.ts --scenario "open-cold,open-warm,relay-cold-cache" --turns "6" --out "/private/tmp/claude-501/-Users-yashvardhansingh-test-opencode/f07b4ac1-8a7c-4f32-8af7-877e6dd4e80b/scratchpad/rig/after"
+  object: events@232->430 outline@233->433 queue@233->433 ses_latency_open@233->433
+  control plane: session-authorize:read@428 session-authorize:read@428; resolver: target@169 revocation@169; jwks: 338
+open-cold open 1: outline headers 600 body 600 queue 600 open 600 stream 600 (host-start 0.0 host-serve 95.0)
+open-cold open 2: outline headers 617 body 617 queue 617 open 617 stream 617 (host-start 0.0 host-serve 93.0)
+open-cold open 3: outline headers 596 body 596 queue 596 open 596 stream 596 (host-start 0.0 host-serve 93.0)
+open-cold open 4: outline headers 617 body 617 queue 617 open 617 stream 619 (host-start 0.0 host-serve 95.0)
+open-cold open 5: outline headers 597 body 597 queue 597 open 597 stream 597 (host-start 0.0 host-serve 93.0)
+open-cold open 6: outline headers 602 body 602 queue 602 open 602 stream 602 (host-start 0.0 host-serve 93.0)
+  object: events@162->256 outline@164->258 queue@164->257 ses_latency_open@164->258
+  control plane: session-authorize:read@255 session-authorize:read@255; resolver: ; jwks: 
+open-warm open 1: outline headers 424 body 424 queue 424 open 424 stream 424 (host-start 0.0 host-serve 64.0)
+open-warm open 2: outline headers 431 body 431 queue 431 open 431 stream 431 (host-start 0.0 host-serve 63.0)
+open-warm open 3: outline headers 425 body 425 queue 425 open 425 stream 425 (host-start 0.0 host-serve 64.0)
+open-warm open 4: outline headers 429 body 429 queue 429 open 429 stream 429 (host-start 0.0 host-serve 63.0)
+open-warm open 5: outline headers 421 body 421 queue 421 open 421 stream 421 (host-start 0.0 host-serve 64.0)
+open-warm open 6: outline headers 425 body 425 queue 423 open 425 stream 425 (host-start 0.0 host-serve 62.0)
+  control plane: session-authorize:turn_acquire@302 session-rows@619 session-authorize:usage_report@1957 session-rows@1957 session-authorize:turn_release@2022
+relay-cold-cache turn 1: accepted 493 first delta 1222 (object 1053, vendor 937) idle 2068
+relay-cold-cache turn 2: accepted 473 first delta 1198 (object 1032, vendor 918) idle 2041
+relay-cold-cache turn 3: accepted 473 first delta 1200 (object 1032, vendor 918) idle 2034
+relay-cold-cache turn 4: accepted 474 first delta 1201 (object 1033, vendor 918) idle 2036
+relay-cold-cache turn 5: accepted 473 first delta 1203 (object 1035, vendor 921) idle 2043
+relay-cold-cache turn 6: accepted 472 first delta 1197 (object 1030, vendor 917) idle 2041
+== open-cold (open; cold object and room; room in enam; links {"clientEdgeMs":50,"roomDoMs":110,"doCpMs":5,"cpMs":50,"vendorMs":10,"doRelayMs":10}; relay host key over JWKS)
+press -> room sent outline p50    233  mean    232  p95    234  sd   1.0  n 6
+press -> object answered   p50    437  mean    439  p95    451  sd   8.8  n 6
+press -> outline headers   p50    602  mean    605  p95    617  sd   8.8  n 6
+press -> outline body      p50    602  mean    605  p95    617  sd   8.8  n 6
+press -> queue body        p50    602  mean    605  p95    617  sd   8.9  n 6
+press -> open view body    p50    602  mean    605  p95    617  sd   8.8  n 6
+press -> stream open       p50    602  mean    605  p95    619  sd   9.1  n 6
+object host-start          p50    0.0  mean    0.0  p95    0.0  sd   0.0  n 6
+object host-serve          p50   93.0  mean   93.7  p95   95.0  sd   0.9  n 6
+press -> first cp answer   p50    431  mean    433  p95    447  sd   9.2  n 6
+control-plane calls {"session-authorize:start":1,"session-authorize:register":1,"session-authorize:read":13,"session-authorize:turn_acquire":1,"session-rows":2,"session-authorize:usage_report":1,"session-authorize:turn_release":1}
+relay resolver calls {"/internal/relay/target":7,"/internal/relay/revocation":7}
+relay JWKS fetches by the object 7
+
+== open-warm (open; warm object and room; room in enam; links {"clientEdgeMs":50,"roomDoMs":110,"doCpMs":5,"cpMs":50,"vendorMs":10,"doRelayMs":10}; relay host key over JWKS)
+press -> room sent outline p50    164  mean    164  p95    165  sd   0.4  n 6
+press -> object answered   p50    259  mean    260  p95    266  sd   3.3  n 6
+press -> outline headers   p50    425  mean    426  p95    431  sd   3.4  n 6
+press -> outline body      p50    425  mean    426  p95    431  sd   3.5  n 6
+press -> queue body        p50    425  mean    425  p95    431  sd   3.6  n 6
+press -> open view body    p50    425  mean    426  p95    431  sd   3.5  n 6
+press -> stream open       p50    425  mean    426  p95    431  sd   3.5  n 6
+object host-start          p50    0.0  mean    0.0  p95    0.0  sd   0.0  n 6
+object host-serve          p50   64.0  mean   63.3  p95   64.0  sd   0.7  n 6
+press -> first cp answer   p50    256  mean    257  p95    262  sd   3.5  n 6
+control-plane calls {"session-authorize:start":1,"session-authorize:register":1,"session-authorize:read":18,"session-authorize:turn_acquire":1,"session-rows":2,"session-authorize:usage_report":1,"session-authorize:turn_release":1}
+relay resolver calls {"/internal/relay/target":2,"/internal/relay/revocation":2}
+relay JWKS fetches by the object 2
+
+== relay-cold-cache (relay; room in enam; links {"clientEdgeMs":50,"roomDoMs":110,"doCpMs":5,"cpMs":50,"vendorMs":10,"doRelayMs":10}; relay cache 1 ms)
+press -> accepted          p50    473  mean    476  p95    493  sd   7.3  n 6
+press -> room sent prompt  p50    225  mean    225  p95    225  sd   0.5  n 6
+press -> object answered   p50    308  mean    310  p95    326  sd   7.1  n 6
+press -> vendor request    p50    307  mean    310  p95    326  sd   7.3  n 6
+press -> vendor first byte p50    918  mean    922  p95    937  sd   7.1  n 6
+press -> object first delta p50   1033  mean   1036  p95   1053  sd   8.1  n 6
+press -> client first delta p50   1201  mean   1204  p95   1222  sd   8.5  n 6
+inter-delta at vendor      p50   25.6  mean   21.6  p95   26.6  sd   9.5  n 258
+inter-delta at object      p50    102  mean   98.0  p95    126  sd  23.2  n 51
+inter-delta at client      p50    102  mean   97.8  p95    125  sd  23.3  n 51
+jitter (sd) at object      p50   29.0  mean   19.5  p95   30.1  sd   9.9  n 6
+jitter (sd) at client      p50   28.3  mean   19.6  p95   31.2  sd  10.1  n 6
+last delta -> idle         p50    9.3  mean    9.1  p95    9.4  sd   0.3  n 6
+press -> idle              p50   2041  mean   2044  p95   2068  sd  11.3  n 6
+event stream open          p50    468  mean    468  p95    468  sd   0.0  n 1
+control-plane calls {"session-authorize:start":1,"session-authorize:register":1,"session-authorize:read":4,"session-authorize:turn_acquire":6,"session-rows":13,"session-authorize:usage_report":6,"session-authorize:turn_release":6}
+relay resolver calls {"/internal/relay/target":1,"/internal/relay/revocation":8}
+
+wrote /private/tmp/claude-501/-Users-yashvardhansingh-test-opencode/f07b4ac1-8a7c-4f32-8af7-877e6dd4e80b/scratchpad/rig/after/open-cold+open-warm+relay-cold-cache-2026-10-19T21-12-46.715Z.json

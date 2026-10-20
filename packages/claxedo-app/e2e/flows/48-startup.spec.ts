@@ -10,9 +10,12 @@ test("48 startup: web onboarding asks for sign-in before it reads repository con
   expect(reads.filter((path) => path.startsWith("/api/claxedo/integrations") || path.startsWith("/api/claxedo/credentials"))).toEqual([])
 })
 
-test("48 startup: web onboarding starts from a connected GitHub repository or a pasted public repository URL", async ({ signed, page }) => {
+test("48 startup: web onboarding asks where it runs first, then starts from a connected GitHub repository or a pasted public repository URL", async ({ signed, page }) => {
   await signed.signIn(page, signed.owner)
-  await expect(page.getByRole("heading", { name: "Start with a project" })).toBeVisible()
+  await expect(page).toHaveURL(/\/welcome$/)
+  await expect(page.getByRole("heading", { level: 1, name: "Where it runs" })).toBeVisible()
+  await page.getByRole("button", { name: "Next", exact: true }).click()
+  await expect(page.getByRole("heading", { level: 1, name: "Start with a project" })).toBeVisible()
   await expect(page.getByRole("textbox", { name: "Fine-grained personal access token" })).toBeVisible()
   await expect(page.getByRole("button", { name: "Connect with token", exact: true })).toBeVisible()
   await expect(page.getByRole("textbox", { name: "Repository URL" })).toHaveCount(0)
@@ -27,7 +30,7 @@ test("48 startup: web onboarding starts from a connected GitHub repository or a 
   expect(((await (await page.request.get(`${signed.url}/api/workspace?host=provisioner`)).json()) as { workspaces: unknown[] }).workspaces).toEqual([])
 })
 
-test("48 startup: a signed account without admission sees the failure and retries after the owner invites it", async ({ signed, page }) => {
+test("48 startup: a signed account without admission sees the failure and retries into onboarding once it accepts the owner's invitation", async ({ signed, page }) => {
   const account = await signed.signUp("Grace Invited")
   await signed.signIn(page, account)
   const alert = page.getByRole("alert")
@@ -39,12 +42,19 @@ test("48 startup: a signed account without admission sees the failure and retrie
   const orgs = await hostedFetch(signed.hosted, "/api/control/orgs", {}, signed.owner.person)
   expect(orgs.status).toBe(200)
   const [{ org_id: orgId }] = await orgs.json() as Array<{ org_id: string }>
-  await inviteHostedPerson(signed.hosted, signed.owner.person, account.person, orgId)
+  const token = await inviteHostedPerson(signed.hosted, signed.owner.person, account.person, orgId)
+  const accepted = await hostedFetch(signed.hosted, "/api/control/invitations/accept", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token }),
+  }, account.person)
+  expect(accepted.status).toBe(200)
   await page.getByRole("button", { name: "Try again", exact: true }).click()
-  await expect(page.getByRole("heading", { name: "Start with a project" })).toBeVisible()
+  await expect(page).toHaveURL(/\/welcome$/)
+  await expect(page.getByRole("heading", { level: 1, name: "Where it runs" })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeEnabled()
   expect((await page.request.get(`${signed.url}/api/workspace?host=provisioner`)).status()).toBe(200)
   await page.reload()
-  await expect(page.getByRole("heading", { name: "Start with a project" })).toBeVisible()
+  await expect(page.getByRole("heading", { level: 1, name: "Where it runs" })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeEnabled()
 })
 
 test("48 startup: an invitation without a token explains how to recover", async ({ app, stack }) => {
@@ -54,7 +64,7 @@ test("48 startup: an invitation without a token explains how to recover", async 
   expect(await app.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })
 
-test("48 startup: an approved device sign-in returns to Claxedo; a denied one stays denied", async ({ signed, page }) => {
+test("48 startup: a device sign-in needs the code typed from the terminal; approved returns to Claxedo, denied stays denied", async ({ signed, page }) => {
   await signed.signIn(page, signed.owner)
   const descriptor = await page.request.get(`${signed.url}/api/claxedo/auth/descriptor`)
   expect(descriptor.status()).toBe(200)
@@ -64,19 +74,31 @@ test("48 startup: an approved device sign-in returns to Claxedo; a denied one st
     expect(response.status(), await response.text()).toBe(200)
     return (await response.json() as { user_code: string }).user_code
   }
+  const codeField = page.getByRole("textbox", { name: "Device code", exact: true })
+  const enter = async (userCode: string) => {
+    await codeField.fill(userCode)
+    await page.getByRole("button", { name: "Continue", exact: true }).click()
+  }
   const approved = await grant()
   await page.goto(`${signed.url}/device?user_code=${approved}`)
+  await expect(codeField).toHaveValue("")
+  await expect(page.getByRole("button", { name: "Approve", exact: true })).toHaveCount(0)
+  await enter(approved)
+  await expect(page.getByText(approved, { exact: true })).toBeVisible()
   await page.getByRole("button", { name: "Approve", exact: true }).click()
   await expect(page).not.toHaveURL(/\/device/)
   const approval = await page.request.get(`${signed.url}/api/auth/device?user_code=${approved}`)
   expect((await approval.json() as { status: string }).status).toBe("approved")
-  await page.goto(`${signed.url}/device?user_code=${approved}`)
+  await page.goto(`${signed.url}/device`)
+  await enter(approved)
   await expect(page).not.toHaveURL(/\/device/)
   const denied = await grant()
-  await page.goto(`${signed.url}/device?user_code=${denied}`)
+  await page.goto(`${signed.url}/device`)
+  await enter(denied)
   await page.getByRole("button", { name: "Deny", exact: true }).click()
   await expect(page.getByRole("heading", { name: "Device denied", exact: true })).toBeVisible()
   await page.reload()
+  await enter(denied)
   await expect(page.getByRole("heading", { name: "Device denied", exact: true })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })

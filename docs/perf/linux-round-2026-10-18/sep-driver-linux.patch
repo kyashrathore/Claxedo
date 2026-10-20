@@ -1,0 +1,102 @@
+diff --git a/packages/claxedo-app/perf-harness/src/agent-claxedo-launcher.ts b/packages/claxedo-app/perf-harness/src/agent-claxedo-launcher.ts
+index aff94ecd..e2cea5de 100644
+--- a/packages/claxedo-app/perf-harness/src/agent-claxedo-launcher.ts
++++ b/packages/claxedo-app/perf-harness/src/agent-claxedo-launcher.ts
+@@ -9,7 +9,7 @@ import { IdleProcessFamilyTracker } from "./idle-process-family";
+ import { connectCdpPage, type BenchmarkPage } from "./agent-cdp-page";
+ import { ensureFrontWindow } from "./front-window";
+ import { optionalRecord, readBoolean, readFlag, readNumber, readRecord, readRecords, readSize, readText } from "./page-value";
+-import { AGENT_APP_WINDOW } from "./agent-display-contract";
++import { AGENT_APP_WINDOW, LINUX_AGENT_APP_WINDOW } from "./agent-display-contract";
+ import { writeJson } from "./storage";
+ import { isolatedHomeEnv } from "./isolated-home";
+ 
+@@ -298,10 +298,14 @@ export async function launchPackagedClaxedo(input: {
+     cmd: [
+       input.executable,
+       `--remote-debugging-port=${String(debugPort)}`,
+-      `--claxedo-window-size=${String(AGENT_APP_WINDOW.width)},${String(AGENT_APP_WINDOW.height)}`,
++      process.platform === "linux"
++        ? `--claxedo-window-size=${String(LINUX_AGENT_APP_WINDOW.width)},${String(LINUX_AGENT_APP_WINDOW.height)}`
++        : `--claxedo-window-size=${String(AGENT_APP_WINDOW.width)},${String(AGENT_APP_WINDOW.height)}`,
+       "--claxedo-window-maximized",
+       ...(process.platform === "darwin" ? ["--use-mock-keychain"] : []),
+-      ...(process.platform === "linux" ? ["--no-sandbox"] : []),
++      ...(process.platform === "linux"
++        ? [`--force-device-scale-factor=${String(LINUX_AGENT_APP_WINDOW.deviceScaleFactor)}`, "--force-dark-mode", "--no-sandbox"]
++        : []),
+     ],
+     env: {
+       ...process.env,
+@@ -533,6 +537,7 @@ export async function launchPackagedClaxedo(input: {
+       throw new Error(
+         "Claxedo did not accept the cold-ready trusted input probe",
+       );
++    if (process.platform === "linux") await requireLinuxBenchmarkWindow(connectedPage);
+     // [PERF-DIAG TEMPORARY] deterministic cold-ready critical-path dump.
+     try {
+       const serial = coldReadyDiagnosticsSerial++;
+@@ -674,6 +679,28 @@ async function stableAgentAppBenchmarkViewport(page: BenchmarkPage) {
+   ));
+ }
+ 
++/** Checked after the measured start so its round trip stays outside the clock. */
++async function requireLinuxBenchmarkWindow(page: BenchmarkPage) {
++  const facts = readRecord(await page.evaluate(() => ({
++    width: innerWidth,
++    height: innerHeight,
++    scale: devicePixelRatio,
++    dark: matchMedia("(prefers-color-scheme: dark)").matches,
++    screenX,
++    screenY,
++  })));
++  if (
++    facts.width !== LINUX_AGENT_APP_WINDOW.width ||
++    facts.height !== LINUX_AGENT_APP_WINDOW.viewportHeight ||
++    facts.scale !== LINUX_AGENT_APP_WINDOW.deviceScaleFactor ||
++    facts.dark !== true ||
++    facts.screenX !== 0 ||
++    facts.screenY !== 0
++  ) {
++    throw new Error(`Claxedo's window is not the Linux benchmark window: ${JSON.stringify(facts)}`);
++  }
++}
++
+ async function drain(stream: ReadableStream<Uint8Array>, sink?: string) {
+   const reader = stream.getReader();
+   const file = sink ? Bun.file(sink).writer() : undefined;
+diff --git a/packages/claxedo-app/perf-harness/src/agent-display-contract.ts b/packages/claxedo-app/perf-harness/src/agent-display-contract.ts
+index dce54159..2fc43848 100644
+--- a/packages/claxedo-app/perf-harness/src/agent-display-contract.ts
++++ b/packages/claxedo-app/perf-harness/src/agent-display-contract.ts
+@@ -1,5 +1,12 @@
+ export const AGENT_APP_WINDOW = { width: 1440, height: 900 } as const
+ 
++/**
++ * A bare X server has no window manager, so `--claxedo-window-maximized` cannot
++ * maximize the window. It is sized instead to the 1512 × 875 macOS viewport plus
++ * the 27 px Linux menu bar, which fills a 3024 × 1804 Xvfb screen at scale 2.
++ */
++export const LINUX_AGENT_APP_WINDOW = { width: 1512, height: 902, viewportHeight: 875, deviceScaleFactor: 2 } as const
++
+ /** Content viewport produced by the fixed app window and the platform's owned chrome. */
+ export function agentAppViewport(platform: NodeJS.Platform = process.platform) {
+   const override = process.env.CLAXEDO_BENCH_VIEWPORT?.trim()
+diff --git a/packages/claxedo-app/perf-harness/src/public-agent-app-driver.ts b/packages/claxedo-app/perf-harness/src/public-agent-app-driver.ts
+index 6bc1b6fc..cd72c736 100755
+--- a/packages/claxedo-app/perf-harness/src/public-agent-app-driver.ts
++++ b/packages/claxedo-app/perf-harness/src/public-agent-app-driver.ts
+@@ -587,8 +587,11 @@ function stringRecord(value: unknown): Record<string, string> | undefined {
+ }
+ 
+ async function applicationBuildFiles(executable: string) {
+-  if (process.platform !== "darwin") return [executable]
+-  const asar = path.resolve(path.dirname(executable), "../Resources/app.asar")
++  if (process.platform !== "darwin" && process.platform !== "linux") return [executable]
++  const asar = path.resolve(
++    path.dirname(executable),
++    process.platform === "linux" ? "resources/app.asar" : "../Resources/app.asar",
++  )
+   await access(asar)
+   return [executable, asar]
+ }

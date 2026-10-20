@@ -451,7 +451,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
   }
 
   async listHostDevices(auth: SignedControlPlaneAuth) {
-    return await listHostDevices(this.database, (await this.requirePrincipal(auth)).actorId, this.now())
+    return await listHostDevices(this.database, this.options.deploymentId, auth, this.now())
   }
 
   async createHostEnrollmentRequest(auth: SignedControlPlaneAuth, args: { hostId: string }) {

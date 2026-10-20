@@ -8,9 +8,11 @@ import type {
   AuthorizeRuntimePrivateSessionInput,
   PrivateSessionRuntimePrincipal,
   PrivateSessionAuthority,
+  ProjectSessionPage,
   RegisterRuntimePrivateSessionInput,
   SessionPageQuery,
 } from "./private-session-authority"
+import type { SessionListKeysetPage } from "../../session/navigation-list"
 import type { LatestView } from "../../session/latest-view-page"
 import type { AgentContentPart, TurnPageQuery, TurnPageRequest, TurnPage, FirstRead } from "@claxedo/agent-runtime-contract"
 import type { HostSessionRowsAuthority } from "./host-session-rows"
@@ -429,6 +431,7 @@ export type WorkspaceAuthority = OrgAccessAuthority & SessionShareAuthority & Pa
     args: { workspaceId: string },
   ) => Promise<AuthoritySessionInventoryRow[]>
   listSessionPage: (auth: SignedControlPlaneAuth, args: SessionPageQuery) => Promise<AuthoritySessionInventoryRow[]>
+  listProjectSessionPages: (auth: SignedControlPlaneAuth, args: SessionListKeysetPage) => Promise<ProjectSessionPage[]>
   publishHostSessionRows?: HostSessionRowsAuthority["publishHostSessionRows"]
   resolveSession?: (auth: SignedControlPlaneAuth, args: { sessionId: string }) => Promise<unknown>
   readSessionMessages: (

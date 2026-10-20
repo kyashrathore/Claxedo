@@ -8,7 +8,7 @@ export type AccountBindingBuildSelection = {
 
 export function resolveAccountBindingSelection(value: string | undefined): AccountBindingBuildSelection {
   if (value === "better-auth") {
-    return { binding: "better-auth", module: "./src/auth/better-auth-binding.ts", manualChunks: { "vendor-better-auth": ["better-auth/client"] } }
+    return { binding: "better-auth", module: "./src/auth/better-auth-binding.ts", manualChunks: { "vendor-better-auth": ["better-auth", "@better-auth/core", "@better-fetch/fetch", "better-call", "nanostores", "defu"] } }
   }
   if (value === "desktop") return { binding: "desktop", module: "./src/auth/electron-binding.ts", manualChunks: {} }
   throw new Error(

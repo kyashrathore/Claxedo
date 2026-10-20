@@ -1,39 +1,24 @@
-import { composerEnglish } from "./en"
-import zh from "./zh"
-import zht from "./zht"
-import ko from "./ko"
-import de from "./de"
-import es from "./es"
-import fr from "./fr"
-import da from "./da"
-import ja from "./ja"
-import pl from "./pl"
-import ru from "./ru"
-import bs from "./bs"
-import ar from "./ar"
-import no from "./no"
-import br from "./br"
-import th from "./th"
-import tr from "./tr"
+import type { Translations } from "@/i18n"
+import { composerEnglish, type ComposerTextKey } from "./en"
 
 export type { ComposerTextKey } from "./en"
 
 export const composerEnglishDictionaries = {
   en: composerEnglish,
-  zh,
-  zht,
-  ko,
-  de,
-  es,
-  fr,
-  da,
-  ja,
-  pl,
-  ru,
-  bs,
-  ar,
-  no,
-  br,
-  th,
-  tr,
-}
+  ar: () => import("../locales/ar"),
+  br: () => import("../locales/br"),
+  bs: () => import("../locales/bs"),
+  da: () => import("../locales/da"),
+  de: () => import("../locales/de"),
+  es: () => import("../locales/es"),
+  fr: () => import("../locales/fr"),
+  ja: () => import("../locales/ja"),
+  ko: () => import("../locales/ko"),
+  no: () => import("../locales/no"),
+  pl: () => import("../locales/pl"),
+  ru: () => import("../locales/ru"),
+  th: () => import("../locales/th"),
+  tr: () => import("../locales/tr"),
+  zh: () => import("../locales/zh"),
+  zht: () => import("../locales/zht"),
+} satisfies Translations<ComposerTextKey>

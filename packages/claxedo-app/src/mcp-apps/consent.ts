@@ -39,6 +39,7 @@ export function toolCallConfirm(text: ConsentText, server: string, tool: string,
     body: text("mcpApps.consent.toolCall.body", { server, tool, arguments: argumentsPreview(args) }),
     confirmLabel: text("mcpApps.consent.toolCall.confirm"),
     cancelLabel: text("mcpApps.consent.cancel"),
+    destructive: false,
   }
 }
 
@@ -48,5 +49,6 @@ export function messageConfirm(text: ConsentText, message: string): ConfirmOptio
     body: text("mcpApps.consent.message.body", { message }),
     confirmLabel: text("mcpApps.consent.message.confirm"),
     cancelLabel: text("mcpApps.consent.cancel"),
+    destructive: false,
   }
 }

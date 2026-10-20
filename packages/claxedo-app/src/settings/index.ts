@@ -18,7 +18,7 @@ const section = (id: string, key: SettingsKey, group: SettingsSection["group"], 
 export type { Preferences } from "./preferences"
 export { terminalFontFamily } from "./fonts"
 export { PreferencesProvider, usePreferences } from "./preferences"
-export { MachineConnectSteps, useConnectMachine } from "./view/machines"
+export { MachineConnectSteps, useConnectMachine } from "./view/machine-connect"
 export { SettingsEmpty, SettingsGroup, SettingsIntro, SettingsList, SettingsListSkeleton, SettingsNote, SettingsRow } from "./view/section"
 
 export const settingsSections: readonly SettingsSection[] = [
@@ -34,3 +34,4 @@ export const settingsSections: readonly SettingsSection[] = [
   section("sounds", "settings.section.sounds", "app", 64, lazyView(() => import("./view/alerts").then((module) => module.SoundsSection))),
   section("keybindings", "settings.section.keybindings", "app", 70, lazyView(() => import("./view/keybindings").then((module) => module.KeybindingsSection))),
 ]
+export { settingsDictionary } from "./i18n"

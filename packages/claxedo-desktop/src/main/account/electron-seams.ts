@@ -8,7 +8,7 @@
  */
 
 import { createServer } from "node:http"
-import { closeSync, fsyncSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
+import { closeSync, fsyncSync, openSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import { randomUUID } from "node:crypto"
 import { basename, join } from "node:path"
 import type { CallbackDisposition, OAuthSeams, TokenSet } from "./oauth-flow"
@@ -113,13 +113,21 @@ export function credentialFile(userDataDir: string): CredentialFile {
         rmSync(temporary, { force: true })
       }
     },
+    // Only the newest rejected record is kept: each one still holds a refresh
+    // token that may be live, and nothing reads them back.
     quarantine: () => {
+      const rejectedPrefix = `${ACCOUNT_CREDENTIAL_RECORD}.rejected-`
+      const kept = `${rejectedPrefix}${randomUUID()}`
       try {
-        renameSync(path, join(userDataDir, `${ACCOUNT_CREDENTIAL_RECORD}.rejected-${randomUUID()}`))
-        syncDirectory()
+        renameSync(path, join(userDataDir, kept))
       } catch (error) {
         if (!isMissingFile(error)) throw error
+        return
       }
+      for (const name of readdirSync(userDataDir)) {
+        if (name.startsWith(rejectedPrefix) && name !== kept) rmSync(join(userDataDir, name), { force: true })
+      }
+      syncDirectory()
     },
     clear: () => {
       rmSync(path, { force: true })
@@ -144,38 +152,10 @@ export function nodeTimer(): OAuthSeams["setTimeout"] {
 /** What a token endpoint answers with, on either grant. */
 type TokenPayload = {
   access_token?: string
-  id_token?: string
   refresh_token?: string
   expires_in?: number
   token_type?: string
   error?: string
-}
-
-/**
- * Compact JWTs have three base64url segments. An authorization server can still
- * issue opaque OAuth access tokens; those fail control-plane JWKS verification.
- */
-export function isJwtShaped(token: string) {
-  const parts = token.split(".")
-  return parts.length === 3 && parts.every((part) => part.length > 0)
-}
-
-/**
- * Bearer the hosted control plane can verify against the issuer's JWKS.
- *
- * Prefer a JWT `access_token`. When the OAuth app still issues opaque access
- * tokens, fall back to the OIDC `id_token` (always a JWT when `openid` was
- * granted). Opaque-only responses keep the access token so userinfo/sign-in
- * still work, but People/hosted ops will 401 until JWT access tokens are
- * enabled on the OAuth app.
- */
-export function controlPlaneBearerFromTokenPayload(payload: {
-  access_token?: string
-  id_token?: string
-}): string | undefined {
-  if (payload.access_token && isJwtShaped(payload.access_token)) return payload.access_token
-  if (payload.id_token && isJwtShaped(payload.id_token)) return payload.id_token
-  return payload.access_token
 }
 
 /**
@@ -206,17 +186,26 @@ async function postToTokenEndpoint(
   timeoutMs: number,
   parentSignal?: AbortSignal,
 ) {
-  return fetchWithDeadline(
+  // Manual: fetch re-sends the body on a 307/308, so following one would hand
+  // the code and verifier, or the refresh token, to whatever the redirect
+  // names. `opaqueredirect` is the browser fetch's shape of the same answer.
+  const response = await fetchWithDeadline(
     fetchImpl,
     tokenUrl,
     {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
       body: new URLSearchParams(form).toString(),
+      redirect: "manual",
     },
     timeoutMs,
     { parentSignal },
   )
+  if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)) {
+    void response.body?.cancel().catch(() => undefined)
+    throw new Error(`token endpoint answered with a redirect (${response.status}), which is never followed`)
+  }
+  return response
 }
 
 /**
@@ -229,7 +218,7 @@ async function postToTokenEndpoint(
  */
 function decodeTokenPayload(payload: TokenPayload | undefined, fallbackRefreshToken?: string): TokenSet | undefined {
   if (!payload) return undefined
-  const accessToken = controlPlaneBearerFromTokenPayload(payload)
+  const accessToken = payload.access_token
   if (
     !accessToken ||
     typeof payload.expires_in !== "number" ||
@@ -281,6 +270,7 @@ export type RefreshExchange = (input: {
   clientId: string
   refreshToken: string
   resource?: string
+  signal?: AbortSignal
 }) => Promise<RefreshOutcome>
 
 /**
@@ -312,6 +302,7 @@ export function refreshExchange(
           ...(input.resource ? { resource: input.resource } : {}),
         },
         timeoutMs,
+        input.signal,
       )
     } catch (error) {
       // Never reached an answer — an offline laptop, DNS, a dropped TLS
@@ -356,19 +347,13 @@ function parseTokenBody(body: string): TokenPayload | undefined {
 }
 
 /**
- * The one reader for a token endpoint's answer, on either grant.
- *
- * Both call sites used to assert `as TokenPayload` over `JSON.parse`/`.json()`
- * output, which claims six typed fields the server never promised — and the
- * consumers below then re-checked those types anyway. Reading the fields here
- * makes that check the ONLY one, and a hostile body simply loses the members
- * whose type is wrong instead of arriving mistyped.
+ * The one reader for a token endpoint's answer, on either grant. A hostile body
+ * loses the members whose type is wrong instead of arriving mistyped.
  */
 function parseTokenPayload(value: unknown): TokenPayload | undefined {
   if (!isRecord(value)) return undefined
   return {
     access_token: readString(value, "access_token"),
-    id_token: readString(value, "id_token"),
     refresh_token: readString(value, "refresh_token"),
     expires_in: readFiniteNumber(value, "expires_in"),
     token_type: readString(value, "token_type"),

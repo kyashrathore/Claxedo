@@ -1,0 +1,8 @@
+@layer theme, base, components, touch, utilities;
+
+@import "@opencode-ai/ui/styles/foundation";
+@import "@opencode-ai/ui/v2/styles/tailwind.css";
+@import "@opencode-ai/ui/icon.css" layer(components);
+@import "./reduced-motion.css" layer(base);
+@import "./touch.css";
+@import "./codex-tokens.css";

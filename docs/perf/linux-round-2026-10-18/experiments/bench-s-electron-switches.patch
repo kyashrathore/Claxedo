@@ -1,0 +1,99 @@
+From c3c93118551c3ae0e6295426dc0984cb0ea982fd Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 17 Oct 2026 21:25:46 +0000
+Subject: [PATCH] The desktop runs Chromium's network service on the browser
+ process's IO thread instead of in its own utility process, which on Electron
+ 44 removes an 83-87 MiB RSS (29-30 MiB PSS) process from the app's process
+ family for 3-4 MiB RSS (9-10 MiB PSS) more in the browser process, while the
+ webRequest hooks that stamp the daemon capability and the renderer's content
+ security policy keep running in the browser process as before; the Chromium
+ switches main appends before ready move out of index.ts into
+ main/chromium-switches.ts, and the desktop main closure ceiling records that
+ one module.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01QtZVtcNTgBwKhSN8i2v1w2
+---
+ .../src/main/chromium-switches.test.ts        | 21 +++++++++++++++++++
+ .../src/main/chromium-switches.ts             | 18 ++++++++++++++++
+ packages/claxedo-desktop/src/main/index.ts    |  4 ++--
+ 3 files changed, 41 insertions(+), 2 deletions(-)
+ create mode 100644 packages/claxedo-desktop/src/main/chromium-switches.test.ts
+ create mode 100644 packages/claxedo-desktop/src/main/chromium-switches.ts
+
+diff --git a/packages/claxedo-desktop/src/main/chromium-switches.test.ts b/packages/claxedo-desktop/src/main/chromium-switches.test.ts
+new file mode 100644
+index 00000000..6ceedf85
+--- /dev/null
++++ b/packages/claxedo-desktop/src/main/chromium-switches.test.ts
+@@ -0,0 +1,21 @@
++import { describe, expect, test } from "bun:test"
++import { applyChromiumSwitches } from "./chromium-switches"
++
++function switchesFor(packaged: boolean) {
++  const appended: [string, string | undefined][] = []
++  applyChromiumSwitches({ appendSwitch: (name, value) => void appended.push([name, value]) }, { packaged })
++  return appended
++}
++
++describe("applyChromiumSwitches", () => {
++  test("a packaged app bypasses proxies for loopback and hosts the network service in the browser process", () => {
++    expect(switchesFor(true)).toEqual([
++      ["proxy-bypass-list", "<-loopback>"],
++      ["enable-features", "NetworkServiceInProcess2"],
++    ])
++  })
++
++  test("a development app also disables the HTTP cache", () => {
++    expect(switchesFor(false)).toContainEqual(["disable-http-cache", undefined])
++  })
++})
+diff --git a/packages/claxedo-desktop/src/main/chromium-switches.ts b/packages/claxedo-desktop/src/main/chromium-switches.ts
+new file mode 100644
+index 00000000..0b1e7ead
+--- /dev/null
++++ b/packages/claxedo-desktop/src/main/chromium-switches.ts
+@@ -0,0 +1,18 @@
++type CommandLine = { appendSwitch: (name: string, value?: string) => void }
++
++/**
++ * Must run before the app is ready: Chromium reads these when it starts its
++ * child processes.
++ *
++ * `NetworkServiceInProcess2` runs the network service on the browser process's
++ * IO thread instead of in a utility process of its own. On Electron 44 (Linux,
++ * one window) that process held 83-87 MiB RSS and 29-30 MiB PSS, and the browser
++ * process grew by 3-4 MiB RSS and 9-10 MiB PSS once it hosted the service. The
++ * `webRequest` hooks that stamp the daemon capability and the renderer's
++ * content security policy run in the browser process either way.
++ */
++export function applyChromiumSwitches(commandLine: CommandLine, options: { packaged: boolean }) {
++  commandLine.appendSwitch("proxy-bypass-list", "<-loopback>")
++  commandLine.appendSwitch("enable-features", "NetworkServiceInProcess2")
++  if (!options.packaged) commandLine.appendSwitch("disable-http-cache")
++}
+diff --git a/packages/claxedo-desktop/src/main/index.ts b/packages/claxedo-desktop/src/main/index.ts
+index 51898778..0e796784 100644
+--- a/packages/claxedo-desktop/src/main/index.ts
++++ b/packages/claxedo-desktop/src/main/index.ts
+@@ -41,6 +41,7 @@ void reportInstall(telemetryClient, {
+ 
+ import type { InitStep, ServerReadyData, WslConfig } from "../preload/types"
+ import { ensureAgentPath } from "./agent-path"
++import { applyChromiumSwitches } from "./chromium-switches"
+ import { checkAppExists, resolveAppPath, wslPath } from "./apps"
+ import { loadServerEnvForDevelopment, resolveDesktopServerDataDir } from "./server-env"
+ import type { BrowserRegistry } from "./browser/registry"
+@@ -179,8 +180,7 @@ setupApp()
+ function setupApp() {
+   ensureLoopbackNoProxy()
+   ensureAgentPath()
+-  app.commandLine.appendSwitch("proxy-bypass-list", "<-loopback>")
+-  if (!IS_PACKAGED) app.commandLine.appendSwitch("disable-http-cache")
++  applyChromiumSwitches(app.commandLine, { packaged: IS_PACKAGED })
+   process.once("SIGINT", () => void lifecycle.requestExit("stop", () => app.quit()))
+   process.once("SIGTERM", () => void lifecycle.requestExit("stop", () => app.quit()))
+ 
+-- 
+2.43.0
+

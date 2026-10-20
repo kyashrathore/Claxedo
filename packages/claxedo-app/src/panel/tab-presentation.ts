@@ -9,11 +9,15 @@ export function unhandledReviewWorkspaceTab(tab: never): never {
 
 const TAB_ICON: Record<ReviewWorkspaceTabKind, ClaxedoIconName> = {
   review: "review",
-  context: "circle-half",
+  context: "details",
   file: "document-text",
   browser: "globe",
   subagent: "task",
   plan: "checklist",
+}
+
+export function workspaceTabIcon(kind: ReviewWorkspaceTabKind): ClaxedoIconName {
+  return TAB_ICON[kind]
 }
 
 const TAB_ICON_PX: Record<ReviewWorkspaceTabKind, number> = {
@@ -59,7 +63,7 @@ export function createReviewWorkspaceTabPresentation(deps: {
     }
   }
 
-  const tabIcon = (tab: ReviewWorkspaceTab): ClaxedoIconName => TAB_ICON[tab.kind]
+  const tabIcon = (tab: ReviewWorkspaceTab): ClaxedoIconName => workspaceTabIcon(tab.kind)
 
   const tabIconPx = (tab: ReviewWorkspaceTab): number => TAB_ICON_PX[tab.kind]
 

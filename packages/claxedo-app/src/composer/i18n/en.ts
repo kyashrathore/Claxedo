@@ -163,7 +163,7 @@ export const composerEnglish: Record<ComposerTextKey, string> = {
   "composer.models.retryWake": "Try again",
   "composer.models.waking": "{{name}} is waking",
   "composer.models.waking.detail": "Its models load once it is running.",
-  "composer.unavailableHere": "{{harness}} runs inside the workspace, and your organization's cloud provider can't keep your key out of it.",
+  "composer.unavailableHere": "{{harness}} can't use your account in this workspace.",
   "composer.unavailableHere.alternative": "Use {{model}} through {{harness}} — same account.",
   "composer.unavailableHere.machines": "It runs on your machines, or pick another harness here.",
   "composer.unavailableHere.switch": "Switch to {{harness}}",

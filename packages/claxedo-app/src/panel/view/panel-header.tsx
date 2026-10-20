@@ -192,7 +192,11 @@ export function PanelHeader(): JSX.Element {
         onClose: panel.toggle,
         closeTestId: "workspace-panel-toggle",
       }}
-      toolbar={<ToolbarRow />}
+      toolbar={
+        <Show when={panel.activeTab().kind !== "context"}>
+          <ToolbarRow />
+        </Show>
+      }
     />
   )
 }

@@ -48,6 +48,7 @@ import {
   type EnvelopeAdmin,
 } from "@claxedo/server-core/credentials/envelope"
 import { trimToUndefined } from "@claxedo/helpers/string"
+import { secretHint } from "@claxedo/server-core/credentials/pasted-key"
 import { storedCredentialKind } from "@claxedo/server-core/credentials/secret-material"
 import { parseUsageWindows, serializeUsageWindows } from "@claxedo/server-core/credentials/usage-windows"
 import { fanoutEligible, fanoutEligibleAuth } from "@claxedo/server-core/credentials/account-kinds"
@@ -80,7 +81,7 @@ export type HostedCredentialStoreInput = {
 }
 
 const METADATA_COLUMNS =
-  "id, owner, org_id, provider_id, kind, source, label, account_id, status, health, expires_at, last_validated_at, last_error, revision, activated_at, usage_windows, usage_at, created_at, updated_at"
+  "id, owner, org_id, provider_id, kind, source, label, account_id, secret_hint, status, health, expires_at, last_validated_at, last_error, revision, activated_at, usage_windows, usage_at, created_at, updated_at"
 
 /** Default-off feature flag for the hosted credential surface. */
 export const HOSTED_CREDENTIALS_FLAG = "CLAXEDO_HOSTED_CREDENTIALS_ENABLED"
@@ -175,12 +176,16 @@ export function hostedOrgCredentials(
     return row ? requiredTextColumn(row, "id") : undefined
   }
 
-  const openSecret = async (id: string, statusScope: string) => {
+  const sealedSecret = async (id: string, statusScope: string) => {
     const row = await database
-      .prepare(`select secret_envelope from hosted_provider_credentials where org_id = ? and id = ?${statusScope}`)
+      .prepare(`select secret_envelope, revision from hosted_provider_credentials where org_id = ? and id = ?${statusScope}`)
       .bind(org, id)
       .first()
-    return row ? cipher.open(id, requiredTextColumn(row, "secret_envelope")) : null
+    return row ? { credentialId: id, revision: Number(row.revision), sealed: requiredTextColumn(row, "secret_envelope") } : null
+  }
+  const openSecret = async (id: string, statusScope: string) => {
+    const sealed = await sealedSecret(id, statusScope)
+    return sealed ? cipher.open(id, sealed.sealed) : null
   }
 
   const readCredential = async (id: string) => {
@@ -247,11 +252,11 @@ export function hostedOrgCredentials(
     const kind = storedCredentialKind(input)
     const mark = await savedMark({ owner, provider_id: input.provider_id, kind }, id, timestamp)
     const guard = administeredGuard(input)
-    const values = "?, ?, ?, ?, ?, ?, ?, ?, 'available', null, ?, null, null, ?, 1, ?, ?, ?"
+    const values = "?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', null, ?, null, null, ?, 1, ?, ?, ?"
     const row = await database
       .prepare(
         `insert into hosted_provider_credentials (
-           id, owner, org_id, provider_id, kind, source, label, account_id, status, health,
+           id, owner, org_id, provider_id, kind, source, label, account_id, secret_hint, status, health,
            expires_at, last_validated_at, last_error, secret_envelope, revision, activated_at, created_at, updated_at
           ) ${guard ? `select ${values} where ${guard.sql}` : `values (${values})`}
          on conflict (org_id, id) do update set
@@ -259,6 +264,7 @@ export function hostedOrgCredentials(
            source = excluded.source,
            label = excluded.label,
            account_id = excluded.account_id,
+           secret_hint = excluded.secret_hint,
            status = 'available',
            health = null,
            expires_at = excluded.expires_at,
@@ -282,6 +288,7 @@ export function hostedOrgCredentials(
         input.source,
         input.label ?? null,
         input.account_id ?? null,
+        secretHint(input) ?? null,
         input.expires_at ?? null,
         await cipher.seal(id, input.secret),
         mark,
@@ -350,6 +357,8 @@ export function hostedOrgCredentials(
     },
     // Verification retries must be able to re-check a prior failed result.
     resolveCredentialSecretById: (id) => openSecret(id, ""),
+    sealedCredentialSecret: (id) => sealedSecret(id, ""),
+    openSealedCredentialSecret: (sealed) => cipher.open(sealed.credentialId, sealed.sealed),
     putCredential: async (input: CredentialWrite) => {
       const found = await existingId(input.owner, input.provider_id)
       const inserted = await upsert(input, found ?? crypto.randomUUID())
@@ -580,6 +589,7 @@ function credentialMetadataRow(row: Record<string, unknown>): CredentialMetadata
     source: enumColumn(row, "source", CREDENTIAL_SOURCES),
     label: nullableTextColumn(row, "label"),
     account_id: nullableTextColumn(row, "account_id"),
+    secret_hint: nullableTextColumn(row, "secret_hint"),
     secure_ref: hostedCredentialSlotRef(requiredTextColumn(row, "id")),
     status: enumColumn(row, "status", CREDENTIAL_STATUSES),
     health: column(row, "health") === null ? null : enumColumn(row, "health", CREDENTIAL_HEALTHS),

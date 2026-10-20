@@ -27,13 +27,20 @@ export type DesktopNativeAuth = {
         detail: string
       }
   >
-  refresh(credential: BoundDesktopCredential): Promise<RefreshOutcome>
+  /** `signal` ends the refresh grant's request, so logout can stop a rotation it is about to revoke. */
+  refresh(credential: BoundDesktopCredential, signal?: AbortSignal): Promise<RefreshOutcome>
   revoke(credential: BoundDesktopCredential): Promise<RemoteRevocation>
+  /**
+   * Revokes a credential the selected deployment no longer binds, but only at
+   * the issuer that minted it: a token sent to a different issuer is a token
+   * handed to whoever answers there.
+   */
+  revokeUnbound(credential: BoundDesktopCredential): Promise<RemoteRevocation>
 }
 
 type SelectedDesktopAdapter = {
   oauth: OAuthConfig
-  refresh(refreshToken: string): Promise<RefreshOutcome>
+  refresh(refreshToken: string, signal?: AbortSignal): Promise<RefreshOutcome>
   revoke(credential: BoundDesktopCredential): Promise<RemoteRevocation>
 }
 
@@ -192,12 +199,13 @@ export function createDesktopNativeAuth(input: {
         resource: descriptor.binding.resource,
         timeoutMs: AUTHORIZATION_REQUEST_LIFETIME_MS,
       },
-      refresh: (refreshToken) =>
+      refresh: (refreshToken, signal) =>
         input.refresh({
           tokenUrl: descriptor.tokenUrl,
           clientId: descriptor.binding.id,
           refreshToken,
           resource: descriptor.binding.resource,
+          ...(signal ? { signal } : {}),
         }),
       revoke: async (credential) => {
         if (descriptor.revocation.protocol !== "rfc7009") {
@@ -214,7 +222,7 @@ export function createDesktopNativeAuth(input: {
                 "content-type": "application/x-www-form-urlencoded",
               },
               body: new URLSearchParams({
-                client_id: descriptor.binding.id,
+                client_id: credential.binding.id,
                 token: credential.tokens.refreshToken,
                 token_type_hint: "refresh_token",
               }).toString(),
@@ -274,9 +282,9 @@ export function createDesktopNativeAuth(input: {
         },
       }
     },
-    async refresh(credential) {
+    async refresh(credential, signal) {
       const descriptor = await validate(credential)
-      return select(descriptor).refresh(credential.tokens.refreshToken)
+      return select(descriptor).refresh(credential.tokens.refreshToken, signal)
     },
     async revoke(credential) {
       try {
@@ -287,6 +295,20 @@ export function createDesktopNativeAuth(input: {
           state: "uncertain",
           detail: `Remote revocation was not attempted because the current descriptor could not bind the credential: ${String(error)}`,
         }
+      }
+    },
+    async revokeUnbound(credential) {
+      try {
+        const descriptor = await discover()
+        if (credential.binding.issuer !== descriptor.binding.issuer) {
+          return {
+            state: "uncertain",
+            detail: "Remote revocation was not attempted because the credential's issuer is not the selected deployment's",
+          }
+        }
+        return await select(descriptor).revoke(credential)
+      } catch (error) {
+        return { state: "uncertain", detail: `Remote revocation was not attempted: ${String(error)}` }
       }
     },
   }

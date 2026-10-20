@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { VENDOR_PROVIDER_NAMES } from "@claxedo/agent-runtime-contract"
@@ -6,6 +6,7 @@ import { asRecord, asString } from "@claxedo/helpers/guards"
 import { assertTemporaryHome } from "../../../script/test-home/temporary-home.mjs"
 import type { ProviderModel } from "../src/contract"
 import { engineProviderBinding } from "../src/transports/opencode-sdk/credentials"
+import { removeTempRoot } from "../src/test-support/temp-root"
 import { createOpenCodeRuntime } from "../src/transports/opencode-sdk/runtime"
 import { WorkspaceScope } from "../src/transports/opencode-sdk/scope"
 
@@ -58,5 +59,5 @@ try {
   const next = render(engineVersion(), await engineModels(root))
   if (!existsSync(output) || readFileSync(output, "utf8") !== next) writeFileSync(output, next)
 } finally {
-  rmSync(root, { recursive: true, force: true })
+  await removeTempRoot(root)
 }

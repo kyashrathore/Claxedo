@@ -1,0 +1,91 @@
+From 2caa13b5f4e2c775f9f6daf066e1f68d6ec3dac1 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 17 Oct 2026 21:45:11 +0000
+Subject: [PATCH] A session's cold first read sends the turns its line estimate
+ needs to cover the viewport and one more screen instead of two, while an
+ older page read on scroll-up still covers two, so opening a session reads,
+ serializes and builds rows for fewer turns (four to three on the benchmark's
+ 1 MiB size-latency session at a 32-row viewport) before its first page
+ paints.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01QtZVtcNTgBwKhSN8i2v1w2
+---
+ .../agent-runtime-contract/src/turn-page.test.ts   | 14 ++++++++++----
+ packages/agent-runtime-contract/src/turn-page.ts   |  9 ++++++---
+ .../session-core/src/routes/session-core.test.ts   |  4 ++--
+ 3 files changed, 18 insertions(+), 9 deletions(-)
+
+diff --git a/packages/agent-runtime-contract/src/turn-page.test.ts b/packages/agent-runtime-contract/src/turn-page.test.ts
+index ad1ec06b..9b50b5c0 100644
+--- a/packages/agent-runtime-contract/src/turn-page.test.ts
++++ b/packages/agent-runtime-contract/src/turn-page.test.ts
+@@ -157,13 +157,19 @@ describe("estimateTurnLines", () => {
+ })
+ 
+ describe("readTurnPage", () => {
+-  test("walks back from the newest turn until the estimate covers the viewport and two more screens", async () => {
++  test("a cold read walks back from the newest turn until the estimate covers the viewport and one more screen", async () => {
+     const turns = Array.from({ length: 10 }, (_, index) => workedTurn(`Prompt ${index}`, `Answer ${index}.`))
+     const reader = turnReader(turns)
+     const page = await readTurnPage(reader.read, viewport(10))
+-    expect(page.turns.map((turn) => drawnTexts(turn)[0])).toEqual(["Prompt 5", "Prompt 6", "Prompt 7", "Prompt 8", "Prompt 9"])
+-    expect(page.turns.map((turn) => turn.cursor)).toEqual(["cursor-5", "cursor-6", "cursor-7", "cursor-8", "cursor-9"])
+-    expect(reader.calls).toEqual([undefined, "cursor-9", "cursor-8", "cursor-7", "cursor-6"])
++    expect(page.turns.map((turn) => drawnTexts(turn)[0])).toEqual(["Prompt 7", "Prompt 8", "Prompt 9"])
++    expect(page.turns.map((turn) => turn.cursor)).toEqual(["cursor-7", "cursor-8", "cursor-9"])
++    expect(reader.calls).toEqual([undefined, "cursor-9", "cursor-8"])
++  })
++
++  test("an older read walks back until the estimate covers the viewport and two more screens", async () => {
++    const turns = Array.from({ length: 12 }, (_, index) => workedTurn(`Prompt ${index}`, `Answer ${index}.`))
++    const page = await readTurnPage(turnReader(turns).read, { ...viewport(10), before: "cursor-11" })
++    expect(page.turns.map((turn) => drawnTexts(turn)[0])).toEqual(["Prompt 6", "Prompt 7", "Prompt 8", "Prompt 9", "Prompt 10"])
+   })
+ 
+   test("a session shorter than the fill is read whole, and its first turn carries no cursor", async () => {
+diff --git a/packages/agent-runtime-contract/src/turn-page.ts b/packages/agent-runtime-contract/src/turn-page.ts
+index e28503aa..d987a0b6 100644
+--- a/packages/agent-runtime-contract/src/turn-page.ts
++++ b/packages/agent-runtime-contract/src/turn-page.ts
+@@ -19,7 +19,9 @@ export const TURN_PAGE_TURN_CAP = 24
+ 
+ export const TURN_PAGE_BYTE_CAP = 256 * 1024
+ 
+-const TURN_PAGE_FILL_SCREENS = 2
++const FIRST_PAGE_FILL_SCREENS = 1
++
++const OLDER_PAGE_FILL_SCREENS = 2
+ 
+ const TURN_CHROME_LINES = 3
+ const FOLD_ROW_LINES = 2
+@@ -191,8 +193,9 @@ const encoder = new TextEncoder()
+ /** The caps decide how many turns are sent; a message or part is never trimmed. */
+ export async function readTurnPage(read: TurnRead, request: TurnPageRequest): Promise<TurnPage> {
+   const turns: PageTurn[] = []
+-  const wanted = request.rows * (1 + TURN_PAGE_FILL_SCREENS)
+-  const byteCap = request.before === undefined ? TURN_PAGE_BYTE_CAP : Number.POSITIVE_INFINITY
++  const first = request.before === undefined
++  const wanted = request.rows * (1 + (first ? FIRST_PAGE_FILL_SCREENS : OLDER_PAGE_FILL_SCREENS))
++  const byteCap = first ? TURN_PAGE_BYTE_CAP : Number.POSITIVE_INFINITY
+   let lines = 0
+   let bytes = 0
+   let before = request.before
+diff --git a/packages/session-core/src/routes/session-core.test.ts b/packages/session-core/src/routes/session-core.test.ts
+index 1a0f88bb..aa7b93af 100644
+--- a/packages/session-core/src/routes/session-core.test.ts
++++ b/packages/session-core/src/routes/session-core.test.ts
+@@ -550,8 +550,8 @@ describe("createSessionRoutes message paging", () => {
+ 
+     expect(response.status).toBe(200)
+     const { page } = await response.json()
+-    expect(reads).toEqual([{ view: "latest-turn" }, ...["29", "28", "27", "26"].map((before) => ({ view: "latest-turn" as const, before }))])
+-    expect(page.turns.map((item: { cursor: string }) => item.cursor)).toEqual(["25", "26", "27", "28", "29"])
++    expect(reads).toEqual([{ view: "latest-turn" }, ...["29", "28"].map((before) => ({ view: "latest-turn" as const, before }))])
++    expect(page.turns.map((item: { cursor: string }) => item.cursor)).toEqual(["27", "28", "29"])
+     const latest = page.turns.at(-1)
+     expect(Object.keys(latest).sort()).toEqual(["cursor", "messages"])
+     expect(latest.messages.map((message: AgentMessage) => message.parts.map((part) => part.id))).toEqual(turns[29].map((message) => message.parts.map((part) => part.id)))
+-- 
+2.43.0
+

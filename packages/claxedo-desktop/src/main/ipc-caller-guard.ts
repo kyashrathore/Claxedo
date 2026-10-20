@@ -15,9 +15,11 @@
  * of the destination catches all of those with one rule.
  *
  * The rule: a call must come from the top frame of a webContents we ourselves
- * registered as the main renderer. Not a trusted URL — a trusted object. URLs
- * can be spoofed within a compromised renderer; a webContents id cannot be
- * chosen by page content.
+ * registered as the main renderer, while that frame shows one of the app's own
+ * documents. The webContents id is the authority, because page content cannot
+ * choose it; the document check is the second half, because the id survives a
+ * top-level navigation, so a page that slipped past the navigation guard would
+ * otherwise inherit the bridge in the window it took over.
  *
  * Kept free of electron VALUE imports so the policy is directly testable, same
  * split as `navigation-guard.ts` and `renderer-url-trust.ts`.
@@ -37,9 +39,28 @@ export type IpcCaller = {
    * embedded content inherit the whole bridge.
    */
   isMainFrame: boolean
+  /** Whether `event.senderFrame.url` is one of the app's own renderer documents. */
+  showsAppDocument: boolean
 }
 
 export type IpcCallerVerdict = { allowed: true } | { allowed: false; reason: string }
+
+/**
+ * The caller as Electron's own event names it, never as the request payload
+ * does. `senderFrame` is null once the frame is gone, which is not a top frame
+ * and shows no document, so it fails closed.
+ */
+export function readIpcCaller(
+  event: Pick<IpcMainInvokeEvent | IpcMainEvent, "sender" | "senderFrame">,
+  isAppDocumentUrl: (url: string) => boolean,
+): IpcCaller {
+  const frame = event.senderFrame
+  return {
+    senderId: event.sender.id,
+    isMainFrame: frame !== null && frame === event.sender.mainFrame,
+    showsAppDocument: frame !== null && isAppDocumentUrl(frame.url),
+  }
+}
 
 /**
  * The set of webContents allowed to call in.
@@ -60,6 +81,10 @@ export function createIpcCallerGuard() {
     revoke(senderId: number) {
       trusted.delete(senderId)
     },
+    /** Whether this webContents is registered, for policies that check its frame and document themselves. */
+    trusts(senderId: number) {
+      return trusted.has(senderId)
+    },
     /** Exposed for assertions; not part of the decision path. */
     trustedCount() {
       return trusted.size
@@ -70,6 +95,9 @@ export function createIpcCallerGuard() {
       }
       if (!caller.isMainFrame) {
         return { allowed: false, reason: `ipc from a subframe of webContents ${caller.senderId}` }
+      }
+      if (!caller.showsAppDocument) {
+        return { allowed: false, reason: `ipc from a foreign document in webContents ${caller.senderId}` }
       }
       return { allowed: true }
     },

@@ -6,7 +6,12 @@ import {
 import type { SessionWriteClass } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { trimToUndefined } from "@claxedo/helpers/string"
 
-/** The `/session-authorize` request body, read exactly: a field an action does not take refuses the request. */
+/**
+ * The `/session-authorize` request body, read exactly: a field an action does
+ * not take refuses the request. A `write` names its class; a `turn_acquire`
+ * over a bearer names `agent_turn`, the one class a turn is, and one over a
+ * deferred grant names none, since the grant was minted under that class.
+ */
 export function parseSessionAuthorityRequest(body: Record<string, unknown> | undefined) {
   const sessionId = trimToUndefined(body?.sessionId)
   const action = body?.action
@@ -26,7 +31,7 @@ export function parseSessionAuthorityRequest(body: Record<string, unknown> | und
   if (!sessionId || !isAuthorityAction(action)) return undefined
   if (
     (writeClass !== undefined && !isSessionWriteClass(writeClass))
-    || (writeClass !== undefined && action !== "write")
+    || (writeClass !== undefined && action !== "write" && action !== "turn_acquire")
     || (body?.title !== undefined && title === undefined)
     || (body?.reason !== undefined && reason === undefined)
     || (body?.stream !== undefined && typeof body.stream !== "boolean")
@@ -73,6 +78,7 @@ export function parseSessionAuthorityRequest(body: Record<string, unknown> | und
       return { ...fields, action, operationId, reason }
     case "turn_acquire":
       if (!turnId || body?.leaseId !== undefined || body?.fencingToken !== undefined) return undefined
+      if (grant ? writeClass !== undefined : writeClass !== "agent_turn") return undefined
       return { ...fields, action, turnId, ...(grant ? { grant } : {}) }
     case "turn_grant": {
       const intent = body?.intent

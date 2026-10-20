@@ -1,12 +1,15 @@
 import { isRecord } from "@claxedo/helpers/guards"
 import { machineId, placementId, projectId } from "../ids"
+import type { CloudWorkspace } from "../cloud-types"
 import type { Placement, Project, ProjectSource } from "../types"
+import { cloudWorkspaceFromRow } from "./cloud"
 import type { PlacementRecord } from "./placements"
 import { placementName } from "./workspace-name"
 
 export type AccountCatalog = {
   readonly projects: readonly Project[]
   readonly placements: readonly PlacementRecord[]
+  readonly cloud: readonly CloudWorkspace[]
 }
 
 type Row = Record<string, unknown>
@@ -96,5 +99,9 @@ export function accountCatalogFromWire(rows: readonly unknown[]): AccountCatalog
   return {
     projects: [...groups.entries()].map(([id, group]) => projectFromRows(id, group.rows, group.placements)),
     placements: [...groups.values()].flatMap((group) => group.placements),
+    cloud: [...groups.values()].flatMap((group) => group.rows).flatMap((row) => {
+      const workspace = cloudWorkspaceFromRow(row)
+      return workspace ? [workspace] : []
+    }),
   }
 }

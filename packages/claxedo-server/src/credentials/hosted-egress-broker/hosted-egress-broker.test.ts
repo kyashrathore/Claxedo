@@ -171,10 +171,10 @@ async function composition(options: { now?: () => number; upstreamTimeoutMs?: nu
   return { app, store, upstream, delivered, signing, sandboxes, telemetry, broker }
 }
 
-describe("a sandbox spending its organization's team account through the hosted broker", () => {
+describe("a sandbox spending its organization account through the hosted broker", () => {
   const ANTHROPIC = ["anthropic", "claude-sdk", "claude-acp"]
 
-  test("the team key arrives at the vendor, and a removed one is refused at the next request", async () => {
+  test("the organization account's key arrives at the vendor, and a removed one is refused at the next request", async () => {
     const { app, store, upstream, delivered } = await composition()
     const team = await store.putCredential({ owner: null, provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-team-key" })
     await store.setAccountSources(ANTHROPIC, "org", "org-1", "alice")
@@ -192,7 +192,7 @@ describe("a sandbox spending its organization's team account through the hosted 
     expect(upstream.seen).toHaveLength(1)
   })
 
-  test("vendor 401s a member's sandbox provokes leave a working team key in use, since only the plane's own check of it marks it; a key the vendor really refuses is marked", async () => {
+  test("vendor 401s a member's sandbox provokes leave a working organization account in use, since only the plane's own check of it marks it; a key the vendor really refuses is marked", async () => {
     let clock = Date.now()
     const { app, store, upstream, delivered } = await composition({ now: () => clock })
     const team = await store.putCredential({ owner: null, provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-team-key" })
@@ -223,7 +223,7 @@ describe("a sandbox spending its organization's team account through the hosted 
     expect(checks()).toBe(2)
   })
 
-  test("a team key's placeholder is refused at once when the workspace's owner chooses their own account or leaves the organization", async () => {
+  test("an organization account's placeholder is refused at once when the workspace's owner chooses their own account or leaves the organization", async () => {
     const { app, store, upstream, delivered } = await composition()
     const team = await store.putCredential({ owner: null, provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-team-key" })
     await store.setAccountSources(ANTHROPIC, "org", "org-1", "alice")
@@ -408,7 +408,7 @@ describe("a sandbox spending its owner's account through the hosted broker", () 
     expect(await health()).toBe("auth_failed")
   })
 
-  test("no browser origin is granted the broker, while the rest of the plane keeps its allow-list", async () => {
+  test("no browser origin is granted the broker", async () => {
     const { app, store, delivered } = await composition()
     const key = await store.putCredential({ owner: "alice", provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-real-key" })
     const { baseUrl, placeholder } = await delivered(key, { workspaceId: "ws_root" })
@@ -417,8 +417,6 @@ describe("a sandbox spending its owner's account through the hosted broker", () 
     expect(brokered.headers.get("access-control-allow-origin")).toBeNull()
     const preflight = await app.request(`${baseUrl}/v1/messages`, { method: "OPTIONS", headers: { origin: "https://app.test", "access-control-request-method": "POST" } })
     expect(preflight.headers.get("access-control-allow-origin")).toBeNull()
-    const health = await app.request(`${ORIGIN}/api/claxedo/health`, { headers: { origin: "https://app.test" } })
-    expect(health.headers.get("access-control-allow-origin")).toBe("https://app.test")
   })
 
   test("a placeholder spends nothing once its sandbox stopped, or was replaced under its lease, and works again only on the sandbox it names", async () => {

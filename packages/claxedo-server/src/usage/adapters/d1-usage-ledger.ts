@@ -98,7 +98,7 @@ function filedCredential(row: Pick<FactRow, "credential_source" | "credential_id
 
 /**
  * The stored row a reported credential names, when the turn could have spent
- * it: the organization's team key, or a personal account of the turn's
+ * it: an organization account, or a personal account of the turn's
  * producer, the session's creator or the workspace's owner, whichever of them
  * the session spends. A sandbox driver's key is never a model credential.
  */

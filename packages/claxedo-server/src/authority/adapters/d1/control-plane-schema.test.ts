@@ -3,8 +3,8 @@ import Database from "better-sqlite3"
 import { afterEach, expect, test } from "vitest"
 import { currentControlPlaneBaseline } from "../../../../scripts/control-plane-schema"
 
-/** sha256 of the single `0001_baseline.sql` the host carried before Tasks' tables moved into `@claxedo/tasks`, recorded at 789ec97. */
-const RECORDED_BASELINE_SHA256 = "9d0bb00cc292dd07106bcf4fdb393422ae009318a1ff18f2ced37c8969a3c1b7"
+/** sha256 of the single `0001_baseline.sql` the host carries while it still holds Tasks' tables, recorded from `dev` at 74370a8. */
+const RECORDED_BASELINE_SHA256 = "356dcdb8718432c841ad8a44873396394532bc53eb0738ec4848b9fc00c11860"
 
 const open: Database.Database[] = []
 afterEach(() => open.splice(0).forEach((database) => database.close()))

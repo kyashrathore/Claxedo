@@ -9,6 +9,7 @@ import type {
 } from "@claxedo/agent-runtime-contract"
 import {
   connectionIdForHarness,
+  EVENT_CURSOR_HEADER,
   parseRecoveryRequest,
   RecoveryContractError,
   sameSessionHarness,
@@ -63,7 +64,8 @@ import {
   unsupportedOperation,
 } from "./session-harness-refusal"
 import { sessionOperationGuard, sessionPromptAdmitted } from "./session-operation-guard"
-import { goalMutationResponse, goalRoute, goalRuntimeErrorResponse, goalStartInvocation, invokeGoalRuntime, resolveGoalRuntime } from "./session-goal-route"
+import { goalMutationResponse, goalRoute, goalStartInvocation, invokeGoalRuntime } from "./session-goal-route"
+import { listSessionSubagents, sessionOpenView, sessionStartSettled } from "./session-open-view"
 import { sessionConfigOptionsRead, sessionConfigRead } from "./session-config-read"
 import { sessionConfigWrite } from "./session-config-write"
 import {
@@ -399,65 +401,6 @@ async function rollbackCreatedSession(
   }
 }
 
-function sessionStartSettled(opts: Opts, sessionId: string) {
-  const start = opts.sessionStarts?.get(sessionId)
-  return !start || start.status === "created"
-}
-
-async function sessionOwnStatus(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string): Promise<unknown> {
-  return (await opts.getStatus?.(c, directory))?.[sessionId] ?? null
-}
-
-/**
- * A harness without todos refuses with `unsupported_operation`, the code every
- * client reads for an operation it lacks. Neither the refusal nor the read
- * attaches the session: opening an idle session never launches its harness.
- */
-async function readSessionTodos(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string): Promise<readonly unknown[] | Response> {
-  const runtime = await opts.runtime(c)
-  const caps = await runtime.reads.declaredCapabilities(sessionId, directory, requestSecretAuthority(c).secretAuthority)
-  if (!caps.todos) return unsupportedOperation(c, caps.harness, "todos", { capability: "todos" })
-  const replay = await opts.getTodos?.(c, directory, sessionId)
-  if (replay) return replay
-  return await runtime.reads.todos(sessionId) ?? []
-}
-
-async function listSessionSubagents(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string) {
-  return await opts.listSubagents?.(c, directory, sessionId) ?? []
-}
-
-async function readSessionGoal(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string) {
-  const runtime = await resolveGoalRuntime(opts, c)
-  try {
-    const capabilities = await runtime.goals.capabilities(sessionId, directory)
-    return { capabilities, goal: capabilities.implemented ? await runtime.goals.read(sessionId, directory) : null }
-  } catch (error) {
-    return goalRuntimeErrorResponse(c, error)
-  }
-}
-
-type SessionFactRefusal = { status: number; code?: string; message: string }
-type SessionFact<T> = { value: T } | { error: SessionFactRefusal }
-
-/**
- * One fact of the open view. A fact that cannot be read is reported in its
- * own field, so a failed side read never costs the reader the session row,
- * the same isolation the separate reads it replaces had.
- */
-async function sessionFact<T>(read: () => Promise<T | Response>): Promise<SessionFact<T>> {
-  try {
-    const result = await read()
-    if (!(result instanceof Response)) return { value: result }
-    const refusal = asRecord(asRecord(await result.json())?.error)
-    const code = asString(refusal?.code)
-    return { error: { status: result.status, ...(code ? { code } : {}), message: asString(refusal?.message) ?? `Refused with status ${result.status}` } }
-  } catch (error) {
-    if (error instanceof HTTPException) return { error: { status: error.status, message: error.message } }
-    console.error(error)
-    return { error: { status: 500, message: "Internal Server Error" } }
-  }
-}
-
 async function readMessagePage(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string, pageInput: AgentMessagePageInput): Promise<AgentMessagePage> {
   let page: AgentMessagePage | undefined
   try {
@@ -481,28 +424,6 @@ async function readPresentedSession(opts: Opts, c: Ctx, directory: RuntimeDirect
   return session
 }
 
-/**
- * `GET /session/:id?view=open`: every fact a reader needs beside the row to
- * open the session, read by the producers the per-fact routes use. The session
- * read's own guard admits them all: no session access policy tells one read
- * operation from another, because each classifies an operation only by its
- * `sessionAccessWriteClass`, and a read has none. The rows are narrowed to
- * this session here rather than filtered through the policy.
- */
-async function sessionOpenView(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string) {
-  const own = <T extends { sessionID: string }>(rows: T[] | Response) =>
-    rows instanceof Response ? rows : rows.filter((row) => row.sessionID === sessionId)
-  const [status, permissions, questions, todos, goal, subagents] = await Promise.all([
-    sessionFact(() => sessionOwnStatus(opts, c, directory, sessionId)),
-    sessionFact(async () => own(await listPermissionRows(opts, c, directory))),
-    sessionFact(async () => sessionStartSettled(opts, sessionId) ? own(await listQuestionRows(opts, c, directory)) : []),
-    sessionFact(() => readSessionTodos(opts, c, directory, sessionId)),
-    sessionFact(() => readSessionGoal(opts, c, directory, sessionId)),
-    sessionFact(() => listSessionSubagents(opts, c, directory, sessionId)),
-  ])
-  return { status, permissions, questions, todos, goal, subagents }
-}
-
 export function createSessionRoutes(opts: Opts) {
   const app = new Hono()
   // The other routers in this package re-throw whatever is not an oversized
@@ -520,6 +441,11 @@ export function createSessionRoutes(opts: Opts) {
     if (!isRequestBodyTooLarge(err) && !(err instanceof HTTPException) && !isAgentRuntimeTurnConflictError(err)) console.error(err)
     return requestErrorResponse(err, c)
   })
+  app.use("*", async (c, next) => {
+    const cursor = c.req.method === "GET" ? opts.eventCursor?.() : undefined
+    await next()
+    if (cursor && c.res.ok) c.res.headers.set(EVENT_CURSOR_HEADER, cursor)
+  })
   const identityChanges = sessionIdentityChanges()
   const withSessionChange = identityChanges.run
   const admitPrompt = createPromptAdmission(opts, requestErrorResponse)
@@ -534,8 +460,6 @@ export function createSessionRoutes(opts: Opts) {
       const answer = await invokeGoalRuntime(opts, c, sessionId, directory, goalStartInvocation(input.first.goal))
       return answer.status === 201 ? { created: { goal: await answer.json() } } : { refused: answer }
     }
-    const guarded = await sessionOperationGuard(opts, c, sessionId, "prompt")
-    if (guarded) return { refused: guarded }
     const admission = await admitPrompt(c, { sessionId, directory, body: input.first.prompt })
     if (admission.answer.status === 204 && !admission.failed) return { created: { prompt: { delivery: "start" } } }
     await Promise.allSettled([admission.turn])
@@ -840,7 +764,6 @@ export function createSessionRoutes(opts: Opts) {
             ...(body.instructions ? { instructions: body.instructions } : {}),
             ...(body.group ? { group: body.group } : {}),
           }
-          const { model: createModel, variant: createVariant, agent: createAgent, ...laterConfig } = config
           let session: AgentSession = existing ?? await runtime.sessions.create({
             ...(body.id ? { id: body.id } : {}),
             workspaceId: workspaceId ?? "",
@@ -851,25 +774,18 @@ export function createSessionRoutes(opts: Opts) {
             ...(start ? { start } : {}),
             ...(first ? { turnFollows: true as const } : {}),
             ...(body.parentID ? { parentID: body.parentID } : {}),
-            ...(createModel ? { model: createModel } : {}),
-            ...(createVariant !== undefined ? { variant: createVariant } : {}),
-            ...(createAgent !== undefined ? { agent: createAgent } : {}),
+            ...(config.model ? { model: config.model } : {}),
+            ...(config.variant !== undefined ? { variant: config.variant } : {}),
+            ...(config.agent !== undefined ? { agent: config.agent } : {}),
             ...(ceiling ? { permissionCeiling: ceiling } : {}),
             ...(body.title !== undefined ? { title: body.title } : {}),
             ...createOptions,
             ...requestSecretAuthority(c),
           })
-          const pendingConfig = existing ? config : laterConfig
-          if (Object.keys(pendingConfig).length > 0) {
-            try {
-              await runtime.sessions.updateConfig(session.id, pendingConfig, directory, requestSecretAuthority(c).secretAuthority)
-            } catch (error) {
-              // Undo only what this request made. A session that was already
-              // there belongs to the attempt that created it, and deleting it
-              // to tidy up a failed configuration destroys that work.
-              if (!existing) await rollbackCreatedSession(opts, c, directory, session.id, error)
-              throw error
-            }
+          // A config update attaches the session's harness, which a created
+          // session has just released; its settings went in with the create.
+          if (existing && Object.keys(config).length > 0) {
+            await runtime.sessions.updateConfig(session.id, config, directory, requestSecretAuthority(c).secretAuthority)
           }
           let subagentKey: string | undefined
           let time: RuntimeSessionTime
@@ -879,7 +795,7 @@ export function createSessionRoutes(opts: Opts) {
             }
             ;({ session, time } = await readCreatedSession(opts, c, directory, session.id))
             if (body.parentID && children) {
-              const harness = requestedHarness ?? config.harness ?? (await sessionConfigOf(opts, c, directory, session.id)).harness
+              const harness = requestedHarness ?? (await sessionConfigOf(opts, c, directory, session.id)).harness
               // Minted before the subagent row exists: the origin is written
               // once, and a wake with no grant on a plane that mints them is
               // never admitted, so a refused mint must fail the create.
@@ -1344,10 +1260,7 @@ export function createSessionRoutes(opts: Opts) {
     })
     .post("/session/:id/prompt_async", async (c) => {
       const id = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, id, "prompt")
-      if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId: id })
-      if (!await readSession(opts, c, directory, id)) return c.json(sessionNotFound(), 404)
       const body = parseSessionPromptBody(await boundedJsonBody(c))
       const admission = await admitPrompt(c, { sessionId: id, directory, body })
       if (admission.failed) publishTurnFailure(opts.publishGlobal, directory, id, admission.failed.error)

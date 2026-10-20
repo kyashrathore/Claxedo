@@ -53,39 +53,37 @@ function providerModels(provider: CustomProviderConfig): ProviderModel[] {
   return Object.entries(provider.models).map(([id, model]) => ({ providerID: provider.providerID, id, name: model.name, cost: [] }))
 }
 
-type VendorModels = (vendor: string, accounts: readonly CredentialMetadata[]) => ProviderModel[]
+/**
+ * The models the engine lists for a vendor once a binding enables it: the
+ * models.dev snapshot it was built with, which it never refreshes, for a vendor
+ * reached through its own account. A ChatGPT plan lists none, since the engine
+ * reads a plan's models from the plan once it runs.
+ */
+function boundVendorModels(vendor: string, accounts: readonly CredentialMetadata[]): ProviderModel[] {
+  return vendorAccountSource(vendor, accounts).source === "api" ? openCodeBundledModels([vendor]) : []
+}
 
 /**
- * With no workspace engine to ask, the credential registry answers: the
- * vendors it brokers to, connected where the caller or the org holds an
- * available account, with the models `vendorModels` names, and the org's
- * declared providers, connected unless every account stored for them is
- * refused.
+ * With no workspace engine to ask (none named, or its runtime is down), the
+ * credential registry answers: the vendors it brokers to, connected where the
+ * caller or the org holds an available account, with the models the engine
+ * would list for them, and the org's declared providers with their declared
+ * models, connected unless every account stored for them is refused. What only
+ * an engine discovers itself, such as a provider from its own sign-ins, its
+ * environment or a project's opencode config, is absent.
  */
-function accountEntries(declared: ReadonlyMap<string, CustomProviderConfig>, credentials: readonly CredentialMetadata[], vendorModels: VendorModels): ProviderCatalogEntry[] {
+function accountEntries(declared: ReadonlyMap<string, CustomProviderConfig>, credentials: readonly CredentialMetadata[]): ProviderCatalogEntry[] {
   const accounts = credentials.filter((credential) => (PROVIDER_AUTH_KINDS as readonly string[]).includes(credential.kind))
   const available = (ids: readonly string[]) => accounts.some((credential) => ids.includes(credential.provider_id) && credential.status === "available")
   const vendors = Object.entries(VENDOR_PROVIDER_NAMES).map(([id, name]): ProviderCatalogEntry => ({
     id, name, env: [], connected: accounts.some((credential) => openCodeSpends(id, credential) && credential.status === "available"),
-    models: vendorModels(id, accounts),
+    models: boundVendorModels(id, accounts),
   }))
   const custom = [...declared.values()].map((provider): ProviderCatalogEntry => ({
     id: provider.providerID, name: provider.name, env: provider.env, models: providerModels(provider),
     connected: available([provider.providerID]) || !accounts.some((credential) => credential.provider_id === provider.providerID),
   }))
   return [...vendors.filter((vendor) => !declared.has(vendor.id)), ...custom]
-}
-
-/**
- * The engine entries of a cloud workspace that does not exist yet, such as the
- * one a cloud Task starts in. Its engine runs the models.dev snapshot it was
- * built with and never refreshes it, so a vendor reached through its own
- * account lists that snapshot's models. A ChatGPT plan lists none: the engine
- * reads a plan's models from the plan once it runs.
- */
-export function openCodeLaunchEntries(credentials: readonly CredentialMetadata[]): ProviderCatalogEntry[] {
-  return accountEntries(new Map(), credentials, (vendor, accounts) =>
-    vendorAccountSource(vendor, accounts).source === "api" ? openCodeBundledModels([vendor]) : [])
 }
 
 /**
@@ -111,10 +109,11 @@ function vendorAccountSource(providerId: string, accounts: readonly CredentialMe
 }
 
 /**
- * The Settings catalog: what the workspace engine discovers and can run,
- * joined with what this org manages for each provider. A declared provider the
- * engine disabled, and a vendor whose stored account it refused, stay listed
- * disconnected, so Settings still offers their reconnect and disconnect rows.
+ * OpenCode's provider catalog: the workspace engine's entries when one
+ * answers, otherwise the account entries, joined with what this org manages
+ * for each provider. A declared provider the engine disabled, and a vendor
+ * whose stored account it refused, stay listed disconnected, so Settings still
+ * offers their reconnect and disconnect rows.
  */
 export function projectOpenCodeProviderCatalog(options: {
   engine: readonly ProviderCatalogEntry[] | undefined
@@ -123,7 +122,7 @@ export function projectOpenCodeProviderCatalog(options: {
 }): OpenCodeCatalog {
   const declared = new Map(options.declared.map((provider) => [provider.providerID, provider]))
   const credentials = options.credentials
-  const entries = new Map((options.engine ?? accountEntries(declared, credentials, () => [])).map((entry) => [entry.id, entry]))
+  const entries = new Map((options.engine ?? accountEntries(declared, credentials)).map((entry) => [entry.id, entry]))
   const accounts = credentials.filter((credential) => (PROVIDER_AUTH_KINDS as readonly string[]).includes(credential.kind))
   for (const provider of declared.values()) {
     if (entries.has(provider.providerID)) continue

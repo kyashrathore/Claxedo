@@ -33,6 +33,7 @@ export function hostedMcpCatalogAuthentication(
         resourceUrl: server.url,
         fetch: oauth.fetch,
         resolve: oauth.resolve,
+        loopback: false,
         ...(oauth.preRegistered ? { preRegistered: oauth.preRegistered } : {}),
         ...(oauth.clientIdMetadataDocumentUrl
           ? { clientIdMetadataDocumentUrl: oauth.clientIdMetadataDocumentUrl }

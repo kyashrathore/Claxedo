@@ -32,23 +32,21 @@ import {
 } from "../../provider-neutral-hosted-services"
 import { createD1UsageLedger } from "../../../usage/adapters/d1-usage-ledger"
 import {
+  BETTER_AUTH_CLI_CLIENT_ID,
+  BETTER_AUTH_DESKTOP_CLIENT_ID,
+  BETTER_AUTH_INTROSPECTION_CLIENT_ID,
   BETTER_AUTH_NATIVE_SCOPES,
-  BETTER_AUTH_SESSION_COOKIE,
   betterAuthIssuer,
   betterAuthNativeRevocation,
   createBetterAuthD1Foundation,
 } from "../../../platform/auth/better-auth-d1-foundation"
+import { BETTER_AUTH_SESSION_COOKIE } from "../../../platform/auth/session-cookie"
 import {
   resolveBetterAuthConfiguration,
   type AuthEmailSender,
   type BetterAuthConfiguration,
 } from "../../../platform/auth/better-auth-configuration"
-import {
-  BETTER_AUTH_CLI_CLIENT_ID,
-  BETTER_AUTH_DESKTOP_CLIENT_ID,
-  BETTER_AUTH_INTROSPECTION_CLIENT_ID,
-  betterAuthNativeResource,
-} from "../../../platform/auth/better-auth-native-clients"
+import { betterAuthNativeResource } from "../../../platform/auth/better-auth-native-clients"
 import { createBetterAuthD1AuthenticationEvidenceResolver, betterAuthAccount } from "../../../platform/auth/better-auth-d1-authentication-evidence"
 import { createBetterAuthD1RequestAuthenticationAdapter } from "../../../platform/auth/better-auth-d1-request-authentication"
 import { orgInvitationEmailDelivery } from "../../../platform/auth/auth-email-delivery"
@@ -182,14 +180,14 @@ export function composeBetterAuthD1UserDeployedControlPlane(
     actorProfile: (identity) => betterAuthAccount({ database: input.authDatabase, issuer: descriptor.issuer }, identity),
     invitations: orgInvitationEmailDelivery({
       verifiedEmail: async (auth) => (await betterAuthAccount({ database: input.authDatabase, issuer: descriptor.issuer }, auth.principal?.identity))?.verifiedEmail,
-      appOrigin: configured.public.appOrigin,
+      appOrigin: configured.public.origin,
       ...(configured.private.emailSender ? { sender: configured.private.emailSender } : {}),
     }),
   })
   const foundation = createBetterAuthD1Foundation({
     database: requiredDatabase(input.authDatabase),
     configuration: configured,
-    resource: betterAuthNativeResource(configured.public.apiOrigin),
+    resource: betterAuthNativeResource(configured.public.origin),
   })
   const authProtocol = new Hono()
   authProtocol.use(browserAuthHttpSecurity(descriptor.browser))
@@ -377,13 +375,13 @@ function betterAuthDescriptor(
     )
   }
   const configurationVersion = required(input.env.CLAXEDO_AUTH_CONFIGURATION_ID, "CLAXEDO_AUTH_CONFIGURATION_ID")
-  const resource = betterAuthNativeResource(configured.public.apiOrigin)
+  const resource = betterAuthNativeResource(configured.public.origin)
   return {
     adapter: "better-auth",
     deploymentId,
     configurationVersion,
     expiresAt: input.descriptorExpiresAt,
-    issuer: betterAuthIssuer(configured.public.apiOrigin),
+    issuer: betterAuthIssuer(configured.public.origin),
     methods: configured.public.methods,
     browser: {
       transport: "cookie",
@@ -407,18 +405,18 @@ function betterAuthDescriptor(
         clientId: BETTER_AUTH_CLI_CLIENT_ID,
         resource,
         scopes: BETTER_AUTH_NATIVE_SCOPES,
-        tokenEndpointOrigin: configured.public.apiOrigin,
-        controlPlaneOrigin: configured.public.apiOrigin,
-        revocation: betterAuthNativeRevocation(configured.public.apiOrigin),
+        tokenEndpointOrigin: configured.public.origin,
+        controlPlaneOrigin: configured.public.origin,
+        revocation: betterAuthNativeRevocation(configured.public.origin),
       },
       desktop: {
         flow: "authorization-code-pkce",
         clientId: BETTER_AUTH_DESKTOP_CLIENT_ID,
         resource,
         scopes: BETTER_AUTH_NATIVE_SCOPES,
-        tokenEndpointOrigin: configured.public.apiOrigin,
-        controlPlaneOrigin: configured.public.apiOrigin,
-        revocation: betterAuthNativeRevocation(configured.public.apiOrigin),
+        tokenEndpointOrigin: configured.public.origin,
+        controlPlaneOrigin: configured.public.origin,
+        revocation: betterAuthNativeRevocation(configured.public.origin),
       },
     },
   } as const satisfies AuthAdapterDescriptor

@@ -22,7 +22,7 @@ A fact the server has not reported answers `false`. Nothing is re-derived from r
 ## Screens
 
 - **Organization** settings section (`organizationSettingsSection`, `/settings/organization`), drawn by `view/organization.tsx`:
-  - signed out: `SignedOutNotice` (`view/signed-out.tsx`, also shown by Team accounts and Sandbox providers): the sign-in button when the auth binding offers sign-in (a failed sign-in shows a toast), "Checking account…" while signing in, otherwise a note to sign in;
+  - signed out: `SignedOutNotice` (`view/signed-out.tsx`, also shown by Sandbox providers): the sign-in button when the auth binding offers sign-in (a failed sign-in shows a toast), "Checking account…" while signing in, otherwise a note to sign in;
   - signed in: each organization the person belongs to and its members (`server.queries.organizations.members(orgId)`, `org.members.list`): each member's name from the auth store (or "Member without a name"), "You" on the person's own row, and their role; owners and admins read that they manage the members and the provider accounts, members that only owners and admins manage the organization;
   - no organization: a note that they are not in one;
   - each read shows "Loading…" after the placeholder delay and a failure with Retry.

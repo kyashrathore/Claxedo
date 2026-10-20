@@ -55,7 +55,7 @@ function NavigatorColumn(props: { readonly placementId: PlacementId }): JSX.Elem
   const preferences = usePreferences()
   const side = () => preferences.appearance.navigatorSide
   const left = () => side() === "left"
-  const selected = () => panel.navigator() !== null && !panel.phone()
+  const selected = () => panel.navigator() !== null && !panel.phone() && panel.activeTab().kind !== "context"
   const visited = createMemo<boolean>((was) => was || (panel.open() && selected()), false)
   const shown = createSidePanelExposed(() => panel.open() && selected())
   const [dragging, setDragging] = createSignal(false)
@@ -138,10 +138,6 @@ function PlanTab(props: { readonly markdown: string; readonly composerKey: () =>
 function ActiveTab(props: { readonly placementId: PlacementId }): JSX.Element {
   const panel = usePanel()
   const tab = () => panel.activeTab()
-  const context = () => {
-    const current = tab()
-    return current.kind === "context" ? current : undefined
-  }
   const subagent = () => {
     const current = tab()
     return current.kind === "subagent" ? current : undefined
@@ -180,8 +176,8 @@ function ActiveTab(props: { readonly placementId: PlacementId }): JSX.Element {
           </div>
         )}
       </Match>
-      <Match when={context()}>
-        {(current) => <RegisteredView kind="context" placementId={props.placementId} sessionId={current().sessionId} />}
+      <Match when={tab().kind === "context" && panel.sessionId()}>
+        {(sessionId) => <RegisteredView kind="context" placementId={props.placementId} sessionId={sessionId()} />}
       </Match>
       <Match when={subagent()}>
         {(current) => (
@@ -249,7 +245,7 @@ export function PanelBody(props: { readonly tabsShown: boolean }): JSX.Element {
             <Show keyed when={panel.allowed() && panel.placementId()}>
               {(placementId) => <NavigatorColumn placementId={placementId} />}
             </Show>
-            <Show keyed when={props.tabsShown && panel.placementId()}>
+            <Show keyed when={props.tabsShown && panel.activeTab().kind !== "context" && panel.placementId()}>
               {(placementId) => <WorkspacePending placementId={placementId} />}
             </Show>
             <div class="h-full min-w-0 flex-1">

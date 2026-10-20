@@ -8,7 +8,8 @@ import { startHostedRelay } from "./hosted-relay"
 import { reservePort, releasePort } from "./ports"
 import { startScriptedModelServer } from "./scripted-model-server"
 
-export type HostedStackOptions = { apiOrigin?: string; appOrigin?: string; emailPassword?: boolean; relayPort?: number }
+/** `origin` is the public origin the Worker is addressed at and the app is served from; absent, the Worker's own loopback origin. */
+export type HostedStackOptions = { origin?: string; emailPassword?: boolean; relayPort?: number; workerEnv?: Readonly<Record<string, string>>; requestLimit?: number }
 
 export const HOSTED_SANDBOX_TEST_TOKEN = "hosted-sandbox-test-token"
 
@@ -21,7 +22,7 @@ export async function startHostedStack(label: string, options: HostedStackOption
   const relayPort = options.relayPort ?? await reservePort()
   const leased = [workerPort, sandboxPort, modelPort, gitPort, ...(options.relayPort === undefined ? [relayPort] : [])]
   const workerOrigin = `https://127.0.0.1:${workerPort}`
-  const workerUrl = options.apiOrigin ?? workerOrigin
+  const workerUrl = options.origin ?? workerOrigin
   const sandboxOrigin = `https://127.0.0.1:${sandboxPort}`
   const relayUrl = `http://127.0.0.1:${relayPort}`
   const credentials = await hostedCertificate(root)
@@ -43,8 +44,8 @@ export async function startHostedStack(label: string, options: HostedStackOption
       relayUrl,
     })
     control = await startHostedControlPlane({ root, port: workerPort, sandboxOrigin, gitUrl: git.url, relayUrl, credentials,
-      apiOrigin: workerUrl, appOrigin: options.appOrigin ?? workerUrl, emailPassword: options.emailPassword })
-    relay = await startHostedRelay({ root, port: relayPort, controlPlaneUrl: workerUrl, certificate: credentials.certificate, allowedOrigins: [options.appOrigin ?? workerUrl],
+      origin: workerUrl, emailPassword: options.emailPassword, workerEnv: options.workerEnv, requestLimit: options.requestLimit })
+    relay = await startHostedRelay({ root, port: relayPort, controlPlaneUrl: workerUrl, certificate: credentials.certificate, allowedOrigins: [workerUrl],
       modelUrl: model.url })
   } catch (error) {
     if (relay) await relay.close()

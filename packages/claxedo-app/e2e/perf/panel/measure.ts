@@ -1,7 +1,6 @@
 import { chromium, type CDPSession, type Page } from "@playwright/test"
 import { execFileSync } from "node:child_process"
 import fs from "node:fs/promises"
-import os from "node:os"
 import path from "node:path"
 import { installPaintedFrames } from "../../harness/painted-frames"
 import { ClaxedoApi } from "../../harness/api"
@@ -10,11 +9,10 @@ import { prepareHarness } from "../../harness/global-setup"
 import { startStack, type Stack } from "../../harness/stack"
 import { startAppOrigin, type AppOrigin } from "../origin"
 import { createSourceMapper } from "./trace"
-import { OUT, Runner } from "./runner"
+import { hostLoad, OUT, Runner } from "./runner"
 import { walk } from "./walk"
 import { benchmarkWorkspace, largeWorkspace, type Workspace } from "./workspaces"
 
-const load = () => os.loadavg().map((value) => value.toFixed(2)).join(" ")
 
 type VariantOrigin = AppOrigin & { readonly name: string; readonly distDir: string }
 
@@ -25,8 +23,7 @@ async function startVariants(stack: Stack): Promise<{ readonly list: readonly Va
   for (const [index, entry] of spec.split(",").entries()) {
     const [name, dist, declaredPort] = entry.split(":") as [string, string | undefined, string | undefined]
     const port = declaredPort ? Number(declaredPort) : 47380 + index
-    const serverUrl = `http://127.0.0.1:${port}`
-    const distDir = dist ?? (await ensureAppBuilt({ serverUrl, outDir: path.join(appDistDir(), "..", `dist-e2e-${name}`) })).distDir
+    const distDir = dist ?? (await ensureAppBuilt({ outDir: path.join(appDistDir(), "..", `dist-e2e-${name}`) })).distDir
     const origin = await startAppOrigin({ port, distDir, daemonUrl: stack.url })
     list.push({ ...origin, name, distDir })
     console.log(`[panel] variant ${name} at ${origin.url} from ${distDir}`)
@@ -74,7 +71,7 @@ async function memory(page: Page, cdp: CDPSession, stack: Stack, label: string) 
 
 async function main() {
   await fs.mkdir(OUT, { recursive: true })
-  console.log(`[panel] out ${OUT}, load ${load()}, runs ${process.env.PANEL_RUNS ?? "5"}`)
+  console.log(`[panel] out ${OUT}, load ${hostLoad()}, runs ${process.env.PANEL_RUNS ?? "5"}`)
   await prepareHarness()
   const stack = await startStack({ label: "panel-switch", daemonEnv: daemonEnv() })
   console.log(`[panel] daemon env ${JSON.stringify(daemonEnv() ?? {})}`)

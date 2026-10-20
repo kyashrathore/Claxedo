@@ -1,0 +1,109 @@
+From 719583eb2f94ac218a694a52e891116968199a4a Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 17 Oct 2026 21:27:35 +0000
+Subject: [PATCH] The desktop main process imports electron-updater on the
+ first update check instead of with its entry, so the updater and its
+ dependencies (a bundled copy took 49-51 ms to import under Node 22 on a
+ 4-core Linux host) are no longer evaluated before main forks the daemon or
+ configured before the main window is created, and a failure to load the
+ updater is reported as a failed check.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01QtZVtcNTgBwKhSN8i2v1w2
+---
+ .../claxedo-desktop/src/main/auto-update.ts   | 33 +++++++++++--------
+ packages/claxedo-desktop/src/main/index.ts    |  1 -
+ 2 files changed, 20 insertions(+), 14 deletions(-)
+
+diff --git a/packages/claxedo-desktop/src/main/auto-update.ts b/packages/claxedo-desktop/src/main/auto-update.ts
+index 207b409e..ea1443b1 100644
+--- a/packages/claxedo-desktop/src/main/auto-update.ts
++++ b/packages/claxedo-desktop/src/main/auto-update.ts
+@@ -1,11 +1,9 @@
+ import { app, dialog } from "electron"
+-import pkg from "electron-updater"
++import type { AppUpdater } from "electron-updater"
+ import { UPDATE_CHANNEL, UPDATER_ENABLED } from "./constants"
+ import type { initLogging } from "./logging"
+ import { installDownloadedUpdate } from "./update-install"
+ 
+-const { autoUpdater } = pkg
+-
+ type CheckResult = { updateAvailable: boolean; version?: string; failed?: boolean }
+ 
+ export function createAutoUpdate(input: {
+@@ -15,9 +13,15 @@ export function createAutoUpdate(input: {
+ }) {
+   const { logger } = input
+   let updateReady = false
++  let updater: Promise<AppUpdater> | undefined
+ 
+-  const setup = () => {
+-    if (!UPDATER_ENABLED) return
++  /**
++   * Imported on the first check, not with the main entry: everything the entry
++   * imports statically is evaluated before main forks the daemon, and a bundled
++   * `electron-updater` took 49-51 ms to import under Node 22 on a 4-core Linux
++   * host, for a check that runs only when someone asks for one.
++   */
++  const loadUpdater = () => (updater ??= import("electron-updater").then(({ default: { autoUpdater } }) => {
+     autoUpdater.logger = logger
+     autoUpdater.channel = UPDATE_CHANNEL
+     autoUpdater.allowPrerelease = false
+@@ -32,17 +36,19 @@ export function createAutoUpdate(input: {
+       allowDowngrade: autoUpdater.allowDowngrade,
+       currentVersion: app.getVersion(),
+     })
+-  }
++    return autoUpdater
++  }))
+ 
+   const check = async (): Promise<CheckResult> => {
+     if (!UPDATER_ENABLED) return { updateAvailable: false }
+-    logger.log("checking for updates", {
+-      currentVersion: app.getVersion(),
+-      channel: autoUpdater.channel,
+-      allowPrerelease: autoUpdater.allowPrerelease,
+-      allowDowngrade: autoUpdater.allowDowngrade,
+-    })
+     try {
++      const autoUpdater = await loadUpdater()
++      logger.log("checking for updates", {
++        currentVersion: app.getVersion(),
++        channel: autoUpdater.channel,
++        allowPrerelease: autoUpdater.allowPrerelease,
++        allowDowngrade: autoUpdater.allowDowngrade,
++      })
+       const result = await autoUpdater.checkForUpdates()
+       const updateInfo = result?.updateInfo
+       logger.log("update metadata fetched", {
+@@ -71,6 +77,7 @@ export function createAutoUpdate(input: {
+ 
+   const install = async () => {
+     if (!updateReady) return
++    const autoUpdater = await loadUpdater()
+     await input.exitForInstall(() => installDownloadedUpdate(autoUpdater, (error) => {
+       logger.error("the update did not install; relaunching this version", error)
+       app.relaunch()
+@@ -124,5 +131,5 @@ export function createAutoUpdate(input: {
+   /** A downloaded update installs on any quit, so a restart has to be this install. */
+   const pending = () => updateReady
+ 
+-  return { setup, check, install, run, pending }
++  return { check, install, run, pending }
+ }
+diff --git a/packages/claxedo-desktop/src/main/index.ts b/packages/claxedo-desktop/src/main/index.ts
+index 51898778..b7019a38 100644
+--- a/packages/claxedo-desktop/src/main/index.ts
++++ b/packages/claxedo-desktop/src/main/index.ts
+@@ -200,7 +200,6 @@ function setupApp() {
+   void app.whenReady().then(async () => {
+     app.setAsDefaultProtocolClient("claxedo")
+     setDockIcon()
+-    autoUpdate.setup()
+     // Account restoration is an optional hosted capability. In particular, a
+     // persisted revocation intent may need a slow or unavailable network before
+     // it can settle. That work must never sit in front of the local daemon or
+-- 
+2.43.0
+

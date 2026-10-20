@@ -28,8 +28,9 @@ import { createQueries } from "./queries"
 import { createPlacementStreams, type PlacementStreams } from "./placement-streams"
 import { createSessionProjection, type SessionProjection } from "./session-projection"
 import { createSessionsApi } from "./sessions"
+import type { SnapshotCoverage } from "./snapshot-coverage"
 import { createStatusOwner, type StatusOwner } from "./status"
-import { createEventStreams } from "./streams"
+import { createEventStreams, type EventStreams } from "./streams"
 import { createStartup } from "./startup"
 import { createProductTelemetry } from "./telemetry"
 import { createTerminalsApi } from "./terminals"
@@ -61,6 +62,7 @@ function createQueryClient() {
 export type ServerHandle = Server & {
   readonly config: ServerConfig
   readonly ready: Promise<void>
+  readonly closeStreams: () => void
   readonly dispose: () => void
 }
 
@@ -79,7 +81,7 @@ function placementsApi(transport: Transport, workspaces: Workspaces): Placements
   }
 }
 
-function serverApis(transport: Transport, workspaces: Workspaces, status: StatusOwner, events: EventIntake["subscribe"], queryClient: QueryClient, queries: ServerQueries, projection: SessionProjection, account: HostedAccount | undefined, port: HostedAccount | undefined) {
+function serverApis(transport: Transport, workspaces: Workspaces, status: StatusOwner, coverage: SnapshotCoverage, events: EventIntake["subscribe"], queryClient: QueryClient, queries: ServerQueries, projection: SessionProjection, account: HostedAccount | undefined, port: HostedAccount | undefined) {
   const telemetry = createProductTelemetry(account)
   const operations = createOperations(transport, port)
   const project = (id: ProjectId) => queryClient.fetchQuery(queries.projects.byId(id))
@@ -87,7 +89,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
   const cloud = createCloudApi(transport, workspaces, wakes, project, account)
   return {
     telemetry,
-    sessions: createSessionsApi(transport, workspaces, status, wakes, projection, telemetry, account),
+    sessions: createSessionsApi(transport, workspaces, status, coverage, wakes, projection, telemetry, account),
     sharedSessions: workspaces.shared,
     projects: { ...createProjectsApi(transport, queryClient, workspaces, cloud.create), ...createProjectEnvironmentApi(transport, queryClient, workspaces, account) },
     placements: placementsApi(transport, workspaces),
@@ -116,6 +118,41 @@ function retryConnections(startup: Pick<ReturnType<typeof createStartup>, "retry
   }
 }
 
+function createServerQueries(queryClient: QueryClient, transport: Transport, workspaces: Workspaces, account: HostedAccount | undefined): ServerQueries {
+  const queries = createQueries(transport, workspaces, account)
+  if (account) {
+    void queryClient.prefetchQuery(queries.machines.list())
+    void queryClient.prefetchQuery(queries.agentConnections.list())
+  }
+  return queries
+}
+
+type ScopeOwners = {
+  readonly streams: Pick<EventStreams, "close">
+  readonly placementStreams: Pick<PlacementStreams, "close">
+  readonly stopProjecting: () => void
+  readonly intake: Pick<EventIntake, "dispose">
+  readonly workspaces: Pick<Workspaces, "dispose">
+  readonly queryClient: QueryClient
+}
+
+function scopeTeardown(owners: ScopeOwners): Pick<ServerHandle, "closeStreams" | "dispose"> {
+  const closeStreams = () => {
+    owners.placementStreams.close()
+    owners.streams.close()
+  }
+  return {
+    closeStreams,
+    dispose: () => {
+      owners.stopProjecting()
+      closeStreams()
+      owners.intake.dispose()
+      owners.workspaces.dispose()
+      owners.queryClient.clear()
+    },
+  }
+}
+
 export function createServer(config: ServerConfig): ServerHandle {
   const queryClient = createQueryClient()
   const transport = createTransport(config)
@@ -126,9 +163,9 @@ export function createServer(config: ServerConfig): ServerHandle {
   const streamed = (ref: SessionLocation) => workspaces.servedHere(ref.placementId) || placementStreams.streams(ref)
   const intake = createEventIntake({ serverUrl: transport.serverUrl, queryClient, workspaces, status, streamed })
   const [connection, setConnection] = createSignal<ConnectionState>({ kind: "connecting" })
-  const streams = createEventStreams({ config, transport, onFrame: intake.frame, onGap: intake.gap, onState: setConnection })
+  const streams = createEventStreams({ config, transport, hostedAccount: account !== undefined, onFrame: intake.frame, onGap: intake.gap, onState: setConnection })
   const capabilities = createCapabilities({ hostedAccount: account !== undefined })
-  const queries = createQueries(transport, workspaces, account)
+  const queries = createServerQueries(queryClient, transport, workspaces, account)
   const startup = createStartup({ workspaces, streams, capabilities, setConnection })
   const projection = createSessionProjection(workspaces, account)
   const stopProjecting = intake.subscribe(projection.observe)
@@ -140,19 +177,12 @@ export function createServer(config: ServerConfig): ServerHandle {
     startup: startup.state,
     queryClient,
     subscribe: intake.subscribe,
-    ...serverApis(transport, workspaces, status, intake.subscribe, queryClient, queries, projection, account, port),
+    ...serverApis(transport, workspaces, status, placementStreams.coverage, intake.subscribe, queryClient, queries, projection, account, port),
     attachPlacement: placementStreams.attach,
     watchPlacement: placementStreams.watch,
     queries,
     retryConnection: retryConnections(startup, placementStreams),
     ready: startup.ready,
-    dispose: () => {
-      stopProjecting()
-      placementStreams.close()
-      streams.close()
-      intake.dispose()
-      workspaces.dispose()
-      queryClient.clear()
-    },
+    ...scopeTeardown({ streams, placementStreams, stopProjecting, intake, workspaces, queryClient }),
   }
 }

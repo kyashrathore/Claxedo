@@ -1,0 +1,6610 @@
+{
+  "schemaVersion": 1,
+  "runId": "claxedo-session-switch-walk-1792280129210",
+  "createdAt": "2026-10-17T23:37:14.758Z",
+  "provenance": {
+    "kind": "community-self-attested",
+    "frameworkRevision": "bfce5981e9ac796a03064850b6d42064315db769"
+  },
+  "environment": {
+    "platform": "linux",
+    "architecture": "x64",
+    "osRelease": "6.18.44-fc-v139",
+    "logicalCpuCount": 4,
+    "cpuModel": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "totalMemoryBytes": 16874930176,
+    "freeMemoryBytes": 15881814016,
+    "loadAverage1mPerCpu": 0.275,
+    "powerSource": "unknown",
+    "lowPowerMode": null,
+    "memoryPressureLevel": null,
+    "nodeVersion": "v22.22.0"
+  },
+  "app": {
+    "id": "claxedo",
+    "name": "Claxedo",
+    "version": "0.0.1",
+    "buildDigestSha256": "cf49b1faa25651e9d6434b3e639b383a0d67886462e628de7460ab5729dd9227"
+  },
+  "driver": {
+    "name": "claxedo-desktop-driver",
+    "version": "1",
+    "sourceCommit": "249804005fe51c10ca1a1dac2a443a76d5d87668",
+    "digestSha256": "483b4b70e5bb1e5a70266c4da6bd523cf5947d6d128308a45999fac6a0d5d55a"
+  },
+  "clockRule": {
+    "id": "settle-31-frames",
+    "declared": "settle-31-frames",
+    "frameLogs": {
+      "checked": 99,
+      "failed": 0,
+      "missing": 0
+    }
+  },
+  "sourceEventFormat": {
+    "id": "opencode-event",
+    "sourceRevision": "a9f7081d4015b0cc22ed67156e042b482a8d064a",
+    "schemaDigestSha256": "eb77e231c036820a83586dd18e270cca068fea4da134a24ab113f1eb0f3b473b"
+  },
+  "materialization": {
+    "mode": "native-opencode",
+    "corpusDigestSha256": "2a41c19fd8939c8cb5ed7d933c734e903a1b61ea28f5c1228f616fda6196bfb4",
+    "mappingDigestSha256": "23d6be995e4771832c5479d6b0664c06b747bb047be33bbbd2a4c5d953ddadfb"
+  },
+  "scenario": {
+    "id": "session-switch-walk",
+    "kind": "session-switch",
+    "digestSha256": "d5cf1ad1b7d3d592f28f02c89d4e74547092e402971799d6cf9160dffbb6131f",
+    "status": "public-comparable"
+  },
+  "corpus": {
+    "id": "opencode-completed-sessions",
+    "definitionDigestSha256": "b73d31b6ee0e1df8ac1218e267a70020e70dfceb2f2f8feb19e8b9fcfca996e7",
+    "digestSha256": "2a41c19fd8939c8cb5ed7d933c734e903a1b61ea28f5c1228f616fda6196bfb4",
+    "status": "public-comparable"
+  },
+  "runProfile": "publication",
+  "repetitions": 2,
+  "observations": [
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-00-latency-across-workspaces-warm-3-1048576",
+        "repetition": 0,
+        "sequence": 0,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 0,
+        "workspaceRelation": "across-workspaces",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "control",
+        "destinationSessionId": "latency-across-workspaces-warm-3-1048576"
+      },
+      "receivedAt": "2026-10-17T23:35:35.741Z",
+      "status": "valid",
+      "durationMs": 131.59999999962747,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 3450.5
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 3450.5
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 3450.5
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 3450.5
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 3318.9000000003725,
+        "end": 3450.5
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-01-latency-across-workspaces-warm-2-1048576",
+        "repetition": 0,
+        "sequence": 1,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 1,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-warm-3-1048576",
+        "destinationSessionId": "latency-across-workspaces-warm-2-1048576"
+      },
+      "receivedAt": "2026-10-17T23:35:36.443Z",
+      "status": "valid",
+      "durationMs": 137.19999999925494,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 4191.5
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 4191.5
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 4191.5
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 4191.5
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 4054.300000000745,
+        "end": 4191.5
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-02-latency-across-workspaces-warm-1-1048576",
+        "repetition": 0,
+        "sequence": 2,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 2,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-warm-2-1048576",
+        "destinationSessionId": "latency-across-workspaces-warm-1-1048576"
+      },
+      "receivedAt": "2026-10-17T23:35:37.141Z",
+      "status": "valid",
+      "durationMs": 119.90000000037253,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 4873
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 4873
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 4873
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 4873
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 4753.0999999996275,
+        "end": 4873
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-03-latency-across-workspaces-warm-0-1048576",
+        "repetition": 0,
+        "sequence": 3,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 3,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-warm-1-1048576",
+        "destinationSessionId": "latency-across-workspaces-warm-0-1048576"
+      },
+      "receivedAt": "2026-10-17T23:35:37.860Z",
+      "status": "valid",
+      "durationMs": 133.40000000037253,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 5586.4000000003725
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 5586.4000000003725
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 5586.4000000003725
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 5586.4000000003725
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 5453,
+        "end": 5586.4000000003725
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-04-latency-across-workspaces-cold-3-1048576",
+        "repetition": 0,
+        "sequence": 4,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 4,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-warm-0-1048576",
+        "destinationSessionId": "latency-across-workspaces-cold-3-1048576"
+      },
+      "receivedAt": "2026-10-17T23:35:38.558Z",
+      "status": "valid",
+      "durationMs": 129,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 6299.0999999996275
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 6299.0999999996275
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 6299.0999999996275
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 6299.0999999996275
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 6170.0999999996275,
+        "end": 6299.0999999996275
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-05-latency-across-workspaces-cold-2-1048576",
+        "repetition": 0,
+        "sequence": 5,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 5,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-cold-3-1048576",
+        "destinationSessionId": "latency-across-workspaces-cold-2-1048576"
+      },
+      "receivedAt": "2026-10-17T23:35:39.241Z",
+      "status": "valid",
+      "durationMs": 114.90000000037253,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 6984.4000000003725
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 6984.4000000003725
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 6984.4000000003725
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 6984.4000000003725
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 6869.5,
+        "end": 6984.4000000003725
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-06-latency-across-workspaces-cold-1-1048576",
+        "repetition": 0,
+        "sequence": 6,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 6,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-cold-2-1048576",
+        "destinationSessionId": "latency-across-workspaces-cold-1-1048576"
+      },
+      "receivedAt": "2026-10-17T23:35:39.923Z",
+      "status": "valid",
+      "durationMs": 114.59999999962747,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 7663.0999999996275
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 7663.0999999996275
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 7663.0999999996275
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 7663.0999999996275
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 7548.5,
+        "end": 7663.0999999996275
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-07-latency-across-workspaces-cold-0-1048576",
+        "repetition": 0,
+        "sequence": 7,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 7,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-cold-1-1048576",
+        "destinationSessionId": "latency-across-workspaces-cold-0-1048576"
+      },
+      "receivedAt": "2026-10-17T23:35:40.592Z",
+      "status": "valid",
+      "durationMs": 95.19999999925494,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 8327.5
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 8327.5
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 8327.5
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 8327.5
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 8232.300000000745,
+        "end": 8327.5
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-08-progressive-resource-8388608",
+        "repetition": 0,
+        "sequence": 8,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 8,
+        "workspaceRelation": "across-workspaces",
+        "sessionState": "cold",
+        "transcriptBytes": 8388608,
+        "sourceSessionId": "latency-across-workspaces-cold-0-1048576",
+        "destinationSessionId": "progressive-resource-8388608"
+      },
+      "receivedAt": "2026-10-17T23:35:41.308Z",
+      "status": "valid",
+      "durationMs": 144.5,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 9043.300000000745
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 9043.300000000745
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 9043.300000000745
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 9043.300000000745
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 8898.800000000745,
+        "end": 9043.300000000745
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-09-progressive-resource-1048576",
+        "repetition": 0,
+        "sequence": 9,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 9,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "progressive-resource-8388608",
+        "destinationSessionId": "progressive-resource-1048576"
+      },
+      "receivedAt": "2026-10-17T23:35:42.024Z",
+      "status": "valid",
+      "durationMs": 156.2999999988824,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 9772.199999999255
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 9772.199999999255
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 9772.199999999255
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 9772.199999999255
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 9615.900000000373,
+        "end": 9772.199999999255
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-10-size-latency-long-1-1048576",
+        "repetition": 0,
+        "sequence": 10,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 10,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "rowShape": "long",
+        "sourceSessionId": "progressive-resource-1048576",
+        "destinationSessionId": "size-latency-long-1-1048576"
+      },
+      "receivedAt": "2026-10-17T23:35:42.842Z",
+      "status": "valid",
+      "durationMs": 219.90000000037253,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 10551.300000000745
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 10551.300000000745
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 10551.300000000745
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 10551.300000000745
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 10331.400000000373,
+        "end": 10551.300000000745
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-11-size-latency-long-0-1048576",
+        "repetition": 0,
+        "sequence": 11,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 11,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "rowShape": "long",
+        "sourceSessionId": "size-latency-long-1-1048576",
+        "destinationSessionId": "size-latency-long-0-1048576"
+      },
+      "receivedAt": "2026-10-17T23:35:43.591Z",
+      "status": "valid",
+      "durationMs": 195.10000000149012,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 11343.800000000745
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 11343.800000000745
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 11343.800000000745
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 11343.800000000745
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 11148.699999999255,
+        "end": 11343.800000000745
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-12-size-latency-1-8388608",
+        "repetition": 0,
+        "sequence": 12,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 12,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 8388608,
+        "sourceSessionId": "size-latency-long-0-1048576",
+        "destinationSessionId": "size-latency-1-8388608"
+      },
+      "receivedAt": "2026-10-17T23:35:44.276Z",
+      "status": "valid",
+      "durationMs": 123.5,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 12022.199999999255
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 12022.199999999255
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 12022.199999999255
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 12022.199999999255
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 11898.699999999255,
+        "end": 12022.199999999255
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-13-size-latency-1-1048576",
+        "repetition": 0,
+        "sequence": 13,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 13,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "size-latency-1-8388608",
+        "destinationSessionId": "size-latency-1-1048576"
+      },
+      "receivedAt": "2026-10-17T23:35:44.975Z",
+      "status": "valid",
+      "durationMs": 119,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 12701.5
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 12701.5
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 12701.5
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 12701.5
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 12582.5,
+        "end": 12701.5
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-14-size-latency-0-8388608",
+        "repetition": 0,
+        "sequence": 14,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 14,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 8388608,
+        "sourceSessionId": "size-latency-1-1048576",
+        "destinationSessionId": "size-latency-0-8388608"
+      },
+      "receivedAt": "2026-10-17T23:35:45.658Z",
+      "status": "valid",
+      "durationMs": 114.79999999888241,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 13397.099999999627
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 13397.099999999627
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 13397.099999999627
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 13397.099999999627
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 13282.300000000745,
+        "end": 13397.099999999627
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-15-size-latency-0-1048576",
+        "repetition": 0,
+        "sequence": 15,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 15,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "size-latency-0-8388608",
+        "destinationSessionId": "size-latency-0-1048576"
+      },
+      "receivedAt": "2026-10-17T23:35:46.358Z",
+      "status": "valid",
+      "durationMs": 142.5,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 14108.199999999255
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 14108.199999999255
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 14108.199999999255
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 14108.199999999255
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 13965.699999999255,
+        "end": 14108.199999999255
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-16-latency-within-workspace-warm-3-1048576",
+        "repetition": 0,
+        "sequence": 16,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 16,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "size-latency-0-1048576",
+        "destinationSessionId": "latency-within-workspace-warm-3-1048576"
+      },
+      "receivedAt": "2026-10-17T23:35:47.041Z",
+      "status": "valid",
+      "durationMs": 115.39999999850988,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 14781.199999999255
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 14781.199999999255
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 14781.199999999255
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 14781.199999999255
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 14665.800000000745,
+        "end": 14781.199999999255
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-17-latency-within-workspace-warm-2-1048576",
+        "repetition": 0,
+        "sequence": 17,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 17,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-warm-3-1048576",
+        "destinationSessionId": "latency-within-workspace-warm-2-1048576"
+      },
+      "receivedAt": "2026-10-17T23:35:47.724Z",
+      "status": "valid",
+      "durationMs": 118.80000000074506,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 15467.300000000745
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 15467.300000000745
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 15467.300000000745
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 15467.300000000745
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 15348.5,
+        "end": 15467.300000000745
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-18-latency-within-workspace-warm-1-1048576",
+        "repetition": 0,
+        "sequence": 18,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 18,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-warm-2-1048576",
+        "destinationSessionId": "latency-within-workspace-warm-1-1048576"
+      },
+      "receivedAt": "2026-10-17T23:35:48.409Z",
+      "status": "valid",
+      "durationMs": 118,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 16149.099999999627
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 16149.099999999627
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 16149.099999999627
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 16149.099999999627
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 16031.099999999627,
+        "end": 16149.099999999627
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-19-latency-within-workspace-warm-0-1048576",
+        "repetition": 0,
+        "sequence": 19,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 19,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-warm-1-1048576",
+        "destinationSessionId": "latency-within-workspace-warm-0-1048576"
+      },
+      "receivedAt": "2026-10-17T23:35:49.058Z",
+      "status": "valid",
+      "durationMs": 95.40000000037253,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 16816.099999999627
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 16816.099999999627
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 16816.099999999627
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 16816.099999999627
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 16720.699999999255,
+        "end": 16816.099999999627
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-20-latency-within-workspace-cold-3-1048576",
+        "repetition": 0,
+        "sequence": 20,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 20,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-warm-0-1048576",
+        "destinationSessionId": "latency-within-workspace-cold-3-1048576"
+      },
+      "receivedAt": "2026-10-17T23:35:49.724Z",
+      "status": "valid",
+      "durationMs": 114.79999999888241,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 17483.599999999627
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 17483.599999999627
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 17483.599999999627
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 17483.599999999627
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 17368.800000000745,
+        "end": 17483.599999999627
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-21-latency-within-workspace-cold-2-1048576",
+        "repetition": 0,
+        "sequence": 21,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 21,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-cold-3-1048576",
+        "destinationSessionId": "latency-within-workspace-cold-2-1048576"
+      },
+      "receivedAt": "2026-10-17T23:35:50.429Z",
+      "status": "valid",
+      "durationMs": 125.89999999850988,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 18161.699999999255
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 18161.699999999255
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 18161.699999999255
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 18161.699999999255
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 18035.800000000745,
+        "end": 18161.699999999255
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-22-latency-within-workspace-cold-1-1048576",
+        "repetition": 0,
+        "sequence": 22,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 22,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-cold-2-1048576",
+        "destinationSessionId": "latency-within-workspace-cold-1-1048576"
+      },
+      "receivedAt": "2026-10-17T23:35:51.141Z",
+      "status": "valid",
+      "durationMs": 139.5,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 18878.099999999627
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 18878.099999999627
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 18878.099999999627
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 18878.099999999627
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 18738.599999999627,
+        "end": 18878.099999999627
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-23-latency-within-workspace-cold-0-1048576",
+        "repetition": 0,
+        "sequence": 23,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 23,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-cold-1-1048576",
+        "destinationSessionId": "latency-within-workspace-cold-0-1048576"
+      },
+      "receivedAt": "2026-10-17T23:35:51.858Z",
+      "status": "valid",
+      "durationMs": 130.09999999962747,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 19599.400000000373
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 19599.400000000373
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 19599.400000000373
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 19599.400000000373
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 19469.300000000745,
+        "end": 19599.400000000373
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-00-latency-across-workspaces-warm-3-1048576",
+        "repetition": 0,
+        "sequence": 24,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 0,
+        "workspaceRelation": "across-workspaces",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-cold-0-1048576",
+        "destinationSessionId": "latency-across-workspaces-warm-3-1048576"
+      },
+      "receivedAt": "2026-10-17T23:35:52.456Z",
+      "status": "valid",
+      "durationMs": 63.5,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 20232.5
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 20232.5
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 20232.5
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 20232.5
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 20169,
+        "end": 20232.5
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-01-latency-across-workspaces-warm-2-1048576",
+        "repetition": 0,
+        "sequence": 25,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 1,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-warm-3-1048576",
+        "destinationSessionId": "latency-across-workspaces-warm-2-1048576"
+      },
+      "receivedAt": "2026-10-17T23:35:53.073Z",
+      "status": "valid",
+      "durationMs": 64.40000000037253,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 20833.300000000745
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 20833.300000000745
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 20833.300000000745
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 20833.300000000745
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 20768.900000000373,
+        "end": 20833.300000000745
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-02-latency-across-workspaces-warm-1-1048576",
+        "repetition": 0,
+        "sequence": 26,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 2,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-warm-2-1048576",
+        "destinationSessionId": "latency-across-workspaces-warm-1-1048576"
+      },
+      "receivedAt": "2026-10-17T23:35:53.707Z",
+      "status": "valid",
+      "durationMs": 64,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 21450.400000000373
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 21450.400000000373
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 21450.400000000373
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 21450.400000000373
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 21386.400000000373,
+        "end": 21450.400000000373
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-03-latency-across-workspaces-warm-0-1048576",
+        "repetition": 0,
+        "sequence": 27,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 3,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-warm-1-1048576",
+        "destinationSessionId": "latency-across-workspaces-warm-0-1048576"
+      },
+      "receivedAt": "2026-10-17T23:35:54.340Z",
+      "status": "valid",
+      "durationMs": 68.29999999888241,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 22087.099999999627
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 22087.099999999627
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 22087.099999999627
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 22087.099999999627
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 22018.800000000745,
+        "end": 22087.099999999627
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-04-latency-across-workspaces-cold-3-1048576",
+        "repetition": 0,
+        "sequence": 28,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 4,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-warm-0-1048576",
+        "destinationSessionId": "latency-across-workspaces-cold-3-1048576"
+      },
+      "receivedAt": "2026-10-17T23:35:55.009Z",
+      "status": "valid",
+      "durationMs": 104.30000000074506,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 22756.5
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 22756.5
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 22756.5
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 22756.5
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 22652.199999999255,
+        "end": 22756.5
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-05-latency-across-workspaces-cold-2-1048576",
+        "repetition": 0,
+        "sequence": 29,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 5,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-cold-3-1048576",
+        "destinationSessionId": "latency-across-workspaces-cold-2-1048576"
+      },
+      "receivedAt": "2026-10-17T23:35:55.639Z",
+      "status": "valid",
+      "durationMs": 75.5,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 23394
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 23394
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 23394
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 23394
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 23318.5,
+        "end": 23394
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-06-latency-across-workspaces-cold-1-1048576",
+        "repetition": 0,
+        "sequence": 30,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 6,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-cold-2-1048576",
+        "destinationSessionId": "latency-across-workspaces-cold-1-1048576"
+      },
+      "receivedAt": "2026-10-17T23:35:56.258Z",
+      "status": "valid",
+      "durationMs": 66.59999999962747,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 24015
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 24015
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 24015
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 24015
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 23948.400000000373,
+        "end": 24015
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-07-latency-across-workspaces-cold-0-1048576",
+        "repetition": 0,
+        "sequence": 31,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 7,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-cold-1-1048576",
+        "destinationSessionId": "latency-across-workspaces-cold-0-1048576"
+      },
+      "receivedAt": "2026-10-17T23:35:56.906Z",
+      "status": "valid",
+      "durationMs": 79.30000000074506,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 24645
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 24645
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 24645
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 24645
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 24565.699999999255,
+        "end": 24645
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-08-progressive-resource-8388608",
+        "repetition": 0,
+        "sequence": 32,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 8,
+        "workspaceRelation": "across-workspaces",
+        "sessionState": "warm",
+        "transcriptBytes": 8388608,
+        "sourceSessionId": "latency-across-workspaces-cold-0-1048576",
+        "destinationSessionId": "progressive-resource-8388608"
+      },
+      "receivedAt": "2026-10-17T23:35:57.558Z",
+      "status": "valid",
+      "durationMs": 75.90000000037253,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 25302.5
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 25302.5
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 25302.5
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 25302.5
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 25226.599999999627,
+        "end": 25302.5
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-09-progressive-resource-1048576",
+        "repetition": 0,
+        "sequence": 33,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 9,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "progressive-resource-8388608",
+        "destinationSessionId": "progressive-resource-1048576"
+      },
+      "receivedAt": "2026-10-17T23:35:58.256Z",
+      "status": "valid",
+      "durationMs": 154.69999999925494,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 26019.5
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 26019.5
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 26019.5
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 26019.5
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 25864.800000000745,
+        "end": 26019.5
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-10-size-latency-long-1-1048576",
+        "repetition": 0,
+        "sequence": 34,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 10,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "rowShape": "long",
+        "sourceSessionId": "progressive-resource-1048576",
+        "destinationSessionId": "size-latency-long-1-1048576"
+      },
+      "receivedAt": "2026-10-17T23:35:58.974Z",
+      "status": "valid",
+      "durationMs": 163.5,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 26728.5
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 26728.5
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 26728.5
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 26728.5
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 26565,
+        "end": 26728.5
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-11-size-latency-long-0-1048576",
+        "repetition": 0,
+        "sequence": 35,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 11,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "rowShape": "long",
+        "sourceSessionId": "size-latency-long-1-1048576",
+        "destinationSessionId": "size-latency-long-0-1048576"
+      },
+      "receivedAt": "2026-10-17T23:35:59.656Z",
+      "status": "valid",
+      "durationMs": 132.2000000011176,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 27412.800000000745
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 27412.800000000745
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 27412.800000000745
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 27412.800000000745
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 27280.599999999627,
+        "end": 27412.800000000745
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-12-size-latency-1-8388608",
+        "repetition": 0,
+        "sequence": 36,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 12,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 8388608,
+        "sourceSessionId": "size-latency-long-0-1048576",
+        "destinationSessionId": "size-latency-1-8388608"
+      },
+      "receivedAt": "2026-10-17T23:36:00.289Z",
+      "status": "valid",
+      "durationMs": 74.30000000074506,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 28038.400000000373
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 28038.400000000373
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 28038.400000000373
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 28038.400000000373
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 27964.099999999627,
+        "end": 28038.400000000373
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-13-size-latency-1-1048576",
+        "repetition": 0,
+        "sequence": 37,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 13,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "size-latency-1-8388608",
+        "destinationSessionId": "size-latency-1-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:00.923Z",
+      "status": "valid",
+      "durationMs": 80,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 28678.199999999255
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 28678.199999999255
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 28678.199999999255
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 28678.199999999255
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 28598.199999999255,
+        "end": 28678.199999999255
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-14-size-latency-0-8388608",
+        "repetition": 0,
+        "sequence": 38,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 14,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 8388608,
+        "sourceSessionId": "size-latency-1-1048576",
+        "destinationSessionId": "size-latency-0-8388608"
+      },
+      "receivedAt": "2026-10-17T23:36:01.605Z",
+      "status": "valid",
+      "durationMs": 125.59999999962747,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 29357.599999999627
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 29357.599999999627
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 29357.599999999627
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 29357.599999999627
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 29232,
+        "end": 29357.599999999627
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-15-size-latency-0-1048576",
+        "repetition": 0,
+        "sequence": 39,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 15,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "size-latency-0-8388608",
+        "destinationSessionId": "size-latency-0-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:02.242Z",
+      "status": "valid",
+      "durationMs": 71.40000000037253,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 29985.599999999627
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 29985.599999999627
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 29985.599999999627
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 29985.599999999627
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 29914.199999999255,
+        "end": 29985.599999999627
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-16-latency-within-workspace-warm-3-1048576",
+        "repetition": 0,
+        "sequence": 40,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 16,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "size-latency-0-1048576",
+        "destinationSessionId": "latency-within-workspace-warm-3-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:02.923Z",
+      "status": "valid",
+      "durationMs": 106.09999999962747,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 30654
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 30654
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 30654
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 30654
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 30547.900000000373,
+        "end": 30654
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-17-latency-within-workspace-warm-2-1048576",
+        "repetition": 0,
+        "sequence": 41,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 17,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-warm-3-1048576",
+        "destinationSessionId": "latency-within-workspace-warm-2-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:03.622Z",
+      "status": "valid",
+      "durationMs": 98.10000000149012,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 31328.800000000745
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 31328.800000000745
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 31328.800000000745
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 31328.800000000745
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 31230.699999999255,
+        "end": 31328.800000000745
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-18-latency-within-workspace-warm-1-1048576",
+        "repetition": 0,
+        "sequence": 42,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 18,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-warm-2-1048576",
+        "destinationSessionId": "latency-within-workspace-warm-1-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:04.272Z",
+      "status": "valid",
+      "durationMs": 102.30000000074506,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 32032.900000000373
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 32032.900000000373
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 32032.900000000373
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 32032.900000000373
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 31930.599999999627,
+        "end": 32032.900000000373
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-19-latency-within-workspace-warm-0-1048576",
+        "repetition": 0,
+        "sequence": 43,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 19,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-warm-1-1048576",
+        "destinationSessionId": "latency-within-workspace-warm-0-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:04.922Z",
+      "status": "valid",
+      "durationMs": 92.30000000074506,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 32679.300000000745
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 32679.300000000745
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 32679.300000000745
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 32679.300000000745
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 32587,
+        "end": 32679.300000000745
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-20-latency-within-workspace-cold-3-1048576",
+        "repetition": 0,
+        "sequence": 44,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 20,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-warm-0-1048576",
+        "destinationSessionId": "latency-within-workspace-cold-3-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:05.539Z",
+      "status": "valid",
+      "durationMs": 65.90000000037253,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 33300.59999999963
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 33300.59999999963
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 33300.59999999963
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 33300.59999999963
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 33234.699999999255,
+        "end": 33300.59999999963
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-21-latency-within-workspace-cold-2-1048576",
+        "repetition": 0,
+        "sequence": 45,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 21,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-cold-3-1048576",
+        "destinationSessionId": "latency-within-workspace-cold-2-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:06.155Z",
+      "status": "valid",
+      "durationMs": 65.40000000037253,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 33916.300000000745
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 33916.300000000745
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 33916.300000000745
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 33916.300000000745
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 33850.90000000037,
+        "end": 33916.300000000745
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-22-latency-within-workspace-cold-1-1048576",
+        "repetition": 0,
+        "sequence": 46,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 22,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-cold-2-1048576",
+        "destinationSessionId": "latency-within-workspace-cold-1-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:06.839Z",
+      "status": "valid",
+      "durationMs": 102.90000000037253,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 34570.800000000745
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 34570.800000000745
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 34570.800000000745
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 34570.800000000745
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 34467.90000000037,
+        "end": 34570.800000000745
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-23-latency-within-workspace-cold-0-1048576",
+        "repetition": 0,
+        "sequence": 47,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 23,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-cold-1-1048576",
+        "destinationSessionId": "latency-within-workspace-cold-0-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:07.509Z",
+      "status": "valid",
+      "durationMs": 102.30000000074506,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 35253.300000000745
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 35253.300000000745
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 35253.300000000745
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 35253.300000000745
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 35151,
+        "end": 35253.300000000745
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-cold-00-latency-across-workspaces-warm-3-1048576",
+        "repetition": 1,
+        "sequence": 0,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 0,
+        "workspaceRelation": "across-workspaces",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "control",
+        "destinationSessionId": "latency-across-workspaces-warm-3-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:18.555Z",
+      "status": "valid",
+      "durationMs": 150.89999999850988,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 3247.7999999988824
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 3247.7999999988824
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 3247.7999999988824
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 3247.7999999988824
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 3096.9000000003725,
+        "end": 3247.7999999988824
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-cold-01-latency-across-workspaces-warm-2-1048576",
+        "repetition": 1,
+        "sequence": 1,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 1,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-warm-3-1048576",
+        "destinationSessionId": "latency-across-workspaces-warm-2-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:19.290Z",
+      "status": "valid",
+      "durationMs": 154.5,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 4037
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 4037
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 4037
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 4037
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 3882.5,
+        "end": 4037
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-cold-02-latency-across-workspaces-warm-1-1048576",
+        "repetition": 1,
+        "sequence": 2,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 2,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-warm-2-1048576",
+        "destinationSessionId": "latency-across-workspaces-warm-1-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:19.990Z",
+      "status": "valid",
+      "durationMs": 100.90000000037253,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 4715.699999999255
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 4715.699999999255
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 4715.699999999255
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 4715.699999999255
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 4614.799999998882,
+        "end": 4715.699999999255
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-cold-03-latency-across-workspaces-warm-0-1048576",
+        "repetition": 1,
+        "sequence": 3,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 3,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-warm-1-1048576",
+        "destinationSessionId": "latency-across-workspaces-warm-0-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:20.724Z",
+      "status": "valid",
+      "durationMs": 145.69999999925494,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 5459.799999998882
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 5459.799999998882
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 5459.799999998882
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 5459.799999998882
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 5314.0999999996275,
+        "end": 5459.799999998882
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-cold-04-latency-across-workspaces-cold-3-1048576",
+        "repetition": 1,
+        "sequence": 4,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 4,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-warm-0-1048576",
+        "destinationSessionId": "latency-across-workspaces-cold-3-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:21.490Z",
+      "status": "valid",
+      "durationMs": 182.09999999962747,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 6230
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 6230
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 6230
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 6230
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 6047.9000000003725,
+        "end": 6230
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-cold-05-latency-across-workspaces-cold-2-1048576",
+        "repetition": 1,
+        "sequence": 5,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 5,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-cold-3-1048576",
+        "destinationSessionId": "latency-across-workspaces-cold-2-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:22.172Z",
+      "status": "valid",
+      "durationMs": 115.5,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 6932.699999999255
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 6932.699999999255
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 6932.699999999255
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 6932.699999999255
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 6817.199999999255,
+        "end": 6932.699999999255
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-cold-06-latency-across-workspaces-cold-1-1048576",
+        "repetition": 1,
+        "sequence": 6,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 6,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-cold-2-1048576",
+        "destinationSessionId": "latency-across-workspaces-cold-1-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:22.924Z",
+      "status": "valid",
+      "durationMs": 131.69999999925494,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 7625.0999999996275
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 7625.0999999996275
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 7625.0999999996275
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 7625.0999999996275
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 7493.4000000003725,
+        "end": 7625.0999999996275
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-cold-07-latency-across-workspaces-cold-0-1048576",
+        "repetition": 1,
+        "sequence": 7,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 7,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-cold-1-1048576",
+        "destinationSessionId": "latency-across-workspaces-cold-0-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:23.657Z",
+      "status": "valid",
+      "durationMs": 129,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 8372.699999999255
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 8372.699999999255
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 8372.699999999255
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 8372.699999999255
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 8243.699999999255,
+        "end": 8372.699999999255
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-cold-08-progressive-resource-8388608",
+        "repetition": 1,
+        "sequence": 8,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 8,
+        "workspaceRelation": "across-workspaces",
+        "sessionState": "cold",
+        "transcriptBytes": 8388608,
+        "sourceSessionId": "latency-across-workspaces-cold-0-1048576",
+        "destinationSessionId": "progressive-resource-8388608"
+      },
+      "receivedAt": "2026-10-17T23:36:24.373Z",
+      "status": "valid",
+      "durationMs": 148.2999999988824,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 9124.799999998882
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 9124.799999998882
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 9124.799999998882
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 9124.799999998882
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 8976.5,
+        "end": 9124.799999998882
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-cold-09-progressive-resource-1048576",
+        "repetition": 1,
+        "sequence": 9,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 9,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "progressive-resource-8388608",
+        "destinationSessionId": "progressive-resource-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:25.090Z",
+      "status": "valid",
+      "durationMs": 152.69999999925494,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 9845.699999999255
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 9845.699999999255
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 9845.699999999255
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 9845.699999999255
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 9693,
+        "end": 9845.699999999255
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-cold-10-size-latency-long-1-1048576",
+        "repetition": 1,
+        "sequence": 10,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 10,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "rowShape": "long",
+        "sourceSessionId": "progressive-resource-1048576",
+        "destinationSessionId": "size-latency-long-1-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:25.874Z",
+      "status": "valid",
+      "durationMs": 211.89999999850988,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 10622.799999998882
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 10622.799999998882
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 10622.799999998882
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 10622.799999998882
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 10410.900000000373,
+        "end": 10622.799999998882
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-cold-11-size-latency-long-0-1048576",
+        "repetition": 1,
+        "sequence": 11,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 11,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "rowShape": "long",
+        "sourceSessionId": "size-latency-long-1-1048576",
+        "destinationSessionId": "size-latency-long-0-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:26.606Z",
+      "status": "valid",
+      "durationMs": 166.90000000037253,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 11359.400000000373
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 11359.400000000373
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 11359.400000000373
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 11359.400000000373
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 11192.5,
+        "end": 11359.400000000373
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-cold-12-size-latency-1-8388608",
+        "repetition": 1,
+        "sequence": 12,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 12,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 8388608,
+        "sourceSessionId": "size-latency-long-0-1048576",
+        "destinationSessionId": "size-latency-1-8388608"
+      },
+      "receivedAt": "2026-10-17T23:36:27.289Z",
+      "status": "valid",
+      "durationMs": 126.40000000037253,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 12052.900000000373
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 12052.900000000373
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 12052.900000000373
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 12052.900000000373
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 11926.5,
+        "end": 12052.900000000373
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-cold-13-size-latency-1-1048576",
+        "repetition": 1,
+        "sequence": 13,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 13,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "size-latency-1-8388608",
+        "destinationSessionId": "size-latency-1-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:27.973Z",
+      "status": "valid",
+      "durationMs": 97.40000000037253,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 12706.599999999627
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 12706.599999999627
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 12706.599999999627
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 12706.599999999627
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 12609.199999999255,
+        "end": 12706.599999999627
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-cold-14-size-latency-0-8388608",
+        "repetition": 1,
+        "sequence": 14,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 14,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 8388608,
+        "sourceSessionId": "size-latency-1-1048576",
+        "destinationSessionId": "size-latency-0-8388608"
+      },
+      "receivedAt": "2026-10-17T23:36:28.673Z",
+      "status": "valid",
+      "durationMs": 127.69999999925494,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 13420.199999999255
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 13420.199999999255
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 13420.199999999255
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 13420.199999999255
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 13292.5,
+        "end": 13420.199999999255
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-cold-15-size-latency-0-1048576",
+        "repetition": 1,
+        "sequence": 15,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 15,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "size-latency-0-8388608",
+        "destinationSessionId": "size-latency-0-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:29.373Z",
+      "status": "valid",
+      "durationMs": 124.60000000149012,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 14118.400000000373
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 14118.400000000373
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 14118.400000000373
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 14118.400000000373
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 13993.799999998882,
+        "end": 14118.400000000373
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-cold-16-latency-within-workspace-warm-3-1048576",
+        "repetition": 1,
+        "sequence": 16,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 16,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "size-latency-0-1048576",
+        "destinationSessionId": "latency-within-workspace-warm-3-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:30.107Z",
+      "status": "valid",
+      "durationMs": 143,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 14835.5
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 14835.5
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 14835.5
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 14835.5
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 14692.5,
+        "end": 14835.5
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-cold-17-latency-within-workspace-warm-2-1048576",
+        "repetition": 1,
+        "sequence": 17,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 17,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-warm-3-1048576",
+        "destinationSessionId": "latency-within-workspace-warm-2-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:30.924Z",
+      "status": "valid",
+      "durationMs": 188.90000000037253,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 15615
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 15615
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 15615
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 15615
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 15426.099999999627,
+        "end": 15615
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-cold-18-latency-within-workspace-warm-1-1048576",
+        "repetition": 1,
+        "sequence": 18,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 18,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-warm-2-1048576",
+        "destinationSessionId": "latency-within-workspace-warm-1-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:31.691Z",
+      "status": "valid",
+      "durationMs": 127.29999999888241,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 16370.199999999255
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 16370.199999999255
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 16370.199999999255
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 16370.199999999255
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 16242.900000000373,
+        "end": 16370.199999999255
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-cold-19-latency-within-workspace-warm-0-1048576",
+        "repetition": 1,
+        "sequence": 19,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 19,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-warm-1-1048576",
+        "destinationSessionId": "latency-within-workspace-warm-0-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:32.427Z",
+      "status": "valid",
+      "durationMs": 130,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 17144.699999999255
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 17144.699999999255
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 17144.699999999255
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 17144.699999999255
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 17014.699999999255,
+        "end": 17144.699999999255
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-cold-20-latency-within-workspace-cold-3-1048576",
+        "repetition": 1,
+        "sequence": 20,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 20,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-warm-0-1048576",
+        "destinationSessionId": "latency-within-workspace-cold-3-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:33.088Z",
+      "status": "valid",
+      "durationMs": 131.40000000037253,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 17878
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 17878
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 17878
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 17878
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 17746.599999999627,
+        "end": 17878
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-cold-21-latency-within-workspace-cold-2-1048576",
+        "repetition": 1,
+        "sequence": 21,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 21,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-cold-3-1048576",
+        "destinationSessionId": "latency-within-workspace-cold-2-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:33.806Z",
+      "status": "valid",
+      "durationMs": 123.5,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 18536.900000000373
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 18536.900000000373
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 18536.900000000373
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 18536.900000000373
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 18413.400000000373,
+        "end": 18536.900000000373
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-cold-22-latency-within-workspace-cold-1-1048576",
+        "repetition": 1,
+        "sequence": 22,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 22,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-cold-2-1048576",
+        "destinationSessionId": "latency-within-workspace-cold-1-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:34.507Z",
+      "status": "valid",
+      "durationMs": 141,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 19271.5
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 19271.5
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 19271.5
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 19271.5
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 19130.5,
+        "end": 19271.5
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-cold-23-latency-within-workspace-cold-0-1048576",
+        "repetition": 1,
+        "sequence": 23,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 23,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-cold-1-1048576",
+        "destinationSessionId": "latency-within-workspace-cold-0-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:35.206Z",
+      "status": "valid",
+      "durationMs": 135.19999999925494,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 19966.199999999255
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 19966.199999999255
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 19966.199999999255
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 19966.199999999255
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 19831,
+        "end": 19966.199999999255
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-warm-00-latency-across-workspaces-warm-3-1048576",
+        "repetition": 1,
+        "sequence": 24,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 0,
+        "workspaceRelation": "across-workspaces",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-cold-0-1048576",
+        "destinationSessionId": "latency-across-workspaces-warm-3-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:35.805Z",
+      "status": "valid",
+      "durationMs": 65.19999999925494,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 20594.799999998882
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 20594.799999998882
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 20594.799999998882
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 20594.799999998882
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 20529.599999999627,
+        "end": 20594.799999998882
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-warm-01-latency-across-workspaces-warm-2-1048576",
+        "repetition": 1,
+        "sequence": 25,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 1,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-warm-3-1048576",
+        "destinationSessionId": "latency-across-workspaces-warm-2-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:36.423Z",
+      "status": "valid",
+      "durationMs": 65.09999999962747,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 21194.699999999255
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 21194.699999999255
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 21194.699999999255
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 21194.699999999255
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 21129.599999999627,
+        "end": 21194.699999999255
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-warm-02-latency-across-workspaces-warm-1-1048576",
+        "repetition": 1,
+        "sequence": 26,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 2,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-warm-2-1048576",
+        "destinationSessionId": "latency-across-workspaces-warm-1-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:37.040Z",
+      "status": "valid",
+      "durationMs": 65.90000000037253,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 21813.900000000373
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 21813.900000000373
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 21813.900000000373
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 21813.900000000373
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 21748,
+        "end": 21813.900000000373
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-warm-03-latency-across-workspaces-warm-0-1048576",
+        "repetition": 1,
+        "sequence": 27,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 3,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-warm-1-1048576",
+        "destinationSessionId": "latency-across-workspaces-warm-0-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:37.673Z",
+      "status": "valid",
+      "durationMs": 65.5,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 22430.5
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 22430.5
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 22430.5
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 22430.5
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 22365,
+        "end": 22430.5
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-warm-04-latency-across-workspaces-cold-3-1048576",
+        "repetition": 1,
+        "sequence": 28,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 4,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-warm-0-1048576",
+        "destinationSessionId": "latency-across-workspaces-cold-3-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:38.321Z",
+      "status": "valid",
+      "durationMs": 88.80000000074506,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 23085
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 23085
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 23085
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 23085
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 22996.199999999255,
+        "end": 23085
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-warm-05-latency-across-workspaces-cold-2-1048576",
+        "repetition": 1,
+        "sequence": 29,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 5,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-cold-3-1048576",
+        "destinationSessionId": "latency-across-workspaces-cold-2-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:38.939Z",
+      "status": "valid",
+      "durationMs": 64.59999999962747,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 23711.5
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 23711.5
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 23711.5
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 23711.5
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 23646.900000000373,
+        "end": 23711.5
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-warm-06-latency-across-workspaces-cold-1-1048576",
+        "repetition": 1,
+        "sequence": 30,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 6,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-cold-2-1048576",
+        "destinationSessionId": "latency-across-workspaces-cold-1-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:39.622Z",
+      "status": "valid",
+      "durationMs": 97.5,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 24357.5
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 24357.5
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 24357.5
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 24357.5
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 24260,
+        "end": 24357.5
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-warm-07-latency-across-workspaces-cold-0-1048576",
+        "repetition": 1,
+        "sequence": 31,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 7,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-cold-1-1048576",
+        "destinationSessionId": "latency-across-workspaces-cold-0-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:40.239Z",
+      "status": "valid",
+      "durationMs": 61.5,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 25004.5
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 25004.5
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 25004.5
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 25004.5
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 24943,
+        "end": 25004.5
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-warm-08-progressive-resource-8388608",
+        "repetition": 1,
+        "sequence": 32,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 8,
+        "workspaceRelation": "across-workspaces",
+        "sessionState": "warm",
+        "transcriptBytes": 8388608,
+        "sourceSessionId": "latency-across-workspaces-cold-0-1048576",
+        "destinationSessionId": "progressive-resource-8388608"
+      },
+      "receivedAt": "2026-10-17T23:36:40.856Z",
+      "status": "valid",
+      "durationMs": 65.19999999925494,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 25625.199999999255
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 25625.199999999255
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 25625.199999999255
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 25625.199999999255
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 25560,
+        "end": 25625.199999999255
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-warm-09-progressive-resource-1048576",
+        "repetition": 1,
+        "sequence": 33,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 9,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "progressive-resource-8388608",
+        "destinationSessionId": "progressive-resource-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:41.489Z",
+      "status": "valid",
+      "durationMs": 80.70000000111759,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 26256.900000000373
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 26256.900000000373
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 26256.900000000373
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 26256.900000000373
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 26176.199999999255,
+        "end": 26256.900000000373
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-warm-10-size-latency-long-1-1048576",
+        "repetition": 1,
+        "sequence": 34,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 10,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "rowShape": "long",
+        "sourceSessionId": "progressive-resource-1048576",
+        "destinationSessionId": "size-latency-long-1-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:42.172Z",
+      "status": "valid",
+      "durationMs": 138.7000000011176,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 26947.5
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 26947.5
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 26947.5
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 26947.5
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 26808.799999998882,
+        "end": 26947.5
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-warm-11-size-latency-long-0-1048576",
+        "repetition": 1,
+        "sequence": 35,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 11,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "rowShape": "long",
+        "sourceSessionId": "size-latency-long-1-1048576",
+        "destinationSessionId": "size-latency-long-0-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:42.891Z",
+      "status": "valid",
+      "durationMs": 147,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 27641.099999999627
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 27641.099999999627
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 27641.099999999627
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 27641.099999999627
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 27494.099999999627,
+        "end": 27641.099999999627
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-warm-12-size-latency-1-8388608",
+        "repetition": 1,
+        "sequence": 36,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 12,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 8388608,
+        "sourceSessionId": "size-latency-long-0-1048576",
+        "destinationSessionId": "size-latency-1-8388608"
+      },
+      "receivedAt": "2026-10-17T23:36:43.538Z",
+      "status": "valid",
+      "durationMs": 94.90000000037253,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 28304.099999999627
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 28304.099999999627
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 28304.099999999627
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 28304.099999999627
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 28209.199999999255,
+        "end": 28304.099999999627
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-warm-13-size-latency-1-1048576",
+        "repetition": 1,
+        "sequence": 37,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 13,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "size-latency-1-8388608",
+        "destinationSessionId": "size-latency-1-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:44.172Z",
+      "status": "valid",
+      "durationMs": 74.80000000074506,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 28933.5
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 28933.5
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 28933.5
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 28933.5
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 28858.699999999255,
+        "end": 28933.5
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-warm-14-size-latency-0-8388608",
+        "repetition": 1,
+        "sequence": 38,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 14,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 8388608,
+        "sourceSessionId": "size-latency-1-1048576",
+        "destinationSessionId": "size-latency-0-8388608"
+      },
+      "receivedAt": "2026-10-17T23:36:44.854Z",
+      "status": "valid",
+      "durationMs": 105.70000000111759,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 29597.900000000373
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 29597.900000000373
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 29597.900000000373
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 29597.900000000373
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 29492.199999999255,
+        "end": 29597.900000000373
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-warm-15-size-latency-0-1048576",
+        "repetition": 1,
+        "sequence": 39,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 15,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "size-latency-0-8388608",
+        "destinationSessionId": "size-latency-0-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:45.488Z",
+      "status": "valid",
+      "durationMs": 72,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 30247.599999999627
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 30247.599999999627
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 30247.599999999627
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 30247.599999999627
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 30175.599999999627,
+        "end": 30247.599999999627
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-warm-16-latency-within-workspace-warm-3-1048576",
+        "repetition": 1,
+        "sequence": 40,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 16,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "size-latency-0-1048576",
+        "destinationSessionId": "latency-within-workspace-warm-3-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:46.187Z",
+      "status": "valid",
+      "durationMs": 156,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 30964.400000000373
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 30964.400000000373
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 30964.400000000373
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 30964.400000000373
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 30808.400000000373,
+        "end": 30964.400000000373
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-warm-17-latency-within-workspace-warm-2-1048576",
+        "repetition": 1,
+        "sequence": 41,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 17,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-warm-3-1048576",
+        "destinationSessionId": "latency-within-workspace-warm-2-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:46.905Z",
+      "status": "valid",
+      "durationMs": 131.69999999925494,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 31640.099999999627
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 31640.099999999627
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 31640.099999999627
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 31640.099999999627
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 31508.400000000373,
+        "end": 31640.099999999627
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-warm-18-latency-within-workspace-warm-1-1048576",
+        "repetition": 1,
+        "sequence": 42,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 18,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-warm-2-1048576",
+        "destinationSessionId": "latency-within-workspace-warm-1-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:47.540Z",
+      "status": "valid",
+      "durationMs": 75.09999999962747,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 32300.599999999627
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 32300.599999999627
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 32300.599999999627
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 32300.599999999627
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 32225.5,
+        "end": 32300.599999999627
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-warm-19-latency-within-workspace-warm-0-1048576",
+        "repetition": 1,
+        "sequence": 43,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 19,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-warm-1-1048576",
+        "destinationSessionId": "latency-within-workspace-warm-0-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:48.239Z",
+      "status": "valid",
+      "durationMs": 113.40000000037253,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 32976.5
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 32976.5
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 32976.5
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 32976.5
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 32863.09999999963,
+        "end": 32976.5
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-warm-20-latency-within-workspace-cold-3-1048576",
+        "repetition": 1,
+        "sequence": 44,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 20,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-warm-0-1048576",
+        "destinationSessionId": "latency-within-workspace-cold-3-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:48.920Z",
+      "status": "valid",
+      "durationMs": 103.59999999962747,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 33668.29999999888
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 33668.29999999888
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 33668.29999999888
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 33668.29999999888
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 33564.699999999255,
+        "end": 33668.29999999888
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-warm-21-latency-within-workspace-cold-2-1048576",
+        "repetition": 1,
+        "sequence": 45,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 21,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-cold-3-1048576",
+        "destinationSessionId": "latency-within-workspace-cold-2-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:49.589Z",
+      "status": "valid",
+      "durationMs": 93.09999999962747,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 34339.79999999888
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 34339.79999999888
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 34339.79999999888
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 34339.79999999888
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 34246.699999999255,
+        "end": 34339.79999999888
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-warm-22-latency-within-workspace-cold-1-1048576",
+        "repetition": 1,
+        "sequence": 46,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 22,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-cold-2-1048576",
+        "destinationSessionId": "latency-within-workspace-cold-1-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:50.272Z",
+      "status": "valid",
+      "durationMs": 98.79999999888241,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 35011.79999999888
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 35011.79999999888
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 35011.79999999888
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 35011.79999999888
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 34913,
+        "end": 35011.79999999888
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-1-warm-23-latency-within-workspace-cold-0-1048576",
+        "repetition": 1,
+        "sequence": 47,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 23,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-cold-1-1048576",
+        "destinationSessionId": "latency-within-workspace-cold-0-1048576"
+      },
+      "receivedAt": "2026-10-17T23:36:50.938Z",
+      "status": "valid",
+      "durationMs": 107.20000000111759,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 35703.5
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 35703.5
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 35703.5
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 35703.5
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 35596.29999999888,
+        "end": 35703.5
+      }
+    },
+    {
+      "case": {
+        "caseId": "progressive-resource-0-within-workspace-cold-1048576",
+        "repetition": 0,
+        "sequence": 0,
+        "workload": "progressive-resource",
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "control",
+        "destinationSessionId": "progressive-resource-1048576"
+      },
+      "receivedAt": "2026-10-17T23:37:04.506Z",
+      "status": "valid",
+      "durationMs": 175.69999999925494,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 5803.9000000003725
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 5803.9000000003725
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 5803.9000000003725
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 5803.9000000003725
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 5628.200000001118,
+        "end": 5803.9000000003725
+      }
+    },
+    {
+      "case": {
+        "caseId": "progressive-resource-0-within-workspace-cold-8388608",
+        "repetition": 0,
+        "sequence": 1,
+        "workload": "progressive-resource",
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 8388608,
+        "sourceSessionId": "control",
+        "destinationSessionId": "progressive-resource-8388608"
+      },
+      "receivedAt": "2026-10-17T23:37:05.854Z",
+      "status": "valid",
+      "durationMs": 133.59999999962747,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 7161.9000000003725
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 7161.9000000003725
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 7161.9000000003725
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 7161.9000000003725
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 7028.300000000745,
+        "end": 7161.9000000003725
+      }
+    },
+    {
+      "case": {
+        "caseId": "progressive-resource-return-control",
+        "repetition": 0,
+        "workload": "resource-control",
+        "destinationSessionId": "control"
+      },
+      "receivedAt": "2026-10-17T23:37:06.454Z",
+      "status": "valid",
+      "durationMs": 49.19999999925494,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 7795.0999999996275
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 7795.0999999996275
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 7795.0999999996275
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 7795.0999999996275
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "performance.now",
+        "start": 7745.9000000003725,
+        "end": 7795.0999999996275
+      }
+    }
+  ],
+  "resources": {
+    "status": "valid",
+    "scope": "summed application process-family RSS",
+    "cpuDefinition": "sampled cumulative CPU delta for descendants observed inside each boundary, divided by wall time; newborn descendants count from birth and exited descendants through their final sample; 100% equals one logical core",
+    "baselineIdleAverageRssMiB": 1218.971,
+    "activeAverageRssMiB": 1225.26,
+    "activeMaximumRssMiB": 1234.152,
+    "activeP95RssMiB": 1234.152,
+    "endingIdleAverageRssMiB": 1234.503,
+    "retainedRssGrowthMiB": 15.532,
+    "rawSampleCount": 29,
+    "trend": [
+      {
+        "caseId": "progressive-resource-0-within-workspace-cold-1048576",
+        "switchSequence": 1,
+        "lane": "within-workspace-cold",
+        "transcriptBytes": 1048576,
+        "atMs": 1792280224508,
+        "rssBytes": 1278390272,
+        "cpuPercent": 103.761,
+        "wallMs": 771,
+        "cpuDeltaMs": 800,
+        "rssMiB": 1219.168
+      },
+      {
+        "caseId": "progressive-resource-0-within-workspace-cold-8388608",
+        "switchSequence": 2,
+        "lane": "within-workspace-cold",
+        "transcriptBytes": 8388608,
+        "atMs": 1792280225857,
+        "rssBytes": 1288589312,
+        "cpuPercent": 64.636,
+        "wallMs": 1346,
+        "cpuDeltaMs": 870,
+        "rssMiB": 1228.895
+      }
+    ]
+  },
+  "resourceTrace": {
+    "version": 1,
+    "samples": [
+      {
+        "atMs": 1792280221986,
+        "collectionDurationMicros": 2494,
+        "rssBytes": 1278218240,
+        "cumulativeCpuTimeMs": 8470,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 21554,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 600,
+            "rssBytes": 198111232,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21556,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64483328,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21557,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 65024000,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21580,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 740,
+            "rssBytes": 278523904,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21602,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1220,
+            "rssBytes": 327438336,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21620,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 5870,
+            "rssBytes": 344637440,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792280222237,
+        "collectionDurationMicros": 3287,
+        "rssBytes": 1278128128,
+        "cumulativeCpuTimeMs": 8500,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 21554,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 600,
+            "rssBytes": 198111232,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21556,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64483328,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21557,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 65024000,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21580,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 760,
+            "rssBytes": 278523904,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21602,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1230,
+            "rssBytes": 327348224,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21620,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 5870,
+            "rssBytes": 344637440,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792280222488,
+        "collectionDurationMicros": 4142,
+        "rssBytes": 1278189568,
+        "cumulativeCpuTimeMs": 8530,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 21554,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 600,
+            "rssBytes": 198115328,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21556,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64483328,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21557,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 65024000,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21580,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 770,
+            "rssBytes": 278523904,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21602,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1250,
+            "rssBytes": 327405568,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21620,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 5870,
+            "rssBytes": 344637440,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792280222737,
+        "collectionDurationMicros": 2869,
+        "rssBytes": 1278193664,
+        "cumulativeCpuTimeMs": 8530,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 21554,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 600,
+            "rssBytes": 198115328,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21556,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64483328,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21557,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 65024000,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21580,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 770,
+            "rssBytes": 278523904,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21602,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1250,
+            "rssBytes": 327409664,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21620,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 5870,
+            "rssBytes": 344637440,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792280222987,
+        "collectionDurationMicros": 3097,
+        "rssBytes": 1278193664,
+        "cumulativeCpuTimeMs": 8530,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 21554,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 600,
+            "rssBytes": 198115328,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21556,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64483328,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21557,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 65024000,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21580,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 770,
+            "rssBytes": 278523904,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21602,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1250,
+            "rssBytes": 327409664,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21620,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 5870,
+            "rssBytes": 344637440,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792280223237,
+        "collectionDurationMicros": 2816,
+        "rssBytes": 1278197760,
+        "cumulativeCpuTimeMs": 8530,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 21554,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 600,
+            "rssBytes": 198119424,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21556,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64483328,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21557,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 65024000,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21580,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 770,
+            "rssBytes": 278523904,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21602,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1250,
+            "rssBytes": 327409664,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21620,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 5870,
+            "rssBytes": 344637440,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792280223487,
+        "collectionDurationMicros": 2866,
+        "rssBytes": 1278197760,
+        "cumulativeCpuTimeMs": 8530,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 21554,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 600,
+            "rssBytes": 198119424,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21556,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64483328,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21557,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 65024000,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21580,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 770,
+            "rssBytes": 278523904,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21602,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1250,
+            "rssBytes": 327409664,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21620,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 5870,
+            "rssBytes": 344637440,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792280223737,
+        "collectionDurationMicros": 2645,
+        "rssBytes": 1278197760,
+        "cumulativeCpuTimeMs": 8530,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 21554,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 600,
+            "rssBytes": 198119424,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21556,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64483328,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21557,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 65024000,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21580,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 770,
+            "rssBytes": 278523904,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21602,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1250,
+            "rssBytes": 327409664,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21620,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 5870,
+            "rssBytes": 344637440,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792280223991,
+        "collectionDurationMicros": 5921,
+        "rssBytes": 1290817536,
+        "cumulativeCpuTimeMs": 9070,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 21554,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 620,
+            "rssBytes": 198197248,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21556,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64483328,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21557,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 65024000,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21580,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 880,
+            "rssBytes": 279175168,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21602,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1560,
+            "rssBytes": 337874944,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21620,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 5970,
+            "rssBytes": 346062848,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792280224237,
+        "collectionDurationMicros": 2636,
+        "rssBytes": 1293762560,
+        "cumulativeCpuTimeMs": 9310,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 21554,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 620,
+            "rssBytes": 198262784,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21556,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64483328,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21557,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 65024000,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21580,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1040,
+            "rssBytes": 281292800,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21602,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1640,
+            "rssBytes": 338636800,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21620,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 5970,
+            "rssBytes": 346062848,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792280224487,
+        "collectionDurationMicros": 2565,
+        "rssBytes": 1278410752,
+        "cumulativeCpuTimeMs": 9330,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 21554,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 620,
+            "rssBytes": 198262784,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21556,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64483328,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21557,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 65024000,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21580,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1040,
+            "rssBytes": 281292800,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21602,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1660,
+            "rssBytes": 323284992,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21620,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 5970,
+            "rssBytes": 346062848,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792280224508,
+        "collectionDurationMicros": 2334,
+        "rssBytes": 1278390272,
+        "cumulativeCpuTimeMs": 9330,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 21554,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 620,
+            "rssBytes": 198164480,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21556,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64483328,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21557,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 65024000,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21580,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1040,
+            "rssBytes": 281292800,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21602,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1660,
+            "rssBytes": 323362816,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21620,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 5970,
+            "rssBytes": 346062848,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792280224511,
+        "collectionDurationMicros": 1835,
+        "rssBytes": 1278390272,
+        "cumulativeCpuTimeMs": 9330,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 21554,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 620,
+            "rssBytes": 198164480,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21556,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64483328,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21557,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 65024000,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21580,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1040,
+            "rssBytes": 281292800,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21602,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1660,
+            "rssBytes": 323362816,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21620,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 5970,
+            "rssBytes": 346062848,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792280224737,
+        "collectionDurationMicros": 3123,
+        "rssBytes": 1275707392,
+        "cumulativeCpuTimeMs": 9530,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 21554,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 620,
+            "rssBytes": 198172672,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21556,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64483328,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21557,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 65024000,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21580,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1110,
+            "rssBytes": 270168064,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21602,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1790,
+            "rssBytes": 331796480,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21620,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 5970,
+            "rssBytes": 346062848,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792280224987,
+        "collectionDurationMicros": 2713,
+        "rssBytes": 1275785216,
+        "cumulativeCpuTimeMs": 9550,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 21554,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 620,
+            "rssBytes": 198172672,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21556,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64483328,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21557,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 65024000,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21580,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1110,
+            "rssBytes": 270168064,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21602,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1810,
+            "rssBytes": 331874304,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21620,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 5970,
+            "rssBytes": 346062848,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792280225237,
+        "collectionDurationMicros": 2736,
+        "rssBytes": 1284755456,
+        "cumulativeCpuTimeMs": 9690,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 21554,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 630,
+            "rssBytes": 198234112,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21556,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64483328,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21557,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 65024000,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21580,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1140,
+            "rssBytes": 277417984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21602,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1870,
+            "rssBytes": 332525568,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21620,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 6010,
+            "rssBytes": 347070464,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792280225487,
+        "collectionDurationMicros": 2481,
+        "rssBytes": 1288007680,
+        "cumulativeCpuTimeMs": 10110,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 21554,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 640,
+            "rssBytes": 198184960,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21556,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64483328,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21557,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 65024000,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21580,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1320,
+            "rssBytes": 273002496,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21602,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 2060,
+            "rssBytes": 338173952,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21620,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 6050,
+            "rssBytes": 349138944,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792280225737,
+        "collectionDurationMicros": 3042,
+        "rssBytes": 1288126464,
+        "cumulativeCpuTimeMs": 10170,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 21554,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 640,
+            "rssBytes": 198184960,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21556,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64483328,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21557,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 65024000,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21580,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1360,
+            "rssBytes": 272986112,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21602,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 2080,
+            "rssBytes": 338309120,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21620,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 6050,
+            "rssBytes": 349138944,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792280225857,
+        "collectionDurationMicros": 2959,
+        "rssBytes": 1288589312,
+        "cumulativeCpuTimeMs": 10200,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 21554,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 650,
+            "rssBytes": 198250496,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21556,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64483328,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21557,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 65024000,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21580,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1360,
+            "rssBytes": 272986112,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21602,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 2100,
+            "rssBytes": 338706432,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21620,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 6050,
+            "rssBytes": 349138944,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792280225987,
+        "collectionDurationMicros": 2579,
+        "rssBytes": 1294102528,
+        "cumulativeCpuTimeMs": 10360,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 21554,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 650,
+            "rssBytes": 198201344,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21556,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64483328,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21557,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 65024000,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21580,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1380,
+            "rssBytes": 271618048,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21602,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 2240,
+            "rssBytes": 345636864,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21620,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 6050,
+            "rssBytes": 349138944,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792280226237,
+        "collectionDurationMicros": 2705,
+        "rssBytes": 1293852672,
+        "cumulativeCpuTimeMs": 10410,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 21554,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 650,
+            "rssBytes": 198201344,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21556,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64483328,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21557,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 65024000,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21580,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1410,
+            "rssBytes": 271572992,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21602,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 2260,
+            "rssBytes": 345432064,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21620,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 6050,
+            "rssBytes": 349138944,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792280226707,
+        "collectionDurationMicros": 2710,
+        "rssBytes": 1294557184,
+        "cumulativeCpuTimeMs": 10450,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 21554,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 650,
+            "rssBytes": 198172672,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21556,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64483328,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21557,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 65024000,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21580,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1420,
+            "rssBytes": 271687680,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21602,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 2290,
+            "rssBytes": 346050560,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21620,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 6050,
+            "rssBytes": 349138944,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792280226957,
+        "collectionDurationMicros": 3122,
+        "rssBytes": 1294540800,
+        "cumulativeCpuTimeMs": 10470,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 21554,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 650,
+            "rssBytes": 198172672,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21556,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64483328,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21557,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 65024000,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21580,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1430,
+            "rssBytes": 271671296,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21602,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 2300,
+            "rssBytes": 346050560,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21620,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 6050,
+            "rssBytes": 349138944,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792280227207,
+        "collectionDurationMicros": 2713,
+        "rssBytes": 1294524416,
+        "cumulativeCpuTimeMs": 10490,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 21554,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 650,
+            "rssBytes": 198172672,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21556,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64483328,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21557,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 65024000,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21580,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1440,
+            "rssBytes": 271605760,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21602,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 2310,
+            "rssBytes": 346099712,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21620,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 6050,
+            "rssBytes": 349138944,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792280227458,
+        "collectionDurationMicros": 3712,
+        "rssBytes": 1294524416,
+        "cumulativeCpuTimeMs": 10490,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 21554,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 650,
+            "rssBytes": 198172672,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21556,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64483328,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21557,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 65024000,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21580,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1440,
+            "rssBytes": 271605760,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21602,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 2310,
+            "rssBytes": 346099712,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21620,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 6050,
+            "rssBytes": 349138944,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792280227707,
+        "collectionDurationMicros": 2689,
+        "rssBytes": 1294409728,
+        "cumulativeCpuTimeMs": 10490,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 21554,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 650,
+            "rssBytes": 198172672,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21556,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64483328,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21557,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 65024000,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21580,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1440,
+            "rssBytes": 271605760,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21602,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 2310,
+            "rssBytes": 345985024,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21620,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 6050,
+            "rssBytes": 349138944,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792280227957,
+        "collectionDurationMicros": 2586,
+        "rssBytes": 1294409728,
+        "cumulativeCpuTimeMs": 10500,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 21554,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 650,
+            "rssBytes": 198172672,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21556,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64483328,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21557,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 65024000,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21580,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1440,
+            "rssBytes": 271605760,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21602,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 2320,
+            "rssBytes": 345985024,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21620,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 6050,
+            "rssBytes": 349138944,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792280228208,
+        "collectionDurationMicros": 3771,
+        "rssBytes": 1294409728,
+        "cumulativeCpuTimeMs": 10500,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 21554,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 650,
+            "rssBytes": 198172672,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21556,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64483328,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21557,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 65024000,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21580,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1440,
+            "rssBytes": 271605760,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21602,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 2320,
+            "rssBytes": 345985024,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21620,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 6050,
+            "rssBytes": 349138944,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792280228458,
+        "collectionDurationMicros": 3320,
+        "rssBytes": 1294409728,
+        "cumulativeCpuTimeMs": 10500,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 21554,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 650,
+            "rssBytes": 198172672,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21556,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64483328,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21557,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 20,
+            "rssBytes": 65024000,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21580,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 1440,
+            "rssBytes": 271605760,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21602,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 2320,
+            "rssBytes": 345985024,
+            "name": "claxedo"
+          },
+          {
+            "pid": 21620,
+            "startTimeMs": 1792280217000,
+            "cpuTimeMs": 6050,
+            "rssBytes": 349138944,
+            "name": "claxedo"
+          }
+        ]
+      }
+    ],
+    "windows": {
+      "baseline": {
+        "startMs": 1792280222233,
+        "endMs": 1792280223734
+      },
+      "active": {
+        "startMs": 1792280223734,
+        "endMs": 1792280226454
+      },
+      "ending": {
+        "startMs": 1792280226954,
+        "endMs": 1792280228454
+      }
+    },
+    "boundaries": [
+      {
+        "case": {
+          "caseId": "progressive-resource-0-within-workspace-cold-1048576",
+          "repetition": 0,
+          "sequence": 0,
+          "workload": "progressive-resource",
+          "workspaceRelation": "within-workspace",
+          "sessionState": "cold",
+          "transcriptBytes": 1048576,
+          "sourceSessionId": "control",
+          "destinationSessionId": "progressive-resource-1048576"
+        },
+        "switchSequence": 1,
+        "beforeSampleIndex": 7,
+        "afterSampleIndex": 11
+      },
+      {
+        "case": {
+          "caseId": "progressive-resource-0-within-workspace-cold-8388608",
+          "repetition": 0,
+          "sequence": 1,
+          "workload": "progressive-resource",
+          "workspaceRelation": "within-workspace",
+          "sessionState": "cold",
+          "transcriptBytes": 8388608,
+          "sourceSessionId": "control",
+          "destinationSessionId": "progressive-resource-8388608"
+        },
+        "switchSequence": 2,
+        "beforeSampleIndex": 12,
+        "afterSampleIndex": 18
+      }
+    ],
+    "monitorErrors": [],
+    "failure": null
+  },
+  "derivation": {
+    "version": 1,
+    "summaryDigestSha256": "348e4a7ca25512a76352b6c91eaf8fd17be26e591e98267971bfa77a9f65f74f",
+    "summary": {
+      "cold-1048576": {
+        "transcriptBytes": 1048576,
+        "status": "valid",
+        "average": 130.442,
+        "maximum": 188.9,
+        "valid": 38,
+        "attempted": 38,
+        "p95": 182.1
+      },
+      "cold-8388608": {
+        "transcriptBytes": 8388608,
+        "status": "valid",
+        "average": 130.867,
+        "maximum": 148.3,
+        "valid": 6,
+        "attempted": 6,
+        "p95": 148.3
+      },
+      "cold-long-1048576": {
+        "transcriptBytes": 1048576,
+        "rowShape": "long",
+        "status": "valid",
+        "average": 198.45,
+        "maximum": 219.9,
+        "valid": 4,
+        "attempted": 4,
+        "p95": 219.9
+      },
+      "warm-1048576": {
+        "transcriptBytes": 1048576,
+        "status": "valid",
+        "average": 87.047,
+        "maximum": 156,
+        "valid": 38,
+        "attempted": 38,
+        "p95": 154.7
+      },
+      "warm-8388608": {
+        "transcriptBytes": 8388608,
+        "status": "valid",
+        "average": 90.267,
+        "maximum": 125.6,
+        "valid": 6,
+        "attempted": 6,
+        "p95": 125.6
+      },
+      "warm-long-1048576": {
+        "transcriptBytes": 1048576,
+        "rowShape": "long",
+        "status": "valid",
+        "average": 145.35,
+        "maximum": 163.5,
+        "valid": 4,
+        "attempted": 4,
+        "p95": 163.5
+      }
+    }
+  }
+}

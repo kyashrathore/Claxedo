@@ -2,15 +2,17 @@ import { asRecord, isRecordArray, parseJson, stringField } from "@claxedo/server
 import { currentControlPlaneBaseline, requireControlPlaneBaseline } from "../control-plane-schema"
 
 import {
-  BETTER_AUTH_CLI_CLIENT_ID,
-  BETTER_AUTH_DESKTOP_CLIENT_ID,
-  BETTER_AUTH_INTROSPECTION_CLIENT_ID,
   betterAuthDatabaseSchemaInspectionSql,
   betterAuthIntrospectionClientSecretCiphertext,
   betterAuthNativeClientProvisioningStatements,
   betterAuthNativeResource,
   verifyBetterAuthDatabaseSchemaInspection,
 } from "../../src/platform/auth/better-auth-native-clients"
+import {
+  BETTER_AUTH_CLI_CLIENT_ID,
+  BETTER_AUTH_DESKTOP_CLIENT_ID,
+  BETTER_AUTH_INTROSPECTION_CLIENT_ID,
+} from "../../src/platform/auth/better-auth-d1-foundation"
 import { d1Row, d1Rows } from "./d1-json"
 import type { D1Location } from "./user-cloudflare-config"
 import { runWrangler } from "./wrangler-cli"
@@ -90,7 +92,7 @@ export function verifyNativeClientProvisioning(output: string) {
  */
 export async function prepareD1Databases(input: {
   configArgs: readonly string[]
-  apiOrigin: string
+  origin: string
   betterAuthSecret: string
   introspectionSecret: string
 }) {
@@ -110,6 +112,6 @@ export async function prepareD1Databases(input: {
     d1Row(await execute(betterAuthDatabaseSchemaInspectionSql(), true), "auth schema inspection"),
   )
   const ciphertext = await betterAuthIntrospectionClientSecretCiphertext(input.betterAuthSecret, input.introspectionSecret)
-  for (const sql of betterAuthNativeClientProvisioningStatements(input.apiOrigin, ciphertext)) await execute(sql)
-  verifyNativeClientProvisioning(await execute(nativeClientVerificationSql(input.apiOrigin), true))
+  for (const sql of betterAuthNativeClientProvisioningStatements(input.origin, ciphertext)) await execute(sql)
+  verifyNativeClientProvisioning(await execute(nativeClientVerificationSql(input.origin), true))
 }

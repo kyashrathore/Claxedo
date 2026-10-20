@@ -39,7 +39,9 @@ export type ControlPlaneInput = {
  * token verifies for this session's host, refuses a create whose operation is
  * not the session's reservation and every write by a viewer, and mints real
  * turn-lease tokens it verifies again on renewal, release and delivery; an
- * acquire while another turn's lease is live is a 409, as on the real plane. A
+ * acquire names its class, `agent_turn`, or is refused, answers with the
+ * turn's delivery as the real plane does for a session's own host, and while
+ * another turn's lease is live is a 409, as on the real plane. A
  * deferred turn grant is minted for the caller and one turn id, and admits
  * that turn's acquire only when it arrives without a bearer and only once, as
  * the real authority redeems it: a later acquire under it is admitted only
@@ -47,8 +49,9 @@ export type ControlPlaneInput = {
  * `control.refusedTurns` is refused as if another turn held the session, and
  * `control.releaseDelayMs` holds every release that long before the lease is
  * released, as a control plane slow to answer does.
- * `/turn-delivery` hands over the session creator's accounts, as the real
- * route does, and with `firstPartyMcp` on a fresh first-party MCP bearer the
+ * `/turn-delivery` hands over the session creator's accounts for a lease the
+ * host took over or whose accounts it must read again, as the real route
+ * does, and with `firstPartyMcp` on a fresh first-party MCP bearer the
  * real `/api/claxedo/mcp` route below admits until the session is deleted;
  * `/turn-execution` mints a machine token while the machine runs, and
  * otherwise refuses at once, starting a sleeping machine only when the call
@@ -61,6 +64,9 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
   const leaseSecret = crypto.getRandomValues(new Uint8Array(32))
   const leases = new Map<string, Lease>()
   const calls = {
+    /** The turn each lease was acquired for; its delivery rode the lease. */
+    acquisitions: [] as string[],
+    /** The turn each `/turn-delivery` was asked for: a lease taken over after a restart, or accounts read again after a vendor's refusal. */
     deliveries: [] as string[], executions: [] as string[], releases: [] as string[], deletes: [] as string[], renewals: 0, mcpBearers: [] as string[],
     /** The turn each machine start was asked by. */
     starts: [] as string[],
@@ -109,12 +115,25 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
       : undefined
     return claims ? claims.user_id ?? claims.actor_id : undefined
   }
+  const refusals = (person: string) => {
+    const refused = input.refused?.()[person]
+    return refused ? { [person]: refused } : {}
+  }
+  const delivery = (origin: string): TurnDelivery => ({
+    expiresAt: Date.now() + control.leaseTtlMs,
+    auth: { machineOwnerUserId: OWNER, accounts: refusals(creator!), direct: { [creator!]: input.accounts()[creator!] ?? {} } },
+    plugins: input.plugins(),
+    providerDefinitions: [],
+    ...(control.firstPartyMcp ? { firstPartyMcp: firstPartyMcp(origin) } : {}),
+    directory: input.machine().directory,
+  })
   const acquire = async (c: Context, turnId: string, userId: string) => {
     const held = [...leases.values()].find((lease) => !lease.released && lease.expiresAt > Date.now() && lease.turnId !== turnId)
     if (held || control.refusedTurns.has(turnId)) return c.json({ error: { code: "session_turn_in_progress" } }, 409)
     const lease = { sessionId: input.root, turnId, fencingToken: ++fencing, released: false, userId, expiresAt: 0 }
     leases.set(turnId, lease)
-    return c.json(await mint(lease))
+    calls.acquisitions.push(turnId)
+    return c.json({ ...await mint(lease), ...(creator ? { delivery: delivery(new URL(c.req.url).origin) } : {}) })
   }
   const refused = (c: Context, status: 400 | 401 | 403, code: string) => c.json({ error: { code } }, status)
 
@@ -170,7 +189,7 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
         return control.refuseRenewals ? refused(c, 401, "session_turn_lease_invalid") : c.json(await mint(lease))
       }
       if (action === "turn_acquire" && typeof body.grant === "string") {
-        if (c.req.header("authorization")) return refused(c, 400, "session_turn_grant_invalid")
+        if (c.req.header("authorization") || body.writeClass !== undefined) return refused(c, 400, "session_turn_grant_invalid")
         const granted = await jwtVerify(body.grant, leaseSecret).catch(() => undefined)
         const userId = asString(granted?.payload.grantedTo)
         if (!userId || granted?.payload.sessionId !== input.root || granted.payload.turnId !== body.turnId || deleted) return refused(c, 401, "session_turn_grant_invalid")
@@ -192,27 +211,18 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
           .setProtectedHeader({ alg: "HS256" }).setExpirationTime(Math.floor(expiresAt / 1000)).sign(leaseSecret)
         return c.json({ grant, expiresAt })
       }
-      if (action === "turn_acquire") return acquire(c, String(body.turnId), userId)
+      if (action === "turn_acquire") {
+        if (body.writeClass !== "agent_turn") return refused(c, 400, "session_authority_request_invalid")
+        return acquire(c, String(body.turnId), userId)
+      }
       if (body.stream === true) return c.json({ lease: `stream_${crypto.randomUUID()}`, expiresAt: Date.now() + 15_000 })
       return c.json({ allowed: true })
     })
     .post("/turn-delivery", async (c) => {
-      const refusals = (person: string) => {
-        const refused = input.refused?.()[person]
-        return refused ? { [person]: refused } : {}
-      }
       const lease = await liveLease((await c.req.json<{ turnLease?: string }>()).turnLease)
       if (!lease || !creator) return refused(c, 401, "session_turn_lease_invalid")
       calls.deliveries.push(lease.turnId)
-      const delivery: TurnDelivery = {
-        expiresAt: Date.now() + control.leaseTtlMs,
-        auth: { machineOwnerUserId: OWNER, accounts: refusals(creator), direct: { [creator]: input.accounts()[creator] ?? {} } },
-        plugins: input.plugins(),
-        providerDefinitions: [],
-        ...(control.firstPartyMcp ? { firstPartyMcp: firstPartyMcp(new URL(c.req.url).origin) } : {}),
-        directory: input.machine().directory,
-      }
-      return c.json(delivery)
+      return c.json(delivery(new URL(c.req.url).origin))
     })
     .post("/turn-execution", async (c) => {
       const body = await c.req.json<{ turnLease?: string; start?: boolean }>()

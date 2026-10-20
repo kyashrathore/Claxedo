@@ -18,10 +18,9 @@
 import { trimToUndefined } from "@claxedo/helpers/string"
 import {
   createWorkspaceRelayDurableObjectGateway,
-  setWorkspaceRelayAllowedOrigins,
-  setWorkspaceRelayAppOrigins,
   type WorkspaceRelayDurableObjectNamespace,
 } from "./cloudflare"
+import { setWorkspaceRelayAllowedOrigins, setWorkspaceRelayAppOrigins } from "./relay-cors"
 import stockWorker, { WorkspaceRelayRoom, type WorkspaceRelayWorkerEnv } from "./worker"
 
 // The DO class is identical to the stock room — only the NAMING fans out. Re-

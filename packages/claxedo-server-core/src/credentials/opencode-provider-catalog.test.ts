@@ -3,6 +3,7 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { afterAll, expect, test } from "vitest"
 import type { ProviderCatalogEntry } from "@claxedo/harness/contract"
+import { openCodeBundledModels } from "@claxedo/harness/opencode-models"
 
 // The formatter reads the org's custom providers and stored accounts, so
 // importing it opens a database. Point that at a scratch directory BEFORE the
@@ -84,7 +85,8 @@ test("a Claude plan or a key stored for Claude Code is no Anthropic account Open
   const settings = opencodeProviderCatalog({ actor: "person_a", org: "org_claude_plan", engine: undefined })
   expect(settings.all.find((provider) => provider.id === "anthropic")).toMatchObject({ source: "config" })
   expect(settings.all.find((provider) => provider.id === "anthropic")).not.toHaveProperty("harness")
-  expect(settings.all.find((provider) => provider.id === "openai")).toMatchObject({ source: "harness", harness: "codex" })
+  expect(settings.all.find((provider) => provider.id === "openai")).toMatchObject({ source: "harness", harness: "codex", models: {} })
+  expect(settings.all.find((provider) => provider.id === "anthropic")?.models).toEqual({})
   expect(settings.connected).toEqual(["openai"])
   const engineAnswered = opencodeProviderCatalog({ actor: "person_a", org: "org_claude_plan", engine: engine(
     { id: "anthropic", name: "Anthropic", env: [], connected: false, models: [{ providerID: "anthropic", id: "sonnet", cost: [] }] },
@@ -118,7 +120,7 @@ test("a declared provider keeps its custom row whether or not the engine runs it
   expect(other.all).toEqual([])
 })
 
-test("with no engine to ask, the vendors and declared providers are listed, connected by the accounts the org holds", async () => {
+test("with no engine to ask, the vendors and declared providers are listed, connected by the accounts the org holds, a vendor held by its own key with the models the engine lists once bound", async () => {
   await putCredential({ owner: "person_a", provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-key" }, "org_accounts")
   const refused = await putCredential({ owner: "person_a", provider_id: "keyed", kind: "api_key", source: "managed", secret: "sk-keyed" }, "org_accounts")
   updateCredentialStatus(refused.id, "revoked", undefined, "org_accounts")
@@ -131,7 +133,11 @@ test("with no engine to ask, the vendors and declared providers are listed, conn
     ["anthropic", "api"], ["openai", "config"], ["openrouter", "config"], ["google", "config"], ["groq", "config"], ["xai", "config"],
     ["keyed", "custom"], ["keyless", "custom"],
   ])
-  expect(catalog.all.find((provider) => provider.id === "anthropic")).toMatchObject({ name: "Anthropic", models: {} })
+  const anthropic = catalog.all.find((provider) => provider.id === "anthropic")
+  expect(anthropic?.name).toBe("Anthropic")
+  expect(Object.values(anthropic?.models ?? {}).map((model) => [model.id, model.name, model.connected])).toEqual(
+    openCodeBundledModels(["anthropic"]).map((model) => [model.id, model.name, true]))
+  expect(catalog.all.find((provider) => provider.id === "openai")?.models).toEqual({})
   expect(catalog.connected).toEqual(["anthropic", "keyless"])
-  expect(catalog.default).toEqual({ keyed: "local", keyless: "local" })
+  expect(catalog.default).toEqual({ anthropic: openCodeBundledModels(["anthropic"]).map((model) => model.id).sort()[0], keyed: "local", keyless: "local" })
 })

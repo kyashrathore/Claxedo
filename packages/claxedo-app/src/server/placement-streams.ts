@@ -3,6 +3,7 @@ import { toAppError } from "./errors"
 import { isImageOutdated, isRuntimeUnavailable } from "./wire/connection"
 import { queryKeys } from "./query-keys"
 import { placementId, sessionId, type PlacementId } from "./ids"
+import { createSnapshotCoverage, type SnapshotCoverage } from "./snapshot-coverage"
 import { openEventStream, type Stream } from "./stream"
 import type { RuntimeRoute, Transport } from "./transport"
 import type { SessionLocation } from "./types"
@@ -12,6 +13,7 @@ const RUNTIME_EVENTS_PATH = "/api/wr/events"
 const RUNTIME_STREAM_RECONNECTS = 8
 
 export type PlacementStreams = {
+  readonly coverage: SnapshotCoverage
   readonly attach: (ref: SessionLocation) => () => void
   readonly watch: (id: PlacementId) => () => void
   readonly streams: (ref: SessionLocation) => boolean
@@ -32,10 +34,11 @@ type Refusal =
   | { readonly kind: "unavailable"; readonly row: string }
   | { readonly kind: "unanswered"; readonly row: string; readonly retried: boolean }
 
-type OpenStream = { readonly stream: Stream; readonly route: string; readonly workspaceId: string; readonly placement: PlacementId; refused?: Refusal }
+type OpenStream = { readonly stream: Stream; readonly route: string; readonly workspaceId: string; readonly placement: PlacementId; readonly session?: SessionLocation; refused?: Refusal }
 
 type StreamsState = {
   readonly input: StreamsInput
+  readonly coverage: SnapshotCoverage
   readonly attached: Map<string, Map<string, number>>
   readonly refs: Map<string, SessionLocation>
   readonly sessions: Map<string, OpenStream>
@@ -82,16 +85,20 @@ function reopens(input: StreamsInput, open: OpenStream) {
   return refused !== undefined && refused.row !== placementRow(input, open.placement)
 }
 
-function openRuntimeStream(input: StreamsInput, placement: PlacementId, route: RuntimeRoute, path: string, rerouted: boolean, session?: SessionLocation): OpenStream {
-  let missed = rerouted || session !== undefined
-  const open: OpenStream = { route: routeKey(route), workspaceId: route.workspaceId, placement, stream: openEventStream({
+function openRuntimeStream(state: StreamsState, placement: PlacementId, route: RuntimeRoute, path: string, rerouted: boolean, session?: SessionLocation): OpenStream {
+  const { input } = state
+  let missed = rerouted
+  const open: OpenStream = { route: routeKey(route), workspaceId: route.workspaceId, placement, ...(session ? { session } : {}), stream: openEventStream({
     open: ({ headers, signal }) => input.transport.runtime(route, path, { headers, signal }),
     onFrame: (frame) => input.onFrame(frame && typeof frame === "object" ? { ...frame, workspaceId: route.workspaceId } : frame),
     onGap: () => input.onGap(session),
     onState: (connection) => {
-      if (missed && connection.kind === "connected") {
-        missed = false
-        input.onGap(session)
+      if (connection.kind === "connected") {
+        if (session) state.coverage.streamStarted(session, connection.since)
+        if (missed) {
+          missed = false
+          input.onGap(session)
+        }
       }
       if (!route.sharedSession && connection.kind === "reconnecting" && connection.attempt === 1) refreshCatalog(input)
     },
@@ -114,13 +121,14 @@ function openRuntimeStream(input: StreamsInput, placement: PlacementId, route: R
   return open
 }
 
-function reconcileKeyed<K, W extends { readonly route: RuntimeRoute }>(input: StreamsInput, open: Map<K, OpenStream>, want: Map<K, W>, start: (wanted: W, rerouted: boolean) => OpenStream) {
+function reconcileKeyed<K, W extends { readonly route: RuntimeRoute }>(state: StreamsState, open: Map<K, OpenStream>, want: Map<K, W>, start: (wanted: W, rerouted: boolean) => OpenStream) {
   const rerouted = new Set<K>()
   for (const [key, current] of open) {
     const route = want.get(key)?.route
-    if (route && routeKey(route) === current.route && !reopens(input, current)) continue
+    if (route && routeKey(route) === current.route && !reopens(state.input, current)) continue
     if (route) rerouted.add(key)
     current.stream.close()
+    if (current.session) state.coverage.streamEnded(current.session)
     open.delete(key)
   }
   for (const [key, wanted] of want) if (!open.has(key)) open.set(key, start(wanted, rerouted.has(key)))
@@ -134,11 +142,10 @@ function watchedWorkspaces(state: StreamsState) {
 }
 
 function reconcileStreams(state: StreamsState) {
-  const { input } = state
-  reconcileKeyed(input, state.sessions, wanted(state), ({ placement, session, route, ref }, rerouted) =>
-    openRuntimeStream(input, placement, route, `${RUNTIME_EVENTS_PATH}?sessionID=${encodeURIComponent(session)}`, rerouted, ref))
-  reconcileKeyed(input, state.workspaces, watchedWorkspaces(state), ({ id, route }, rerouted) =>
-    openRuntimeStream(input, id, route, `${RUNTIME_EVENTS_PATH}?sessions=none`, rerouted))
+  reconcileKeyed(state, state.sessions, wanted(state), ({ placement, session, route, ref }, rerouted) =>
+    openRuntimeStream(state, placement, route, `${RUNTIME_EVENTS_PATH}?sessionID=${encodeURIComponent(session)}`, rerouted, ref))
+  reconcileKeyed(state, state.workspaces, watchedWorkspaces(state), ({ id, route }, rerouted) =>
+    openRuntimeStream(state, id, route, `${RUNTIME_EVENTS_PATH}?sessions=none`, rerouted))
 }
 
 function retain<K>(counts: Map<K, number>, key: K): () => void {
@@ -185,6 +192,7 @@ function attachSession(state: StreamsState, ref: SessionLocation): () => void {
   const session = String(ref.sessionId)
   const counts = state.attached.get(placement) ?? new Map<string, number>()
   state.attached.set(placement, counts)
+  if (!state.refs.has(sessionKey(placement, session))) state.coverage.attached(ref)
   state.refs.set(sessionKey(placement, session), ref)
   const release = retain(counts, session)
   reconcileStreams(state)
@@ -193,16 +201,20 @@ function attachSession(state: StreamsState, ref: SessionLocation): () => void {
   })
   return () => {
     release()
-    if (!counts.has(session)) state.refs.delete(sessionKey(placement, session))
+    if (!counts.has(session)) {
+      state.refs.delete(sessionKey(placement, session))
+      state.coverage.detached(ref)
+    }
     if (counts.size === 0) state.attached.delete(placement)
     reconcileStreams(state)
   }
 }
 
 export function createPlacementStreams(input: StreamsInput): PlacementStreams {
-  const state: StreamsState = { input, attached: new Map(), refs: new Map(), sessions: new Map(), watched: new Map(), workspaces: new Map() }
+  const state: StreamsState = { input, coverage: createSnapshotCoverage(input.onGap), attached: new Map(), refs: new Map(), sessions: new Map(), watched: new Map(), workspaces: new Map() }
   const unfollow = followCatalog(state)
   return {
+    coverage: state.coverage,
     attach: (ref) => attachSession(state, ref),
     watch: (id) => {
       const release = retain(state.watched, id)
@@ -220,6 +232,7 @@ export function createPlacementStreams(input: StreamsInput): PlacementStreams {
     close: () => {
       unfollow()
       state.attached.clear()
+      for (const ref of state.refs.values()) state.coverage.detached(ref)
       state.refs.clear()
       state.watched.clear()
       reconcileStreams(state)

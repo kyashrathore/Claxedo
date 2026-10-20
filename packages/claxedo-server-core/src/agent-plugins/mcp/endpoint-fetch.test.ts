@@ -43,7 +43,7 @@ afterAll(async () => {
 })
 
 describe("authenticated MCP endpoint fetch", () => {
-  const checked = createSafeEndpointFetch(fetch, async () => { throw new Error("literal address must not resolve") })
+  const checked = createSafeEndpointFetch(fetch, async () => { throw new Error("literal address must not resolve") }, { loopback: true })
   const grants: Record<string, string>[] = [
     { grant_type: "authorization_code", code: "test-code", code_verifier: "test-verifier" },
     { grant_type: "refresh_token", refresh_token: "test-refresh" },
@@ -73,7 +73,7 @@ describe("authenticated MCP endpoint fetch", () => {
 
   it("refuses same-origin redirects too", async () => {
     const fetcher = vi.fn(async () => new Response(null, { status: 307, headers: { location: "/other-token" } }))
-    await expect(createSafeEndpointFetch(fetcher, async () => ["93.184.216.34"])(
+    await expect(createSafeEndpointFetch(fetcher, async () => ["93.184.216.34"], { loopback: true })(
       "https://login.example/token", { method: "POST", body: "client_secret=test-secret" },
     )).rejects.toThrow()
     expect(fetcher).toHaveBeenCalledTimes(1)

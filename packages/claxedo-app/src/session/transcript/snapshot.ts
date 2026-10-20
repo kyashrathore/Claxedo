@@ -11,11 +11,10 @@ function hasOlderLoaded(context: TranscriptContext, page: TranscriptPage): boole
   return first !== undefined && context.data.messages.some((message) => !isOptimisticMessage(message) && messageOrder(message, first) < 0)
 }
 
-function landFirst(context: TranscriptContext, first: SessionFirstRead): void {
+function landPage(context: TranscriptContext, first: Omit<SessionFirstRead, "row">): void {
   const current = context.phase.state()
   const held = isReading(current) ? current.held : []
   batch(() => {
-    context.deps.list.readRow(first.row)
     replaceLatest(context.setData, first.transcript)
     context.latestTurnRead.current = first.latestTurn
     if (!hasOlderLoaded(context, first.transcript)) context.setOlderCursor(first.transcript.olderCursor)
@@ -23,6 +22,13 @@ function landFirst(context: TranscriptContext, first: SessionFirstRead): void {
     context.setOutline(outlineOf(first.outline))
     for (const event of held) applyTranscriptEvent(context, event)
     context.phase.send({ type: "readLanded" })
+  })
+}
+
+function landFirst(context: TranscriptContext, first: SessionFirstRead): void {
+  batch(() => {
+    context.deps.list.readRow(first.row)
+    landPage(context, first)
   })
 }
 
@@ -35,6 +41,7 @@ function landSide<T>(context: TranscriptContext, what: string, read: Promise<T>,
 
 function landSides(context: TranscriptContext, reads: SessionReads, sentAt: number): void {
   const { ref, deps } = context
+  void Promise.allSettled([reads.firstSent]).then(() => context.queue.reread())
   reads.runtime.then(
     () => context.setRuntimeMissing(false),
     (cause) => context.setRuntimeMissing(isSessionMissing(cause)),
@@ -57,6 +64,14 @@ function landSides(context: TranscriptContext, reads: SessionReads, sentAt: numb
   landSide(context, "subagents", reads.subagents, context.subagents.read)
 }
 
+function landHeld(context: TranscriptContext, held: HeldSessionReads, first: Promise<SessionFirstRead>): void {
+  landPage(context, { diff: [], outline: held.outline, transcript: held.latestTurn, latestTurn: held.latestTurn })
+  landSide(context, "row", first, (read) => batch(() => {
+    context.deps.list.readRow(read.row)
+    context.setData("diff", [...read.diff])
+  }))
+}
+
 export function readSnapshot(context: TranscriptContext, held?: HeldSessionReads): Promise<void> {
   const read = context.snapshotRead
   if (read.current) {
@@ -77,6 +92,7 @@ async function readOnce(context: TranscriptContext, held?: HeldSessionReads): Pr
   const sentAt = Date.now()
   const reads = context.server.sessions.read(context.ref, context.deps.pageShape(), held)
   landSides(context, reads, sentAt)
+  if (held) return landHeld(context, held, reads.first)
   try {
     landFirst(context, await reads.first)
   } catch (cause) {
@@ -88,9 +104,6 @@ async function readOnce(context: TranscriptContext, held?: HeldSessionReads): Pr
 export function rereadWhenAsleep(context: TranscriptContext): void {
   const asleep = () => isStoppedCloud(context.server.placements.byId(context.ref.placementId))
   createEffect(on(asleep, (now, before) => {
-    if (now && before === false) {
-      void readSnapshot(context)
-      void context.queue.reread()
-    }
+    if (now && before === false) void readSnapshot(context)
   }))
 }

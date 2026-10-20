@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { createIpcCallerGuard, installIpcCallerGuard, type GuardableIpcMain, type IpcCaller } from "./ipc-caller-guard"
+import { createIpcCallerGuard, installIpcCallerGuard, readIpcCaller, type GuardableIpcMain, type IpcCaller } from "./ipc-caller-guard"
 
 const MAIN_RENDERER = 1
 const OTHER = 2
 
 function topFrame(senderId: number): IpcCaller {
-  return { senderId, isMainFrame: true }
+  return { senderId, isMainFrame: true, showsAppDocument: true }
 }
 
 /** A minimal `ipcMain` that records registrations and can invoke them. */
@@ -63,9 +63,30 @@ describe("createIpcCallerGuard", () => {
     const guard = createIpcCallerGuard()
     guard.trust(MAIN_RENDERER)
 
-    const verdict = guard.check({ senderId: MAIN_RENDERER, isMainFrame: false })
+    const verdict = guard.check({ senderId: MAIN_RENDERER, isMainFrame: false, showsAppDocument: true })
     expect(verdict.allowed).toBe(false)
     expect(!verdict.allowed && verdict.reason).toContain("subframe")
+  })
+
+  test("rejects the trusted top frame once it shows a document that is not the app's", () => {
+    // The webContents id survives a top-level navigation, so a page that got
+    // past the navigation guard would otherwise inherit the bridge.
+    const guard = createIpcCallerGuard()
+    guard.trust(MAIN_RENDERER)
+
+    const verdict = guard.check({ senderId: MAIN_RENDERER, isMainFrame: true, showsAppDocument: false })
+    expect(verdict.allowed).toBe(false)
+    expect(!verdict.allowed && verdict.reason).toContain("foreign document")
+  })
+
+  test("trusts answers registration alone, for policies that check the frame and document themselves", () => {
+    const guard = createIpcCallerGuard()
+    guard.trust(MAIN_RENDERER)
+
+    expect(guard.trusts(MAIN_RENDERER)).toBe(true)
+    expect(guard.trusts(OTHER)).toBe(false)
+    guard.revoke(MAIN_RENDERER)
+    expect(guard.trusts(MAIN_RENDERER)).toBe(false)
   })
 
   test("rejects everything before anything is trusted", () => {
@@ -145,5 +166,29 @@ describe("installIpcCallerGuard", () => {
     const caller = topFrame(MAIN_RENDERER)
     expect(fake.invoke("echo", caller, "x", 2)).toBe(2)
     expect(seen).toEqual([caller, "x", 2])
+  })
+})
+
+describe("readIpcCaller", () => {
+  const APP = "file:///app/renderer/index.html"
+  const isAppDocument = (url: string) => url === APP
+  type Event = Parameters<typeof readIpcCaller>[0]
+  const event = (frame: { url: string } | null, mainFrame: { url: string } | null = frame) =>
+    ({ sender: { id: MAIN_RENDERER, mainFrame }, senderFrame: frame }) as unknown as Event
+
+  test("reads the app's own top frame as such", () => {
+    expect(readIpcCaller(event({ url: APP }), isAppDocument)).toEqual({ senderId: MAIN_RENDERER, isMainFrame: true, showsAppDocument: true })
+  })
+
+  test("reads a subframe as a subframe even when it shows the app's document", () => {
+    expect(readIpcCaller(event({ url: APP }, { url: APP }), isAppDocument)).toMatchObject({ isMainFrame: false, showsAppDocument: true })
+  })
+
+  test("reads the top frame of a foreign document as showing no app document", () => {
+    expect(readIpcCaller(event({ url: "https://evil.example/" }), isAppDocument)).toMatchObject({ isMainFrame: true, showsAppDocument: false })
+  })
+
+  test("fails closed once the frame is gone", () => {
+    expect(readIpcCaller(event(null, { url: APP }), isAppDocument)).toEqual({ senderId: MAIN_RENDERER, isMainFrame: false, showsAppDocument: false })
   })
 })

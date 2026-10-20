@@ -17,6 +17,6 @@
       "@claxedo/agent-runtime-contract": ["../agent-runtime-contract/src/index.ts"]
     }
   },
-  "include": ["e2e", "playwright.config.ts"],
+  "include": ["e2e", "playwright.config.ts", "published-deployment.ts", "scripts/publish-deployment.ts"],
   "exclude": ["e2e/report", "e2e/results"]
 }

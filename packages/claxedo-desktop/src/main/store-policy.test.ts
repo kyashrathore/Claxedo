@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
 
 import {
+  assertRendererStoreKey,
   assertStoreKey,
   assertStoreName,
   assertStoreValue,
@@ -68,5 +70,40 @@ describe("store key and value bounds", () => {
     expect(() => assertStoreValue("{}")).not.toThrow()
     expect(() => assertStoreValue(123)).toThrow(/invalid settings store value/)
     expect(() => assertStoreValue("x".repeat(16 * 1024 * 1024 + 1))).toThrow(/invalid settings store value/)
+  })
+})
+
+describe("main-owned settings keys", () => {
+  test("the generic channels refuse every key main decides with, in the settings store", () => {
+    for (const key of ["cliSignInMode", "defaultServerUrl", "wslEnabled"]) {
+      expect(() => assertRendererStoreKey("claxedo.settings", key)).toThrow(/owned by the main process/)
+      expect(() => assertRendererStoreKey(undefined, key)).toThrow(/owned by the main process/)
+    }
+  })
+
+  test("a dot-path or escaped spelling of a main-owned key is refused too", () => {
+    for (const key of ["cliSignInMode.nested", "cliSignInMode[0]", "cli\\SignInMode", "cliSignInMode\\"]) {
+      expect(() => assertRendererStoreKey("claxedo.settings", key)).toThrow(/owned by the main process/)
+    }
+  })
+
+  test("other settings keys and the same names in renderer stores stay writable", () => {
+    expect(() => assertRendererStoreKey("claxedo.settings", "language")).not.toThrow()
+    expect(() => assertRendererStoreKey("claxedo.settings", "cliSignInModeHint")).not.toThrow()
+    expect(() => assertRendererStoreKey("default.dat", "cliSignInMode")).not.toThrow()
+  })
+
+  test("the ordinary key bounds still apply", () => {
+    expect(() => assertRendererStoreKey("default.dat", "")).toThrow(/invalid settings store key/)
+    expect(() => assertRendererStoreKey("default.dat", 42)).toThrow(/invalid settings store key/)
+  })
+
+  test("the store channels route every key through the main-owned check", () => {
+    const source = readFileSync(new URL("./ipc.ts", import.meta.url), "utf8")
+    for (const channel of ["store-get", "store-set", "store-delete"]) {
+      const start = source.indexOf(`ipcMain.handle("${channel}"`)
+      expect(start).toBeGreaterThan(-1)
+      expect(source.slice(start, source.indexOf("})", start))).toContain("assertRendererStoreKey(name, key)")
+    }
   })
 })

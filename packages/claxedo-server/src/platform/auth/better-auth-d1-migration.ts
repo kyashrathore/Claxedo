@@ -14,12 +14,11 @@ export const BETTER_AUTH_D1_MIGRATION_HEADER = `-- Generated from better-auth-d1
 export async function compileBetterAuthD1Migration(
   database: NonNullable<BetterAuthOptions["database"]>,
 ) {
-  const apiOrigin = "https://api.claxedo.test"
+  const origin = "https://app.claxedo.test"
   const configuration = resolveBetterAuthConfiguration({
     env: {
       CLAXEDO_AUTH_METHODS: "email-password",
-      BETTER_AUTH_URL: apiOrigin,
-      CLAXEDO_APP_ORIGIN: "https://app.claxedo.test",
+      BETTER_AUTH_URL: origin,
       BETTER_AUTH_SECRET: "schema-generation-only-secret-that-is-never-deployed",
     },
     emailSender: { async send() {} },
@@ -27,7 +26,7 @@ export async function compileBetterAuthD1Migration(
   const migrations = await getMigrations(betterAuthD1FoundationOptions({
     database,
     configuration,
-    resource: betterAuthNativeResource(apiOrigin),
+    resource: betterAuthNativeResource(origin),
   }))
   return BETTER_AUTH_D1_MIGRATION_HEADER + await migrations.compileMigrations() + "\n"
 }

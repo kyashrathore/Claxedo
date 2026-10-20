@@ -52,13 +52,20 @@ describe("a Cursor account in a native-brokering sandbox", () => {
 
   test("Vercel's firewall writes the key only on Cursor's exchange request", async () => {
     const secret = await cursorSecret()
-    expect(vercelBrokeredNetworkPolicy([secret], "deny-all")).toEqual({ allow: {
+    const policy = vercelBrokeredNetworkPolicy([secret], "deny-all")
+    expect(policy).toEqual({ allow: {
       "api2.cursor.sh": [{
-        match: { path: { startsWith: EXCHANGE }, method: ["POST"],
+        match: { path: { regex: expect.any(String) }, method: ["POST"],
           headers: [{ key: { exact: "authorization" }, value: { exact: `Bearer claxedo-broker:${secret.name}` } }] },
         transform: [{ headers: { Authorization: `Bearer ${KEY}` } }],
       }],
     } })
+    const allow = typeof policy === "object" && "allow" in policy && !Array.isArray(policy.allow) ? policy.allow : undefined
+    const matcher = allow?.["api2.cursor.sh"]?.[0]?.match?.path
+    const exchangePath = new RegExp(matcher && "regex" in matcher ? matcher.regex ?? "" : "")
+    expect(exchangePath.test(EXCHANGE)).toBe(true)
+    expect(exchangePath.test(`${EXCHANGE}_elsewhere`)).toBe(false)
+    expect(exchangePath.test(RPC)).toBe(false)
   })
 
   test("the Cloudflare Worker swaps the key into the exchange and leaves the returned token alone", async () => {

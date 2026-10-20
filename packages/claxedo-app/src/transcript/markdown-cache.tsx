@@ -1,5 +1,6 @@
 import DOMPurify from "dompurify"
 import { createByteBoundedCache } from "./byte-bounded-cache"
+import { withholdRemoteFetches } from "./markdown-remote-media"
 import { transcriptLinkUriPattern } from "./transcript-link"
 
 export type MarkdownCacheEntry = {
@@ -25,6 +26,7 @@ const config = {
 const markdownPurifier = typeof window === "undefined" || !DOMPurify.isSupported ? undefined : DOMPurify(window)
 markdownPurifier?.setConfig(config)
 markdownPurifier?.addHook("afterSanitizeAttributes", (node: Element) => {
+  withholdRemoteFetches(node, window.location)
   if (!(node instanceof HTMLAnchorElement)) return
   if (node.target !== "_blank") return
 
@@ -41,20 +43,11 @@ export function sanitizeMarkdown(html: string) {
 
 const SAFE_SVG_URI = /^(?:(?:https?|mailto):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i
 
-const CSS_AT_RULE = /@(?:import|namespace)\b/gi
-const CSS_URL = /url\(\s*(['"]?)([^)]*?)\1\s*\)/gi
-
-function hardenSvgCss(css: string) {
-  return css
-    .replace(CSS_AT_RULE, "@blocked")
-    .replace(CSS_URL, (rule, _quote, target: string) => (target.trim().startsWith("#") ? rule : "none"))
-}
-
 const svgConfig = {
   USE_PROFILES: { svg: true, svgFilters: true },
   ALLOWED_URI_REGEXP: SAFE_SVG_URI,
-  ADD_TAGS: ["style"],
   FORBID_TAGS: [
+    "style",
     "script",
     "foreignObject",
     "use",
@@ -66,7 +59,7 @@ const svgConfig = {
     "handler",
     "listener",
   ],
-  FORBID_CONTENTS: ["script", "foreignObject"],
+  FORBID_CONTENTS: ["style", "script", "foreignObject"],
   FORBID_ATTR: ["onload", "onerror", "onclick", "onmouseover", "onbegin", "onend", "onrepeat", "onfocusin"],
   SANITIZE_NAMED_PROPS: false,
 }
@@ -76,15 +69,7 @@ type SvgPurifier = {
   sanitize(source: string, config: typeof svgConfig): string
 }
 
-const svgPurifier =
-  typeof window === "undefined" || !DOMPurify.isSupported ? undefined : (DOMPurify(window) as SvgPurifier & {
-    addHook: (typeof DOMPurify)["addHook"]
-  })
-
-svgPurifier?.addHook("afterSanitizeElements", (node) => {
-  if (node.nodeName?.toLowerCase() !== "style") return
-  node.textContent = hardenSvgCss(node.textContent ?? "")
-})
+const svgPurifier: SvgPurifier | undefined = typeof window === "undefined" || !DOMPurify.isSupported ? undefined : DOMPurify(window)
 
 export function sanitizeSvg(svg: string, purifier: SvgPurifier | undefined = svgPurifier) {
   if (!purifier?.isSupported) return ""

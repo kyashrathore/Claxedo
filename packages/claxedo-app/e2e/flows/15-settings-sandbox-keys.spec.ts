@@ -1,40 +1,58 @@
-import { expect, test } from "../harness"
+import { expect, test, type SignedStack } from "../harness"
+import { hostedFetch } from "../../../harness/e2e/harness/hosted-auth"
+import { HOSTED_SANDBOX_TEST_TOKEN } from "../../../harness/e2e/harness/hosted-stack"
 
-type SandboxListing = { readonly default_driver: string | null; readonly keys: ReadonlyArray<{ readonly provider_id: string; readonly owner: string | null }> }
+type SandboxListing = { readonly default_driver: string | null; readonly keys: ReadonlyArray<{ readonly provider_id: string }> }
 
-async function sandboxListing(url: string): Promise<SandboxListing> {
-  const response = await fetch(new URL("/api/claxedo/credentials/sandbox-drivers", url))
+async function sandboxListing(signed: SignedStack): Promise<SandboxListing> {
+  const response = await hostedFetch(signed.hosted, "/api/claxedo/credentials/sandbox-drivers", {}, signed.owner.person)
   expect(response.status).toBe(200)
   return await response.json() as SandboxListing
 }
 
-test("15 settings: the machine's operator adds a sandbox provider key, sees it in use, and removes it", async ({ stack, app, isMobile }) => {
+test("15 settings: signed out, Sandbox providers asks for a sign-in instead of offering a key", async ({ stack, app }) => {
   await app.goto(`${stack.url}/settings/sandbox`)
   await expect(app.getByRole("link", { name: "Sandbox providers", exact: true })).toHaveAttribute("aria-current", "page")
-  const sandbox = app
-  await expect(sandbox.getByText("No sandbox keys yet.", { exact: true })).toBeVisible()
-  await expect(sandbox.getByText("None yet", { exact: true })).toBeVisible()
+  await expect(app.getByText("Sign in to see your organization.", { exact: true })).toBeVisible()
+  await expect(app.getByRole("button", { name: "Add a key…", exact: true })).toHaveCount(0)
+})
 
-  await sandbox.getByRole("button", { name: "Add a key…", exact: true }).click()
-  const form = app.getByRole("dialog", { name: "Add a sandbox key" })
-  await form.getByRole("textbox", { name: "Token ID", exact: true }).fill("modal-token-id")
-  await form.getByLabel("Token Secret", { exact: true }).fill("modal-token-secret")
-  await form.getByRole("button", { name: "Save key", exact: true }).click()
+test("15 settings: an organization owner removes the sandbox provider key through the dialog, adds one back, and sees it in use", async ({ signed, page, isMobile }) => {
+  await signed.signIn(page, signed.owner)
+  await page.goto(`${signed.url}/settings/sandbox`)
+  await expect(page.getByRole("link", { name: "Sandbox providers", exact: true })).toHaveAttribute("aria-current", "page")
+  const defaultProvider = page.getByRole("group", { name: "Default provider" })
+  await expect(defaultProvider.getByRole("button", { name: "Cloudflare", exact: true })).toBeVisible()
+  expect(await sandboxListing(signed)).toMatchObject({ default_driver: "cloudflare", keys: [{ provider_id: "cloudflare" }] })
 
-  await expect(form).toHaveCount(0)
-  await expect(sandbox.getByText(/^Couldn't check/)).toBeVisible()
-  await expect(sandbox.getByRole("group", { name: "Default provider" }).getByRole("button", { name: "Modal", exact: true })).toBeVisible()
-  expect(await sandboxListing(stack.url)).toMatchObject({ default_driver: "modal", keys: [{ provider_id: "modal", owner: "local" }] })
-  expect(await app.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-
-  const remove = sandbox.getByRole("button", { name: "Remove key", exact: true })
+  const remove = page.getByRole("button", { name: "Remove key", exact: true })
   if (isMobile) {
     const box = await remove.boundingBox()
     expect(box?.height).toBeGreaterThanOrEqual(44)
     expect(box?.width).toBeGreaterThanOrEqual(44)
   }
   await remove.click()
-  await sandbox.getByRole("button", { name: "Remove key", exact: true }).click()
-  await expect(sandbox.getByText("No sandbox keys yet.", { exact: true })).toBeVisible()
-  expect(await sandboxListing(stack.url)).toMatchObject({ default_driver: null, keys: [] })
+  const confirm = page.getByRole("dialog", { name: "Remove this key?" })
+  await expect(confirm).toContainText("Cloudflare")
+  await confirm.getByRole("button", { name: "Cancel", exact: true }).click()
+  await expect(confirm).toHaveCount(0)
+  expect(await sandboxListing(signed)).toMatchObject({ keys: [{ provider_id: "cloudflare" }] })
+  await remove.click()
+  const confirmRemove = confirm.getByRole("button", { name: "Remove key", exact: true })
+  await expect(confirmRemove).toHaveAttribute("data-variant", "danger")
+  await confirmRemove.click()
+  await expect(page.getByText("No sandbox keys yet.", { exact: true })).toBeVisible()
+  await expect(page.getByText("None yet", { exact: true })).toBeVisible()
+  expect(await sandboxListing(signed)).toMatchObject({ default_driver: null, keys: [] })
+
+  await page.getByRole("button", { name: "Add a key…", exact: true }).click()
+  const form = page.getByRole("dialog", { name: "Add a sandbox key" })
+  await form.getByLabel("API Token", { exact: true }).fill(HOSTED_SANDBOX_TEST_TOKEN)
+  await form.getByRole("textbox", { name: "Worker URL", exact: true }).fill(signed.hosted.sandboxOrigin)
+  await form.getByRole("button", { name: "Save key", exact: true }).click()
+
+  await expect(form).toHaveCount(0)
+  await expect(defaultProvider.getByRole("button", { name: "Cloudflare", exact: true })).toBeVisible()
+  expect(await sandboxListing(signed)).toMatchObject({ default_driver: "cloudflare", keys: [{ provider_id: "cloudflare" }] })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 })

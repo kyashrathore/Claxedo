@@ -18,28 +18,38 @@ export function createRelayRuntimeClient(deps: {
   error: RelayRuntimeErrorFactory
   request?: (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
 }) {
-  const request = async (capability: RelayRuntimeCapability, path: string, init?: RequestInit) => {
+  const connect = (capability: RelayRuntimeCapability) => {
     const { homeRegion, ...claims } = capability
-    const token = await deps.provider.mintRuntimeAccessToken(claims)
-    const endpoint = await deps.provider.getRelayEndpoint(claims.workspaceId, homeRegion)
-    const headers = new Headers(init?.headers)
-    headers.set("authorization", `Bearer ${token.token}`)
-    headers.set("x-claxedo-directory", `workspace:${claims.workspaceId}`)
-    // A cold boot's delivery is the first request a new workspace's room ever
-    // sees, and the relay places the room by it for good.
-    headers.set(RELAY_REGION_HEADER, homeRegion)
-    return await (deps.request ?? globalThis.fetch)(
-      `${endpoint.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(claims.workspaceId)}${path}`,
-      { ...init, headers },
-    )
+    const minted = (async () => {
+      const token = await deps.provider.mintRuntimeAccessToken(claims)
+      return { token, endpoint: await deps.provider.getRelayEndpoint(claims.workspaceId, homeRegion) }
+    })()
+    const request = async (path: string, init?: RequestInit) => {
+      const { token, endpoint } = await minted
+      const headers = new Headers(init?.headers)
+      headers.set("authorization", `Bearer ${token.token}`)
+      headers.set("x-claxedo-directory", `workspace:${claims.workspaceId}`)
+      // A cold boot's delivery is the first request a new workspace's room ever
+      // sees, and the relay places the room by it for good.
+      headers.set(RELAY_REGION_HEADER, homeRegion)
+      return await (deps.request ?? globalThis.fetch)(
+        `${endpoint.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(claims.workspaceId)}${path}`,
+        { ...init, headers },
+      )
+    }
+    return {
+      fetch: request,
+      async json(path: string, init?: RequestInit) {
+        const headers = new Headers(init?.headers)
+        headers.set("accept", "application/json")
+        return await decodeRelayRuntimeJson(await request(path, { ...init, headers }), deps.error)
+      },
+    }
   }
   return {
-    fetch: request,
-    async json(capability: RelayRuntimeCapability, path: string, init?: RequestInit) {
-      const headers = new Headers(init?.headers)
-      headers.set("accept", "application/json")
-      return await decodeRelayRuntimeJson(await request(capability, path, { ...init, headers }), deps.error)
-    },
+    connect,
+    fetch: (capability: RelayRuntimeCapability, path: string, init?: RequestInit) => connect(capability).fetch(path, init),
+    json: (capability: RelayRuntimeCapability, path: string, init?: RequestInit) => connect(capability).json(path, init),
   }
 }
 

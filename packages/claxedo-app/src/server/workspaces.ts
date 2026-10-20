@@ -6,11 +6,14 @@ import type { PlacementsApi } from "./api"
 import { ServerError, toAppError } from "./errors"
 import { placementId, sessionId as asSessionId, type PlacementId, type ProjectId } from "./ids"
 import { mergedCatalog } from "./merged-catalog"
+import { publishedDeployment } from "./published-deployment"
 import { queryKeys } from "./query-keys"
 import { createSharedSessions, type SharedSessions } from "./shared-sessions"
 import type { RuntimeRoute, Transport } from "./transport"
+import type { CloudWorkspace } from "./cloud-types"
 import type { AppError, Project, SessionLocation } from "./types"
 import { isStoppedCloud } from "./placement-runtime"
+import { cloudSessionHosts, hostedRoute, rememberSessionHost, sessionHostKey, type HostFinder, type SessionHosts } from "./session-hosts"
 import { workspaceStopped } from "./wire/connection"
 import { bootstrapCatalog, type BootstrapCatalog, type PlacementRecord } from "./wire/placements"
 import type { Address } from "./wire/session-row"
@@ -39,6 +42,7 @@ export type Workspaces = Pick<PlacementsApi, "byId" | "list" | "complete" | "ope
   readonly refresh: () => Promise<void>
   readonly locateSession: (ref: SessionAddress) => Promise<Pick<SessionLocation, "placementId" | "sessionId">>
   readonly accountProjects: () => Promise<readonly Project[]>
+  readonly cloudWorkspaces: () => Promise<readonly CloudWorkspace[]>
   readonly accountProjectIds: (projectId: ProjectId) => readonly ProjectId[]
   readonly accountKnows: (workspaceId: string) => boolean
   readonly dispose: () => void
@@ -98,39 +102,6 @@ function placementReads(records: () => readonly PlacementRecord[]) {
         return record ? { placementId: record.placement.id, projectId: record.placement.projectId } : undefined
       },
     },
-  }
-}
-
-type SessionHosts = { readonly roots: Map<string, string>; readonly askedOrServedByWorkspace: Map<string, Promise<unknown>>; readonly learned: Set<() => void> }
-
-function rememberSessionHost(hosts: SessionHosts, key: string, root: string) {
-  if (hosts.roots.get(key) === root) return
-  hosts.roots.set(key, root)
-  for (const listener of hosts.learned) listener()
-}
-
-const sessionHostKey = (ref: Pick<SessionLocation, "placementId" | "sessionId">) => JSON.stringify([ref.placementId, ref.sessionId])
-
-function hostedRoute(record: PlacementRecord, hosts: SessionHosts, ref: Pick<SessionLocation, "placementId" | "sessionId">): RuntimeRoute | undefined {
-  const root = hosts.roots.get(sessionHostKey(ref))
-  return root ? { ...record.route, sessionHost: { sessionId: root } } : undefined
-}
-
-type HostFinder = Transport["findSessionHost"]
-
-function cloudSessionHosts(find: HostFinder, hosts: SessionHosts) {
-  return async (record: PlacementRecord, ref: Pick<SessionLocation, "placementId" | "sessionId">) => {
-    if (record.placement.kind !== "cloud") return hostedRoute(record, hosts, ref)
-    const key = sessionHostKey(ref)
-    const pending = hosts.askedOrServedByWorkspace.get(key) ?? find(record.route.workspaceId, ref.sessionId).then((root) => {
-      if (root) rememberSessionHost(hosts, key, root)
-    }, (error: unknown) => {
-      hosts.askedOrServedByWorkspace.delete(key)
-      throw error
-    })
-    hosts.askedOrServedByWorkspace.set(key, pending)
-    await pending
-    return hostedRoute(record, hosts, ref)
   }
 }
 
@@ -208,13 +179,16 @@ async function readCatalogs(local: Promise<BootstrapCatalog>, account: Promise<v
   return read.value
 }
 
-function accountReads(linked: () => LinkedCatalog | undefined, signed: boolean, load: () => Promise<unknown>): Pick<Workspaces, "accountProjects" | "accountProjectIds" | "accountKnows"> {
+function accountReads(linked: () => LinkedCatalog | undefined, signed: boolean, load: () => Promise<unknown>): Pick<Workspaces, "accountProjects" | "cloudWorkspaces" | "accountProjectIds" | "accountKnows"> {
+  const linkedList = <T,>(pick: (catalog: LinkedCatalog) => readonly T[]) => async () => {
+    if (!signed) return []
+    await load()
+    const catalog = linked()
+    return catalog ? pick(catalog) : []
+  }
   return {
-    accountProjects: async () => {
-      if (!signed) return []
-      await load()
-      return linked()?.projects ?? []
-    },
+    accountProjects: linkedList((catalog) => catalog.projects),
+    cloudWorkspaces: linkedList((catalog) => catalog.cloud),
     accountProjectIds: (projectId) => linked()?.accountProjectIds(projectId) ?? [],
     accountKnows: (workspaceId) => linked()?.knowsWorkspace(workspaceId) ?? false,
   }
@@ -229,7 +203,8 @@ async function invalidatePlacementReads(queryClient: QueryClient, serverUrl: str
 
 function catalogReads(transport: Transport, queryClient: QueryClient, accountPlacements: AccountPlacements | undefined) {
   const key = queryKeys.bootstrap(transport.serverUrl)
-  const read = async () => bootstrapCatalog(await transport.json(BOOTSTRAP_PATH))
+  const published = publishedDeployment(transport.serverUrl)
+  const read = async () => bootstrapCatalog(published ? published.bootstrap : await transport.json(BOOTSTRAP_PATH))
   const reread = () => queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime: 0 })
   const merged = mergedCatalog(queryClient, transport.serverUrl, reread, accountPlacements)
   const loadFor = async (purpose: CatalogPurpose) =>

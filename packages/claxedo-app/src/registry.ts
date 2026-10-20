@@ -1,13 +1,22 @@
-import { modelsSettingsSection, sandboxSettingsSection, teamSettingsSection } from "@/accounts"
+import { accessDictionary } from "@/access"
+import { accountsDictionary, modelsSettingsSection, sandboxSettingsSection } from "@/accounts"
+import { composerDictionary } from "@/composer"
 import { authRoutes } from "@/auth"
+import { errorDictionary, type Translations } from "@/i18n"
+import { notificationsDictionary } from "@/notifications"
 import { onboardingRoute } from "@/onboarding"
+import { panelDictionary } from "@/panel"
 import { pluginsSettingsSection } from "@/plugins"
-import { projectsSettingsSection } from "@/projects"
-import { marketplacePage } from "@/rail"
-import { settingsSections } from "@/settings"
-import { draftSessionPaneKind, sessionPaneKind, subagentPanelView } from "@/session"
+import { projectsDictionary, projectsSettingsSection } from "@/projects"
+import { marketplacePage, railDictionary } from "@/rail"
+import { reviewDictionary } from "@/review"
+import { settingsDictionary, settingsSections } from "@/settings"
+import { draftSessionPaneKind, sessionDetailsPanelView, sessionPaneKind, sessionScreenDictionary, subagentPanelView } from "@/session"
+import { transcriptDictionary } from "@/transcript"
+import { usageDictionary } from "@/usage"
 import { terminalCreatorPaneKind, terminalPaneKind } from "@/terminal"
-import { pageTabPaneKind, paneKindEntry, settingsPage, type FirstPartyEntries } from "@/shell"
+import { pageTabPaneKind, paneKindEntry, settingsPage, shellDictionary, type FirstPartyEntries } from "@/shell"
+import { workbenchDictionary } from "@/workbench"
 
 export const firstParty: FirstPartyEntries = {
   pages: [settingsPage, marketplacePage],
@@ -18,8 +27,8 @@ export const firstParty: FirstPartyEntries = {
     paneKindEntry(terminalCreatorPaneKind),
     paneKindEntry(pageTabPaneKind),
   ],
-  panelViews: [subagentPanelView],
-  settingsSections: [...settingsSections, modelsSettingsSection, teamSettingsSection, sandboxSettingsSection, projectsSettingsSection, pluginsSettingsSection],
+  panelViews: [subagentPanelView, sessionDetailsPanelView],
+  settingsSections: [...settingsSections, modelsSettingsSection, sandboxSettingsSection, projectsSettingsSection, pluginsSettingsSection],
   sidebarItems: [],
   overlays: [],
   commands: [],
@@ -29,3 +38,21 @@ export const firstParty: FirstPartyEntries = {
   routes: [onboardingRoute, ...authRoutes],
   toolCards: [],
 }
+
+export const firstPartyDictionaries: readonly Translations[] = [
+  errorDictionary,
+  shellDictionary,
+  railDictionary,
+  projectsDictionary,
+  transcriptDictionary,
+  notificationsDictionary,
+  settingsDictionary,
+  usageDictionary,
+  accountsDictionary,
+  reviewDictionary,
+  composerDictionary,
+  sessionScreenDictionary,
+  panelDictionary,
+  workbenchDictionary,
+  accessDictionary,
+]

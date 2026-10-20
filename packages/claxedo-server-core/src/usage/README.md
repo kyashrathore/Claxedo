@@ -29,7 +29,7 @@ The hosted plane's D1 ledger (`claxedo-server/src/usage/adapters/d1-usage-ledger
 | `credential_source` | When | `credential_id`, `credential_kind`, `credential_owner` |
 | --- | --- | --- |
 | `personal` | A personal account in the turn's organization owned by the turn's producer, the session's creator or the workspace's owner | the row's id, its stored `kind` (`api_key`, `oauth_token`, `subscription_session`) and its owner |
-| `org` | The organization's own account (a team key, owner `null`) | id and kind; no owner |
+| `org` | An organization account (owner `null`) | id and kind; no owner |
 | `machine` | The harness's own login | none |
 | `unresolved` | A stored id the turn could not have spent: another member's account, another organization's, a sandbox driver key, or a row that no longer exists | none |
 | `unreported` | No credential named | none |
@@ -41,4 +41,4 @@ The table's check constraints hold these shapes.
 `GET /api/claxedo/usage/credentials?since&until&scope` (`cloud-routes.ts`, priced by `credential-spend.ts`) answers spend per credential:
 
 - `scope=mine` (the default): every turn that spent one of the reader's own accounts, whoever sent it on a session they share, and the reader's own turns on anything else. Another person's account that the reader's turns spent on a shared session is `other_member`, with no id, kind or label.
-- `scope=org`: every member's turns on the organization's team keys, answered to the organization's owners and admins alone (403 `usage_scope_forbidden` otherwise). No member's personal account is ever in it. Each key carries `members`, its spend per member who sent turns on it (the fact's `user_id`), in the same grouped read; the route names them from the organization's members list (`orgMembers`, the hosted plane's `listOrgMembers`), and a spender no longer in it is `former`.
+- `scope=org`: every member's turns on the organization accounts, answered to the organization's owners and admins alone (403 `usage_scope_forbidden` otherwise). No member's personal account is ever in it. Each key carries `members`, its spend per member who sent turns on it (the fact's `user_id`), in the same grouped read; the route names them from the organization's members list (`orgMembers`, the hosted plane's `listOrgMembers`), and a spender no longer in it is `former`.

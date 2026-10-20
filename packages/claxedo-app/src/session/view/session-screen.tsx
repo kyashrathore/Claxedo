@@ -1,17 +1,20 @@
 import { createEffect, createMemo, createSignal, Match, on, Show, Switch } from "solid-js"
 import { Composer, promptText, SelectionComment, sessionComposerKey, useComposerStore } from "@/composer"
 import { useElapsed } from "@/lib/delay"
+import { holdPrefetch, prefetchWhenSettled } from "@/lib/prefetch"
 import { FailureBoundary, FailureNotice } from "@/lib/failure"
 import { useErrorCopy } from "@/i18n"
 import { sessionId, useServer, type SessionLocation } from "@/server"
 import { usePanel } from "@/panel"
 import { useAccess, type SessionControls } from "@/access"
 import { useSessionStores, type SessionView } from "@/session"
+import { loadCodeViews } from "@/transcript"
 import { sessionPath, useCommands, useShellRoute, type PaneProps } from "@/shell"
 import { DockLayout, useDialog } from "@/ui"
 import { holdPaneReveal, useWorkbench } from "@/workbench"
 import { createQueueEdit } from "./queue-edit"
-import { createTodoDock, SessionDocks } from "./session-docks"
+import { createTodoDock } from "./docks/todo-dock-state"
+import { SessionDocks, loadSessionDocks } from "./session-docks-lazy"
 import { SessionTimeline, userMessages } from "./session-timeline"
 import { createMessageLinks } from "./message-links"
 import { useSessionScreenText, type SessionScreenText } from "./text"
@@ -19,7 +22,7 @@ import { createTimelineHost } from "./timeline-host"
 import { createTimelineScroll } from "./timeline-scroll"
 import { createDockFollow } from "./dock-follow"
 import { navTurns } from "./nav-turns"
-import { SessionHistoryLoading } from "./session-timeline-skeleton"
+import { SessionHistoryLoading } from "./session-history-loading"
 import { installSessionScreenKeydown } from "./session-screen-keydown"
 import { SessionConnectionLine } from "./connection-line"
 import { commitDeltasWhileShown } from "./delta-frames"
@@ -145,7 +148,7 @@ function SessionBody(props: {
           classList={{ "session-floating-timeline": props.floating, "session-floating-timeline-collapsed": transcriptCollapsed() }}
         >
           <Show when={props.view.state().kind === "loading" && !props.view.conversation()}>
-            <SessionHistoryLoading placementId={props.view.ref.placementId} />
+            <SessionHistoryLoading />
           </Show>
           <SessionTimeline view={props.view} queued={queueEdit.queued} navTurns={turns()} host={host} active={props.active} onScreen={!transcriptCollapsed()} scroll={scroll} onRecover={props.controls.owner ? recovery.recover : undefined} follow={!props.controls.send} canPrompt={composing() && props.controls.send} />
         </div>
@@ -210,6 +213,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
   commitDeltasWhileShown(view)
   markSeenWhileShown(view, () => props.active && !props.readOnly, stores.list)
   holdPaneReveal(() => view().state().kind === "loading" && !placeholderDue())
+  holdPrefetch(() => view().state().kind === "loading")
   const failure = () => {
     const state = view().state()
     return state.kind === "failed" ? state : undefined
@@ -253,5 +257,6 @@ export function SessionSurface(props: SessionSurfaceProps) {
 }
 
 export function SessionScreen(props: PaneProps<SessionLocation>) {
+  prefetchWhenSettled(() => Promise.all([loadCodeViews(), loadSessionDocks()]), "The code views and docks could not be fetched ahead; they load when first shown")
   return <SessionSurface sessionRef={props.state} active={props.active} />
 }

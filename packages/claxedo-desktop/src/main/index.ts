@@ -78,7 +78,7 @@ import { createDaemonStatus, DAEMON_STATUS_CHANNELS, type DaemonExit } from "./d
 import { embeddedServerReadiness } from "./server-readiness"
 import { recordStartupClock } from "../shared/startup-clock-probe"
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand, wireFullscreenEvents } from "./ipc"
-import { installIpcCallerGuard, mainIpcCallerGuard } from "./ipc-caller-guard"
+import { installIpcCallerGuard, mainIpcCallerGuard, readIpcCaller } from "./ipc-caller-guard"
 import { setupLazyAccount } from "./account/lazy-account"
 import { readCliSignInMode } from "./account/cli-credential-file"
 import { store } from "./store"
@@ -96,8 +96,6 @@ import { setupHostProviderConfigPush } from "./host-connector/provider-config-pu
 import { publishHostConnectorStatus } from "./host-connector/status-channel"
 import { initLogging, openServerLogFile } from "./logging"
 import { createMenu } from "./menu"
-import { createNativeMermaidRenderer } from "./native-mermaid"
-import { resolveMermaidRendererPath } from "./mermaid-renderer-path"
 import {
   checkHealth,
   checkHealthOrAskRetry,
@@ -107,7 +105,7 @@ import {
   setDefaultServerUrl,
   setWslConfig,
 } from "./server"
-import { createMainWindow, isRendererDocumentUrl, isTrustedMainRendererUrl, rendererDocumentUrlPatterns, setDockIcon } from "./windows"
+import { createMainWindow, devServerUrl, isRendererDocumentUrl, isTrustedMainRendererUrl, rendererDocumentUrlPatterns, setDockIcon } from "./windows"
 import { rendererContentSecurityListener } from "./renderer-content-security"
 import { createStartAtLogin } from "./start-at-login"
 import { claxedoServerExitedBeforeListening, parseClaxedoServerReadyMessage } from "../shared/claxedo-server-lifecycle"
@@ -169,12 +167,6 @@ const lifecycle = createAppLifecycle({
   confirmQuit: (message, signal) => confirmQuitDialog(message, signal, mainWindow ?? undefined),
   exit: exitApp,
   log: (message, fields) => logger.log(message, fields),
-})
-const mermaidRendererPath = resolveMermaidRendererPath({
-  packaged: IS_PACKAGED,
-  resourcesPath: process.resourcesPath,
-  appPath: join(import.meta.dirname, "../.."),
-  override: process.env.CLAXEDO_MERMAID_RENDERER_PATH,
 })
 const startAtLogin = createStartAtLogin(app)
 
@@ -473,7 +465,7 @@ async function initialize(serverConnectionStarted: Promise<ServerConnection>) {
         serverOrigin: serverOrigin.promise,
         relayOrigins: accountConfig.configured ? accountConfig.relayOrigins ?? [] : [],
         isRendererDocument: isRendererDocumentUrl,
-        devServerUrl: process.env.ELECTRON_RENDERER_URL,
+        devServerUrl: devServerUrl(),
       }),
     }),
   )
@@ -521,7 +513,7 @@ async function initialize(serverConnectionStarted: Promise<ServerConnection>) {
           // The same registry the IPC boundary trusts: a webContents this
           // process registered as bridge-carrying, never a URL a page controls.
           isBridgeCarryingWebContents: (webContentsId) =>
-            mainIpcCallerGuard().check({ senderId: webContentsId, isMainFrame: true }).allowed,
+            mainIpcCallerGuard().trusts(webContentsId),
           isTrustedDocumentUrl: isTrustedMainRendererUrl,
         },
         onBeforeSendHeaders: (filter, listener) =>
@@ -597,12 +589,7 @@ function restartApp(reload: () => void) {
 installIpcCallerGuard({
   ipcMain,
   guard: mainIpcCallerGuard(),
-  readCaller: (event) => ({
-    senderId: event.sender.id,
-    // Null when the frame is already gone, which is not a top frame and so
-    // fails closed.
-    isMainFrame: event.senderFrame !== null && event.senderFrame === event.sender.mainFrame,
-  }),
+  readCaller: (event) => readIpcCaller(event, isRendererDocumentUrl),
   onRejected: (channel, reason) => logger.warn(`[security] ${reason} (channel ${channel})`),
 })
 
@@ -616,7 +603,7 @@ const account = setupLazyAccount({
   ipcMain,
   userDataDir: app.getPath("userData"),
   adapterReady: app.whenReady(),
-  env: accountConfigEnvironment(process.env, bakedAccountConfig),
+  env: accountConfigEnvironment(process.env, bakedAccountConfig, IS_PACKAGED),
   cliSignInMode: () => readCliSignInMode(store),
   onError: (stage, error) => logger.warn(`[account] ${stage}: ${String(error)}`),
   // An activation made from this machine is applied here at once rather than
@@ -738,7 +725,7 @@ agentPluginsSync = setupAgentPluginsSignedSync({
 })
 void account.ready.then(() => agentPluginsSync?.follow(account.state()))
 
-const accountConfig = readAccountConfig(accountConfigEnvironment(process.env, bakedAccountConfig))
+const accountConfig = readAccountConfig(accountConfigEnvironment(process.env, bakedAccountConfig, IS_PACKAGED))
 
 /**
  * Machine remote access, constructed but NOT started.
@@ -866,7 +853,6 @@ registerIpcHandlers({
   restart: restartApp,
   getStartAtLogin: () => startAtLogin.get(),
   setStartAtLogin: (enabled) => startAtLogin.set(enabled),
-  renderMermaid: createNativeMermaidRenderer(mermaidRendererPath),
   browser: browserRegistry,
 })
 

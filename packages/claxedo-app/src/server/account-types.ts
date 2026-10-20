@@ -6,6 +6,8 @@ export type AccountDelivery = { readonly local: boolean; readonly cloud: boolean
 
 export type AccountSources = { readonly sources: ReadonlyMap<string, AccountSource>; readonly org: readonly Account[]; readonly canManageOrgAccounts: boolean }
 
+export type KeyHint = { readonly prefix: string; readonly tail: string }
+
 export type Account = {
   readonly id: string
   readonly providerId: string
@@ -13,6 +15,7 @@ export type Account = {
   readonly source: string
   readonly label?: string
   readonly accountId?: string
+  readonly keyHint?: KeyHint
   readonly active: boolean
   readonly activatedAt?: number
   readonly status?: string

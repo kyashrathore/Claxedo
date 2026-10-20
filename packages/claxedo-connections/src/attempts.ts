@@ -43,6 +43,7 @@ export type AttemptRouting = {
   context?: Record<string, string>
 }
 export type AttemptSummary = { status: AttemptStatus; integrationId: string; scope: "org" | "personal"; message?: string }
+export type AttemptOwnership = { owner?: string }
 
 /**
  * Every method may answer asynchronously.
@@ -82,6 +83,9 @@ export type Attempts = {
   // who merely took too long that authorization was refused.
   expire(state: string): MaybePromise<void>
   status(state: string): MaybePromise<AttemptSummary | undefined>
+  // Unlike `inspect`, answers for a row in any status: the owner keeps
+  // polling after the callback settles it, and nobody else may.
+  ownership(state: string): MaybePromise<AttemptOwnership | undefined>
   sweep(): MaybePromise<void>
   dispose(): void
 }
@@ -103,6 +107,7 @@ export type SyncAttempts = {
   settle(state: string, ok: boolean, message?: string): void
   expire(state: string): void
   status(state: string): AttemptSummary | undefined
+  ownership(state: string): AttemptOwnership | undefined
   sweep(): void
   dispose(): void
 }
@@ -249,6 +254,11 @@ export function createAttempts(options: {
         scope: entry.scope,
         ...(entry.status !== "pending" && entry.message ? { message: entry.message } : {}),
       }
+    },
+    ownership(state) {
+      const entry = map.get(state)
+      if (!entry) return undefined
+      return entry.owner !== undefined ? { owner: entry.owner } : {}
     },
     sweep,
     dispose() {

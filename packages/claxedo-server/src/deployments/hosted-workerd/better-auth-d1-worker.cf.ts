@@ -1,5 +1,5 @@
 import type { D1Database } from "@cloudflare/workers-types"
-import { timedD1 } from "../../platform/http/server-timing"
+import { timedD1, timedResponse } from "../../platform/http/server-timing"
 import type { ExecutionContext } from "hono"
 import {
   requestIsHttps,
@@ -7,8 +7,6 @@ import {
   withApiResponseHeaders,
   withSecurityHeaders,
 } from "@claxedo/server-core/platform/http/security-headers"
-import { BROWSER_ALLOWED_REQUEST_HEADERS } from "@claxedo/server-core/platform/http/browser-auth-security"
-import { configuredCoreAppOrigins } from "../hosted-shared/hosted-core-origins"
 
 import {
   composeBetterAuthD1UserDeployedControlPlane,
@@ -26,7 +24,7 @@ import {
 } from "../../platform/auth/rate-limit"
 import { requestClientKeyFromHeaders } from "../../platform/auth/request-guard"
 import { createHostedCoreWorker, LiveSyncRoom, type HostedCoreWorkerEnv } from "./core-worker.cf"
-import { settledCompositionCache } from "./settled-composition-cache"
+import { settledCompositionCache, type CompositionLifetime } from "./settled-composition-cache"
 
 export { LiveSyncRoom }
 
@@ -38,13 +36,6 @@ export type BetterAuthD1WorkerEnv = HostedCoreWorkerEnv & {
   CF_VERSION_METADATA?: { id?: string; tag?: string }
   CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID?: string
   CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME?: string
-  /**
-   * The browser app origins (comma-separated; `https://*.suffix` allowed).
-   * A refusal answers these with CORS headers so an unavailable deployment
-   * reads as a 503 with a code in the app, not as "Failed to fetch".
-   */
-  CLAXEDO_APP_ORIGINS?: string
-  CLAXEDO_APP_ORIGIN?: string
 }
 
 /**
@@ -102,31 +93,6 @@ function authRoute(pathname: string) {
   )
 }
 
-/**
- * CORS for a refusal.
- *
- * A served request answers the app origin with CORS through the core app's
- * own middleware; a refusal answers before that middleware exists. Without
- * these headers the browser hides the 503 and its code behind "Failed to
- * fetch". Same origin rule as the core app.
- */
-function refusalCorsEntries(
-  request: Request,
-  env: { CLAXEDO_APP_ORIGINS?: string; CLAXEDO_APP_ORIGIN?: string },
-): ReadonlyArray<readonly [string, string]> {
-  const origin = request.headers.get("origin")
-  if (!origin) return []
-  const allowed = configuredCoreAppOrigins(env.CLAXEDO_APP_ORIGINS ?? env.CLAXEDO_APP_ORIGIN)
-  if (!allowed(origin)) return []
-  return [
-    ["access-control-allow-origin", origin],
-    ["access-control-allow-credentials", "true"],
-    ["access-control-allow-methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS"],
-    ["access-control-allow-headers", BROWSER_ALLOWED_REQUEST_HEADERS.join(", ")],
-    ["vary", "origin"],
-  ]
-}
-
 function requestSecurityHeaderEntries(request: Request) {
   return securityHeaderEntries({
     https: requestIsHttps({ url: request.url, header: (name) => request.headers.get(name) ?? undefined }),
@@ -137,15 +103,10 @@ function requestSecurityHeaderEntries(request: Request) {
  * `deployment_candidate_unavailable` is the code host connectors and the
  * desktop app already treat as a transient deploy window and retry.
  */
-function unavailable(request: Request, cors: ReadonlyArray<readonly [string, string]>) {
-  // The preflight must succeed for the browser to send the real request and
-  // read the 503 it gets back.
-  if (request.method === "OPTIONS" && cors.length) {
-    return withSecurityHeaders(new Response(null, { status: 204 }), cors)
-  }
+function unavailable(request: Request) {
   return withSecurityHeaders(
     Response.json({ error: { code: "deployment_candidate_unavailable" } }, { status: 503 }),
-    [...requestSecurityHeaderEntries(request), ...cors],
+    requestSecurityHeaderEntries(request),
   )
 }
 
@@ -179,21 +140,13 @@ function createPublicAuthRateLimiter(env: BetterAuthD1WorkerEnv, local: Connecti
   })
 }
 
-function rateLimitedResponse(
-  request: Request,
-  cors: ReadonlyArray<readonly [string, string]>,
-  retryAfterMs: number,
-) {
+function rateLimitedResponse(request: Request, retryAfterMs: number) {
   return withSecurityHeaders(
     Response.json(
       { error: { code: "rate_limited", message: "Request limit exceeded", retryAfterMs } },
       { status: 429 },
     ),
-    [
-      ...requestSecurityHeaderEntries(request),
-      ["retry-after", String(Math.max(1, Math.ceil(retryAfterMs / 1000)))],
-      ...cors,
-    ],
+    [...requestSecurityHeaderEntries(request), ["retry-after", String(Math.max(1, Math.ceil(retryAfterMs / 1000)))]],
   )
 }
 
@@ -207,7 +160,7 @@ function rateLimitedResponse(
  * between artifacts.
  */
 export function createBetterAuthD1Worker(input: {
-  composition: (env: BetterAuthD1WorkerEnv) => BetterAuthD1UserDeployedComposition
+  composition: (env: BetterAuthD1WorkerEnv, lifetime?: CompositionLifetime) => BetterAuthD1UserDeployedComposition
   /**
    * Per-isolate fuse for the public-auth budget. Tests pass a smaller limit;
    * entries leave it unset — buckets live inside the limiter, so the default
@@ -222,51 +175,56 @@ export function createBetterAuthD1Worker(input: {
       limit: PUBLIC_AUTH_RATE_LIMIT,
       windowMs: PUBLIC_AUTH_RATE_LIMIT_WINDOW_MS,
     })
-  const core = createHostedCoreWorker<BetterAuthD1WorkerEnv>((env) => {
-    const selected = composition(env)
+  const core = createHostedCoreWorker<BetterAuthD1WorkerEnv>((env, lifetime) => {
+    const selected = composition(env, lifetime)
     return { plane: selected.plane, options: selected.options, documentAccess: selected.documentAccess }
   })
 
   return {
-    async fetch(request: Request, env: BetterAuthD1WorkerEnv, context?: ExecutionContext) {
-      const cors = refusalCorsEntries(request, env)
-      try {
-        if (!env.AUTH_DB || !env.CONTROL_PLANE_DB) throw new Error("AUTH_DB and CONTROL_PLANE_DB are required")
-        const configured = resolveBetterAuthConfiguration({ env: stringEnvironment(env), emailSender: cloudflareAuthEmailSender(env) })
-        const url = new URL(request.url)
-        if (url.origin !== configured.public.apiOrigin)
-          throw new Error("observed request origin does not match BETTER_AUTH_URL")
-        if (authRoute(url.pathname)) {
-          const decision = await createPublicAuthRateLimiter(env, publicAuthRateLimiter).check({
-            key: `public-auth:${requestClientKeyFromHeaders(request.headers)}`,
-          })
-          if (!decision.allowed) return rateLimitedResponse(request, cors, decision.retryAfterMs)
-        }
-        // The deploy command polls this until it names the version it just
-        // deployed, so it answers before composition and reads no database.
-        if (url.pathname === "/health" && (request.method === "GET" || request.method === "HEAD")) {
-          return withSecurityHeaders(
-            Response.json({
-              status: "ok",
-              platformVersionId: requiredSetting(env.CF_VERSION_METADATA?.id, "CF_VERSION_METADATA.id"),
-              platformVersionTag: env.CF_VERSION_METADATA?.tag || null,
-            }),
-            requestSecurityHeaderEntries(request),
-          )
-        }
-        const selected = composition(env)
-        if (authRoute(url.pathname)) {
-          return withApiResponseHeaders(await selected.authHandler(request), {
-            url: request.url,
-            header: (name) => request.headers.get(name) ?? undefined,
-          })
-        }
-        return await core.fetch(request, env, context)
-      } catch (error) {
-        console.error("[better-auth-d1] deployment is unavailable", error)
-        return unavailable(request, cors)
-      }
+    fetch(request: Request, env: BetterAuthD1WorkerEnv, context?: ExecutionContext) {
+      return timedResponse(request, () => respond(request, env, context))
     },
+  }
+
+  async function respond(request: Request, env: BetterAuthD1WorkerEnv, context?: ExecutionContext) {
+    try {
+      if (!env.AUTH_DB || !env.CONTROL_PLANE_DB) throw new Error("AUTH_DB and CONTROL_PLANE_DB are required")
+      const configured = resolveBetterAuthConfiguration({ env: stringEnvironment(env), emailSender: cloudflareAuthEmailSender(env) })
+      const url = new URL(request.url)
+      if (url.origin !== configured.public.origin)
+        throw new Error("observed request origin does not match BETTER_AUTH_URL")
+      if (authRoute(url.pathname)) {
+        const decision = await createPublicAuthRateLimiter(env, publicAuthRateLimiter).check({
+          key: `public-auth:${requestClientKeyFromHeaders(request.headers)}`,
+        })
+        if (!decision.allowed) return rateLimitedResponse(request, decision.retryAfterMs)
+      }
+      // The deploy command polls this until it names the version it just
+      // deployed, so it answers before composition and reads no database.
+      if (url.pathname === "/health" && (request.method === "GET" || request.method === "HEAD")) {
+        return withSecurityHeaders(
+          Response.json({
+            status: "ok",
+            platformVersionId: requiredSetting(env.CF_VERSION_METADATA?.id, "CF_VERSION_METADATA.id"),
+            platformVersionTag: env.CF_VERSION_METADATA?.tag || null,
+          }),
+          requestSecurityHeaderEntries(request),
+        )
+      }
+      // The core composes for itself inside `core.fetch`; composing here as
+      // well built every cold core request's control plane twice, since the
+      // first instance is not reusable until its readiness reads settle.
+      if (authRoute(url.pathname)) {
+        return withApiResponseHeaders(await composition(env, context).authHandler(request), {
+          url: request.url,
+          header: (name) => request.headers.get(name) ?? undefined,
+        })
+      }
+      return await core.fetch(request, env, context)
+    } catch (error) {
+      console.error("[better-auth-d1] deployment is unavailable", error)
+      return unavailable(request)
+    }
   }
 }
 

@@ -322,7 +322,7 @@ CREATE TABLE hosted_provider_credentials (
   usage_windows text,
   usage_at integer,
   created_at integer not null,
-  updated_at integer not null,
+  updated_at integer not null, secret_hint text,
   primary key (org_id, id)
 );
 

@@ -69,6 +69,7 @@ export type FakeTransportOptions = {
   /** The upstream id a started session is bound to; the default derives one from the session id. */
   upstreamSessionId?: (input: StartInput) => string
   onStart?: (input: StartInput, config: SessionConfig) => void
+  onAttach?: (input: AttachInput) => void
   onClose?: (session: HarnessSession) => void
   onDispose?: () => void | Promise<void>
   /** Awaited inside `start`, before the session binds; a test parks a create or asks a startup request here. */
@@ -185,6 +186,7 @@ export class FakeTransport implements HarnessTransport {
 
   async attach(input: AttachInput, _session: SessionBroker): Promise<HarnessSession> {
     this.attaches.push(input)
+    this.options.onAttach?.(input)
     return { binding: input.binding, directory: input.directory, locality: input.locality }
   }
 

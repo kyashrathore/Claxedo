@@ -4,7 +4,8 @@ import { HostedShellRoutes } from "./shell"
 import type { ControlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 import type { OpenCodeCatalog } from "@claxedo/server-core/credentials/opencode-provider-projection"
 import type { CredentialSnapshot } from "@claxedo/agent-runtime-contract"
-import { CursorModelsError, type MachineHarnessDraft } from "../../credentials/worker/native-launch"
+import { CursorModelsError } from "@claxedo/server-core/credentials/harness-model-list"
+import type { MachineHarnessDraft } from "../../credentials/worker/native-launch"
 
 // An unverifiable bearer falls back to `verifyCliAccessBearer`, which reads
 // these from process.env. Clear them so "invalid token" is deterministic here
@@ -121,6 +122,23 @@ describe("the Pi provider catalog", () => {
     expect(calls).toEqual(["org_a"])
     expect((await app().request(route, { headers: { authorization: "Bearer token-a" } })).status).toBe(503)
     expect((await catalog.request("/api/claxedo/agent-config/providers?nativeHarness=claude", { headers: { authorization: "Bearer token-a" } })).status).toBe(400)
+  })
+
+  test("the Pi catalog answers the view it is asked for: the summary names an unconnected provider with no models, and one provider's read answers its models", async () => {
+    const catalog = HostedShellRoutes({ authConfig: signedConfig, verifier, piProviderCatalog: async () => plan() })
+    const read = async (query: string) => await (await catalog.request(`/api/claxedo/agent-config/providers?nativeHarness=pi${query}`, { headers: { authorization: "Bearer token-a" } })).json() as { all: Array<{ id: string; models: Record<string, unknown> }>; connected: string[] }
+    const models = (body: Awaited<ReturnType<typeof read>>, id: string) => Object.keys(body.all.find((provider) => provider.id === id)?.models ?? {}).length
+    const full = await read("")
+    const summary = await read("&view=summary")
+    expect(summary.connected).toEqual(["openai-codex"])
+    expect(summary.all.map((provider) => provider.id)).toEqual(full.all.map((provider) => provider.id))
+    expect(models(summary, "openai-codex")).toBe(models(full, "openai-codex"))
+    expect(models(full, "openrouter")).toBeGreaterThan(0)
+    expect(models(summary, "openrouter")).toBe(0)
+    const openrouter = await read("&provider=openrouter")
+    expect(openrouter.all.map((provider) => provider.id)).toEqual(["openrouter"])
+    expect(models(openrouter, "openrouter")).toBe(models(full, "openrouter"))
+    expect(JSON.stringify(summary).length).toBeLessThan(JSON.stringify(full).length / 4)
   })
 
   test("a Pi draft's options are the launch models of the providers the account connected, with no runtime asked", async () => {

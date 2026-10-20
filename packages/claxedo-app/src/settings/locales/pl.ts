@@ -52,7 +52,6 @@ export default {
   "settings.appearance.theme.description": "Dostosuj motyw Claxedo.",
   "settings.keybindings.palette": "Paleta poleceń",
   "settings.connections.reconnect": "Połącz ponownie",
-  "settings.connections.confirm": "Potwierdź",
   "settings.section.connections": "Połączenia",
   "settings.section.machines": "Maszyny",
   "settings.common.remove": "Usuń",

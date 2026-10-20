@@ -1,0 +1,13 @@
+@import "./ui/foundation.css";
+
+body {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  padding: 1px;
+}

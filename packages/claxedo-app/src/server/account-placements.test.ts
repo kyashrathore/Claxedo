@@ -15,8 +15,13 @@ const bootstrap = {
 
 const projects = { projects: [{ id: "local_app", name: "app", available: true, created_at: 1, updated_at: 2 }] }
 
-const provisioned = { workspaces: [{ workspace_id: "ws_cloud", project_id: "prj_app", backing: "cloud-vm", reachable: true, display_name: "main" }, { workspace_id: "ws_web", project_id: "prj_web", backing: "cloud-vm", repo_name: "ada/web", created_at: 5, updated_at: 6 }] }
-const machines = { workspaces: [{ workspace_id: "ws_shared", project_id: "prj_app", backing: "local-worktree", placement: { host_enrollment_id: "enr_this" } }] }
+const provisioned = {
+  workspaces: [
+    { workspace_id: "ws_cloud", project_id: "prj_app", backing: "cloud-vm", reachable: true, display_name: "main" },
+    { workspace_id: "ws_web", project_id: "prj_web", backing: "cloud-vm", repo_name: "ada/web", created_at: 5, updated_at: 6 },
+    { workspace_id: "ws_shared", project_id: "prj_app", backing: "local-worktree", placement: { host_enrollment_id: "enr_this" } },
+  ],
+}
 
 function transport(): Transport {
   const answers: Record<string, unknown> = { "/api/claxedo/bootstrap": bootstrap, "/api/claxedo/projects": projects }
@@ -33,11 +38,11 @@ function world(run: (operation: string) => Promise<unknown>, gcTime?: number) {
 
 test("signed desktop catalog: the account's cloud workspace joins the local project it shares a workspace with", async () => {
   await createRoot(async (dispose) => {
-    const { calls, workspaces } = world(async (operation) => (operation === "workspace.list.machine" ? machines : provisioned))
+    const { calls, workspaces } = world(async () => provisioned)
     expect(workspaces.complete()).toBe(false)
     await workspaces.load()
     expect(workspaces.complete()).toBe(true)
-    expect(calls.toSorted()).toEqual(["session.shared.list", "workspace.list.machine", "workspace.list.provisioner"])
+    expect(calls.toSorted()).toEqual(["session.shared.list", "workspace.list.provisioner"])
     expect(workspaces.list().map((placement) => [String(placement.id), String(placement.projectId), placement.kind])).toEqual([
       ["ws_shared", "local_app", "folder"],
       ["ws_cloud", "local_app", "cloud"],
@@ -55,11 +60,11 @@ test("signed desktop catalog: the account's catalog is asked while the bootstrap
     const answered = new Promise<void>((resolve) => { answer = resolve })
     const slow = { ...transport(), json: async (path: string) => { await answered; return path === "/api/claxedo/bootstrap" ? bootstrap : projects } } as Transport
     const calls: string[] = []
-    const account = createHostedAccount(async (operation) => (calls.push(operation), operation === "session.shared.list" ? { sessions: [] } : operation === "workspace.list.machine" ? machines : provisioned))
+    const account = createHostedAccount(async (operation) => (calls.push(operation), operation === "session.shared.list" ? { sessions: [] } : provisioned))
     const workspaces = createWorkspaces(slow, new QueryClient({ defaultOptions: { queries: { retry: false } } }), account)
     const loaded = workspaces.load()
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(calls.toSorted()).toEqual(["session.shared.list", "workspace.list.machine", "workspace.list.provisioner"])
+    expect(calls.toSorted()).toEqual(["session.shared.list", "workspace.list.provisioner"])
     answer()
     await loaded
     expect(workspaces.list()).toHaveLength(3)
@@ -70,7 +75,7 @@ test("signed desktop catalog: the account's catalog is asked while the bootstrap
 
 test("signed desktop catalog: the project list gains the control-plane-only project, readable by id", async () => {
   await createRoot(async (dispose) => {
-    const { queryClient, projects } = world(async (operation) => (operation === "workspace.list.machine" ? machines : provisioned))
+    const { queryClient, projects } = world(async () => provisioned)
     const listed = await queryClient.fetchQuery(projects.list())
     expect(listed.map((project) => String(project.id))).toEqual(["local_app", "prj_web"])
     expect(await queryClient.fetchQuery(projects.byId(projectId("prj_web")))).toMatchObject({ id: "prj_web", name: "ada/web", createdAt: 5 })
@@ -98,13 +103,13 @@ test("signed desktop catalog: an account that cannot answer leaves this machine'
 
 test("signed desktop catalog: the account's placements stay in the catalog once the query cache's collection time has passed", async () => {
   await createRoot(async (dispose) => {
-    const { calls, workspaces } = world(async (operation) => (operation === "workspace.list.machine" ? machines : provisioned), 1)
+    const { calls, workspaces } = world(async () => provisioned, 1)
     await workspaces.load()
     await Bun.sleep(20)
     expect(workspaces.list().map((placement) => String(placement.id))).toEqual(["ws_shared", "ws_cloud", "ws_web"])
     expect(workspaces.accountProjectIds(projectId("local_app"))).toEqual([projectId("prj_app")])
     await workspaces.load()
-    expect(calls.toSorted()).toEqual(["session.shared.list", "workspace.list.machine", "workspace.list.provisioner"])
+    expect(calls.toSorted()).toEqual(["session.shared.list", "workspace.list.provisioner"])
     workspaces.dispose()
     dispose()
   })

@@ -3,16 +3,13 @@
 // file list, so the ambient declaration has to travel with the file.
 /// <reference path="./workerd-globals.d.ts" />
 import { hostTunnelFailure, hostTunnelFailureResponse } from "./host-tunnel-failure"
-import { createRemoteJWKSet, importSPKI } from "jose"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import {
   WorkspaceRelayAuthError,
   verifyHostTunnelToken,
-  verifyRuntimeAccessToken,
   type HostTunnelTokenClaims,
-  type RelayKey,
 } from "./auth"
-import { bearerToken, errorBody } from "./http"
+import { bearerToken, errorBody, hostIdFromTunnelPath, workspaceIdsFromSearch } from "./http"
 import {
   makeTunnelPong,
   TUNNEL_PROTOCOL_VERSION,
@@ -33,10 +30,10 @@ import {
 } from "./server"
 import type { RuntimeAccessTokenActiveResult } from "./resolver-clients"
 import { createWorkspaceRelayDirectory } from "./directory"
-import { createOriginMatcher, DEFAULT_RELAY_APP_ORIGINS, parseAllowedOrigins, RELAY_ALLOWED_REQUEST_HEADERS } from "./cors-origins"
+import { corsPreflight, withRelayResponseHeaders, workspaceUpgradeOriginDenied } from "./relay-cors"
 import { isHostTunnelTarget } from "./host-tunnel-forwarding"
 import { forwardSessionHostHttp, isSessionHostTarget, type SessionHostNamespace } from "./session-host-forwarding"
-import { relayRoomPlacement } from "./relay-location"
+import { workspaceRelayRoomPlacement } from "./gateway-placement"
 
 export type WorkspaceRelayDurableObjectId = unknown
 
@@ -45,9 +42,7 @@ export type WorkspaceRelayDurableObjectStub = {
 }
 
 export type WorkspaceRelayDurableObjectGetOptions = {
-  // Cloudflare Durable Object placement hint, applied when the DO is first
-  // created. Keeps the relay's stateful end near users so each browser↔host
-  // round-trip doesn't cross continents.
+  /** Cloudflare's placement hint, honoured on the room's first creation only: beside the workspace's runtime (`workspaceRelayRoomPlacement`). */
   locationHint?: string
 }
 
@@ -60,90 +55,6 @@ export type WorkspaceRelayDurableObjectNamespace = {
 }
 
 export type WorkspaceRelayDurableObjectEnv = Record<string, unknown>
-
-/**
- * Runtime access key material for placement-hint authentication, resolved
- * lazily from the same env contract `worker.ts` reads
- * (`CLAXEDO_CONTROL_PLANE_JWKS_URL`, then
- * `CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM`). The gateway is constructed
- * before env exists, so resolution happens per fetch and is cached by the env
- * value itself — both are fixed for a deployment's life, and a JWKS resolver
- * additionally caches its fetched key set.
- */
-const placementAuthKeys = new Map<string, Promise<RelayKey | undefined>>()
-
-function placementAuthKey(env: WorkspaceRelayDurableObjectEnv) {
-  const jwksUrl = typeof env.CLAXEDO_CONTROL_PLANE_JWKS_URL === "string"
-    ? trimToUndefined(env.CLAXEDO_CONTROL_PLANE_JWKS_URL)
-    : undefined
-  const pem = (typeof env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM === "string"
-    ? trimToUndefined(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM)
-    : undefined)?.replaceAll("\\n", "\n")
-  const id = jwksUrl ? `jwks:${jwksUrl}` : pem ? `pem:${pem}` : undefined
-  if (!id) return undefined
-  const cached = placementAuthKeys.get(id)
-  if (cached) return cached
-  if (placementAuthKeys.size >= 32) placementAuthKeys.clear()
-  const loaded = (async (): Promise<RelayKey | undefined> => {
-    try {
-      if (jwksUrl) return createRemoteJWKSet(new URL(jwksUrl))
-      if (!pem) return undefined
-      return await importSPKI(pem, "EdDSA")
-    } catch {
-      return undefined
-    }
-  })()
-  placementAuthKeys.set(id, loaded)
-  return loaded
-}
-
-function runtimeAccessTokenFrom(request: Request) {
-  return bearerToken(request.headers.get("authorization") ?? undefined)
-    ?? request.headers.get("sec-websocket-protocol")
-      ?.split(",")
-      .map((item) => item.trim())
-      .find((item) => item.startsWith("claxedo-rat."))
-      ?.slice("claxedo-rat.".length)
-}
-
-/**
- * Whether the request's own credential verifies against the deployment's
- * runtime access key — the only verdict that makes its declared placement
- * inputs (region header/param, edge country) trustworthy.
- *
- * The Durable Object's location is fixed at first creation and never
- * migrates, and this gateway runs BEFORE the room authenticates anything, so
- * a hint taken straight from an anonymous request would let first-touch
- * traffic pin a workspace's room wherever the caller chose for the room's
- * whole life. This is a signature-level check only — the room still performs
- * the full authorization after routing — and it fails closed: a deployment
- * without verifiable key material, or a caller authenticated through a custom
- * `tokenVerifier` the gateway cannot see, simply gets the configured hint.
- */
-async function relayPlacementAuthenticated(
-  request: Request,
-  env: WorkspaceRelayDurableObjectEnv,
-  url: URL,
-  workspaceId: string,
-) {
-  const key = await placementAuthKey(env)
-  if (!key) return false
-  try {
-    if (url.pathname.startsWith("/host-tunnels/")) {
-      const hostId = trimToUndefined(hostIdFromTunnelPath(url.pathname))
-      const token = bearerToken(request.headers.get("authorization"))
-      if (!hostId || !token) return false
-      await verifyHostTunnelToken(token, key, { hostId, workspaceIds: workspaceIdsFromSearch(url) })
-      return true
-    }
-    const token = runtimeAccessTokenFrom(request)
-    if (!token) return false
-    await verifyRuntimeAccessToken(token, key, { workspaceId })
-    return true
-  } catch {
-    return false
-  }
-}
 
 export type WorkspaceRelayDurableObjectGatewayOptions = {
   bindingName?: string
@@ -309,19 +220,21 @@ const TUNNEL_RESPONSE_BODY_MAX_BYTES_DEFAULT = 16 * 1024 * 1024
 const SLOW_CONSUMER_HIGH_WATER_MARK_BYTES_DEFAULT = 8 * 1024 * 1024
 const SLOW_CONSUMER_TIMEOUT_MS_DEFAULT = 30_000
 // Frames a client may send while the upstream WebSocket is still connecting.
-//
-// Overflow CLOSES the socket rather than dropping frames, deliberately: this
-// queue carries an ordered byte stream (terminal input, PTY data), so shedding
-// entries would hand the far end a corrupted stream with no error anywhere —
-// strictly worse than a clean, diagnosable close. Sized for the interactive
-// case, where a human never has 64 unacknowledged frames in flight during the
-// few milliseconds before upstream connects.
-const UPSTREAM_WS_PRE_OPEN_QUEUE_MAX_FRAMES_DEFAULT = 64
-// Bytes are the resource this queue actually consumes, and 64 tiny frames is
-// not a memory problem. Admitting on either bound lets a legitimate burst of
-// small frames through while still capping real memory, so the close above is
-// reserved for traffic genuinely too large to hold.
+// Crossing either this or the byte bound closes the socket. Overflow CLOSES
+// rather than dropping frames, deliberately: this queue carries an ordered
+// byte stream (terminal input, PTY data), so shedding entries would hand the
+// far end a corrupted stream with no error anywhere — strictly worse than a
+// clean, diagnosable close. Far above any interactive burst: a client that
+// pipelines keystroke-sized frames faster than the upstream opens must not
+// lose the socket to that startup race, and a cap of 64 did exactly that.
+// Mirrors `DEFAULT_WS_PRE_OPEN_QUEUE_MAX_FRAMES` on the host leg
+// (workspace-runtime/src/workspace-relay-host-tunnel.ts), which queues the
+// same stream during the same connect window.
+const UPSTREAM_WS_PRE_OPEN_QUEUE_MAX_FRAMES_DEFAULT = 8_192
 const UPSTREAM_WS_PRE_OPEN_QUEUE_MAX_BYTES_DEFAULT = 8 * 1024 * 1024
+// Charged per queued frame on top of its payload, so the byte bound also
+// counts the entries an empty frame would otherwise add for free.
+const UPSTREAM_WS_PRE_OPEN_QUEUE_FRAME_OVERHEAD_BYTES = 64
 const WORKSPACE_TARGET_ACTIVE_CHECK_INTERVAL_MS_DEFAULT = 30_000
 // Consecutive resolver-unreachable answers tolerated before an established
 // connection is closed. 3 × the 30 s watcher interval survives ~90 s of resolver
@@ -338,6 +251,12 @@ const HIBERNATED_REVOCATION_ALARM_INTERVAL_MS_DEFAULT = 30_000
 const HOST_GENERATION_CHECK_INTERVAL_MS_DEFAULT = 30_000
 const TRACE_ID_HEADER = "x-claxedo-trace-id"
 const TRACE_FORCE_HEADER = "x-claxedo-relay-trace"
+/**
+ * Set by a room on a sampled trace's response and consumed by the gateway: the
+ * gateway appends its own phases only behind this marker, never behind an
+ * upstream's `server-timing`, which a session host answers on every response.
+ */
+const TRACE_SAMPLED_RESPONSE_HEADER = "x-claxedo-relay-sampled"
 
 type HostTunnelSocket = {
   hostId: string
@@ -474,6 +393,7 @@ function withTraceHeaders(response: Response, trace: RelayTrace) {
   if (timing) {
     const existing = headers.get("server-timing")
     headers.set("server-timing", existing ? `${existing}, ${timing}` : timing)
+    headers.set(TRACE_SAMPLED_RESPONSE_HEADER, "1")
   }
   return new Response(response.body, {
     status: response.status,
@@ -514,10 +434,6 @@ function workspaceIdFromRelayPath(pathname: string) {
   return /^\/workspaces\/([^/]+)(?:\/|$)/.exec(pathname)?.[1]
 }
 
-function hostIdFromTunnelPath(pathname: string) {
-  return /^\/host-tunnels\/([^/]+)(?:\/|$)/.exec(pathname)?.[1]
-}
-
 function websocketRequest(request: Request) {
   return request.headers.get("upgrade")?.toLowerCase() === "websocket"
 }
@@ -529,13 +445,6 @@ function websocketRequest(request: Request) {
 // change.
 function relayWebSocketTraceEnabled(request: Request) {
   return request.headers.get("x-claxedo-relay-ws-trace") === "1"
-}
-
-function workspaceIdsFromSearch(url: URL) {
-  return [...new Set([
-    ...url.searchParams.getAll("workspaceId"),
-    ...url.searchParams.getAll("workspace_id"),
-  ].map(trimToUndefined).filter((item): item is string => !!item))]
 }
 
 function randomToken() {
@@ -585,10 +494,10 @@ function base64ToBytes(input: string) {
   return Uint8Array.from(atob(input), (char) => char.charCodeAt(0))
 }
 
-/** Byte size of a frame awaiting the upstream socket, for the pre-open bound. */
+/** What a frame awaiting the upstream socket costs the pre-open byte bound. */
 function preOpenFrameBytes(input: string | ArrayBuffer | Uint8Array) {
-  if (typeof input === "string") return new TextEncoder().encode(input).byteLength
-  return input.byteLength
+  const payload = typeof input === "string" ? new TextEncoder().encode(input).byteLength : input.byteLength
+  return payload + UPSTREAM_WS_PRE_OPEN_QUEUE_FRAME_OVERHEAD_BYTES
 }
 
 type BlobLike = { arrayBuffer: () => Promise<ArrayBuffer> }
@@ -813,102 +722,6 @@ function json(code: string, message: string, status: 400 | 401 | 403 | 404 | 413
   return Response.json(errorBody(code, message), { status })
 }
 
-// Deployment-configured ADDITIVE app origins (CLAXEDO_APP_ORIGINS,
-// comma-separated; exact `https://app.example.com` or `https://*.example.com`
-// suffix entries). Set once at Worker boot so staged app hosts (e.g.
-// Cloudflare Pages) can call the relay without editing shared code per
-// deployment.
-let configuredAppOriginAllowed: (origin: string) => boolean = () => false
-
-export function setWorkspaceRelayAppOrigins(raw: string | undefined) {
-  configuredAppOriginAllowed = raw?.trim()
-    ? createOriginMatcher(parseAllowedOrigins(raw) ?? [])
-    : () => false
-}
-
-// Deployment-configured REPLACEMENT origin allowlist
-// (CLAXEDO_RELAY_ALLOWED_ORIGINS). When set, it fully replaces the built-in
-// default list (Claxedo/OpenCode app origins plus localhost dev hosts) — a
-// self-hosted relay is not forced to keep the product domains in its CORS
-// policy. Additive CLAXEDO_APP_ORIGINS entries still apply on top.
-const defaultOriginAllowed = createOriginMatcher(DEFAULT_RELAY_APP_ORIGINS)
-let baseOriginAllowed = defaultOriginAllowed
-
-export function setWorkspaceRelayAllowedOrigins(raw: string | undefined) {
-  const patterns = parseAllowedOrigins(raw)
-  baseOriginAllowed = patterns ? createOriginMatcher(patterns) : defaultOriginAllowed
-}
-
-function allowedCorsOrigin(origin: string | null): string | undefined {
-  if (!origin) return undefined
-  return baseOriginAllowed(origin) || configuredAppOriginAllowed(origin) ? origin : undefined
-}
-
-/**
- * The browser-origin gate on workspace WebSocket upgrades, applied after token
- * authorization and before the upgrade is granted. A request carrying NO
- * `Origin` header is a non-browser client — browsers always send Origin on
- * WebSocket upgrades — so there is no origin verdict to enforce and it is
- * admitted.
- */
-function workspaceUpgradeOriginDenied(request: Request) {
-  const origin = request.headers.get("origin")
-  if (origin === null || allowedCorsOrigin(origin)) return null
-  return json("origin_not_allowed", "Origin is not in the allowlist", 403)
-}
-
-function corsHeaders(request: Request): Record<string, string> | undefined {
-  const origin = allowedCorsOrigin(request.headers.get("origin"))
-  if (!origin) return undefined
-  return {
-    "access-control-allow-origin": origin,
-    "access-control-allow-methods": "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS",
-    "access-control-allow-headers": RELAY_ALLOWED_REQUEST_HEADERS,
-    "access-control-max-age": "86400",
-    vary: "Origin",
-  }
-}
-
-function corsPreflight(request: Request) {
-  const headers = corsHeaders(request)
-  return new Response(null, { status: headers ? 204 : 403, ...(headers ? { headers } : {}) })
-}
-
-/**
- * Response headers the RELAY — not the upstream — owns at this boundary.
- * Every workspace shares the relay's origin, so an upstream Set-Cookie would
- * be replayed to other workspaces' requests through the relay, and an
- * upstream access-control-* grant would answer for the relay's own allowlist.
- * Stripped unconditionally before `corsHeaders` stamps the relay's policy.
- */
-const UPSTREAM_OWNED_RESPONSE_HEADERS = [
-  "set-cookie",
-  "access-control-allow-origin",
-  "access-control-allow-credentials",
-  "access-control-allow-headers",
-  "access-control-allow-methods",
-  "access-control-expose-headers",
-  "access-control-max-age",
-]
-
-function withCors(request: Request, response: Response) {
-  // A WebSocket upgrade (101) CANNOT be reconstructed: in Workers
-  // `new Response(..., { status: 101 })` throws and the attached `webSocket`
-  // would be dropped anyway. Browsers always send `Origin` on WS upgrades, so
-  // wrapping here turned EVERY browser PTY/WS connection into a 500 while
-  // non-browser clients (no Origin header) worked — pass upgrades through
-  // untouched (WebSockets are not subject to CORS).
-  if (response.status === 101 || ("webSocket" in response && response.webSocket)) return response
-  const next = new Headers(response.headers)
-  for (const name of UPSTREAM_OWNED_RESPONSE_HEADERS) next.delete(name)
-  for (const [key, value] of Object.entries(corsHeaders(request) ?? {})) next.set(key, value)
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers: next,
-  })
-}
-
 function defaultWebSocketPair(): WorkspaceRelayDurableObjectSocketPair {
   // `WebSocketPair` is declared in ./workerd-globals.d.ts — see that file for
   // why this package models the workerd surface structurally.
@@ -987,12 +800,7 @@ export function createWorkspaceRelayDurableObjectGateway(
           url.pathname.startsWith("/workspaces/") || url.pathname.startsWith("/host-tunnels/") ? 400 : 404,
         )
       }
-      // The room's location is fixed at its first creation and never migrates,
-      // so this decision is permanent for the workspace.
-      const placement = await relayRoomPlacement(request, {
-        ...(typeof env.CLAXEDO_RELAY_LOCATION_HINT === "string" ? { configured: env.CLAXEDO_RELAY_LOCATION_HINT } : {}),
-        authenticated: () => relayPlacementAuthenticated(request, env, url, workspaceId),
-      })
+      const placement = await workspaceRelayRoomPlacement(request, env, workspaceId)
       const locationHint = placement.locationHint
       const routeFinishedAt = performance.now()
       const response = await namespace.get(namespace.idFromName(workspaceRelayDurableObjectRoomName(workspaceId)), {
@@ -1006,7 +814,7 @@ export function createWorkspaceRelayDurableObjectGateway(
         }, placement))
       const fetchFinishedAt = performance.now()
       if (response.status === 101 || ("webSocket" in response && response.webSocket)) {
-        return url.pathname.startsWith("/workspaces/") ? withCors(request, response) : response
+        return url.pathname.startsWith("/workspaces/") ? withRelayResponseHeaders(request, response) : response
       }
       const headers = new Headers(response.headers)
       headers.set(TRACE_ID_HEADER, headers.get(TRACE_ID_HEADER) ?? gatewayTraceId)
@@ -1019,11 +827,13 @@ export function createWorkspaceRelayDurableObjectGateway(
       })
       const gatewayFinishedAt = performance.now()
       // Only append gateway phase timings when the room decided this trace was
-      // sampled (signalled by the room having emitted its own server-timing).
-      // The sampling decision lives in the room, cannot be forced by client
-      // headers, and keeps timing internals off ordinary production responses.
-      const roomTiming = tracedResponse.headers.get("server-timing")
-      if (roomTiming) {
+      // sampled. The sampling decision lives in the room, cannot be forced by
+      // client headers, and keeps timing internals off ordinary production
+      // responses; a session host's own `server-timing` rides through unmarked.
+      const sampled = tracedResponse.headers.get(TRACE_SAMPLED_RESPONSE_HEADER) === "1"
+      tracedResponse.headers.delete(TRACE_SAMPLED_RESPONSE_HEADER)
+      const roomTiming = tracedResponse.headers.get("server-timing") ?? ""
+      if (sampled) {
         const gatewayTiming = [
           `relay-gateway-route;dur=${roundedMs(routeFinishedAt - gatewayStartedAt)}`,
           `relay-gateway-do-fetch;dur=${roundedMs(fetchFinishedAt - routeFinishedAt)}`,
@@ -1032,7 +842,7 @@ export function createWorkspaceRelayDurableObjectGateway(
         ].join(", ")
         tracedResponse.headers.set("server-timing", `${roomTiming}, ${gatewayTiming}`)
       }
-      return url.pathname.startsWith("/workspaces/") ? withCors(request, tracedResponse) : tracedResponse
+      return url.pathname.startsWith("/workspaces/") ? withRelayResponseHeaders(request, tracedResponse) : tracedResponse
     },
   }
 }
@@ -2132,14 +1942,10 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     }
     const deliverClientFrame = orderedFrameDelivery((payload) => {
       if (!upstreamOpen) {
-        // Admit on EITHER bound — see the constants. A burst of small frames
-        // while the upstream is still connecting costs almost nothing to hold,
-        // and this queue carries an ordered stream, so shedding entries would
-        // corrupt it silently. Only genuinely large buffered traffic closes.
         const frameBytes = preOpenFrameBytes(payload)
         if (
           queue.length >= (options.upstreamWebSocketPreOpenQueueMaxFrames ?? UPSTREAM_WS_PRE_OPEN_QUEUE_MAX_FRAMES_DEFAULT)
-          && queuedBytes + frameBytes > (options.upstreamWebSocketPreOpenQueueMaxBytes ?? UPSTREAM_WS_PRE_OPEN_QUEUE_MAX_BYTES_DEFAULT)
+          || queuedBytes + frameBytes > (options.upstreamWebSocketPreOpenQueueMaxBytes ?? UPSTREAM_WS_PRE_OPEN_QUEUE_MAX_BYTES_DEFAULT)
         ) {
           closeSocket(pair.server, 1011, "Upstream WebSocket queue limit exceeded")
           cleanupClient({ code: 1011, reason: "Upstream WebSocket queue limit exceeded" })
@@ -2256,7 +2062,10 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       trace && (trace.routeKind = "host-tunnel-http")
       return forwardHostTunnelHttp(request, authorized.request, trace)
     }
-    if (isSessionHostTarget(authorized.request.target)) return forwardSessionHostHttp(options.sessionHost, request, authorized.request)
+    if (isSessionHostTarget(authorized.request.target)) {
+      trace && (trace.routeKind = "session-host-http")
+      return traceSpan(trace, "session-host-fetch", () => forwardSessionHostHttp(options.sessionHost, request, authorized.request))
+    }
     trace && (trace.routeKind = "cloud-http")
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), options.forwardTimeoutMs ?? 30_000)
@@ -2392,7 +2201,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
         trace.phases.push({ name: "relay-room-total", ms: performance.now() - roomTotalStartedAt })
         const tracedResponse = withTraceHeaders(response, trace)
         logTrace(options, nextRequest, roomWorkspaceId, trace, tracedResponse)
-        return withCors(request, tracedResponse)
+        return withRelayResponseHeaders(request, tracedResponse)
       }
       return json("relay_route_not_found", "Workspace Relay route not found", 404)
     },

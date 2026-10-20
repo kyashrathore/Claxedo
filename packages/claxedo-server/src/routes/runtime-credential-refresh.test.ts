@@ -51,7 +51,7 @@ async function fixture() {
       hostId: "host-1", role: "owner", backing: "cloud-vm", jti: "proof-1", parentJti: "parent-1", ttlSeconds: 60 }, relayKeys.privateKey, "EdDSA")
     const response = await app.request("/session-authorize", { method: "POST",
       headers: { authorization: `Bearer ${proof}`, "content-type": "application/json" },
-      body: JSON.stringify({ sessionId: "ses-1", action: "turn_acquire", turnId: "msg-1" }) })
+      body: JSON.stringify({ sessionId: "ses-1", action: "turn_acquire", turnId: "msg-1", writeClass: "agent_turn" }) })
     expect(response.status).toBe(200)
     return (await response.json() as { leaseId: string }).leaseId
   }

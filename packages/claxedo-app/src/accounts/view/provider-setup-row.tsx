@@ -2,7 +2,7 @@ import { createSignal, Show, type JSX } from "solid-js"
 import { connectContextFor } from "@/lib/harness-catalog"
 import { useDialog, Button, ProviderIcon } from "@/ui"
 import { useAccountsText } from "../i18n"
-import { DialogProviderConnect } from "./connect-dialog"
+import { DrawerProviderConnect } from "./connect-drawer"
 
 export function ProviderSetupRow(props: { readonly id: string; readonly name: string; readonly harness: string; readonly note: string | undefined; readonly onConnected: () => Promise<void>; readonly children?: JSX.Element }) {
   const t = useAccountsText()
@@ -11,7 +11,7 @@ export function ProviderSetupRow(props: { readonly id: string; readonly name: st
   const openConnect = () => {
     setConnecting(true)
     const context = connectContextFor({ providerId: props.id, engine: props.harness, vendor: props.name })
-    void dialog.show(() => <DialogProviderConnect provider={props.id} context={context} harness={props.harness} onConnected={props.onConnected} />, () => setConnecting(false))
+    void dialog.show(() => <DrawerProviderConnect provider={props.id} context={context} harness={props.harness} onConnected={props.onConnected} />, () => setConnecting(false))
   }
   return (
     <div class="border-b border-border-weak-base last:border-none" data-provider={props.id}>

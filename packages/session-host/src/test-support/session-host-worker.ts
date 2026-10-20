@@ -25,9 +25,13 @@ export async function bundleSessionHostWorker(): Promise<string> {
   return result.outputFiles[0].text
 }
 
+/** The relay's published key set in place of a key in the Worker's env: the object fetches `url` through `fetch`, as every other outbound request of its. */
+export type RelayKeySet = { url: string; fetch: (request: Request) => Promise<Response> }
+
 /** One workerd running the session-host Worker, its control plane reached through a Node service binding. */
-export async function startSessionHostWorker(input: { script: string; persist: string; relayHostKey: CryptoKey; controlPlane: (request: Request) => Promise<Response> | Response }) {
+export async function startSessionHostWorker(input: { script: string; persist: string; relayHostKey: CryptoKey | RelayKeySet; controlPlane: (request: Request) => Promise<Response> | Response }) {
   const stderr: string[] = []
+  const keySet = input.relayHostKey instanceof CryptoKey ? undefined : input.relayHostKey
   const miniflare = new Miniflare({
     compatibilityDate: "2026-07-22",
     compatibilityFlags: ["nodejs_compat"],
@@ -37,8 +41,9 @@ export async function startSessionHostWorker(input: { script: string; persist: s
     serviceBindings: { CONTROL_PLANE: async (request: unknown) => await input.controlPlane(request as Request) as never },
     bindings: {
       WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL: AUTHORITY_URL,
-      WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM: await exportSPKI(input.relayHostKey),
+      ...(keySet ? { WORKSPACE_RUNTIME_RELAY_JWKS_URL: keySet.url } : { WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM: await exportSPKI(input.relayHostKey as CryptoKey) }),
     },
+    ...(keySet ? { outboundService: keySet.fetch as never } : {}),
     handleRuntimeStdio: (stdout: Readable, err: Readable) => {
       stdout.resume()
       err.on("data", (chunk: Buffer) => stderr.push(chunk.toString()))

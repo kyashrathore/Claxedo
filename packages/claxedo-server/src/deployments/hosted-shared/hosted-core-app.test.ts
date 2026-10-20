@@ -8,6 +8,7 @@ import { AgentMessagePageError } from "@claxedo/agent-runtime-contract"
 import { sourceClosure } from "@claxedo/server-core/platform/governance/source-closure"
 
 import { createHostedCoreApp } from "./hosted-core-app"
+import { publicOriginRoute } from "../../../scripts/deploy/public-origin"
 import { sandboxRelayTargetLookup, type HostedControlPlane } from "../../authority/hosted-services"
 import type { ControlPlaneServices } from "../../authority/services"
 import { STATIC_PRODUCT_DESCRIPTORS } from "./deployment-profile"
@@ -679,23 +680,13 @@ describe("resource-closed hosted core app", () => {
     }
   })
 
-  test("enforces exact-origin credentialed CORS and CSRF for cookie mutations", async () => {
+  test("grants no CORS and enforces CSRF for cookie mutations", async () => {
     const app = createHostedCoreApp(plane(), options)
-    const preflight = await app.fetch(new Request("https://core.test/api/workspace/create", {
-      method: "OPTIONS",
-      headers: {
-        origin: "https://app.test",
-        "access-control-request-method": "POST",
-      },
-    }))
-    expect(preflight.status).toBe(204)
-    expect(preflight.headers.get("access-control-allow-origin")).toBe("https://app.test")
-    expect(preflight.headers.get("access-control-allow-credentials")).toBe("true")
-
     const read = await app.fetch(new Request("https://core.test/api/claxedo/auth/descriptor", {
       headers: { origin: "https://app.test" },
     }))
-    expect(read.headers.get("timing-allow-origin")).toBe("https://app.test")
+    expect(read.status).toBe(200)
+    expect(read.headers.get("access-control-allow-origin")).toBeNull()
 
     const mutation = (headers: Record<string, string>) => app.fetch(new Request(
       "https://core.test/api/workspace/create",
@@ -762,7 +753,7 @@ describe("hosted-core usage", () => {
     const cloudUsageFacts = vi.fn(async () => [])
     const machineTime = vi.fn(async () => ({ activeMs: 600_000, running: 1, workspaces: [], providers: [] }))
     const writeRevision = vi.fn(async () => ({ status: "accepted" as const, firstSettled: true }))
-    const teamKeyRow = { source: "org" as const, credential_id: "cred_team", credential_kind: "api_key", label: "Team key", credential_provider_id: "anthropic", model: "anthropic/claude-sonnet-4-5", turn_count: 1, output_tokens: 10 }
+    const teamKeyRow = { source: "org" as const, credential_id: "cred_team", credential_kind: "api_key", label: "Acme key", credential_provider_id: "anthropic", model: "anthropic/claude-sonnet-4-5", turn_count: 1, output_tokens: 10 }
     const credentialSpend = vi.fn(async () => [{ ...teamKeyRow, spender: "alice" }, { ...teamKeyRow, spender: "bob" }])
     const listOrgMembers = vi.fn(async () => [{ user_id: "alice", public_id: "alice", role: "owner" as const, joined_at: 1, name: "Alice Liddell", you: true }])
     Object.assign(composed.services.authority!, { listOrgMembers })
@@ -911,23 +902,6 @@ describe("control-plane root and unrouted paths", () => {
     const response = await appWith("https://app.example.test").request("/")
     expect(response.status).toBe(302)
     expect(response.headers.get("location")).toBe("https://app.example.test")
-  })
-
-  /**
-   * The deployment this exists for binds the SINGULAR name. The first version
-   * read only the plural and went live redirecting nothing — the root answered
-   * JSON 404 with no `location`, which is better than a rendered "404 Not
-   * Found" but not the product.
-   */
-  test("redirects from the singular binding the locked worker actually uses", async () => {
-    const base = plane()
-    const singular = {
-      ...base,
-      env: { ...base.env, CLAXEDO_APP_ORIGIN: "https://app.single.test" },
-    } as unknown as HostedControlPlane
-    const response = await (createHostedCoreApp(singular, options) as unknown as Hono).request("/")
-    expect(response.status).toBe(302)
-    expect(response.headers.get("location")).toBe("https://app.single.test")
   })
 
   test("answers an unrouted path as JSON, never as a rendered page", async () => {
@@ -1100,6 +1074,25 @@ describe("hosted-core session-list", () => {
     }
   })
 
+  test("reads the first page of every project the reader holds in one request", async () => {
+    const listProjectSessionPages = vi.fn(async () => [
+      { projectId: "prj_1", sessions: [{ session_id: "ses_1", workspace_id: "ws_1", project_id: "prj_1", created_at: 1, updated_at: 1 }] },
+    ])
+    const response = await core({ listProjectSessionPages }).request(
+      "/api/control/session-list?scope=projects&limit=5&sort=human_turn_desc&settled=active",
+      { headers: signed },
+    )
+    expect(response.status).toBe(200)
+    expect(listProjectSessionPages).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: "signed" }),
+      { sort: "human_turn_desc", archived: "active", settled: "active", limit: 6 },
+    )
+    expect(await response.json()).toEqual({
+      view: { scope: "projects", sort: "human_turn_desc", limit: 5 },
+      pages: [{ projectId: "prj_1", items: [expect.objectContaining({ sessionRef: "workspace:ws_1:session:ses_1" })] }],
+    })
+  })
+
   test("refuses an unsigned caller with JSON, not a rendered 404", async () => {
     const response = await core({}).request("/api/control/session-list?scope=workspace&limit=5&workspaceId=ws_1")
     expect(response.status).toBe(401)
@@ -1251,5 +1244,14 @@ describe("hosted-core adapter-native device login", () => {
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({ device_code: "dev-1", user_code: "ABCD-EFGH" })
     expect(issuerFetch).toHaveBeenCalledWith("https://issuer.test/device/code", expect.objectContaining({ method: "POST" }))
+  })
+})
+
+describe("the public origin", () => {
+  test("forwards every path the control plane mounts, so a new mount cannot be lost behind the app's assets", () => {
+    const app = createHostedCoreApp(plane(), { ...options, egressBroker: async () => new Response(null, { status: 204 }) }) as unknown as Hono
+    const mounted = [...new Set(app.routes.map((route) => route.path))].filter((path) => path !== "/*" && path !== "*")
+    expect(mounted.length).toBeGreaterThan(10)
+    expect(mounted.filter((path) => publicOriginRoute(path) !== "control-plane")).toEqual([])
   })
 })

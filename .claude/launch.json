@@ -99,7 +99,6 @@
       "runtimeArgs": [
         "PORT=4445",
         "CLAXEDO_DEV_PROXY_TARGET=http://127.0.0.1:2594",
-        "VITE_CLAXEDO_SERVER_URL=http://localhost:4445",
         "bun",
         "run",
         "dev"

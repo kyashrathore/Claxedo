@@ -1,10 +1,9 @@
-import { HARNESS_IDS, HARNESS_TABLE, harnessBindingIds, vendorName, type HarnessId } from "@claxedo/agent-runtime-contract"
+import { HARNESS_IDS, HARNESS_TABLE, harnessBindingIds, piProviderSpending, type HarnessId } from "@claxedo/agent-runtime-contract"
 import { isRefusal } from "@/lib/account-health"
-import type { Account, AccountDelivery, AccountSources, AccountVerdict, MachineLogin, ProviderSource } from "@/server"
+import { harnessDisplayLabel } from "@/lib/harness-catalog"
+import type { Account, AccountSources, AccountVerdict, CatalogProvider, HarnessOptionChoice, MachineLogin, ProviderSource } from "@/server"
 
 export { isRefusal, isUnavailable } from "@/lib/account-health"
-
-export type AccountReach = "local-and-cloud" | "local-only"
 
 type QuotaWindow = NonNullable<Account["usage"]>[number]
 
@@ -33,6 +32,7 @@ export type Harness = {
   readonly vendor: string
   readonly providerIds: readonly string[]
   readonly connectProvider: string
+  readonly vendorProvider: string
   readonly signIn: string
 }
 
@@ -44,29 +44,37 @@ export const harnesses: readonly Harness[] = HARNESS_IDS.map((id) => ({
   vendor: HARNESS_TABLE[id].vendor,
   providerIds: HARNESS_TABLE[id].providerIds,
   connectProvider: HARNESS_TABLE[id].connectProvider,
+  vendorProvider: HARNESS_TABLE[id].vendorProvider,
   signIn: SIGN_IN[id],
 }))
-
-export type TeamVendor = { readonly id: string; readonly label: string }
-
-export const TEAM_VENDORS: readonly TeamVendor[] = ["anthropic", "openai", HARNESS_TABLE.cursor.vendorProvider, "openrouter", "google", "groq", "xai"].map((id) => ({ id, label: vendorName(id) }))
 
 export const MACHINE_LOGIN_KEY = "machine"
 
 export const ORG_ACCOUNT_KEY = "org"
 
-export function accountReach(delivery: AccountDelivery | undefined): AccountReach | undefined {
-  if (delivery === undefined) return "local-only"
-  if (delivery.cloud) return "local-and-cloud"
-  return delivery.local ? "local-only" : undefined
+export function machineCheckKey(harness: Harness): string {
+  return `${MACHINE_LOGIN_KEY}:${harness.id}`
+}
+
+export function harnessesServedBy(providerIds: readonly string[]): readonly string[] {
+  const cli = harnesses.filter((harness) => providerIds.some((id) => harness.providerIds.includes(id))).map((harness) => harness.label)
+  const engines = providerIds.some((id) => piProviderSpending(id) !== undefined) ? [harnessDisplayLabel("pi")] : []
+  return [...cli, ...engines]
+}
+
+export function servedByList(providerIds: readonly string[], locale: string): string {
+  return new Intl.ListFormat(locale, { style: "long", type: "conjunction" }).format(harnessesServedBy(providerIds))
 }
 
 const OPAQUE_ACCOUNT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+const KEY_MASK = "•••••"
+
 export function accountIdentity(row: Account): { text: string; readable: boolean } | undefined {
+  if (row.keyHint) return { text: `${row.keyHint.prefix}${KEY_MASK}${row.keyHint.tail}`, readable: true }
   if (row.accountId === undefined) return undefined
-  const fingerprint = /^fp_[0-9a-f]{8}(….+)$/.exec(row.accountId)
-  if (fingerprint?.[1]) return { text: fingerprint[1], readable: true }
+  const fingerprint = /^fp_[0-9a-f]{8}…(.+)$/.exec(row.accountId)
+  if (fingerprint?.[1]) return { text: `${KEY_MASK}${fingerprint[1]}`, readable: true }
   return { text: row.accountId, readable: !OPAQUE_ACCOUNT_ID.test(row.accountId) }
 }
 
@@ -89,6 +97,14 @@ export function replacedAccountLabel(providerId: string, snapshot: AccountsSnaps
   const rows = snapshot.stored.filter((row) => row.providerId === providerId)
   const replaced = snapshot.cloudOnly ? rows[0] : methodType === "token" ? rows.find((row) => row.kind === "oauth_token") : undefined
   return replaced ? accountLabel(replaced) : undefined
+}
+
+export type OrganizationTarget = { readonly vendorProvider: string; readonly replaces: string | undefined }
+
+export function organizationTarget(harness: Harness, snapshot: AccountsSnapshot, manages: boolean): OrganizationTarget | undefined {
+  if (!manages) return undefined
+  const replaced = snapshot.sources.org.find((row) => row.providerId === harness.vendorProvider)
+  return { vendorProvider: harness.vendorProvider, replaces: replaced ? accountLabel(replaced) : undefined }
 }
 
 function mergeGroup(ordered: readonly Account[]): HarnessAccount | undefined {
@@ -215,4 +231,8 @@ export function harnessRunnable(harness: Harness, snapshot: AccountsSnapshot, li
   if (row === undefined || (snapshot.cloudOnly && row.delivery?.cloud !== true)) return false
   const verdict = storedCheck(row, live[row.id])?.verdict
   return !(verdict !== undefined && isRefusal(verdict))
+}
+
+export function piModelChoices(connected: readonly CatalogProvider[]): HarnessOptionChoice[] {
+  return connected.flatMap((provider) => Object.values(provider.models).map((model) => ({ id: `${provider.id}/${model.id}`, name: model.name })))
 }

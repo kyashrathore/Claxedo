@@ -1,8 +1,7 @@
 import { isAgentSnapshotFileDiff, NO_BACKGROUND_WORK, type AgentSession } from "@claxedo/agent-runtime-contract"
 import { readField } from "@claxedo/helpers/readers"
 import { readCentralFirst, readCentralRow } from "./central-session"
-import { responseError } from "./errors"
-import { onHistory, onRuntime, sessionEndpoint, type SessionContext } from "./session-context"
+import { historyAt, readSnapshotDatum, runtimeAt, sessionEndpoint, type SessionContext } from "./session-context"
 import { NO_GOAL } from "./session-goal"
 import { withQuery, type RuntimeRoute } from "./transport"
 import type { SessionStatus } from "./status-types"
@@ -22,9 +21,7 @@ function runtimeRow(session: AgentSession, ref: SessionLocation): Pick<SessionFi
 }
 
 async function readRuntimeFirst(context: SessionContext, route: RuntimeRoute, ref: SessionLocation, shape: PageShape): Promise<SessionFirstRead> {
-  const response = await context.transport.runtime(route, withQuery(sessionEndpoint(ref, "/outline"), viewportQuery(shape)))
-  if (!response.ok) throw await responseError(response, "First read")
-  const read = firstReadFromWire(await response.json())
+  const read = firstReadFromWire(await readSnapshotDatum(context, route, withQuery(sessionEndpoint(ref, "/outline"), viewportQuery(shape)), ref, "first", "First read"))
   return { ...runtimeRow(sessionFromWire(read.session), ref), outline: read.outline, ...(read.page ?? NO_FIRST_PAGE) }
 }
 
@@ -32,20 +29,20 @@ async function readOfflineFirst(context: SessionContext, workspaceId: string, re
   return { row: await readCentralRow(context, workspaceId, ref), diff: [], outline: undefined, ...NO_FIRST_PAGE }
 }
 
-function readLiveSession(context: SessionContext, ref: SessionLocation): Promise<AgentSession | undefined> {
-  return onRuntime(context, ref, async (route) => sessionFromWire(await context.transport.runtimeJson(route, sessionEndpoint(ref))), async () => undefined)
+function readLiveSession(context: SessionContext, home: SessionHome, ref: SessionLocation): Promise<AgentSession | undefined> {
+  return runtimeAt(context, home, ref, async (route) => sessionFromWire(await readSnapshotDatum(context, route, sessionEndpoint(ref), ref, "row", "Session row")), async () => undefined)
 }
 
-async function readHeldFirst(context: SessionContext, homeRead: Promise<SessionHome>, ref: SessionLocation, held: HeldSessionReads): Promise<SessionFirstRead> {
-  const home = await homeRead
-  const live = home.central ? undefined : await readLiveSession(context, ref)
+async function readHeldFirst(context: SessionContext, home: SessionHome, ref: SessionLocation, held: HeldSessionReads): Promise<SessionFirstRead> {
+  const live = home.central ? undefined : await readLiveSession(context, home, ref)
   const row = live ? runtimeRow(live, ref) : { row: await readCentralRow(context, home.route.workspaceId, ref), diff: [] }
   return { ...row, outline: held.outline, transcript: held.latestTurn, latestTurn: held.latestTurn }
 }
 
-function readFirst(context: SessionContext, ref: SessionLocation, shape: PageShape): Promise<SessionFirstRead> {
-  return onHistory(
+function readFirst(context: SessionContext, home: SessionHome, ref: SessionLocation, shape: PageShape): Promise<SessionFirstRead> {
+  return historyAt(
     context,
+    home,
     ref,
     (route) => readRuntimeFirst(context, route, ref, shape),
     (workspaceId) => readCentralFirst(context, workspaceId, ref, shape),
@@ -53,10 +50,9 @@ function readFirst(context: SessionContext, ref: SessionLocation, shape: PageSha
   )
 }
 
-async function readCentralRuntime(context: SessionContext, homeRead: Promise<SessionHome>, ref: SessionLocation): Promise<Pick<SessionFirstRead, "row" | "diff"> | undefined> {
-  const home = await homeRead
+async function readCentralRuntime(context: SessionContext, home: SessionHome, ref: SessionLocation): Promise<Pick<SessionFirstRead, "row" | "diff"> | undefined> {
   if (!home.central || !home.live) return undefined
-  const live = await readLiveSession(context, ref)
+  const live = await readLiveSession(context, home, ref)
   return live ? runtimeRow(live, ref) : undefined
 }
 
@@ -74,18 +70,19 @@ function todosOf(view: SessionOpenView) {
 }
 
 export function startSessionReads(context: SessionContext, ref: SessionLocation, shape: PageShape, held?: HeldSessionReads): SessionReads {
-  const { transport } = context
-  const home = context.workspaces.home(ref)
-  const first = held ? readHeldFirst(context, home, ref, held) : readFirst(context, ref, shape)
-  const runtime = readCentralRuntime(context, home, ref)
-  const opened = onRuntime<SessionOpenView | undefined>(
+  const sent = context.workspaces.home(ref).then((home) => ({ home, first: held ? readHeldFirst(context, home, ref, held) : readFirst(context, home, ref, shape) }))
+  const first = sent.then((issued) => issued.first)
+  const runtime = sent.then(({ home }) => readCentralRuntime(context, home, ref))
+  const opened = sent.then(({ home }) => runtimeAt<SessionOpenView | undefined>(
     context,
+    home,
     ref,
-    async (route) => sessionOpenFromWire(await transport.runtimeJson(route, withQuery(sessionEndpoint(ref), OPEN_VIEW))),
+    async (route) => sessionOpenFromWire(await readSnapshotDatum(context, route, withQuery(sessionEndpoint(ref), OPEN_VIEW), ref, "open", "Open view")),
     async () => undefined,
-  )
+  ))
   const fact = <T>(read: (view: SessionOpenView) => T, stopped: T) => opened.then((view) => (view ? read(view) : stopped))
   return {
+    firstSent: sent,
     first,
     runtime,
     status: Promise.all([first, opened, runtime]).then(([read, view, live]) =>

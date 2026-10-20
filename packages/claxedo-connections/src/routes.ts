@@ -149,14 +149,13 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
   // caller's personal partition. Owner-absent rows are the org partition
   // ONLY while no org key is defined and the host has not refused the null
   // partition — a partitioned host must never surface them.
+  const visibleOwner = (owner: string | undefined, keys: PartitionKeys) => {
+    if (owner === undefined) return !refuseOwnerless && keys.org === undefined
+    return owner === keys.org || owner === keys.personal
+  }
   const visibleConnection = async (id: string, keys: PartitionKeys) => {
     const row = await service.getById(id)
-    if (!row) return undefined
-    if (row.owner === undefined) {
-      if (refuseOwnerless || keys.org !== undefined) return undefined
-      return row
-    }
-    return row.owner === keys.org || row.owner === keys.personal ? row : undefined
+    return row && visibleOwner(row.owner, keys) ? row : undefined
   }
 
   const connectOwner = (c: Context, scope: ConnectionScope) => {
@@ -254,6 +253,8 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
   // to settle it. For a redirect attempt the poll is a plain read, so the two
   // oauth shapes share one route and one client-side polling loop.
   route("get", "/attempts/:state", "authenticated", async (c) => {
+    const ownership = await service.attemptOwnership(c.req.param("state"))
+    if (!ownership || !visibleOwner(ownership.owner, managementKeys(c))) return c.json({ code: "attempt_not_found" }, 404)
     const status = await service.pollAttempt(c.req.param("state"))
     if (!status) return c.json({ code: "attempt_not_found" }, 404)
     return c.json(status)

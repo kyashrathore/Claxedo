@@ -1,23 +1,7 @@
 import { useServer, type AppError, type ErrorClass, type ProductErrorSurface } from "@/server"
-import type { Locale } from "./locales"
+import type { LocaleLoader, Translations } from "./dictionary"
 import type { ErrorMessages } from "./errors/model"
-import ar from "./errors/ar"
-import br from "./errors/br"
-import bs from "./errors/bs"
-import da from "./errors/da"
-import de from "./errors/de"
 import en from "./errors/en"
-import es from "./errors/es"
-import fr from "./errors/fr"
-import ja from "./errors/ja"
-import ko from "./errors/ko"
-import no from "./errors/no"
-import pl from "./errors/pl"
-import ru from "./errors/ru"
-import th from "./errors/th"
-import tr from "./errors/tr"
-import zh from "./errors/zh"
-import zht from "./errors/zht"
 import { useTranslator } from "./provider"
 
 export type ErrorCopy = { readonly title: string; readonly message: string; readonly retry: string }
@@ -50,25 +34,28 @@ function errorTranslations(messages: ErrorMessages): Record<ErrorKey, string> {
   }
 }
 
+const errorLocale = (load: () => Promise<{ readonly default: ErrorMessages }>): LocaleLoader<ErrorKey> => () =>
+  load().then((module) => ({ default: errorTranslations(module.default) }))
+
 export const errorDictionary = {
   en: errorTranslations(en),
-  ar: errorTranslations(ar),
-  br: errorTranslations(br),
-  bs: errorTranslations(bs),
-  da: errorTranslations(da),
-  de: errorTranslations(de),
-  es: errorTranslations(es),
-  fr: errorTranslations(fr),
-  ja: errorTranslations(ja),
-  ko: errorTranslations(ko),
-  no: errorTranslations(no),
-  pl: errorTranslations(pl),
-  ru: errorTranslations(ru),
-  th: errorTranslations(th),
-  tr: errorTranslations(tr),
-  zh: errorTranslations(zh),
-  zht: errorTranslations(zht),
-} satisfies Record<Locale, Readonly<Record<ErrorKey, string>>>
+  ar: errorLocale(() => import("./errors/ar")),
+  br: errorLocale(() => import("./errors/br")),
+  bs: errorLocale(() => import("./errors/bs")),
+  da: errorLocale(() => import("./errors/da")),
+  de: errorLocale(() => import("./errors/de")),
+  es: errorLocale(() => import("./errors/es")),
+  fr: errorLocale(() => import("./errors/fr")),
+  ja: errorLocale(() => import("./errors/ja")),
+  ko: errorLocale(() => import("./errors/ko")),
+  no: errorLocale(() => import("./errors/no")),
+  pl: errorLocale(() => import("./errors/pl")),
+  ru: errorLocale(() => import("./errors/ru")),
+  th: errorLocale(() => import("./errors/th")),
+  tr: errorLocale(() => import("./errors/tr")),
+  zh: errorLocale(() => import("./errors/zh")),
+  zht: errorLocale(() => import("./errors/zht")),
+} satisfies Translations<ErrorKey>
 
 export function useErrorCopy(surface: ProductErrorSurface): (error: AppError) => ErrorCopy {
   const t = useTranslator(errorDictionary)

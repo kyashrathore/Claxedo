@@ -1,25 +1,24 @@
 import { describe, expect, test } from "bun:test"
 import { exportSPKI, generateKeyPair } from "jose"
-import { TUNNEL_PROTOCOL_VERSION } from "@claxedo/workspace-relay-protocol"
+import { sessionHostId, sessionHostRootOf, TUNNEL_PROTOCOL_VERSION } from "@claxedo/workspace-relay-protocol"
 import { mintHostTunnelToken, mintRuntimeAccessToken, verifyRelayHostToken, type RuntimeAccessTokenClaims } from "./auth"
 import { createWorkspaceRelayDirectory } from "./directory"
 import {
   createWorkspaceRelayDurableObjectRoom,
   createWorkspaceRelayDurableObjectGateway,
-  setWorkspaceRelayAppOrigins,
-  setWorkspaceRelayAllowedOrigins,
   type WorkspaceRelayDurableObjectConnectWebSocket,
   workspaceRelayDurableObjectRoomName,
   workspaceRelayDurableObjectWorkspaceId,
   type WorkspaceRelaySocketAttachment,
   type WorkspaceRelayDurableObjectNamespace,
 } from "./cloudflare"
+import { setWorkspaceRelayAllowedOrigins, setWorkspaceRelayAppOrigins } from "./relay-cors"
 import {
   createCachedHostGenerationClient,
   type HostGenerationLookup,
   type HostGenerationResult,
 } from "./resolver-clients"
-import { DEFAULT_RELAY_LOCATION_HINT, RELAY_LOCATION_HINTS } from "./relay-location"
+import { DEFAULT_RELAY_LOCATION_HINT, RELAY_LOCATION_HINTS, SESSION_HOST_LOCATION_HINT } from "./relay-location"
 import type { WorkspaceRelayTarget } from "./relay-target"
 import { signUnfencedHostTunnelToken } from "./test-support/unfenced-host-token"
 
@@ -314,22 +313,22 @@ describe("workspace relay Cloudflare Durable Object gateway", () => {
     expect(routed[0]?.options?.locationHint).toBe("apac")
   })
 
-  test("appends gateway timing only when the room emitted sampled server-timing", async () => {
-    const namespace: WorkspaceRelayDurableObjectNamespace = {
+  test("appends gateway timing only behind the room's sampled marker; an upstream's own server-timing rides through unmarked and untouched", async () => {
+    const roomAnswering = (headers: Record<string, string>): WorkspaceRelayDurableObjectNamespace => ({
       idFromName: (name) => name,
-      get: () => ({
-        fetch: async () => new Response("room-ok", {
-          headers: { "server-timing": "relay-room;dur=1.5" },
-        }),
-      }),
-    }
-    const gateway = createWorkspaceRelayDurableObjectGateway({ namespace })
-    const res = await gateway.fetch(new Request("https://relay.test/workspaces/ws_1/api/wr/health"))
+      get: () => ({ fetch: async () => new Response("room-ok", { headers }) }),
+    })
+    const sampled = await createWorkspaceRelayDurableObjectGateway({ namespace: roomAnswering({ "server-timing": "relay-room;dur=1.5", "x-claxedo-relay-sampled": "1" }) })
+      .fetch(new Request("https://relay.test/workspaces/ws_1/api/wr/health"))
+    expect(sampled.status).toBe(200)
+    expect(sampled.headers.get("server-timing")).toContain("relay-room;dur=1.5")
+    expect(sampled.headers.get("server-timing")).toContain("relay-gateway-route;dur=")
+    expect(sampled.headers.get("server-timing")).toContain("relay-gateway;dur=")
+    expect(sampled.headers.get("x-claxedo-relay-sampled")).toBeNull()
 
-    expect(res.status).toBe(200)
-    expect(res.headers.get("server-timing")).toContain("relay-room;dur=1.5")
-    expect(res.headers.get("server-timing")).toContain("relay-gateway-route;dur=")
-    expect(res.headers.get("server-timing")).toContain("relay-gateway;dur=")
+    const hostTimed = await createWorkspaceRelayDurableObjectGateway({ namespace: roomAnswering({ "server-timing": "host-start;dur=120, host-serve;dur=9" }) })
+      .fetch(new Request("https://relay.test/workspaces/ws_1/api/wr/health"))
+    expect(hostTimed.headers.get("server-timing")).toBe("host-start;dur=120, host-serve;dur=9")
   })
 
   test("uses deployment relay location hint for Durable Object routing", async () => {
@@ -388,6 +387,31 @@ describe("workspace relay Cloudflare Durable Object gateway", () => {
       expect(unknown.status).toBe(403)
       const insecure = await preflight("http://claxedo-app-staging.pages.dev")
       expect(insecure.status).toBe(403)
+    } finally {
+      setWorkspaceRelayAppOrigins(undefined)
+    }
+  })
+
+  test("refuses loopback page origins by default and admits them only when a deployment names them", async () => {
+    const gateway = createWorkspaceRelayDurableObjectGateway()
+    const preflight = (origin: string) => gateway.fetch(new Request("https://relay.test/workspaces/ws_1/api/wr/health", {
+      method: "OPTIONS",
+      headers: {
+        origin,
+        "access-control-request-method": "GET",
+        "access-control-request-headers": "authorization",
+      },
+    }))
+
+    expect((await preflight("http://localhost:5173")).status).toBe(403)
+    expect((await preflight("http://127.0.0.1:4444")).status).toBe(403)
+
+    setWorkspaceRelayAppOrigins("http://localhost:*, http://127.0.0.1:*")
+    try {
+      const local = await preflight("http://localhost:5173")
+      expect(local.status).toBe(204)
+      expect(local.headers.get("access-control-allow-origin")).toBe("http://localhost:5173")
+      expect((await preflight("http://127.0.0.1:4444")).status).toBe(204)
     } finally {
       setWorkspaceRelayAppOrigins(undefined)
     }
@@ -2343,11 +2367,12 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     expect(res.status).toBe(101)
   })
 
-  test("strips upstream Set-Cookie and CORS grants from cloud HTTP responses", async () => {
+  test("strips upstream Set-Cookie and CORS grants from cloud HTTP responses and serves them as no document", async () => {
     const harness = await roomHarness({
-      fetch: (() => Promise.resolve(new Response("cloud-ok", {
+      fetch: (() => Promise.resolve(new Response("<script>cloud</script>", {
         headers: {
-          "content-type": "text/plain",
+          "content-type": "text/html",
+          "content-security-policy": "script-src *",
           "set-cookie": "session=abc; HttpOnly",
           "access-control-allow-origin": "*",
           "access-control-allow-credentials": "true",
@@ -2368,7 +2393,13 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     expect(res.headers.get("set-cookie")).toBeNull()
     expect(res.headers.get("access-control-allow-origin")).toBe("https://app.claxedo.com")
     expect(res.headers.get("access-control-allow-credentials")).toBeNull()
-    expect(res.headers.get("content-type")).toBe("text/plain")
+    expect(res.headers.get("content-type")).toBe("text/html")
+    expect(res.headers.get("content-security-policy")).toBe("sandbox")
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff")
+    // The relay owns what a browser may read off a relayed response, and lets
+    // the app attribute the response's timing to its own origin.
+    expect(res.headers.get("access-control-expose-headers")).toBe("X-Event-Cursor, X-Next-Cursor, X-Max-Event-Ordinal, Server-Timing, X-Claxedo-Trace-Id, X-Claxedo-Relay-Location-Hint")
+    expect(res.headers.get("timing-allow-origin")).toBe("https://app.claxedo.com")
 
     const noOrigin = await harness.room.fetch(new Request("https://relay.test/workspaces/ws_1/api/wr/health", {
       headers: {
@@ -2377,9 +2408,10 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     }))
     expect(noOrigin.headers.get("access-control-allow-origin")).toBeNull()
     expect(noOrigin.headers.get("set-cookie")).toBeNull()
+    expect(noOrigin.headers.get("content-security-policy")).toBe("sandbox")
   })
 
-  test("strips upstream Set-Cookie and CORS grants from tunnelled HTTP responses", async () => {
+  test("strips upstream Set-Cookie and CORS grants from tunnelled HTTP responses and serves them as no document", async () => {
     const harness = await roomHarness({ resolveTarget: "local-worktree" })
     await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
       headers: {
@@ -2403,7 +2435,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       request_id: requestMessage.request_id,
       status: 200,
       headers: {
-        "content-type": "text/plain",
+        "content-type": "text/html",
         "set-cookie": "session=abc; HttpOnly",
         "access-control-allow-origin": "*",
       },
@@ -2418,7 +2450,9 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     expect(res.status).toBe(200)
     expect(res.headers.get("set-cookie")).toBeNull()
     expect(res.headers.get("access-control-allow-origin")).toBe("https://app.claxedo.com")
-    expect(res.headers.get("content-type")).toBe("text/plain")
+    expect(res.headers.get("content-type")).toBe("text/html")
+    expect(res.headers.get("content-security-policy")).toBe("sandbox")
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff")
   })
 
   test("rejects oversized streamed tunnelled request bodies without buffering them", async () => {
@@ -2576,16 +2610,12 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     expect(harness.room.drain.pendingCount()).toBe(0)
   })
 
-  test("closes the upstream socket and clears the client when the pre-open queue overflows", async () => {
+  async function preOpenClient(bounds: { upstreamWebSocketPreOpenQueueMaxFrames?: number; upstreamWebSocketPreOpenQueueMaxBytes?: number }) {
     const upstream = new FakeSocket()
     upstream.readyState = 0
     const harness = await roomHarness({
       connectWebSocket: () => upstream,
-      upstreamWebSocketPreOpenQueueMaxFrames: 1,
-      // Both bounds must be exceeded to close, so the byte bound has to be tiny
-      // here too — otherwise these small frames are admitted (which is the
-      // point of the byte bound) and the client is not closed.
-      upstreamWebSocketPreOpenQueueMaxBytes: 1,
+      ...bounds,
       createServerSocket: () => new SilentCloseSocket(),
     })
     const res = await harness.room.fetch(new Request("https://relay.test/workspaces/ws_1/api/claxedo/pty/pty_1/connect", {
@@ -2595,20 +2625,55 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       },
     }))
     expect(res.status).toBe(101)
-    const clientSocket = harness.socket(0)
+    return { harness, upstream, client: harness.socket(0) }
+  }
 
-    clientSocket.message("frame-1")
-    clientSocket.message("frame-2")
+  const QUEUE_LIMIT = { code: 1011, reason: "Upstream WebSocket queue limit exceeded" }
 
-    expect(clientSocket.closed).toEqual({
-      code: 1011,
-      reason: "Upstream WebSocket queue limit exceeded",
-    })
-    expect(upstream.closed).toEqual({
-      code: 1011,
-      reason: "Upstream WebSocket queue limit exceeded",
-    })
+  test("closes the upstream socket and clears the client when the pre-open queue reaches its frame bound, however small the frames", async () => {
+    const { harness, upstream, client } = await preOpenClient({ upstreamWebSocketPreOpenQueueMaxFrames: 2 })
+
+    client.message("")
+    client.message("")
+    expect(client.closed).toBeUndefined()
+    client.message("")
+
+    expect(client.closed).toEqual(QUEUE_LIMIT)
+    expect(upstream.closed).toEqual(QUEUE_LIMIT)
     expect(harness.room.state()).toMatchObject({ clientCount: 0 })
+  })
+
+  test("charges every queued frame an overhead, so empty frames reach the byte bound", async () => {
+    const { client } = await preOpenClient({
+      upstreamWebSocketPreOpenQueueMaxFrames: 1_000_000,
+      upstreamWebSocketPreOpenQueueMaxBytes: 3 * 64,
+    })
+
+    for (let index = 0; index < 3; index += 1) client.message("")
+    expect(client.closed).toBeUndefined()
+    client.message("")
+
+    expect(client.closed).toEqual(QUEUE_LIMIT)
+  })
+
+  test("closes on the byte bound alone when the frames are few but large", async () => {
+    const { client } = await preOpenClient({ upstreamWebSocketPreOpenQueueMaxBytes: 1024 })
+
+    client.message("x".repeat(2048))
+
+    expect(client.closed).toEqual(QUEUE_LIMIT)
+  })
+
+  test("keeps a burst of keystroke-sized frames under the default bounds and delivers it in order once upstream opens", async () => {
+    const { upstream, client } = await preOpenClient({})
+    const frames = Array.from({ length: 200 }, (_, index) => `key-${index}`)
+
+    for (const frame of frames) client.message(frame)
+    expect(client.closed).toBeUndefined()
+    upstream.readyState = 1
+    upstream.dispatch("open")
+
+    expect(upstream.sent).toEqual(frames)
   })
 
   /**
@@ -3580,7 +3645,9 @@ describe("workspace relay Cloudflare room host generation fence", () => {
  *
  * Request-declared inputs (region header/param, edge country) only move the
  * hint off the configured floor when the request's own credential verifies —
- * anonymous first-touch traffic cannot pin a workspace's room placement.
+ * anonymous first-touch traffic cannot pin a workspace's room placement. A
+ * credential naming a session's Durable Object places the room beside that
+ * object, whatever the request declares.
  */
 describe("workspace relay Durable Object location hint", () => {
   async function routeWith(input: {
@@ -3589,7 +3656,9 @@ describe("workspace relay Durable Object location hint", () => {
     search?: string
     cf?: { country?: string }
     env?: Record<string, unknown>
-    authenticate?: "rat" | "rat-subprotocol" | "host-tunnel" | "wrong-workspace" | "invalid"
+    authenticate?: "rat" | "rat-subprotocol" | "host-tunnel" | "wrong-workspace" | "invalid" | "foreign-key"
+    /** The host the Runtime Access Token reaches; a machine unless the test names a session's object. */
+    hostId?: string
   }) {
     const { namespace, routed } = fakeNamespace()
     const gateway = createWorkspaceRelayDurableObjectGateway({ namespace })
@@ -3598,6 +3667,7 @@ describe("workspace relay Durable Object location hint", () => {
     if (input.authenticate) {
       const runtime = await generateKeyPair("EdDSA", { extractable: true })
       env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM = await exportSPKI(runtime.publicKey)
+      const signer = input.authenticate === "foreign-key" ? await generateKeyPair("EdDSA", { extractable: true }) : runtime
       if (input.authenticate === "host-tunnel") {
         headers.authorization = `Bearer ${await mintHostTunnelToken({
           enrollmentId: "enr_1",
@@ -3615,9 +3685,10 @@ describe("workspace relay Durable Object location hint", () => {
           actorKind: "human",
           orgId: "org_1",
           workspaceId: input.authenticate === "wrong-workspace" ? "ws_2" : "ws_1",
-          hostId: "host_1",
+          hostId: input.hostId ?? "host_1",
           role: "editor",
-        }, runtime.privateKey, "EdDSA")
+          ...(input.hostId && sessionHostRootOf(input.hostId) ? { sessionId: sessionHostRootOf(input.hostId) } : {}),
+        }, signer.privateKey, "EdDSA")
         if (input.authenticate === "rat-subprotocol") {
           headers["sec-websocket-protocol"] = `claxedo-rat.${token}`
         } else {
@@ -3760,6 +3831,58 @@ describe("workspace relay Durable Object location hint", () => {
     })
 
     expect(hint).toBe("weur")
+  })
+
+  test("a workspace whose sessions run on their Durable Objects gets its room beside the object, not beside the opener", async () => {
+    // The session's object is created in enam (`SESSION_HOST_LOCATION_HINT`);
+    // the room asks the control plane in IAD on every cold start and every
+    // revocation refresh, so it lives there too, whatever the browser in India
+    // declares and wherever the deployment's floor is.
+    const opened = await routeWith({
+      path: "/workspaces/ws_1/api/wr/events",
+      search: "?sessionID=ses_1&region=apac-south",
+      cf: { country: "IN" },
+      env: { CLAXEDO_RELAY_LOCATION_HINT: "apac" },
+      authenticate: "rat-subprotocol",
+      hostId: sessionHostId("ses_1"),
+    })
+    expect(opened.hint).toBe(SESSION_HOST_LOCATION_HINT)
+    expect(opened.routed[0]?.request.url).toBe("https://relay.test/workspaces/ws_1/api/wr/events?sessionID=ses_1")
+
+    const read = await routeWith({
+      path: "/workspaces/ws_1/session/ses_1/outline",
+      authenticate: "rat",
+      hostId: sessionHostId("ses_1"),
+    })
+    expect(read.hint).toBe(SESSION_HOST_LOCATION_HINT)
+    expect(read.res.headers.get("x-claxedo-relay-location-hint")).toBe(SESSION_HOST_LOCATION_HINT)
+  })
+
+  test("a machine's room stays beside its machine", async () => {
+    // A cloud machine in apac serving a browser in India, and a person's own
+    // machine in Germany: neither credential names a session's object, so the
+    // declared region and the edge country place the room as before.
+    expect((await routeWith({ search: "?region=apac-south", cf: { country: "IN" }, authenticate: "rat", hostId: "host_cloud_vm" })).hint).toBe("apac")
+    expect((await routeWith({ search: "?region=us-east", cf: { country: "IN" }, authenticate: "rat", hostId: "host_cloud_vm" })).hint).toBe("enam")
+    expect((await routeWith({ cf: { country: "DE" }, authenticate: "rat", hostId: "host_laptop" })).hint).toBe("weur")
+    expect((await routeWith({ path: "/host-tunnels/host_1", search: "?workspaceId=ws_1", cf: { country: "IN" }, authenticate: "host-tunnel" })).hint).toBe("apac")
+  })
+
+  test("no declaration moves a session host's room off its object, and no claim of a session host moves a machine's", async () => {
+    // The host is read from the signed token alone: a region a caller sets on
+    // the query cannot drag the room away from the object, and a token naming
+    // a session's object signed by anyone but the control plane proves nothing,
+    // so the room gets the configured floor as any anonymous request does.
+    expect((await routeWith({ search: "?region=eu-west", authenticate: "rat", hostId: sessionHostId("ses_1") })).hint).toBe(SESSION_HOST_LOCATION_HINT)
+    expect((await routeWith({
+      headers: { "x-claxedo-workspace-region": "eu-west" },
+      cf: { country: "DE" },
+      authenticate: "rat",
+      hostId: sessionHostId("ses_1"),
+    })).hint).toBe(SESSION_HOST_LOCATION_HINT)
+    expect((await routeWith({ cf: { country: "IN" }, authenticate: "foreign-key", hostId: sessionHostId("ses_1") })).hint).toBe(DEFAULT_RELAY_LOCATION_HINT)
+    expect((await routeWith({ search: "?region=eu-west", authenticate: "foreign-key", hostId: sessionHostId("ses_1") })).hint).toBe(DEFAULT_RELAY_LOCATION_HINT)
+    expect((await routeWith({ authenticate: "wrong-workspace", hostId: sessionHostId("ses_1") })).hint).toBe(DEFAULT_RELAY_LOCATION_HINT)
   })
 
   test("only ever emits a hint Cloudflare recognises", async () => {

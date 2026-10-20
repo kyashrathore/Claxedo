@@ -78,7 +78,6 @@ function localDesktopBridge(input: TimelineHostInput): ReturnType<typeof desktop
 function timelinePlatform(input: TimelineHostInput): TimelineHost["platform"] {
   return {
     openLink: openExternal,
-    renderMermaid: desktopBridge()?.renderMermaid,
     get openPath() { return localDesktopBridge(input)?.openPath },
     get canReadLocalFiles() { return !!localDesktopBridge(input)?.readFileContent },
   }

@@ -19,7 +19,7 @@ export function readOptions(argv: string[]): Options {
   const value = (name: string) => argv.find((arg) => arg.startsWith(`--${name}=`))?.slice(name.length + 3)
   const variants = (value("variants") ?? "app").split(",").map((spec, index): Variant => {
     const [name, dist, port] = spec.split(":") as [string, string | undefined, string | undefined]
-    return { name, dist, port: port ? Number(port) : ORIGIN_PORT_BASE + index }
+    return { name, dist: dist || undefined, port: port ? Number(port) : ORIGIN_PORT_BASE + index }
   })
   return {
     variants,

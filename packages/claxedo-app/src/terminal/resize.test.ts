@@ -2,19 +2,19 @@
 import { afterEach, beforeEach, expect, jest, test } from "bun:test"
 import type { TerminalSize } from "@/server"
 import type { TerminalBackend } from "./backend/types"
+import { stubGlobal } from "@/lib/stub-global"
 import { createResizePublisher, hostStable, isLikelyTui, sigwinchToggle, sizeSane } from "./resize"
 
-const globals = globalThis as { window?: unknown }
-const originalWindow = globals.window
+let restoreWindow: () => void
 
 beforeEach(() => {
   jest.useFakeTimers()
-  globals.window = globalThis
+  restoreWindow = stubGlobal("window", globalThis)
 })
 
 afterEach(() => {
-  globals.window = originalWindow
   jest.useRealTimers()
+  restoreWindow()
 })
 
 function advance(ms: number): void {

@@ -1,7 +1,7 @@
 .usage-claxedo {
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 32px;
   min-width: 0;
 }
 
@@ -120,21 +120,22 @@
   justify-content: flex-end;
 }
 
-.usage-mix {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
 .usage-mix-group {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
+.usage-mix-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
 .usage-mix-title {
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-medium);
+  color: var(--v2-text-text-base);
 }
 
 .usage-mix-rows {
@@ -178,19 +179,6 @@
 
 .usage-mix-share {
   color: var(--v2-text-text-muted);
-}
-
-.usage-breakdown {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.usage-breakdown-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
 }
 
 .usage-table-share {

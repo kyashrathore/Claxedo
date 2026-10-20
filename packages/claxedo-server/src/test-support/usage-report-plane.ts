@@ -82,7 +82,7 @@ export async function usageReportPlane(input: { usageWriter?: boolean | UsageRep
   }
 
   async function acquire(who: SignedControlPlaneAuth, sessionId: string, turnId: string, workspaceId: Workspace = "ws_real") {
-    const response = await post({ action: "turn_acquire", sessionId, turnId }, await relayToken(who, workspaceId))
+    const response = await post({ action: "turn_acquire", sessionId, turnId, writeClass: "agent_turn" }, await relayToken(who, workspaceId))
     if (response.status !== 200) throw new Error(`turn_acquire answered ${response.status}: ${await response.text()}`)
     const lease = await response.json() as { leaseId: string; fencingToken: number }
     return { sessionId, turnId, leaseId: lease.leaseId, fencingToken: lease.fencingToken }

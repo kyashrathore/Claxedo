@@ -1,0 +1,245 @@
+From 1f4827c906a4f246870a2b4bd1ec38227f44b1a7 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 17 Oct 2026 21:37:29 +0000
+Subject: [PATCH] A folded plain-text user message renders only its first ten
+ source lines, at most 4,096 characters, until the reader shows it all, which
+ still overflows the eight-line preview whenever the whole prompt would, so
+ the clip, the toggle and Copy message are unchanged while a 131 KB prompt
+ (the benchmark's long rows) is no longer laid out behind the clip; the plain
+ prompt renderer moves beside the fold as HighlightedPromptText,
+ message-part.tsx's ceiling falls to its measured 2,150 lines, and the app's
+ line budget is the measured 107,810.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01QtZVtcNTgBwKhSN8i2v1w2
+---
+ packages/claxedo-app/src/transcript/README.md |  2 +-
+ .../folded-user-message-body.test.ts          | 19 +++++
+ .../transcript/folded-user-message-body.tsx   | 72 ++++++++++++++++++-
+ .../src/transcript/message-part.tsx           | 57 +++------------
+ 4 files changed, 100 insertions(+), 50 deletions(-)
+ create mode 100644 packages/claxedo-app/src/transcript/folded-user-message-body.test.ts
+
+diff --git a/packages/claxedo-app/src/transcript/README.md b/packages/claxedo-app/src/transcript/README.md
+index abc871f8..fb6446cb 100644
+--- a/packages/claxedo-app/src/transcript/README.md
++++ b/packages/claxedo-app/src/transcript/README.md
+@@ -9,7 +9,7 @@ A logic change here is its own slice, proven by the transcript corpus (flow 30,
+ - A user message's header (`user-message-head.ts`) names the engine agent the message carries, capitalized, else the harness the session runs (`harnessLabel` on the data context, the contract's `harnessProductLabel`), then the model. Only OpenCode has agents, so only a prompt the person aimed at one names an agent; the app never writes the engine's default into a prompt or its echo, and a header reading "Build" on a Claude or Pi session is the defect this rule removes.
+ - The data context (`data.tsx`): `DataProvider` and `useData()` carry the placement folder, the session's harness label, and the host's callbacks (session and task hrefs, first-party tool hrefs, subagent resolution, file URLs, tool images, and `loadToolBody` for a tool part a page sent as its header). A header-only tool row (`part.headerOnly`) draws its collapsed header from the input and metadata the header reads, can open although it holds no body (`bodyPending` on `BasicTool`), and asks for its whole part when it opens; a patch's header keeps each file's path and counts (`patchFiles(files, headerOnly)`). `useOptionalData()` is for renderers that also mount outside a session.
+ - Parts (`message-part.tsx`): the registry from `part.type` and tool name to a renderer, one registry entry per harness alias, and the user-message, text, reasoning, tool, image and file renderers.
+-- User-message text shares `FoldedUserMessageBody` for plain text and markdown. Rendered content beyond eight lines starts clipped without a fade, with a visible Show all / Show less button inside the card's shared surface. A ResizeObserver reads actual content height, including width and typography changes; its subscription ends with the component. Expansion stays local to that mounted message. Collapse brings the preview back into view, and focusing a clipped link expands it. Attachments stay outside the preview, and copy always reads the complete original text. Assistant replies and work/turn folds keep their own behavior. Flow 30 (`30-user-message-fold.spec.ts`, desktop and phone) and the `long-user-message` corpus case cover this presentation.
++- User-message text shares `FoldedUserMessageBody` for plain text and markdown. Rendered content beyond eight lines starts clipped without a fade, with a visible Show all / Show less button inside the card's shared surface. Plain text is drawn by `HighlightedPromptText`, which marks its file and agent mentions, in the same module. While folded, plain text renders only its first ten source lines, at most 4,096 characters (`foldedPreviewLength`): that prefix overflows the eight-line preview whenever the whole text would, so the clip and the toggle are unchanged, and a 131 KB prompt is not laid out behind the clip. Markdown renders whole. A ResizeObserver reads actual content height, including width and typography changes; its subscription ends with the component. Expansion stays local to that mounted message. Collapse brings the preview back into view, and focusing a clipped link expands it. Attachments stay outside the preview, and copy always reads the complete original text. Assistant replies and work/turn folds keep their own behavior. Flow 30 (`30-user-message-fold.spec.ts`, desktop and phone) and the `long-user-message` corpus case cover this presentation.
+ - Tool rows (`basic-tool.tsx`, `claxedo-tool*.ts(x)`, `plan-tool.ts`, `question-*.ts(x)`, `tool-error-card.tsx`, `scrollable-output.tsx`, `shell-label.ts`, `local-preview.ts`, `apply-patch-file.ts`).
+ - Grouping and the fold: the rule is `@claxedo/agent-runtime-contract/turn-fold`, shared with the runtime's turn record; this folder draws it (`work-group-summary.ts`, `turn-fold-row.tsx`).
+ - Markdown (`markdown*.ts(x)`, `mermaid.ts`, `transcript-link.ts`, `safe-link.ts`), and image availability per URL (`image-availability.ts`).
+diff --git a/packages/claxedo-app/src/transcript/folded-user-message-body.test.ts b/packages/claxedo-app/src/transcript/folded-user-message-body.test.ts
+new file mode 100644
+index 00000000..02c12b76
+--- /dev/null
++++ b/packages/claxedo-app/src/transcript/folded-user-message-body.test.ts
+@@ -0,0 +1,19 @@
++/// <reference types="bun" />
++import { expect, test } from "bun:test"
++import { foldedPreviewLength } from "./folded-user-message-body"
++
++test("a folded plain prompt keeps ten source lines, so it still overflows the eight-line preview", () => {
++  const lines = Array.from({ length: 1_011 }, (_, index) => `Review fixture_${index} and implement the next improvement.`)
++  const text = lines.join("\n")
++  expect(text.slice(0, foldedPreviewLength(text))).toBe(`${lines.slice(0, 10).join("\n")}\n`)
++})
++
++test("a folded prompt with few long lines keeps 4,096 characters", () => {
++  const text = "word ".repeat(10_000)
++  expect(foldedPreviewLength(text)).toBe(4_096)
++})
++
++test("a short prompt is kept whole", () => {
++  const text = "one\ntwo\nthree"
++  expect(foldedPreviewLength(text)).toBe(text.length)
++})
+diff --git a/packages/claxedo-app/src/transcript/folded-user-message-body.tsx b/packages/claxedo-app/src/transcript/folded-user-message-body.tsx
+index 56364f53..0de9a9a9 100644
+--- a/packages/claxedo-app/src/transcript/folded-user-message-body.tsx
++++ b/packages/claxedo-app/src/transcript/folded-user-message-body.tsx
+@@ -1,7 +1,21 @@
+-import { createSignal, createUniqueId, onCleanup, onMount, Show, type JSX } from "solid-js"
++import { createMemo, createSignal, createUniqueId, For, onCleanup, onMount, Show, type Accessor, type JSX } from "solid-js"
++import type { AgentAgentPart, AgentFilePart } from "@claxedo/agent-runtime-contract"
+ import { useTranscriptI18n } from "./i18n"
+ 
+-export function FoldedUserMessageBody(props: { readonly markdown: boolean; readonly children: JSX.Element }) {
++const PREVIEW_SOURCE_LINES = 10
++const PREVIEW_CHARACTERS = 4096
++
++export function foldedPreviewLength(text: string): number {
++  let end = 0
++  for (let line = 0; line < PREVIEW_SOURCE_LINES; line++) {
++    const newline = text.indexOf("\n", end)
++    if (newline === -1) return Math.min(text.length, PREVIEW_CHARACTERS)
++    end = newline + 1
++  }
++  return Math.min(end, PREVIEW_CHARACTERS)
++}
++
++export function FoldedUserMessageBody(props: { readonly markdown: boolean; readonly children: (expanded: Accessor<boolean>) => JSX.Element }) {
+   const i18n = useTranscriptI18n()
+   const id = createUniqueId()
+   const [expanded, setExpanded] = createSignal(false)
+@@ -37,7 +51,7 @@ export function FoldedUserMessageBody(props: { readonly markdown: boolean; reado
+           if (event.target instanceof HTMLElement && event.target.getBoundingClientRect().bottom > preview.getBoundingClientRect().bottom) setExpanded(true)
+         }}
+       >
+-        <div ref={content}>{props.children}</div>
++        <div ref={content}>{props.children(expanded)}</div>
+       </div>
+       <Show when={overflows()}>
+         <button
+@@ -54,3 +68,55 @@ export function FoldedUserMessageBody(props: { readonly markdown: boolean; reado
+     </div>
+   )
+ }
++
++type HighlightSegment = { text: string; type?: "file" | "agent" }
++
++function segmentsWithin(segments: readonly HighlightSegment[], limit: number): HighlightSegment[] {
++  const result: HighlightSegment[] = []
++  let length = 0
++  for (const segment of segments) {
++    if (length >= limit) break
++    const text = segment.text.length > limit - length ? segment.text.slice(0, limit - length) : segment.text
++    result.push(text === segment.text ? segment : { ...segment, text })
++    length += text.length
++  }
++  return result
++}
++
++export function HighlightedPromptText(props: { text: string; limit: number | undefined; references: AgentFilePart[]; agents: AgentAgentPart[] }) {
++  const segments = createMemo(() => {
++    const text = props.text
++
++    const allRefs: { start: number; end: number; type: "file" | "agent" }[] = [
++      ...props.references
++        .filter((r) => r.source?.text?.start !== undefined && r.source?.text?.end !== undefined)
++        .map((r) => ({ start: r.source!.text.start, end: r.source!.text.end, type: "file" as const })),
++      ...props.agents
++        .filter((a) => a.source?.start !== undefined && a.source?.end !== undefined)
++        .map((a) => ({ start: a.source!.start, end: a.source!.end, type: "agent" as const })),
++    ].sort((a, b) => a.start - b.start)
++
++    const result: HighlightSegment[] = []
++    let lastIndex = 0
++
++    for (const ref of allRefs) {
++      if (ref.start < lastIndex) continue
++
++      if (ref.start > lastIndex) {
++        result.push({ text: text.slice(lastIndex, ref.start) })
++      }
++
++      result.push({ text: text.slice(ref.start, ref.end), type: ref.type })
++      lastIndex = ref.end
++    }
++
++    if (lastIndex < text.length) {
++      result.push({ text: text.slice(lastIndex) })
++    }
++
++    return result
++  })
++  const shown = createMemo(() => (props.limit === undefined ? segments() : segmentsWithin(segments(), props.limit)))
++
++  return <For each={shown()}>{(segment) => <span data-highlight={segment.type}>{segment.text}</span>}</For>
++}
+diff --git a/packages/claxedo-app/src/transcript/message-part.tsx b/packages/claxedo-app/src/transcript/message-part.tsx
+index 1e4b972a..3fb204c5 100644
+--- a/packages/claxedo-app/src/transcript/message-part.tsx
++++ b/packages/claxedo-app/src/transcript/message-part.tsx
+@@ -17,7 +17,6 @@ import { createStore } from "solid-js/store"
+ import { Dynamic } from "solid-js/web"
+ import type {
+   AgentFileLocation,
+-  AgentAgentPart,
+   AgentContentPart,
+   AgentFilePart,
+   AgentPresentationMessage,
+@@ -59,7 +58,7 @@ import { isRetractedPart, RetractedPartDisplay } from "./retracted-part"
+ import { DiagnosticsDisplay, getDiagnostics } from "./tool-diagnostics"
+ import { readPartText, type AssistantCopy } from "./message-part-text"
+ import { shouldRenderUserMarkdown } from "./user-message-markdown"
+-import { FoldedUserMessageBody } from "./folded-user-message-body"
++import { FoldedUserMessageBody, HighlightedPromptText, foldedPreviewLength } from "./folded-user-message-body"
+ import { handleTranscriptLinkClick, transcriptLinkHref, transcriptLinks } from "./transcript-link"
+ 
+ export interface MessageProps {
+@@ -766,11 +765,16 @@ export function UserMessageDisplay(props: {
+       </Show>
+       <Show when={shape() !== "empty"}>
+         <FoldedUserMessageBody markdown={shape() === "markdown"}>
+-          <div data-slot="user-message-text" class="ui-user-message-text" data-markdown={shape() === "markdown" ? "true" : undefined}>
+-            <Show when={shape() === "markdown"} fallback={<HighlightedText text={text()} references={inlineFiles()} agents={agents()} />}>
+-              <Markdown text={text()} cacheKey={textPart()?.id} streaming={false} />
+-            </Show>
+-          </div>
++          {(expanded) => (
++            <div data-slot="user-message-text" class="ui-user-message-text" data-markdown={shape() === "markdown" ? "true" : undefined}>
++              <Show
++                when={shape() === "markdown"}
++                fallback={<HighlightedPromptText text={text()} limit={expanded() ? undefined : foldedPreviewLength(text())} references={inlineFiles()} agents={agents()} />}
++              >
++                <Markdown text={text()} cacheKey={textPart()?.id} streaming={false} />
++              </Show>
++            </div>
++          )}
+         </FoldedUserMessageBody>
+         {footer()}
+       </Show>
+@@ -778,45 +782,6 @@ export function UserMessageDisplay(props: {
+   )
+ }
+ 
+-type HighlightSegment = { text: string; type?: "file" | "agent" }
+-
+-function HighlightedText(props: { text: string; references: AgentFilePart[]; agents: AgentAgentPart[] }) {
+-  const segments = createMemo(() => {
+-    const text = props.text
+-
+-    const allRefs: { start: number; end: number; type: "file" | "agent" }[] = [
+-      ...props.references
+-        .filter((r) => r.source?.text?.start !== undefined && r.source?.text?.end !== undefined)
+-        .map((r) => ({ start: r.source!.text.start, end: r.source!.text.end, type: "file" as const })),
+-      ...props.agents
+-        .filter((a) => a.source?.start !== undefined && a.source?.end !== undefined)
+-        .map((a) => ({ start: a.source!.start, end: a.source!.end, type: "agent" as const })),
+-    ].sort((a, b) => a.start - b.start)
+-
+-    const result: HighlightSegment[] = []
+-    let lastIndex = 0
+-
+-    for (const ref of allRefs) {
+-      if (ref.start < lastIndex) continue
+-
+-      if (ref.start > lastIndex) {
+-        result.push({ text: text.slice(lastIndex, ref.start) })
+-      }
+-
+-      result.push({ text: text.slice(ref.start, ref.end), type: ref.type })
+-      lastIndex = ref.end
+-    }
+-
+-    if (lastIndex < text.length) {
+-      result.push({ text: text.slice(lastIndex) })
+-    }
+-
+-    return result
+-  })
+-
+-  return <For each={segments()}>{(segment) => <span data-highlight={segment.type}>{segment.text}</span>}</For>
+-}
+-
+ export function Part(props: MessagePartProps) {
+   const component = createMemo(() => (isRetractedPart(props.part) ? RetractedPartDisplay : PART_MAPPING[props.part.type]))
+   return (
+-- 
+2.43.0
+

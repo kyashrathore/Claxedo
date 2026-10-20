@@ -115,6 +115,7 @@ test("14 a file three folders deep opens from the files tree without blocking th
   await panel.getByRole("treeitem", { name: /^deep\.ts/ }).click()
   await expect(panel.getByText("three folders down").first()).toBeVisible()
   expect(await longest(), "the longest task while the file opened, in ms").toBeLessThan(1_000)
+  await expect(panel.locator("[data-line] span[style*='var(--syntax-string)']").filter({ hasText: "three folders down" }), "the file's string drawn in the TypeScript grammar's colors").toBeVisible()
 })
 
 test("14 Review keeps its scroll position through a file tab and back", async ({ stack, api, app }) => {

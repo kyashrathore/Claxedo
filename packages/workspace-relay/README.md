@@ -32,14 +32,18 @@ on a new acquisition, including after lease deletion. The resolver requires the
 signed identity to match the current ready lease; otherwise it returns 401
 `runtime_access_token_invalid`. The app renews through connection POST once.
 
-Target lookups only coalesce while in flight, keyed by workspace, host and routing
-identity. Completed answers are never retained. Each subsequent lookup checks
-current authority, even when a newer identity has already been served. A request
-already resolving or forwarding when the lease changes can finish with its
-previous snapshot; established streams are not disconnected by this fence. The
-runtime receives a relay-host token, so it does not independently fence the
-original routing identity. This costs a control-plane lookup per request rather
-than allowing a stale positive-cache window. The relay does not retry upstream failures.
+Target lookups are keyed by workspace, host and routing identity. A resolved
+cloud or host-tunnel target is kept for `CLAXEDO_RELAY_TARGET_CACHE_TTL_MS`
+(10 s), the same lag the revocation cache allows; a workspace still starting is
+asked about on every request. A `durable-object` target is kept for 30 minutes,
+the longest life of a Runtime Access Token, because the host id names the
+session's object and the object never moves; revocation is still asked about
+on its own cadence. The revocation check and the target lookup go out together,
+since each needs only the token's claims. A request already resolving or
+forwarding when the lease changes can finish with its previous snapshot;
+established streams are not disconnected by this fence. The runtime receives a
+relay-host token, so it does not independently fence the original routing
+identity. The relay does not retry upstream failures.
 
 ### Revocation And Active Checks
 
@@ -109,7 +113,10 @@ a session host serves its events over HTTP streams.
 The relay owns CORS responses for browser-facing workspace requests. Do not
 forward upstream CORS headers as the source of truth. Configure browser origins
 with `CLAXEDO_RELAY_ALLOWED_ORIGINS` or `CLAXEDO_APP_ORIGINS` (see
-Configuration) and keep wildcard origins out of credentialed deployments.
+Configuration) and keep wildcard origins out of credentialed deployments. A
+development relay that serves a local app names its loopback origins itself,
+for example `CLAXEDO_APP_ORIGINS=http://localhost:*,http://127.0.0.1:*`; a
+deployed relay admits none by default.
 
 ### Host-Tunnel Topology
 
@@ -149,7 +156,7 @@ All knobs are environment variables: Worker vars and secrets in
 | `CLAXEDO_CONTROL_PLANE_JWKS_URL` | Remote JWKS the relay uses to verify runtime-access and host-tunnel tokens. |
 | `CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM` | Inline public key (alternative to JWKS). |
 | `CLAXEDO_RELAY_HOST_SIGNING_KEY_PEM` | Private PEM the relay uses to mint relay-host tokens. The Worker publishes its public half at `/.well-known/jwks.json`. |
-| `CLAXEDO_RELAY_ALLOWED_ORIGINS` | Comma-separated browser-origin allowlist for CORS. **Replaces** the built-in default list (Claxedo/OpenCode app origins plus `http://localhost:*` dev hosts). Grammar: exact origin, `https://*.example.com`, `http://localhost:*`.  |
+| `CLAXEDO_RELAY_ALLOWED_ORIGINS` | Comma-separated browser-origin allowlist for CORS. **Replaces** the built-in default list (`https://claxedo.com` and `https://*.claxedo.com`; no loopback origin). Grammar: exact origin, `https://*.example.com`, `http://localhost:*`.  |
 
 Cloudflare Worker tracing knobs (Durable Object deployment):
 

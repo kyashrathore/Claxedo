@@ -1,110 +1,86 @@
 import { createEffect, createSignal, For, on, Show, type Accessor } from "solid-js"
-import { useLocation, useNavigate } from "@solidjs/router"
 import { toAppError, useServer, type AppError } from "@/server"
 import type { BrowserAuthMethod, BrowserAuthSignInOptions } from "../browser-auth"
-import { createOrgInvitationFlow, loginDestination, loginOAuthContinuation } from "../login-continuation"
-import { apiOrigin, appOrigin } from "../origins"
+import { createOrgInvitationFlow } from "../login-continuation"
 import { useAuth } from "../provider"
 import { ClaxedoIcon as Icon } from "@/ui"
 import { AuthSplit } from "./auth-split"
+import { loginRedirect, type LoginHost, type LoginRedirect } from "./login-redirect"
 import "./auth.css"
 
 const providerName = (method: "google" | "github") => (method === "google" ? "Google" : "GitHub")
 type InvitationFlow = ReturnType<typeof createOrgInvitationFlow>
 type LoginController = ReturnType<typeof createLoginController>
 
-export function LoginPage() {
-  return <LoginForm />
-}
-
-export function OrgInvitationPage() {
-  const location = useLocation()
-  return (
-    <Show when={location.hash.slice(1)} keyed fallback={
-      <main class="auth-page">
-        <section class="auth-card">
-          <h1 class="auth-title">Invitation link is incomplete</h1>
-          <p class="auth-subtitle">Open the complete invitation link from your email, or ask your organization for a new invitation.</p>
-          <a class="auth-button" href="/">Continue to Claxedo</a>
-        </section>
-      </main>
-    }>
-      {(token) => <LoginForm invitationToken={token} />}
-    </Show>
-  )
-}
-
-function loginRedirect() {
-  const location = useLocation()
-  const navigate = useNavigate()
-  const continuation = () =>
-    loginOAuthContinuation({
-      appOrigin: appOrigin(),
-      apiOrigin: apiOrigin(),
-      pathname: location.pathname,
-      search: location.search,
-    })
-  return {
-    target: () => continuation()?.signInRedirect ?? "/",
-    finish() {
-      const destination = loginDestination(continuation())
-      if ("assign" in destination) window.location.assign(destination.assign)
-      else navigate(destination.navigate, { replace: true })
-    },
-  }
-}
-
-async function acceptInvitation(flow: InvitationFlow) {
+async function acceptInvitation(accept: () => Promise<unknown>) {
   try {
-    await flow.accept()
+    await accept()
   } catch (cause) {
     console.error("Organization invitation acceptance failed", toAppError(cause).class)
   }
 }
 
-function loginAction(input: {
-  auth: ReturnType<typeof useAuth>
-  invitation?: InvitationFlow
-  action: Accessor<"signIn" | "signUp">
+type SignInInput = {
   email: Accessor<string>
   password: Accessor<string>
   redirect: Accessor<string>
+}
+
+function signInOptions(method: BrowserAuthMethod | undefined, input: SignInInput): BrowserAuthSignInOptions {
+  if (method === "email-password") return { method, email: input.email(), password: input.password(), redirectUrl: input.redirect() }
+  return method ? { method, redirectUrl: input.redirect() } : { redirectUrl: input.redirect() }
+}
+
+function loginAction(input: SignInInput & {
+  auth: ReturnType<typeof useAuth>
+  invitation?: InvitationFlow
+  action: Accessor<"signIn" | "signUp">
+  continuation: LoginRedirect
 }) {
   const [failure, setFailure] = createSignal<AppError>()
   return {
-    failure,
+    failure: () => {
+      const state = input.invitation?.state()
+      return state?.kind === "failed" ? state.failure : failure()
+    },
     continueWith: async (method?: BrowserAuthMethod) => {
       setFailure()
-      const options: BrowserAuthSignInOptions =
-        method === "email-password"
-          ? { method, email: input.email(), password: input.password(), redirectUrl: input.redirect() }
-          : method
-            ? { method, redirectUrl: input.redirect() }
-            : { redirectUrl: input.redirect() }
+      const options = signInOptions(method, input)
       try {
         if (input.invitation) await input.invitation.authenticate(options, input.action())
-        else await input.auth.signIn(options)
+        else {
+          input.continuation.started()
+          await input.auth.signIn(options)
+        }
       } catch (cause) {
+        input.continuation.abandoned()
         if (input.invitation) console.error("Organization invitation authentication failed", toAppError(cause).class)
         else setFailure(toAppError(cause))
+      }
+    },
+    signOut: async () => {
+      setFailure()
+      try {
+        await input.auth.signOut()
+      } catch (cause) {
+        setFailure(toAppError(cause))
       }
     },
   }
 }
 
-function createLoginController(token?: string) {
+function createLoginController(host: LoginHost, token?: string) {
   const auth = useAuth()
-  const server = useServer()
-  const invitation = token ? createOrgInvitationFlow(auth, server.acceptOrgInvitation, token) : undefined
+  const invitation = token ? createOrgInvitationFlow(auth, useServer().acceptOrgInvitation, token) : undefined
   const [email, setEmail] = createSignal("")
   const [password, setPassword] = createSignal("")
   const [action, setAction] = createSignal<"signIn" | "signUp">(invitation ? "signUp" : "signIn")
-  const redirect = loginRedirect()
-  const login = loginAction({ auth, invitation, action, email, password, redirect: redirect.target })
+  const redirect = loginRedirect(host)
+  const login = loginAction({ auth, invitation, action, email, password, redirect: redirect.target, continuation: redirect })
   createEffect(
     on(auth.state, (state) => {
       if (state.kind !== "signedIn") return
-      if (invitation) void acceptInvitation(invitation)
+      if (invitation) void acceptInvitation(invitation.resume)
       else redirect.finish()
     }),
   )
@@ -118,16 +94,15 @@ function createLoginController(token?: string) {
     action,
     setAction,
     continueWith: (method?: BrowserAuthMethod) => login.continueWith(method),
+    signOut: () => login.signOut(),
     joined: () => invitation?.state().kind === "joined",
     accept: () => {
-      if (invitation) void acceptInvitation(invitation)
+      if (invitation) void acceptInvitation(invitation.accept)
     },
     busy: () =>
       auth.state().kind === "signingIn" || ["authenticating", "accepting"].includes(invitation?.state().kind ?? "idle"),
-    failure: () => {
-      const state = invitation?.state()
-      return state?.kind === "failed" ? state.failure : login.failure()
-    },
+    failure: login.failure,
+    reauthenticating: () => !invitation && redirect.freshSignInRequired() && auth.state().kind === "signedIn",
     socialMethods: () =>
       auth.methods().filter((method): method is "google" | "github" => method === "google" || method === "github"),
   }
@@ -135,8 +110,8 @@ function createLoginController(token?: string) {
 
 const LEAD = "Every coding agent, on any machine, from anywhere."
 
-function LoginForm(props: { invitationToken?: string }) {
-  const controller = createLoginController(props.invitationToken)
+export function LoginForm(props: { readonly host: LoginHost; readonly invitationToken?: string }) {
+  const controller = createLoginController(props.host, props.invitationToken)
   return (
     <AuthSplit
       title={controller.invitation ? "Join your organization" : "Sign in to Claxedo"}
@@ -144,6 +119,9 @@ function LoginForm(props: { invitationToken?: string }) {
     >
       <Show when={controller.auth.state().kind === "expired"}>
         <p role="status" class="auth-note">Your sign-in expired. Sign in again to continue.</p>
+      </Show>
+      <Show when={controller.reauthenticating()}>
+        <p role="status" class="auth-note">The app asking for access needs you to sign in again.</p>
       </Show>
       <Show when={controller.joined()} fallback={<LoginActions controller={controller} />}>
         <p class="auth-subtitle">You have joined the organization.</p>
@@ -177,7 +155,7 @@ function LoginActions(props: { controller: LoginController }) {
             type="button"
             class="auth-button auth-button-secondary"
             disabled={controller.busy()}
-            onClick={() => void controller.auth.signOut()}
+            onClick={() => void controller.signOut()}
           >
             Use another account
           </button>

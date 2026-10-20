@@ -6,7 +6,6 @@ import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import { Hono } from "hono"
 import { allowedOriginPatterns } from "@claxedo/server-core/platform/http/cors-origins"
 import { securityHeaders } from "@claxedo/server-core/platform/http/security-headers"
-import { responseTiming } from "../../platform/http/server-timing"
 import { browserAuthHttpSecurity } from "@claxedo/server-core/platform/http/browser-auth-security"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { TelemetryTrackRoutes } from "@claxedo/server-core/platform/telemetry/track-route"
@@ -29,7 +28,8 @@ import {
 import { JwksRoutes } from "../../authority/routes/jwks"
 import { OAuthProtectedResourceRoutes } from "../../mcp/oauth-protected-resource"
 import type { CredentialSnapshot } from "@claxedo/agent-runtime-contract"
-import { HostedShellRoutes, hostedHarnessRuntimeStatus } from "../../routes/hosted/shell"
+import { HostedShellRoutes } from "../../routes/hosted/shell"
+import { hostedHarnessRuntimeStatus } from "../../workspace/harness-runtime"
 import { HostedAuthProfileRoutes } from "../../routes/hosted/auth-profile"
 import { HostedDeviceAuthRoutes } from "../../routes/hosted/device-auth"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "../../routes/hosted/workspace"
@@ -63,7 +63,7 @@ import {
   hostedRouteGuardExemptions,
   type RouteGuardExemption,
 } from "../../platform/auth/request-guard"
-import { parseSessionListQuery, sessionInventoryResponse, signedSessionList, sessionListErrorResponse } from "../../session/list"
+import { parseSessionListQuery, sessionInventoryResponse, signedProjectSessionPages, signedSessionList, sessionListErrorResponse } from "../../session/list"
 import { createSessionReadRoutes, authoritySessionReads } from "../../session/routes/session-read"
 import { createSessionReaderRoutes } from "../../session/routes/session-reader"
 import type { HostedControlPlane } from "../../authority/hosted-services"
@@ -96,7 +96,7 @@ import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-t
 import { privateRepoHosts } from "../private-repo-hosts"
 import { hostedSandboxEgress } from "./hosted-sandbox-egress"
 import { configuredCoreAppOrigins, coreAppHomeOrigin, corsMiddleware } from "./hosted-core-origins"
-import { BROKER_ROUTE_PATTERN, isBrokerPath } from "@claxedo/egress-broker"
+import { BROKER_ROUTE_PATTERN } from "@claxedo/egress-broker"
 import type { UsageProjectionLedger } from "@claxedo/server-core/usage/ledger"
 import type { UsageReportWriter } from "@claxedo/server-core/usage/usage-report"
 import { withTurnCompletedTelemetry } from "../../usage/turn-completed-telemetry"
@@ -242,7 +242,6 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
   const app = withRouteOwnership(new Hono(), ownership, "hosted-core")
 
   app.use(securityHeaders())
-  app.use(responseTiming())
   const flushTelemetry = services.telemetry.flush
   if (flushTelemetry) {
     app.use(async (c, next) => {
@@ -251,7 +250,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
     })
   }
   if (options.authentication.descriptor.browser.transport === "cookie") {
-    app.use(browserAuthHttpSecurity(options.authentication.descriptor.browser, { withholdFrom: isBrokerPath }))
+    app.use(browserAuthHttpSecurity(options.authentication.descriptor.browser))
   } else {
     app.use(
       corsMiddleware(
@@ -690,9 +689,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
   //
   // The root gets a redirect rather than an error, because a person typing
   // this hostname wants the product, not a diagnostic.
-  // Both spellings: the hosted roots' CORS reads the plural list, while the
-  // user-deployed deploy binds only the SINGULAR `CLAXEDO_APP_ORIGIN`.
-  const appHome = coreAppHomeOrigin(plane.env.CLAXEDO_APP_ORIGINS ?? plane.env.CLAXEDO_APP_ORIGIN)
+  const appHome = coreAppHomeOrigin(plane.env.CLAXEDO_APP_ORIGINS)
   if (appHome) app.get("/", (context) => context.redirect(appHome, 302))
   app.notFound((context) =>
     context.json(
@@ -743,7 +740,10 @@ function mountSessionReadRoutes(app: Hono, plane: HostedControlPlane, authentica
       return context.json({ error: { code: "UNAUTHORIZED", message: "Signed auth is required" } }, 401)
     }
     try {
-      return context.json(await signedSessionList(services, authResult.auth, parseSessionListQuery(new URL(context.req.url))))
+      const query = parseSessionListQuery(new URL(context.req.url))
+      return context.json(query.scope === "projects"
+        ? await signedProjectSessionPages(services, authResult.auth, query)
+        : await signedSessionList(services, authResult.auth, query))
     } catch (err) {
       const mapped = sessionListErrorResponse(err)
       if (mapped) return mapped

@@ -16,14 +16,14 @@ test("57 composer: on a cloud provider without its own edge, Claude Code runs th
   await picker.getByRole("button", { name: "Claude Code", exact: true }).click()
 
   await expect(picker.getByRole("button", { name: /^Harness/ })).toContainText("Claude Code")
-  await expect(picker.getByText(/runs inside the workspace, and your organization's cloud provider can't keep your key out of it\./)).toHaveCount(0)
+  await expect(picker.getByText(/can't use your account in this workspace\./)).toHaveCount(0)
   await expect(picker.getByText(/secret_brokering_unsupported|harness_needs_brokering/)).toHaveCount(0)
 
   await showHarnesses(picker)
   await picker.getByRole("button", { name: "Cursor", exact: true }).click()
-  await expect(picker.getByText("Cursor runs inside the workspace, and your organization's cloud provider can't keep your key out of it.", { exact: true })).toBeVisible()
+  await expect(picker.getByText("Cursor can't use your account in this workspace.", { exact: true })).toBeVisible()
   await expect(picker.getByText("It runs on your machines, or pick another harness here.", { exact: true })).toBeVisible()
   await expect(picker.getByRole("button", { name: /^Switch to/ })).toHaveCount(0)
-  await expect(page.getByText("This workspace is asleep. It wakes when you send a message.", { exact: true })).toBeVisible()
+  await expect(page.getByText("This workspace is asleep. It wakes when you send a message.", { exact: true })).toHaveCount(0)
   expect(starts.filter((method) => method === "POST"), "the answers come without starting the workspace").toEqual([])
 })

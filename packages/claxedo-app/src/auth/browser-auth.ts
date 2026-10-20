@@ -1,6 +1,7 @@
-import { INTERACTIVE_AUTH_METHODS, type AuthAdapterDescriptor, type BrowserAuthDescriptor as BrowserCredentialDescriptor, type InteractiveAuthMethod } from "@claxedo/account-contract/auth"
-import { z } from "zod"
+import type { AuthAdapterDescriptor, BrowserAuthDescriptor as BrowserCredentialDescriptor, InteractiveAuthMethod } from "@claxedo/account-contract/auth"
+import { isFiniteNumber, isRecord } from "@claxedo/helpers/guards"
 import type { Accessor } from "solid-js"
+import { exactHttps, readCookieContract, readLiveBrowserAuthDescriptor } from "./browser-auth-descriptor"
 import type { AuthUser } from "./display-user"
 
 export type BrowserAuthAdapterId = "better-auth"
@@ -30,8 +31,7 @@ export type BrowserAuthState = {
 }
 
 export type BrowserAuthDeployment = {
-  apiOrigin: string
-  appOrigin: string
+  origin: string
   issuesSessions: boolean
 }
 
@@ -56,17 +56,10 @@ export function assertBrowserAuthDescriptorBinding(expected: BrowserAuthDescript
   }
 }
 
-function exactHttps(value: string, origin = false) {
-  if (!URL.canParse(value)) return false
-  const url = new URL(value)
-  const canonical = origin ? url.origin : `${url.origin}${url.pathname === "/" ? "" : url.pathname}`
-  return url.protocol === "https:" && canonical === value && !url.search && !url.hash && !url.username && !url.password
-}
-
 export function browserAuthUnavailable(deployment: BrowserAuthDeployment): string | null {
   if (!deployment.issuesSessions) return "Sign-in is unavailable: this Claxedo server issues no sessions, so it has no accounts."
-  if (!exactHttps(deployment.apiOrigin, true) || !exactHttps(deployment.appOrigin, true)) {
-    return "Sign-in is unavailable: it requires the app and the Claxedo server on exact HTTPS origins."
+  if (!exactHttps(deployment.origin, true)) {
+    return "Sign-in is unavailable: it requires the app on an exact HTTPS origin."
   }
   return null
 }
@@ -76,58 +69,33 @@ export function browserAuthUnavailableReason(error: unknown): string {
   return `Sign-in is unavailable: ${detail}`
 }
 
-const text = z.string().refine((value) => value.trim().length > 0)
-const uniqueTexts = z.array(text).refine((values) => new Set(values).size === values.length)
-const httpsUrl = text.refine((value) => exactHttps(value))
-const descriptorSchema = z.object({
-  adapter: z.literal("better-auth"),
-  deploymentId: text,
-  configurationVersion: text,
-  expiresAt: z.number().finite().refine((value) => value > Date.now()),
-  issuer: httpsUrl,
-  methods: z.array(z.enum(INTERACTIVE_AUTH_METHODS)).nonempty().refine((values) => new Set(values).size === values.length),
-  browser: z.object({
-    transport: z.literal("cookie"),
-    credentialPolicy: z.literal("reject-cookie-and-authorization"),
-    trustedOrigins: uniqueTexts.refine((values) => values.every((value) => exactHttps(value, true))),
-    clientId: text,
-    resource: httpsUrl,
-    scopes: uniqueTexts.refine((values) => values.length > 0),
-    cookie: z.unknown().optional(),
-  }),
-})
-const cookieSchema = z.object({
-  name: text,
-  path: z.literal("/"),
-  secure: z.literal(true),
-  httpOnly: z.literal(true),
-  hostOnly: z.literal(true),
-  sameSite: z.enum(["lax", "strict"]),
-})
-
-function parseDescriptor(value: unknown, input: { selectedAdapter: BrowserAuthAdapterId; apiOrigin: string; appOrigin: string }): BrowserAuthDescriptor {
-  const parsed = descriptorSchema.safeParse(value)
-  if (!parsed.success || !parsed.data.browser.trustedOrigins.includes(input.appOrigin) || new URL(parsed.data.browser.resource).origin !== input.apiOrigin) {
+function parseDescriptor(value: unknown, input: { selectedAdapter: BrowserAuthAdapterId; origin: string }): BrowserAuthDescriptor {
+  const descriptor = readLiveBrowserAuthDescriptor(value)
+  if (!descriptor || !descriptor.browser.trustedOrigins.includes(input.origin) || new URL(descriptor.browser.resource).origin !== input.origin) {
     throw new BrowserAuthConfigurationError(`live auth descriptor does not match the ${input.selectedAdapter} browser build`)
   }
-  const descriptor = parsed.data
-  const cookie = cookieSchema.safeParse(descriptor.browser.cookie)
-  if (descriptor.issuer !== `${input.apiOrigin}/api/auth` || !cookie.success) {
+  const cookie = readCookieContract(descriptor.browser.cookie)
+  if (descriptor.issuer !== `${input.origin}/api/auth` || !cookie) {
     throw new BrowserAuthConfigurationError("live Better Auth descriptor has an invalid cookie contract")
   }
-  return { ...descriptor, browser: { ...descriptor.browser, cookie: cookie.data } }
+  return { ...descriptor, browser: { ...descriptor.browser, cookie } }
+}
+
+function isDescriptorInDate(published: unknown): boolean {
+  return isRecord(published) && isFiniteNumber(published.expiresAt) && published.expiresAt > Date.now()
 }
 
 export async function loadBrowserAuthDescriptor(input: {
   selectedAdapter: BrowserAuthAdapterId
-  apiOrigin: string
-  appOrigin: string
+  origin: string
+  published?: unknown
   request?: DescriptorRequest
 }): Promise<BrowserAuthDescriptor> {
-  if (!exactHttps(input.apiOrigin, true) || !exactHttps(input.appOrigin, true)) {
-    throw new BrowserAuthConfigurationError("browser auth requires exact HTTPS API and app origins")
+  if (!exactHttps(input.origin, true)) {
+    throw new BrowserAuthConfigurationError("browser auth requires an exact HTTPS origin")
   }
-  const response = await (input.request ?? fetch)(`${input.apiOrigin}/api/claxedo/auth/descriptor`, {
+  if (isDescriptorInDate(input.published)) return parseDescriptor(input.published, input)
+  const response = await (input.request ?? fetch)(`${input.origin}/api/claxedo/auth/descriptor`, {
     credentials: "include",
     headers: { accept: "application/json" },
   })

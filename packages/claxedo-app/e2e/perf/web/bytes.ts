@@ -1,0 +1,114 @@
+import fs from "node:fs"
+import path from "node:path"
+import { promisify } from "node:util"
+import zlib from "node:zlib"
+import { SourceMapConsumer } from "../../../../../node_modules/.bun/node_modules/source-map/source-map.js"
+import type { EncodedAsset } from "../../harness/front-shaping"
+
+const brotli = promisify(zlib.brotliCompress)
+const gzip = promisify(zlib.gzip)
+
+export type ChunkBytes = {
+  readonly path: string
+  readonly kind: "js" | "css" | "html" | "other"
+  readonly initial: boolean
+  readonly raw: number
+  readonly gzip: number
+  readonly br: number
+  readonly sources: readonly { readonly source: string; readonly bytes: number }[] | undefined
+}
+
+export type DistBytes = {
+  readonly chunks: readonly ChunkBytes[]
+  readonly initial: ReadonlySet<string>
+  readonly encoded: (pathname: string) => EncodedAsset | undefined
+  readonly compressMs: number
+}
+
+const COMPRESSED = /\.(js|mjs|css|html|svg|json|webmanifest|txt|xml)$/
+
+function kindOf(file: string): ChunkBytes["kind"] {
+  const extension = path.extname(file)
+  if (extension === ".js" || extension === ".mjs") return "js"
+  if (extension === ".css") return "css"
+  if (extension === ".html") return "html"
+  return "other"
+}
+
+function initialAssets(distDir: string) {
+  const html = fs.readFileSync(path.join(distDir, "index.html"), "utf8")
+  const initial = new Set<string>(["/index.html"])
+  for (const match of html.matchAll(/(?:src|href)="(\/[^"]+)"/g)) initial.add(match[1])
+  return initial
+}
+
+function walk(directory: string, root = directory): string[] {
+  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(directory, entry.name)
+    if (entry.isDirectory()) return walk(full, root)
+    return entry.name.endsWith(".map") || entry.name.endsWith(".json") && entry.name.startsWith("claxedo-e2e-build") ? [] : [`/${path.relative(root, full).split(path.sep).join("/")}`]
+  })
+}
+
+function normalizeSource(source: string) {
+  const packages = source.indexOf("/packages/")
+  if (packages >= 0) return source.slice(packages + 1)
+  const modules = source.lastIndexOf("node_modules/")
+  if (modules >= 0) {
+    const rest = source.slice(modules + "node_modules/".length)
+    const [scope, name] = rest.split("/")
+    return `node_modules/${scope.startsWith("@") ? `${scope}/${name}` : scope}`
+  }
+  return source.replace(/^(\.\.\/)+/, "")
+}
+
+function sourceBytes(distDir: string, pathname: string, code: string) {
+  const mapFile = path.join(distDir, `${pathname}.map`)
+  if (!fs.existsSync(mapFile)) return undefined
+  const consumer = new SourceMapConsumer(JSON.parse(fs.readFileSync(mapFile, "utf8")))
+  const lines = code.split("\n")
+  const totals = new Map<string, number>()
+  let previous: { source: string; line: number; column: number } | undefined
+  const credit = (upTo: { line: number; column: number }) => {
+    if (!previous) return
+    const lineLength = lines[previous.line - 1]?.length ?? 0
+    const end = upTo.line === previous.line ? upTo.column : lineLength
+    totals.set(previous.source, (totals.get(previous.source) ?? 0) + Math.max(0, end - previous.column))
+  }
+  consumer.eachMapping((mapping) => {
+    credit({ line: mapping.generatedLine, column: mapping.generatedColumn })
+    previous = mapping.source ? { source: normalizeSource(mapping.source), line: mapping.generatedLine, column: mapping.generatedColumn } : undefined
+  }, undefined, SourceMapConsumer.GENERATED_ORDER)
+  if (previous) credit({ line: previous.line, column: lines[previous.line - 1]?.length ?? 0 })
+  return [...totals.entries()].sort((a, b) => b[1] - a[1]).map(([source, bytes]) => ({ source, bytes }))
+}
+
+export async function analyzeDist(distDir: string): Promise<DistBytes> {
+  const started = Date.now()
+  const initial = initialAssets(distDir)
+  const encoded = new Map<string, EncodedAsset>()
+  const chunks = await Promise.all(walk(distDir).map(async (pathname): Promise<ChunkBytes> => {
+    const content = fs.readFileSync(path.join(distDir, pathname))
+    const kind = kindOf(pathname)
+    const compressible = COMPRESSED.test(pathname)
+    const [br, gz] = compressible
+      ? await Promise.all([brotli(content, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 11, [zlib.constants.BROTLI_PARAM_SIZE_HINT]: content.byteLength } }), gzip(content, { level: 6 })])
+      : [undefined, undefined]
+    if (br && gz) encoded.set(pathname, { br, gzip: gz })
+    return {
+      path: pathname,
+      kind,
+      initial: initial.has(pathname),
+      raw: content.byteLength,
+      gzip: gz?.byteLength ?? content.byteLength,
+      br: br?.byteLength ?? content.byteLength,
+      sources: kind === "js" && initial.has(pathname) ? sourceBytes(distDir, pathname, content.toString("utf8")) : undefined,
+    }
+  }))
+  return {
+    chunks: chunks.sort((a, b) => b.raw - a.raw),
+    initial,
+    encoded: (pathname) => encoded.get(pathname === "/" ? "/index.html" : pathname) ?? (path.extname(pathname) === "" ? encoded.get("/index.html") : undefined),
+    compressMs: Date.now() - started,
+  }
+}

@@ -383,9 +383,10 @@ because the machine publishes them.
 
 **D.1 The page** — the session list's reads
 (`packages/claxedo-app/src/session/list/reads.ts`) call
-`server.sessions.list`, which is `listSessions`
-(`packages/claxedo-app/src/server/session-list.ts`). A project's page is built
-by `projectSources`:
+`server.sessions.firstPages` for the first page of every project (`listFirstPages`
+in `packages/claxedo-app/src/server/session-list.ts`) and `server.sessions.list`
+(`listSessions`) for a project's later pages and the Activity view. A project's
+page is built by `projectSources`:
 - `serverSource` reads the attached server's list: `GET
   /api/claxedo/session-list` on a loopback server (the daemon's
   `packages/claxedo-local-server/src/session/routes/meta-routes.ts`), and
@@ -399,6 +400,19 @@ by `projectSources`:
   `session.page` (`GET /api/control/session-list?scope=project`). It is
   optional, except for a project that exists only in the account catalog,
   where it is the only source and required.
+- The first page of every account project comes from one account operation,
+  `session.pages` (`GET /api/control/session-list?scope=projects`, `signedProjectSessionPages`):
+  the Worker reads the reader's projects from the workspaces the reader may
+  open and runs the `scope=project` statement for each in one D1 batch
+  (`readD1ProjectSessionPages` in
+  `packages/claxedo-server/src/authority/adapters/d1/session-read-store.ts`).
+  On a signed browser the whole catalog is the account's, so the read starts
+  when the fill begins, before the catalog has named a project, and the
+  rail's first fill is one request beside the catalog's; a signed desktop
+  starts it when the first project asks, once per settled filter the projects
+  need (`all` for paired projects, the reader's own for account-only ones).
+  A project the answer does not name has an empty first page; `after` pages
+  are the project's own `session.page`.
 
 The Activity view's page (`every: true`) is built by `everySources`: the same
 `serverSource` with `scope=all`, every session the reader may read (the

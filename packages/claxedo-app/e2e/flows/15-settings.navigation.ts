@@ -9,6 +9,10 @@ export function picker(app: Page, label: string) {
   return app.getByRole("group", { name: label }).getByRole("button")
 }
 
+export function harnessSection(app: Page, name: string) {
+  return app.locator("section").filter({ has: app.getByRole("heading", { level: 2, name, exact: true }) }).last()
+}
+
 export async function choose(app: Page, label: string, option: string) {
   await picker(app, label).click()
   await app.getByRole("option", { name: option, exact: true }).click()
@@ -21,7 +25,7 @@ export async function revealRail(app: Page, isMobile: boolean) {
 }
 
 async function showSettingsNav(app: Page, isMobile: boolean) {
-  const nav = app.getByRole("group", { name: "Account" })
+  const nav = app.getByRole("group", { name: "Account", exact: true })
   await expect(async () => {
     await expectNothingAnimating(app)
     const open = app.getByRole("button", { name: UI.openRail })

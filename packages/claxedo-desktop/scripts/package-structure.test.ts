@@ -103,7 +103,6 @@ function withAsar(
     includeBoundary?: boolean
     includeHostConnector?: boolean
     corruptHostConnector?: boolean
-    includeMermaidRenderer?: boolean
     includeSdk?: boolean
     includeLaunchGate?: boolean
   } = {},
@@ -134,11 +133,6 @@ function withAsar(
       entry: "index.js",
       sha256: options.corruptHostConnector ? "0".repeat(64) : createHash("sha256").update(contents).digest("hex"),
     }))
-  }
-  if (options.includeMermaidRenderer !== false) {
-    const mermaidDir = path.join(resources, "mermaid")
-    fs.mkdirSync(mermaidDir, { recursive: true })
-    fs.writeFileSync(path.join(mermaidDir, "claxedo-mermaid-renderer.exe"), "synthetic fixture")
   }
   if (options.includeLaunchGate !== false) {
     const unpacked = path.join(resources, "app.asar.unpacked/out/main")
@@ -204,11 +198,6 @@ test("a packaged app must carry the verified Host Connector sidecar", () => {
 
   const corrupt = withAsar(["package.json", "out/main/index.js"], { corruptHostConnector: true })
   expect(corrupt).toContainEqual(expect.stringContaining("Host Connector child fingerprint mismatch"))
-})
-
-test("a packaged app must carry exactly one native Mermaid renderer", () => {
-  const missing = withAsar(["package.json", "out/main/index.js"], { includeMermaidRenderer: false })
-  expect(missing).toContainEqual(expect.stringContaining("expected one packaged Mermaid renderer"))
 })
 
 test("a packaged app must unpack the launch gate child beside its main bundle", () => {

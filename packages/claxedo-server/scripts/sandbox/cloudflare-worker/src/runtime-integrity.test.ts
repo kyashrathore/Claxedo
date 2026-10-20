@@ -30,7 +30,10 @@ afterEach(() => {
   for (const root of made.splice(0)) fs.rmSync(root, { recursive: true, force: true })
 })
 
-describe("runtime digest", () => {
+// The script runs in the Linux container; Git Bash's sha256sum writes ` *` for
+// binary mode where the container's writes two spaces, and its readlink answers
+// in MSYS paths, so the host's shell on Windows cannot stand in for it.
+describe.skipIf(process.platform === "win32")("runtime digest", () => {
   test("the container's shell computes the digest the image build records, whatever npm install writes beside the bundle", () => {
     const { root, write } = bundle()
     const recorded = runtimeDigest(root)

@@ -1,0 +1,41 @@
+relay-warm turn 1: accepted 529 first delta 1381 (object 1218, vendor 1098) idle 2255
+relay-warm turn 2: accepted 505 first delta 1326 (object 1160, vendor 1043) idle 2167
+relay-warm turn 3: accepted 1073 first delta 1937 (object 1774, vendor 1637) idle 2770
+relay-warm turn 4: accepted 1523 first delta 2367 (object 2205, vendor 2084) idle 3340
+relay-warm turn 5: accepted 576 first delta 1424 (object 1256, vendor 1141) idle 2252
+relay-warm turn 6: accepted 474 first delta 1277 (object 1113, vendor 997) idle 2121
+relay-cold-cache turn 1: accepted 1017 first delta 1832 (object 1671, vendor 1555) idle 2682
+relay-cold-cache turn 2: accepted 1016 first delta 1808 (object 1645, vendor 1530) idle 2662
+relay-cold-cache turn 3: accepted 1036 first delta 1876 (object 1685, vendor 1563) idle 2727
+relay-cold-cache turn 4: accepted 1038 first delta 1838 (object 1674, vendor 1560) idle 2704
+relay-cold-cache turn 5: accepted 1057 first delta 1870 (object 1704, vendor 1589) idle 2731
+relay-cold-cache turn 6: accepted 1042 first delta 1844 (object 1680, vendor 1565) idle 2730
+direct turn 1: accepted 484 first delta 1317 (object -, vendor 1036) idle 2265
+direct turn 2: accepted 471 first delta 1277 (object -, vendor 998) idle 2230
+direct turn 3: accepted 485 first delta 1283 (object -, vendor 1005) idle 2217
+direct turn 4: accepted 463 first delta 1260 (object -, vendor 986) idle 2169
+direct turn 5: accepted 460 first delta 1254 (object -, vendor 979) idle 2167
+direct turn 6: accepted 459 first delta 1267 (object -, vendor 986) idle 2239
+cp-slow turn 1: accepted 1213 first delta 2380 (object 2214, vendor 2097) idle 3326
+cp-slow turn 2: accepted 1192 first delta 2365 (object 2195, vendor 2079) idle 3281
+cp-slow turn 3: accepted 2534 first delta 3736 (object 3572, vendor 3436) idle 4677
+cp-slow turn 4: accepted 1296 first delta 2519 (object 2352, vendor 2218) idle 3495
+cp-slow turn 5: accepted 1275 first delta 2471 (object 2303, vendor 2173) idle 3397
+cp-slow turn 6: accepted 2484 first delta 3700 (object 3533, vendor 3401) idle 4647
+no-links turn 1: accepted 41.8 first delta 785 (object 779, vendor 670) idle 1624
+no-links turn 2: accepted 27.3 first delta 748 (object 741, vendor 636) idle 1578
+no-links turn 3: accepted 25.1 first delta 747 (object 740, vendor 633) idle 1576
+no-links turn 4: accepted 24.6 first delta 750 (object 743, vendor 633) idle 1609
+no-links turn 5: accepted 51.3 first delta 799 (object 777, vendor 660) idle 1679
+no-links turn 6: accepted 101 first delta 840 (object 833, vendor 719) idle 1708
+cold-object turn 1: accepted 489 first delta 1321 (object 1156, vendor 1039) idle 2169
+/Users/yashvardhansingh/test/claxedo-lanes/pi-durable-latency/packages/harness/e2e/perf/latency-client.ts:66
+      const timer = setTimeout(() => { done(); reject(new Error(`${label}: no frame within ${timeoutMs} ms; saw ${frames.slice(-8).map((frame) => frame.type).join(", ")}`)) }, timeoutMs)
+                                                      ^
+
+Error: first delta: no frame within 60000 ms; saw message.updated, session.error, heartbeat, heartbeat, heartbeat, heartbeat, heartbeat, heartbeat
+    at Timeout.<anonymous> (/Users/yashvardhansingh/test/claxedo-lanes/pi-durable-latency/packages/harness/e2e/perf/latency-client.ts:66:55)
+    at listOnTimeout (node:internal/timers:685:17)
+    at process.processTimers (node:internal/timers:618:7)
+
+Node.js v26.8.1

@@ -1,10 +1,12 @@
+import { onCleanup, untrack } from "solid-js"
 import type { AccountBinding, AccountSession } from "./binding"
 import type { BrowserAuthAdapter } from "./browser-auth"
-import { apiOrigin, appOrigin, serverIssuesSessions } from "./origins"
+import { watchOtherTabIdentity } from "./persistence"
+import { appOrigin, serverIssuesSessions } from "./origins"
 
 function startBrowserAuth(adapter: BrowserAuthAdapter) {
   adapter
-    .initialize({ apiOrigin: apiOrigin(), appOrigin: appOrigin(), issuesSessions: serverIssuesSessions() })
+    .initialize({ origin: appOrigin(), issuesSessions: serverIssuesSessions() })
     .catch((error: unknown) => console.error("Browser sign-in could not start", { error }))
 }
 
@@ -13,6 +15,10 @@ export function browserAccountBinding(adapter: BrowserAuthAdapter): AccountBindi
     open: (): AccountSession => {
       const browser = adapter.useAuth()
       startBrowserAuth(adapter)
+      onCleanup(watchOtherTabIdentity((userId) => {
+        const current = untrack(browser.user)?.id
+        if (current && userId !== current) window.location.reload()
+      }))
       return {
         methods: browser.methods,
         user: browser.user,

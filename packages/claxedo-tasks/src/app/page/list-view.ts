@@ -30,7 +30,7 @@ function taskCountText(t: Translate, count: number): string {
   return count === 1 ? t("claxedo-tasks.page.count.one") : t("claxedo-tasks.page.count.other", { count })
 }
 
-function header(view: PageView): SurfaceComponent[] {
+function pageHeader(view: PageView): SurfaceComponent[] {
   const { t, state } = view
   const name = projectNameOf(view) || t("claxedo-tasks.page.noProject")
   const actions = state.create.kind === "open" ? ["page-presets"] : ["page-presets", "page-new"]
@@ -138,7 +138,7 @@ export function listComponents(view: PageView): SurfaceComponent[] {
   const create = state.create.kind === "open" ? createComponents(t, state.create, view.projects) : []
   return [
     surfaceColumn("root", ["page-header", ...noticeParts.slice(0, 1).map((part) => part.id), ...create.slice(0, 1).map((part) => part.id), "tasks-tabs"]),
-    ...header(view),
+    ...pageHeader(view),
     ...noticeParts,
     ...create,
     { id: "tasks-tabs", component: "Tabs", tabs, selected: bound("/controls/collection"), change: { event: { name: PAGE_EVENTS.collection } } },

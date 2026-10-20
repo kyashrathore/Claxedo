@@ -175,6 +175,18 @@ export async function exerciseSessionTurnGrantConformance(harness: SessionTurnGr
     Error,
     "a follow-only grantee minted a grant",
   )
+  await rejects(
+    () => harness.authority.acquireSessionTurn({ ...grantee, turnId: "msg_follow_only" }),
+    Error,
+    "a follow-only grantee acquired a turn",
+  )
+  await harness.setGranteeShare(null)
+  await rejects(
+    () => harness.reconstructed.acquireSessionTurn({ ...grantee, turnId: "msg_no_share" }),
+    Error,
+    "someone with no share acquired a turn",
+  )
+  invariant(await harness.turnProducer("msg_follow_only") === undefined && await harness.turnProducer("msg_no_share") === undefined, "a refused acquisition wrote a producer row")
   await harness.setGranteeShare("send")
 
   const wake = await harness.authority.grantSessionTurn({

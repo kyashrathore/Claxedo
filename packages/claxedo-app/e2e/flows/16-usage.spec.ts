@@ -95,7 +95,7 @@ test("16 usage: quota windows and the turns Claxedo ran", async ({ stack, api, a
     await expect(totals.nth(2)).toHaveText("Unknown")
   })
   await expect(ai.getByRole("group", { name: "Daily usage" })).toBeVisible()
-  await expect(ai.getByRole("region", { name: "Where the tokens went" })).toBeVisible()
+  await expect(ai.getByRole("region", { name: "Token types" })).toBeVisible()
   const byProvider = ai.getByRole("table", { name: "Usage grouped by provider" })
   await expect(byProvider.getByRole("row")).toHaveCount(2)
   await expect(byProvider.getByRole("row").nth(1).getByRole("cell").last()).toHaveText("Unknown")

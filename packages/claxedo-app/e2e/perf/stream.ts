@@ -15,9 +15,8 @@ const SEED_TURNS = 22
 const LAST_SEED_TEXT = `Seed turn ${SEED_TURNS} done.`
 
 async function startOrigin(variant: Variant, daemonUrl: string, closers: (() => Promise<void>)[]): Promise<AppOrigin> {
-  const serverUrl = `http://127.0.0.1:${variant.port}`
   const outDir = path.join(import.meta.dirname, "dist", variant.name)
-  const distDir = variant.dist ?? (await ensureAppBuilt({ serverUrl, outDir })).distDir
+  const distDir = variant.dist ?? (await ensureAppBuilt({ outDir })).distDir
   const origin = await startAppOrigin({ port: variant.port, distDir, daemonUrl })
   closers.push(() => origin.close())
   return origin

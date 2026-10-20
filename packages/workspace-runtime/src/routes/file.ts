@@ -13,6 +13,7 @@ import {
   listAllWorkspaceFiles,
   listWorkspaceDirectory,
   resolveWorkspaceFile,
+  type WorkspaceFileTarget,
   searchWorkspaceFiles,
   warmWorkspaceSearchIndex,
   workspaceFileStatus,
@@ -70,6 +71,28 @@ export function FileRoutes(options: WorktreeTargetAccessOptions = {}) {
     }) ?? base
   }
 
+  /**
+   * The path a handler opens, authorized as the filesystem resolved it when
+   * its containment was checked. Asking about the spelling alone would let a
+   * symlink repointed between that question and the open land the read in a
+   * worktree the caller holds no grant on.
+   */
+  const openable = async (c: WorktreeTargetContext): Promise<{ base: string; target: WorkspaceFileTarget } | Response> => {
+    const base = root(c)
+    if (!base) return c.json(invalidDirectory(), 400)
+    const named = c.req.query("path")
+    const target = await routeFile(base, named)
+    const denied = await authorizeWorktreeTarget(c, options, {
+      operation: "worktree_read",
+      directory: base,
+      paths: [named],
+      ...(target ? { resolved: [target.real] } : {}),
+    })
+    if (denied) return denied
+    if (!target) return c.json(invalidPath(), 400)
+    return { base, target }
+  }
+
   return new Hono<{ Variables: RelayHostAuthContext }>()
     .get("/find/file", async (c) => {
       const base = await readable(c)
@@ -86,28 +109,25 @@ export function FileRoutes(options: WorktreeTargetAccessOptions = {}) {
       return c.json((await searchWorkspaceFiles(base, query, type, limit)).filter((item) => visible(item)))
     })
     .get("/file", async (c) => {
-      const base = await readable(c)
-      if (typeof base !== "string") return base
-      const dir = await routeFile(base, c.req.query("path"))
-      if (!dir) return c.json(invalidPath(), 400)
+      const opened = await openable(c)
+      if (!("target" in opened)) return opened
+      const { base, target } = opened
       // The tree lists a directory when the panel opens, seconds before the
       // first keystroke reaches /find/file — build the index off that path so
       // the search itself never pays for the listing.
       warmWorkspaceSearchIndex(base)
       const visible = await deniedWorktreeFilter(c, options, { directory: base, bases: ["directory"] })
       try {
-        return c.json((await listWorkspaceDirectory(base, dir)).filter((entry) => visible(entry.path)))
+        return c.json((await listWorkspaceDirectory(base, target)).filter((entry) => visible(entry.path)))
       } catch {
         return c.json([])
       }
     })
     .get("/file/content", async (c) => {
-      const base = await readable(c)
-      if (typeof base !== "string") return base
-      const full = await routeFile(base, c.req.query("path"))
-      if (!full) return c.json(invalidPath(), 400)
+      const opened = await openable(c)
+      if (!("target" in opened)) return opened
       try {
-        return c.json(await readFileContent(full))
+        return c.json(await readFileContent(opened.target.real))
       } catch (error) {
         if (!(error instanceof FileContentError)) throw error
         return c.json(errorBody(`file_${error.refusal}`, error.message), FILE_REFUSAL_STATUS[error.refusal])

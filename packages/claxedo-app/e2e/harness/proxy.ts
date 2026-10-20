@@ -1,29 +1,50 @@
-import { request as forwardRequest, type IncomingMessage, type ServerResponse } from "node:http"
+import type { Http2ServerRequest } from "node:http2"
+import { request as forwardRequest, type IncomingHttpHeaders, type IncomingMessage, type OutgoingHttpHeaders } from "node:http"
 import net from "node:net"
-import type { Duplex } from "node:stream"
+import type { Duplex, Writable } from "node:stream"
 
-function forwardedHeaders(request: IncomingMessage, target: URL) {
+export type FrontRequest = IncomingMessage | Http2ServerRequest
+export type FrontResponse = Writable & {
+  readonly headersSent: boolean
+  writeHead(status: number, headers?: OutgoingHttpHeaders): Writable
+}
+
+const CONNECTION_HEADERS = ["connection", "keep-alive", "proxy-connection", "transfer-encoding", "upgrade"]
+
+export function forwardedHeaders(request: FrontRequest, host: string = request.headers.host ?? request.headers[":authority"] as string) {
   const headers: Record<string, string | string[]> = {}
-  for (const [name, value] of Object.entries(request.headers)) if (value !== undefined) headers[name] = value
-  headers.host = target.host
+  for (const [name, value] of Object.entries(request.headers)) if (value !== undefined && !name.startsWith(":")) headers[name] = value
+  headers.host = host
   return headers
 }
 
-export function forward(request: IncomingMessage, response: ServerResponse, target: URL) {
+export function answerHeaders(headers: IncomingHttpHeaders): OutgoingHttpHeaders {
+  const answer: OutgoingHttpHeaders = { ...headers }
+  for (const name of CONNECTION_HEADERS) delete answer[name]
+  return answer
+}
+
+export function abortResponse(response: FrontResponse, error: Error) {
+  if (response.headersSent) response.destroy(error)
+  else response.writeHead(502).end(error.message)
+}
+
+export function forward(request: FrontRequest, response: FrontResponse, target: URL) {
   const upstream = forwardRequest(
-    { host: target.hostname, port: target.port, method: request.method, path: request.url, headers: forwardedHeaders(request, target) },
+    { host: target.hostname, port: target.port, method: request.method, path: request.url, headers: forwardedHeaders(request, target.host) },
     (reply) => {
-      response.writeHead(reply.statusCode ?? 502, reply.headers)
+      response.writeHead(reply.statusCode ?? 502, answerHeaders(reply.headers))
       reply.pipe(response)
     },
   )
-  upstream.on("error", (error) => (response.headersSent ? response.destroy(error) : response.writeHead(502).end(error.message)))
+  upstream.on("error", (error) => abortResponse(response, error))
+  response.on("close", () => upstream.destroy())
   request.pipe(upstream)
 }
 
 export function forwardUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer, target: URL) {
   const upstream = net.connect(Number(target.port), target.hostname, () => {
-    const headers = Object.entries(forwardedHeaders(request, target)).flatMap(([name, value]) =>
+    const headers = Object.entries(forwardedHeaders(request, target.host)).flatMap(([name, value]) =>
       (Array.isArray(value) ? value : [value]).map((item) => `${name}: ${item}`),
     )
     upstream.write([`${request.method} ${request.url} HTTP/1.1`, ...headers, "", ""].join("\r\n"))

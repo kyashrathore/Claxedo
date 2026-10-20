@@ -1,0 +1,430 @@
+{
+  "schemaVersion": 1,
+  "runId": "claxedo-app-start-1792277006554",
+  "createdAt": "2026-10-17T22:45:26.242Z",
+  "provenance": {
+    "kind": "community-self-attested",
+    "frameworkRevision": "bfce5981e9ac796a03064850b6d42064315db769"
+  },
+  "environment": {
+    "platform": "linux",
+    "architecture": "x64",
+    "osRelease": "6.18.44-fc-v139",
+    "logicalCpuCount": 4,
+    "cpuModel": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "totalMemoryBytes": 16874930176,
+    "freeMemoryBytes": 15927304192,
+    "loadAverage1mPerCpu": 0.278,
+    "powerSource": "unknown",
+    "lowPowerMode": null,
+    "memoryPressureLevel": null,
+    "nodeVersion": "v22.22.0"
+  },
+  "app": {
+    "id": "claxedo",
+    "name": "Claxedo",
+    "version": "0.0.1",
+    "buildDigestSha256": "5420d3be20c90b8a57aa9414db7dc7aada9ee4f16d02b86b7ab09eaf45f8d886"
+  },
+  "driver": {
+    "name": "claxedo-desktop-driver",
+    "version": "1",
+    "sourceCommit": "249804005fe51c10ca1a1dac2a443a76d5d87668",
+    "digestSha256": "483b4b70e5bb1e5a70266c4da6bd523cf5947d6d128308a45999fac6a0d5d55a"
+  },
+  "clockRule": {
+    "id": "settle-31-frames",
+    "declared": "settle-31-frames",
+    "frameLogs": {
+      "checked": 8,
+      "failed": 0,
+      "missing": 0
+    }
+  },
+  "sourceEventFormat": {
+    "id": "opencode-event",
+    "sourceRevision": "a9f7081d4015b0cc22ed67156e042b482a8d064a",
+    "schemaDigestSha256": "eb77e231c036820a83586dd18e270cca068fea4da134a24ab113f1eb0f3b473b"
+  },
+  "materialization": {
+    "mode": "native-opencode",
+    "corpusDigestSha256": "2a41c19fd8939c8cb5ed7d933c734e903a1b61ea28f5c1228f616fda6196bfb4",
+    "mappingDigestSha256": "23d6be995e4771832c5479d6b0664c06b747bb047be33bbbd2a4c5d953ddadfb"
+  },
+  "scenario": {
+    "id": "app-start",
+    "kind": "app-start",
+    "digestSha256": "dd80a1cfa1fcfdd384bc0296bdcc70692b759dce3a696741ae753bca5e8e8ead",
+    "status": "public-comparable"
+  },
+  "corpus": {
+    "id": "opencode-completed-sessions",
+    "definitionDigestSha256": "b73d31b6ee0e1df8ac1218e267a70020e70dfceb2f2f8feb19e8b9fcfca996e7",
+    "digestSha256": "2a41c19fd8939c8cb5ed7d933c734e903a1b61ea28f5c1228f616fda6196bfb4",
+    "status": "public-comparable"
+  },
+  "runProfile": "publication",
+  "repetitions": 4,
+  "observations": [
+    {
+      "case": {
+        "caseId": "start-new-application-state-0",
+        "repetition": 0,
+        "startMode": "new-application-state",
+        "stateHandle": "P0"
+      },
+      "receivedAt": "2026-10-17T22:44:07.209Z",
+      "status": "valid",
+      "durationMs": 3108.779733000003,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 39077.984375
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 39077.984375
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 39077.984375
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 39077.984375
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "bun-performance",
+        "start": 35969.204642,
+        "end": 39077.984375
+      }
+    },
+    {
+      "case": {
+        "caseId": "start-initialized-application-state-0",
+        "repetition": 0,
+        "startMode": "initialized-application-state",
+        "stateHandle": "P1"
+      },
+      "receivedAt": "2026-10-17T22:44:17.404Z",
+      "status": "valid",
+      "durationMs": 2871.485318656065,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 49276.884472656064
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 49276.884472656064
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 49276.884472656064
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 49276.884472656064
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "bun-performance",
+        "start": 46405.399154,
+        "end": 49276.884472656064
+      }
+    },
+    {
+      "case": {
+        "caseId": "start-initialized-application-state-1",
+        "repetition": 1,
+        "startMode": "initialized-application-state",
+        "stateHandle": "P1"
+      },
+      "receivedAt": "2026-10-17T22:44:27.754Z",
+      "status": "valid",
+      "durationMs": 3140.527606656251,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 59618.08447265625
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 59618.08447265625
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 59618.08447265625
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 59618.08447265625
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "bun-performance",
+        "start": 56477.556866,
+        "end": 59618.08447265625
+      }
+    },
+    {
+      "case": {
+        "caseId": "start-new-application-state-1",
+        "repetition": 1,
+        "startMode": "new-application-state",
+        "stateHandle": "P0"
+      },
+      "receivedAt": "2026-10-17T22:44:37.972Z",
+      "status": "valid",
+      "durationMs": 2863.71125748381,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 69835.78452148382
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 69835.78452148382
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 69835.78452148382
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 69835.78452148382
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "bun-performance",
+        "start": 66972.073264,
+        "end": 69835.78452148382
+      }
+    },
+    {
+      "case": {
+        "caseId": "start-new-application-state-2",
+        "repetition": 2,
+        "startMode": "new-application-state",
+        "stateHandle": "P0"
+      },
+      "receivedAt": "2026-10-17T22:44:48.222Z",
+      "status": "valid",
+      "durationMs": 2851.4412786558823,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 80097.18447265588
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 80097.18447265588
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 80097.18447265588
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 80097.18447265588
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "bun-performance",
+        "start": 77245.743194,
+        "end": 80097.18447265588
+      }
+    },
+    {
+      "case": {
+        "caseId": "start-initialized-application-state-2",
+        "repetition": 2,
+        "startMode": "initialized-application-state",
+        "stateHandle": "P1"
+      },
+      "receivedAt": "2026-10-17T22:44:58.636Z",
+      "status": "valid",
+      "durationMs": 3013.29198465588,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 90464.68447265588
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 90464.68447265588
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 90464.68447265588
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 90464.68447265588
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "bun-performance",
+        "start": 87451.392488,
+        "end": 90464.68447265588
+      }
+    },
+    {
+      "case": {
+        "caseId": "start-initialized-application-state-3",
+        "repetition": 3,
+        "startMode": "initialized-application-state",
+        "stateHandle": "P1"
+      },
+      "receivedAt": "2026-10-17T22:45:09.519Z",
+      "status": "valid",
+      "durationMs": 3235.555757484195,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 101401.18452148419
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 101401.18452148419
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 101401.18452148419
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 101401.18452148419
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "bun-performance",
+        "start": 98165.628764,
+        "end": 101401.18452148419
+      }
+    },
+    {
+      "case": {
+        "caseId": "start-new-application-state-3",
+        "repetition": 3,
+        "startMode": "new-application-state",
+        "stateHandle": "P0"
+      },
+      "receivedAt": "2026-10-17T22:45:19.839Z",
+      "status": "valid",
+      "durationMs": 2908.473996000379,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 111701.38437500037
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 111701.38437500037
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 111701.38437500037
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 111701.38437500037
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "bun-performance",
+        "start": 108792.910379,
+        "end": 111701.38437500037
+      }
+    }
+  ],
+  "resources": null,
+  "resourceTrace": null,
+  "derivation": {
+    "version": 1,
+    "summaryDigestSha256": "0e277052daf0a16a58f48d926b6a5eab96e7f885c4e51a518f2798fc7e0b1466",
+    "summary": {
+      "new-application-state": {
+        "status": "valid",
+        "average": 2933.102,
+        "maximum": 3108.78,
+        "valid": 4,
+        "attempted": 4,
+        "p95": 3108.78
+      },
+      "initialized-application-state": {
+        "status": "valid",
+        "average": 3065.215,
+        "maximum": 3235.556,
+        "valid": 4,
+        "attempted": 4,
+        "p95": 3235.556
+      }
+    }
+  }
+}

@@ -36,6 +36,7 @@ function harness(input: {
   parents?: Record<string, string>
   relayAuth?: Record<string, unknown>
   renewalIntervalMs?: number
+  eventCursor?: () => string
 }) {
   const app = new Hono()
   const hub = createRuntimeEventHub()
@@ -61,6 +62,7 @@ function harness(input: {
     ...(input.policy ? { sessionAccessPolicy: input.policy, policy: sessionEventDeliveryPolicy(input.policy) } : {}),
     ...(input.renewalIntervalMs !== undefined ? { renewalIntervalMs: input.renewalIntervalMs } : {}),
     ...(input.parents ? { sessionParents: { parentSessionIdFor: (id) => input.parents?.[id] } } : {}),
+    ...(input.eventCursor ? { eventCursor: input.eventCursor } : {}),
   })
   app.get("/api/wr/events", handler)
   return { app, hub, bus, ptys, frames: handler.frames }
@@ -122,6 +124,21 @@ function dataFrames(text: string) {
 }
 
 describe("wr/events — one stream per workspace runtime", () => {
+  test("the stream answers the feed position it starts after, and every frame published after that position reaches it", async () => {
+    let at = 0
+    const { app, hub } = harness({ eventCursor: () => `feed_1.${at}` })
+    hub.publishGlobal(part("ses-before", "prt-before", { status: "completed" }))
+    at = 1
+    const response = await app.request("http://localhost/api/wr/events")
+    expect(response.status).toBe(200)
+    expect(response.headers.get("X-Event-Cursor")).toBe("feed_1.1")
+    at = 2
+    hub.publishGlobal(part("ses-after", "prt-after", { status: "completed" }))
+    const text = await readUntil(response, "prt-after")
+    expect(text).not.toContain("prt-before")
+    expect(text).toContain("prt-after")
+  })
+
   test.each([
     { allowed: true as const },
     { allowed: true as const, lease: " ", expiresAt: Date.now() + 60_000 },

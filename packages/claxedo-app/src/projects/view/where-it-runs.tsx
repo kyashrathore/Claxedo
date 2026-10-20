@@ -45,6 +45,7 @@ function CloudRow(props: { readonly row: CloudWorkspaceRow; readonly cloud: Clou
       body: t("projects.where.delete.body"),
       confirmLabel: t("projects.where.delete.confirm"),
       cancelLabel: t("projects.where.cancel"),
+      destructive: true,
     })
     if (confirmed) await props.cloud.remove(props.row.id)
   }

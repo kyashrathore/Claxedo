@@ -4,16 +4,17 @@ import { SettingsEmpty, SettingsList } from "@/settings"
 import { Button, ClaxedoIcon, Tag, ProviderIcon } from "@/ui"
 import { catalogNeedsSearch, catalogProviders, matchingModels, MODELS_PREVIEW_COUNT, usesInlineSearch } from "../catalog-rules"
 import { useAccountsText } from "../i18n"
-import { modelKeyOf, groupContext, type ModelItem, type ModelSource, type SourceGroup } from "../model-sources"
+import { modelKeyOf, groupContext, sourceGroups, type ModelItem, type ModelSource, type SourceGroup } from "../model-sources"
+import type { SettingsPlacement } from "../settings-placement"
 import { SearchField } from "./search-field"
 import { ModelRows } from "./model-rows"
 
 export function enabledCount(source: ModelSource, visible: (item: ModelItem, group: SourceGroup) => boolean): number {
-  return source.groups.reduce((total, group) => total + group.items.filter((item) => visible(item, group)).length, 0)
+  return sourceGroups(source).reduce((total, group) => total + group.items.filter((item) => visible(item, group)).length, 0)
 }
 
 export function soleSelfGroup(source: ModelSource, harness: string): SourceGroup | undefined {
-  const [group, ...rest] = source.groups
+  const [group, ...rest] = sourceGroups(source)
   return rest.length === 0 && group && group.groupKey === harness ? group : undefined
 }
 
@@ -88,34 +89,57 @@ function ProviderModelCard(props: { readonly entry: SourceGroup }) {
   )
 }
 
-function SourceNote(props: { readonly source: ModelSource; readonly harness: string; readonly harnessLabel: string; readonly workspace: string }) {
-  const t = useAccountsText()
-  const text = () => {
-    if (props.source.loading) return `${t("common.loading")}${t("common.loading.ellipsis")}`
-    if (props.source.error) return props.source.error
-    return props.source.empty ? t("settings.models.harness.empty", { harness: props.harnessLabel, workspace: props.workspace }) : undefined
-  }
+function Note(props: { readonly text: string | undefined }) {
   return (
-    <Show when={text()}>
-      {(note) => (
+    <Show when={props.text}>
+      {(text) => (
         <SettingsEmpty>
-          <span>{note()}</span>
+          <span>{text()}</span>
         </SettingsEmpty>
       )}
     </Show>
   )
 }
 
-export function ModelsTab(props: { readonly source: ModelSource; readonly harness: string; readonly harnessLabel: string; readonly workspace: string }) {
+export function PlacementNote(props: { readonly placement: SettingsPlacement; readonly harnessLabel: string }) {
+  const t = useAccountsText()
+  const text = (): string | undefined => {
+    const placement = props.placement
+    if (placement.kind === "ready") return undefined
+    if (placement.kind === "loading") return `${t("common.loading")}${t("common.loading.ellipsis")}`
+    if (placement.kind === "failed") return t("settings.models.projects.failed", { reason: placement.error.message })
+    if (placement.kind === "noProject") return t("settings.models.projects.none", { harness: props.harnessLabel })
+    return placement.why.kind === "folderMissing"
+      ? t("settings.models.project.folderMissing", { project: placement.project, directory: placement.why.directory })
+      : t("settings.models.project.workspaceUnavailable", { project: placement.project })
+  }
+  return <Note text={text()} />
+}
+
+function sourceNoteText(t: ReturnType<typeof useAccountsText>, source: ModelSource, harness: string, workspace: string | undefined): string | undefined {
+  if (source.kind === "loading") return `${t("common.loading")}${t("common.loading.ellipsis")}`
+  if (source.kind === "failed") {
+    return workspace ? t("settings.models.harness.failed", { workspace, harness, reason: source.reason }) : t("settings.models.account.failed", { harness, reason: source.reason })
+  }
+  if (source.groups.length > 0) return undefined
+  return workspace ? t("settings.models.harness.empty", { harness, workspace }) : t("settings.models.account.empty", { harness })
+}
+
+function SourceNote(props: { readonly source: ModelSource; readonly harnessLabel: string; readonly workspace?: string }) {
+  const t = useAccountsText()
+  return <Note text={sourceNoteText(t, props.source, props.harnessLabel, props.workspace)} />
+}
+
+export function ModelsTab(props: { readonly source: ModelSource; readonly harness: string; readonly harnessLabel: string; readonly workspace?: string }) {
   const t = useAccountsText()
   const [providerQuery, setProviderQuery] = createSignal("")
+  const all = () => sourceGroups(props.source)
   const sole = () => soleSelfGroup(props.source, props.harness)
-  const groups = createMemo(() => catalogProviders(props.source.groups.map((group) => ({ ...group, id: group.groupKey, name: group.providerName })), props.source.groups.filter((group) => group.connected).map((group) => group.groupKey), providerQuery(), []))
-  const noted = () => props.source.loading || props.source.error !== undefined || props.source.empty
+  const groups = createMemo(() => catalogProviders(all().map((group) => ({ ...group, id: group.groupKey, name: group.providerName })), all().filter((group) => group.connected).map((group) => group.groupKey), providerQuery(), []))
   return (
     <>
-      <SourceNote source={props.source} harness={props.harness} harnessLabel={props.harnessLabel} workspace={props.workspace} />
-      <Show when={catalogNeedsSearch(props.source.groups.length)}>
+      <SourceNote source={props.source} harnessLabel={props.harnessLabel} workspace={props.workspace} />
+      <Show when={catalogNeedsSearch(all().length)}>
         <SearchField value={providerQuery()} onChange={setProviderQuery} placeholder={t("settings.models.add.providerSearch")} action="settings-models-provider-search" />
       </Show>
       <Show when={sole()}>
@@ -128,7 +152,7 @@ export function ModelsTab(props: { readonly source: ModelSource; readonly harnes
       <Show
         when={!sole() && groups().length > 0}
         fallback={
-          <Show when={!noted() && !sole()}>
+          <Show when={all().length > 0 && !sole()}>
             <SettingsEmpty>
               <span>{providerQuery().trim() ? t("settings.models.add.noProviders", { query: providerQuery().trim() }) : t("settings.models.enabled.empty")}</span>
             </SettingsEmpty>

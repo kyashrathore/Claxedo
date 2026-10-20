@@ -293,8 +293,11 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   // who the caller is. Admission's exemptions are exactly the callers that
   // prove themselves another way: readiness probes, mounts that verify a scoped
   // credential of their own (the broker's runtime token, the first-party MCP's
-  // runtime credential, the agent-hook token, and the daemon lifecycle routes'
-  // bearer — the same secret under its own header), and requests the relay
+  // runtime credential, the daemon lifecycle routes' bearer — the same secret
+  // under its own header — and the agent-lifecycle report a terminal's shell
+  // hook posts, which the runtime admits on its hook token or, for a live
+  // terminal the machine's user opened and that holds none, as status only;
+  // every other hook route needs the capability), and requests the relay
   // dispatcher verifies for the workspace they name. A composition with no
   // daemon identity mints no capability and keeps the unsigned local posture
   // instead.
@@ -305,12 +308,11 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
       capability: identity.token,
       isPublicProbe: (method, pathname) =>
         method === "GET" && (pathname === "/api/claxedo/health" || pathname === "/global/health"),
-      hasOwnCredentialAuthority: (pathname) =>
+      hasOwnCredentialAuthority: (method, pathname) =>
         pathname === CLAXEDO_MCP_PATH ||
         pathname.startsWith(`${CLAXEDO_MCP_PATH}/`) ||
         isBrokerPath(pathname) ||
-        pathname === "/api/wr/hook" ||
-        pathname.startsWith("/api/wr/hook/") ||
+        (method === "POST" && pathname === "/api/wr/hook/agent-lifecycle") ||
         pathname === "/api/claxedo/daemon" ||
         pathname.startsWith("/api/claxedo/daemon/"),
       relayReplay: (request) => relayReplayAdmission(request, runtimeProxy),

@@ -177,15 +177,17 @@ function cacheThemeVariants(theme: DesktopTheme, themeId: string) {
 export const { use: useTheme, useOptional: useThemeOptional, provider: ThemeProvider } = createSimpleContext({
   name: "Theme",
   init: (props: {
-    defaultTheme?: string
+    defaultTheme?: DesktopTheme
     onThemeApplied?: (theme: DesktopTheme, mode: "light" | "dark", scheme: ColorScheme) => void
   }) => {
-    const themeId = normalize(read(STORAGE_KEYS.THEME_ID) ?? props.defaultTheme) ?? "oc-2"
+    const defaultThemeId = props.defaultTheme?.id ?? "oc-2"
+    const themeId = normalize(read(STORAGE_KEYS.THEME_ID)) ?? defaultThemeId
     const colorScheme = parseColorScheme(read(STORAGE_KEYS.COLOR_SCHEME)) ?? "system"
     const mode = colorScheme === "system" ? getSystemMode() : colorScheme
     const [store, setStore] = createStore({
       themes: {
         "oc-2": oc2Theme,
+        ...(props.defaultTheme ? { [props.defaultTheme.id]: props.defaultTheme } : {}),
       } as Record<string, DesktopTheme>,
       themeId,
       colorScheme,
@@ -268,7 +270,7 @@ export const { use: useTheme, useOptional: useThemeOptional, provider: ThemeProv
       makeEventListener(mediaQuery, "change", onMedia)
 
       const rawTheme = read(STORAGE_KEYS.THEME_ID)
-      const savedTheme = normalize(rawTheme ?? props.defaultTheme) ?? "oc-2"
+      const savedTheme = normalize(rawTheme) ?? defaultThemeId
       const savedScheme = parseColorScheme(read(STORAGE_KEYS.COLOR_SCHEME)) ?? "system"
       if (rawTheme && rawTheme !== savedTheme) {
         write(STORAGE_KEYS.THEME_ID, savedTheme)
@@ -328,7 +330,7 @@ export const { use: useTheme, useOptional: useThemeOptional, provider: ThemeProv
       unregisterTheme: (id: string) => {
         if (id === "oc-2" || knownThemes().has(id) || !store.themes[id]) return
         setStore("themes", produce((themes) => void delete themes[id]))
-        if (store.themeId === id) setTheme(normalize(props.defaultTheme) ?? "oc-2")
+        if (store.themeId === id) setTheme(defaultThemeId)
       },
       previewTheme: (id: string) => {
         const next = normalize(id)

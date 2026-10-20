@@ -4,10 +4,11 @@ import { AGENT_MESSAGE_PAGE_LIMIT, AgentMessagePageError } from "@claxedo/agent-
 import { asRecord, numberField, parseJson } from "@claxedo/server-core/platform/json/index"
 import { latestViewPage, type LatestView } from "@claxedo/server-core/session/latest-view-page"
 import type { D1Database } from "@cloudflare/workers-types"
-import type { SessionPageQuery } from "@claxedo/server-core/platform/auth/private-session-authority"
+import type { ProjectSessionPage, SessionPageQuery } from "@claxedo/server-core/platform/auth/private-session-authority"
+import type { SessionListKeysetPage } from "@claxedo/server-core/session/navigation-list"
 import { sessionOrderSql, unsettledSql } from "@claxedo/server-core/session/navigation-order"
-import { requireHuman } from "./access-context"
-import { maySql, type BoundSql } from "./authorization"
+import { namedPrincipal, requireHuman } from "./access-context"
+import { maySql, type AuthorizationPrincipal, type BoundSql } from "./authorization"
 import type { D1ActorProfile } from "./workspace-authority"
 import type { SessionHostPlacement } from "../../session-hosts"
 
@@ -108,10 +109,10 @@ function pageScope(query: SessionPageQuery, readerUserId: string): Clauses {
  * lapsed unreleased reads as `interrupted`: the runtime holding it is gone, and
  * the lease's own expiry is the one record that says so.
  */
-export async function readD1SessionPage(database: D1Database, query: SessionPageQuery, access: BoundSql, readerUserId: string, now: number) {
+function sessionPageStatement(database: D1Database, query: SessionPageQuery, access: BoundSql, readerUserId: string, now: number) {
   const scope = pageScope(query, readerUserId)
   const filters = pageFilters(query, "s", "r")
-  const result = await database
+  return database
     .prepare(`
       select s.session_id, s.workspace_id, s.project_id, s.title, s.created_at, s.updated_at,
         s.last_human_turn_at, s.archived_at,
@@ -130,8 +131,44 @@ export async function readD1SessionPage(database: D1Database, query: SessionPage
       limit ?
     `)
     .bind(now, readerUserId, ...scope.params, ...filters.params, ...access.bind, query.limit)
-    .all<SessionPageRow>()
+}
+
+export async function readD1SessionPage(database: D1Database, query: SessionPageQuery, access: BoundSql, readerUserId: string, now: number) {
+  const result = await sessionPageStatement(database, query, access, readerUserId, now).all<SessionPageRow>()
   return result.results.map(pageRowJson)
+}
+
+/**
+ * The projects the reader may open a workspace in, in the catalog's order: the
+ * same rows `/api/workspace` lists, so a reader's rail and this read name the
+ * same projects.
+ */
+async function readerProjectIds(database: D1Database, who: AuthorizationPrincipal) {
+  const opens = maySql(who, "open", { kind: "workspace", alias: "w" })
+  const result = await database
+    .prepare(`select w.project_id from workspaces w where ${opens.sql} group by w.project_id order by min(w.created_at), min(w.workspace_id)`)
+    .bind(...opens.bind)
+    .all<{ project_id: string }>()
+  return result.results.map((row) => row.project_id)
+}
+
+/**
+ * Each project's first page in one D1 batch, every statement the one
+ * `readD1SessionPage` reads for that project, read beside the principal's
+ * verification (`namedPrincipal`); the read rule decides every row.
+ */
+export async function readD1ProjectSessionPages(database: D1Database, deploymentId: string, auth: SignedControlPlaneAuth, page: SessionListKeysetPage, now: number): Promise<ProjectSessionPage[]> {
+  const who = namedPrincipal(auth)
+  const access = maySql(who, "read", { kind: "session", alias: "s" })
+  const [, pages] = await Promise.all([requireHuman(database, deploymentId, auth), (async () => {
+    const projectIds = await readerProjectIds(database, who)
+    if (projectIds.length === 0) return []
+    const results = await database.batch<SessionPageRow>(
+      projectIds.map((projectId) => sessionPageStatement(database, { ...page, projectId }, access, who.userId, now)),
+    )
+    return projectIds.map((projectId, index) => ({ projectId, sessions: (results[index]?.results ?? []).map(pageRowJson) }))
+  })()])
+  return pages
 }
 
 function backgroundWorkJson(row: SessionPageRow) {
@@ -297,29 +334,40 @@ export function decodeMessagePageCursor(sessionId: string, input: string) {
   }
 }
 
+/**
+ * The sessions shared to the caller, from the caller's live share grants
+ * (`session_share_grants_by_user`) rather than every session the deployment
+ * holds; the read rule still decides each row, and the read runs beside the
+ * principal's verification (`namedPrincipal`).
+ */
 export async function listD1SharedSessions(
   database: D1Database,
   deploymentId: string,
   profile: D1ActorProfile | undefined,
   auth: SignedControlPlaneAuth,
 ): Promise<SharedSession[]> {
-  const who = await requireHuman(database, deploymentId, auth)
+  const who = namedPrincipal(auth)
   const reads = maySql(who, "read", { kind: "session", alias: "s" })
   const sends = maySql(who, "send", { kind: "session", alias: "s" })
   const issuer = auth.principal!.identity.issuer
-  const rows = await database.prepare(`
+  const [, rows] = await Promise.all([
+    requireHuman(database, deploymentId, auth),
+    database.prepare(`
       select s.session_id, s.workspace_id, s.project_id, s.title,
         case when ${sends.sql} then 'send' else 'follow' end as level,
         (select owner.subject from auth_identities owner
           where owner.user_id = w.owner_user_id and owner.unlinked_at is null
             and owner.adapter = 'better-auth' and owner.issuer = ?
           order by owner.linked_at, owner.subject limit 1) as owner_subject
-      from sessions s
+      from session_share_grants grant_row
+      join sessions s on s.session_id = grant_row.session_id
       join workspaces w on w.workspace_id = s.workspace_id
-      where w.owner_user_id <> ? and ${reads.sql}
+      where grant_row.target_user_id = ? and grant_row.revoked_at is null
+        and w.owner_user_id <> ? and ${reads.sql}
       order by s.updated_at desc, s.session_id
-    `).bind(...sends.bind, issuer, who.userId, ...reads.bind)
-    .all<Omit<SharedSession, "owner_name"> & { owner_subject: string | null }>()
+    `).bind(...sends.bind, issuer, who.userId, who.userId, ...reads.bind)
+      .all<Omit<SharedSession, "owner_name"> & { owner_subject: string | null }>(),
+  ])
   const names = new Map<string, Promise<string | null>>()
   const nameOf = (subject: string) => {
     let name = names.get(subject)

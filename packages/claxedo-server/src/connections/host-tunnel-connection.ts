@@ -1,6 +1,6 @@
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
-import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
+import type { WorkspaceAuthority, WorkspaceOpenResult, WorkspaceRecord } from "@claxedo/server-core/platform/auth/authority"
 import { normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import {
   apiError,
@@ -13,29 +13,28 @@ import {
 } from "../workspace/route-support"
 import {
   previousRuntimeAccessTokenError,
+  resolvedActor,
   runtimeTokenOrgId,
-  workspaceOpenAuthorizationError,
+  type SettledActor,
 } from "../workspace/runtime-token-guards"
-import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
+
+/** A workspace the caller may open, with the caller's actor read beside the open. */
+export type OpenedWorkspace = {
+  authority: WorkspaceAuthority
+  result: WorkspaceOpenResult
+  workspace: WorkspaceRecord
+  actor: Promise<SettledActor>
+}
 
 export async function hostTunnelConnectionInfo(
   services: ControlPlaneServices | undefined,
   options: WorkspaceRouteOptions,
   auth: SignedControlPlaneAuth,
   workspaceId: string,
+  opened: OpenedWorkspace,
   previousJti?: string,
 ) {
-  const authority = requireAuthority(services)
-  const result = await authority.openWorkspace(auth, { workspaceId })
-  const authz = await workspaceOpenAuthorizationError(services, auth, result, workspaceId)
-  if (authz) return authz
-  if (result.workspace?.backing !== "local-worktree") {
-    return {
-      error: apiError("workspace_relay_machine_placement_required", "Workspace Relay machine connection is only available for a workspace shared from a machine"),
-      status: 400,
-    } as const
-  }
-
+  const { authority, result, workspace } = opened
   const activeLink = await authority.activeWorkspaceHost(auth, { workspaceId })
   if (!activeLink.active) {
     await authority.auditDeny(auth, {
@@ -51,7 +50,7 @@ export async function hostTunnelConnectionInfo(
 
   const hostId = activeLink.host_id
   const role = relayRole(result.role)
-  const homeRegion = normalizeClaxedoRegion(result.workspace.home_region, options.defaultHomeRegion)
+  const homeRegion = normalizeClaxedoRegion(workspace.home_region, options.defaultHomeRegion)
   const relayUrl = configuredRelayUrl(options, homeRegion)
   if (!relayUrl) {
     throw new ControlPlaneAuthError(
@@ -66,7 +65,7 @@ export async function hostTunnelConnectionInfo(
     auth,
     event: "workspace.connection.requested",
     workspaceId,
-    orgId: workspaceOrgId(result.workspace),
+    orgId: workspaceOrgId(workspace),
     properties: {
       backing: "local-worktree",
       homeRegion,
@@ -82,8 +81,8 @@ export async function hostTunnelConnectionInfo(
   if (previousToken) return previousToken
 
   const signer = configuredRuntimeAccessTokenSigner(options)
-  const orgId = await runtimeTokenOrgId(authority, auth, result.workspace)
-  const actor = await resolveRuntimeActor(authority, auth)
+  const orgId = await runtimeTokenOrgId(authority, auth, workspace)
+  const actor = resolvedActor(await opened.actor)
   const token = await signer({
     principalKind: "user",
     ...actor,

@@ -47,6 +47,7 @@ export const APP_ICONS = {
   eye: true,
   file: true,
   "document-text": true,
+  details: true,
   folder: true,
   "folder-add": true,
   "folder-open": true,

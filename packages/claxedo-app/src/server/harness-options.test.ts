@@ -131,3 +131,29 @@ test("a desktop with no account leaves a cloud draft to its runtime, because its
   expect(server.requests.filter((path) => path.startsWith("/api/claxedo/agent-config"))).toEqual([])
   expect(server.runtimeCalls).toEqual(["/api/wr/harness-config-options?nativeHarness=claude"])
 })
+
+function catalogReads(respond: () => Response) {
+  const seen: string[] = []
+  const transport = {
+    serverUrl: "http://daemon.test",
+    request: async (path: string) => (seen.push(path), respond()),
+    runtimeJson: async (_route: RuntimeRoute, path: string) => (seen.push(`runtime ${path}`), answer),
+    startRuntime: async (workspaceId: string) => void seen.push(`start ${workspaceId}`),
+  } as unknown as Transport
+  const workspaces = { route: async () => { throw new Error("a catalog read asked for a workspace") }, byId: () => undefined } as unknown as Workspaces
+  const fetch = (harness: "claude" | "codex" | "cursor") =>
+    new QueryClient({ defaultOptions: { queries: { retry: false } } }).fetchQuery(harnessQueries(transport, workspaces, undefined).catalogOptions(harness))
+  return { seen, fetch }
+}
+
+test("a harness's catalog options are the connected server's workspace-free read of the account it runs on, decoded like any options", async () => {
+  const { seen, fetch } = catalogReads(() => Response.json(answer))
+  expect((await fetch("claude")).models?.choices.map((choice) => choice.id)).toEqual(["m1", "m2"])
+  expect(seen).toEqual(["/api/claxedo/credentials/harness-models?nativeHarness=claude"])
+})
+
+test("a refused catalog read is a typed error carrying the server's code and reason", async () => {
+  const { seen, fetch } = catalogReads(() => Response.json({ error: { code: "cursor_models_unavailable", message: "Cursor's model list could not be reached." } }, { status: 502 }))
+  await expect(fetch("cursor")).rejects.toMatchObject({ code: "cursor_models_unavailable", message: "Cursor's model list could not be reached." })
+  expect(seen).toEqual(["/api/claxedo/credentials/harness-models?nativeHarness=cursor"])
+})

@@ -29,7 +29,6 @@ const TOOL_KEYS: Readonly<Record<string, SessionScreenTextKey>> = {
 
 function PermissionFacts(props: { facts: Facts; patterns: readonly string[] }) {
   const t = useSessionScreenText()
-  const summarized = () => Boolean(props.facts.command) || props.facts.inputFields.length > 0
   return (
     <>
       <div class="text-12-medium text-text-strong">
@@ -60,7 +59,7 @@ function PermissionFacts(props: { facts: Facts; patterns: readonly string[] }) {
       </For>
       <Show when={props.facts.details}>
         {(value) => (
-          <details open={!summarized()}>
+          <details open={!props.facts.summarized}>
             <summary>{t("sessionScreen.permission.details")}</summary>
             <pre class="whitespace-pre-wrap break-all text-12-regular text-text-base">{value()}</pre>
           </details>

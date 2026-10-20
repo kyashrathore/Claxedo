@@ -23,7 +23,7 @@ export function SandboxPrices(props: { readonly time: MachineTime }): JSX.Elemen
   const unpriced = createMemo(() => props.time.workspaces.filter((machine) => machine.costUsd === undefined))
   const unpricedMs = () => unpriced().reduce((total, machine) => total + machine.activeMs, 0)
   return (
-    <ul class="usage-billing">
+    <ul class="usage-section-notes">
       <Show when={unpricedMs() > 0}>
         <li class="usage-hint">{t("usage.sandbox.unpriced", { time: format.duration(unpricedMs()), providers: [...new Set(unpriced().map((machine) => machine.providerLabel))].join(", ") })}</li>
       </Show>

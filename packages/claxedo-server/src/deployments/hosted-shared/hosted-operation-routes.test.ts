@@ -30,6 +30,7 @@ function hostedRoutes() {
     services,
     env: { CLAXEDO_DEPLOYMENT_MODE: "hosted", CLAXEDO_CREDENTIALS_KEK: Buffer.alloc(32, 3).toString("base64") },
     orgCredentials: () => ({}),
+    resolverToken: "relay-resolver-secret",
     privateSessionAuthority: {},
     runtimeSessionAuthority: {},
     safetyLimits: {

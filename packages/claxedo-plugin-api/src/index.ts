@@ -81,14 +81,10 @@ export {
   PluginStatusHooksRefusedError,
   isPluginCapability,
   pluginBackendRouteAllowed,
-  pluginBackendSchema,
-  pluginManifestSchema,
   pluginOperationAllowed,
-  pluginPackageSchema,
   pluginRouteAllowed,
-  pluginServerAccessSchema,
-  readPluginManifest,
 } from "./manifest"
+export { pluginBackendSchema, pluginManifestSchema, pluginPackageSchema, pluginServerAccessSchema, readPluginManifest } from "./manifest-schema"
 export type { FirstPartyPluginId, PluginBackend, PluginCapability, PluginManifest, PluginServerAccess } from "./manifest"
 export { isPluginId, PLUGIN_ID_MAX_LENGTH, PLUGIN_ID_PATTERN } from "./id"
 export { FIRST_PARTY_PLUGIN_IDS, isFirstPartyPluginId } from "./manifest"

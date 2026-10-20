@@ -48,9 +48,8 @@ export const ALL_NATIVE_MODULES: readonly string[] = [
  *
  * `out` is everything electron-vite emits: main, preload, renderer and the
  * copied local-server bundle. Nothing else from `resources/` goes in the asar:
- * the Host Connector child and the Mermaid renderer ship as `extraResources`
- * beside it, because they are executed as separate
- * processes and asar paths are not real filesystem paths.
+ * the Host Connector child ships as an `extraResource` beside it, because it
+ * runs as a separate process and asar paths are not real filesystem paths.
  *
  * `resources/icons` is declared but currently contributes nothing: measured on
  * a real `package:mac` run, the packaged asar holds only `out`, `package.json`

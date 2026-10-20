@@ -26,7 +26,7 @@ describe("hosted organization, team and project access routes on D1", () => {
     })
     const opens = async () => (await call(bob.token, "GET", "/api/claxedo/agent-config/harness?workspaceId=ws_acme")).status
     const listed = async () =>
-      ((await call(bob.token, "GET", "/api/workspace?host=machine")).body as { workspaces: Array<{ workspace_id: string }> })
+      ((await call(bob.token, "GET", "/api/workspace?host=provisioner")).body as { workspaces: Array<{ workspace_id: string }> })
         .workspaces.map((row) => row.workspace_id)
     const access = async () =>
       ((await call(alice.token, "GET", `/api/control/projects/${projectId}/access`)).body as { entries: unknown[] }).entries

@@ -49,7 +49,7 @@ The corpus holds the transcript's behavior still: every case renders the same as
 - `interactions` run in order after the transcript is on screen, and the comparison is taken after each one:
   - `scroll` to `top` or `bottom`, `toggleFold` of the n-th Worked header, `reload`;
   - `toggleUserMessage` expands or collapses the user bubble containing the stable visible text in `message`;
-  - `toggleAgentMessage` expands or collapses the child-message details row containing the report text in `message`;
+  - `toggleAgentMessage` expands or collapses the agent-message details row whose text contains `message` (its "Message from …" line, or the report it carries);
   - `release` a live turn's `hold`, wait for its `ready` text and a DOM that has stopped changing, and, with `settles`, for the session to go idle;
   - `markRows` remembers the turn rows on screen, and `rowsKept` asserts they are still the same elements;
   - `markDetached` counts, after a forced collection, the DOM nodes that live outside the document, and `detachedGrowth` asserts that count grew by at most `max` since.

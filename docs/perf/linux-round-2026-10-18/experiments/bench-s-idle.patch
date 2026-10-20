@@ -1,0 +1,77 @@
+From 215b6fc32c84c96dde866e130216ccdf32ef78db Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 17 Oct 2026 21:38:58 +0000
+Subject: [PATCH] An event stream opened by the machine's own unmanaged local
+ reader, the desktop renderer's loopback connection to its daemon, no longer
+ arms the 5 s renewal interval that could only answer deliver for it, so an
+ idle desktop daemon stops waking every five seconds per open local stream,
+ while verified relay connections keep renewing their grants and workspace
+ lease on the same cadence.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01QtZVtcNTgBwKhSN8i2v1w2
+---
+ .../session-core/src/event-delivery.test.ts   | 25 +++++++++++++++++++
+ packages/session-core/src/event-delivery.ts   |  3 ++-
+ 2 files changed, 27 insertions(+), 1 deletion(-)
+
+diff --git a/packages/session-core/src/event-delivery.test.ts b/packages/session-core/src/event-delivery.test.ts
+index 148f95a8..3096cb9d 100644
+--- a/packages/session-core/src/event-delivery.test.ts
++++ b/packages/session-core/src/event-delivery.test.ts
+@@ -46,6 +46,31 @@ async function drain(release: Array<() => void>) {
+ }
+ 
+ describe("createIdentityAwareEventSource", () => {
++  test("renews a verified connection on its cadence and never arms a timer for the machine's own reader", async () => {
++    const bus = createBus<Event>()
++    const renewed: string[] = []
++    const policy: EventDeliveryPolicy<Event> = Object.assign(() => "deliver" as const, {
++      renew: (principal: EventDeliveryPrincipal) => {
++        renewed.push(principal.connectionId)
++        return "deliver" as const
++      },
++    })
++    const source = createIdentityAwareEventSource<Event>({
++      subscribe: (fn) => bus.subscribe(fn),
++      policy,
++      sessionId: (event) => event.sessionId,
++      renewalIntervalMs: 5,
++    })
++    const closeLocal = source.open({ mode: "unmanaged-local", connectionId: "local_reader" }).subscribe(() => undefined)
++    const closeVerified = source.open(participant("verified_reader")).subscribe(() => undefined)
++    await new Promise((resolve) => setTimeout(resolve, 40))
++    closeLocal()
++    closeVerified()
++    source.close()
++    expect(renewed).not.toContain("local_reader")
++    expect(renewed).toContain("verified_reader")
++  })
++
+   test("closing cancels queued delivery before its resolver can touch disposed state", async () => {
+     const bus = createBus<Event>()
+     let disposed = false
+diff --git a/packages/session-core/src/event-delivery.ts b/packages/session-core/src/event-delivery.ts
+index 0246f64b..bf87b4b9 100644
+--- a/packages/session-core/src/event-delivery.ts
++++ b/packages/session-core/src/event-delivery.ts
+@@ -32,6 +32,7 @@ export type EventDeliveryPolicy<T> = ((input: {
+   actorId?: string
+   sensitive: boolean
+ }) => EventDeliveryDecision | Promise<EventDeliveryDecision>) & {
++  /** Asked every `renewalIntervalMs` on each verified connection. An unmanaged local reader is never refused, so its connection is never renewed. */
+   renew?: (principal: EventDeliveryPrincipal) => EventDeliveryDecision | Promise<EventDeliveryDecision>
+   release?: (principal: EventDeliveryPrincipal) => void
+   /** The workspace stream lease a connection was admitted with; presented for every session it first sees. */
+@@ -688,7 +689,7 @@ export function createIdentityAwareEventSource<T extends object>(input: {
+           }
+           const connection: Connection<T> = { principal, push: listener, terminate, authorizedSessions, delivered: new WeakSet() }
+           scope.connections.add(connection)
+-          if (input.policy.renew) {
++          if (input.policy.renew && principal.mode === "verified") {
+             connection.renewalTimer = setInterval(() => {
+               void Promise.resolve(input.policy.renew!(principal)).then((next) => {
+                 if (next !== "deliver") terminateConnection()
+-- 
+2.43.0
+

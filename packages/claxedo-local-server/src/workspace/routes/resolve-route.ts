@@ -27,16 +27,16 @@ export function LocalWorkspaceRoutes(options: ControlPlaneRouteAuthOptions = {})
      * carries no `placement.host_enrollment_id` here, so a client would render
      * every one of them offline.
      *
-     * `host=machine` is accepted and answers nothing: a workspace on somebody
-     * else's machine is the authority's record, and a daemon has no authority
-     * to ask.
+     * `provisioner` is the one host value: a workspace on somebody else's
+     * machine is the authority's record, which `host=provisioner` on the
+     * control plane lists beside the provisioned ones, and a daemon has no
+     * authority to ask.
      */
     .get("/", controlPlaneRouteAuth(options), async (c) => {
       const host = c.req.query("host")
-      if (host !== undefined && host !== "machine" && host !== "provisioner") {
+      if (host !== undefined && host !== "provisioner") {
         return c.json({ error: { code: "workspace_host_invalid", message: "workspace host is invalid" } }, 400)
       }
-      if (host === "machine") return c.json({ workspaces: [] })
       const workspaces = (await listWorkspaces())
         .filter((workspace) => workspaceBacking(workspace).kind === "cloud-vm")
         .map(controlPlaneListRow)

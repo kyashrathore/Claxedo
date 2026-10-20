@@ -31,26 +31,10 @@ export function controlPlaneWorkspaceRow(
   }
 }
 
-/**
- * The rows `GET /api/workspace?host=` answers for one host.
- *
- * `machine` is the only value the route filters; `provisioner` hands back every
- * row the caller can see, provisioned or not, so a client that trusts the host
- * it asked for rather than the row's own `backing` mislabels machines as cloud
- * VMs.
- */
-export function workspaceListHostRows(
-  rows: readonly ControlPlaneWorkspaceRow[],
-  host: string | null,
-): readonly ControlPlaneWorkspaceRow[] {
-  if (host === "machine") return rows.filter((row) => row.backing === "local-worktree")
-  return rows
-}
-
 export function controlPlaneWorkspaceListFetch(rows: readonly ControlPlaneWorkspaceRow[]): ClaxedoFetch {
   return async (path) => {
     const url = new URL(path, "http://control.local")
     if (url.pathname !== "/api/workspace") return new Response("no such route", { status: 404 })
-    return Response.json({ workspaces: workspaceListHostRows(rows, url.searchParams.get("host")) })
+    return Response.json({ workspaces: rows })
   }
 }

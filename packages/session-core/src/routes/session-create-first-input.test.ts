@@ -29,6 +29,8 @@ afterEach(async () => {
 function harness(journal: Journal, input: {
   failTurnStart?: Error
   goal?: (objective: string) => Promise<AgentGoalMutationResult>
+  /** Takes the release of a quiescent session, as the ACP transport does. */
+  releasing?: boolean
 } = {}) {
   let unreadable = false
   const goals: NativeGoalOperations = {
@@ -53,7 +55,9 @@ function harness(journal: Journal, input: {
       journal.push(`create:${start.sessionId}`)
       unreadable = true
     },
+    onAttach: (attach) => { journal.push(`attach:${attach.sessionId}`) },
     onClose: (session) => { journal.push(`delete:${session.binding.sessionId}`) },
+    ...(input.releasing ? { release: async (session) => { journal.push(`release:${session.binding.sessionId}`); return true } } : {}),
     turn: async function* ({ session, turn }) {
       journal.push(`turn:${session.binding.sessionId}:${turn.prompt.userMessageId}`)
       yield { type: "finish", sessionId: session.binding.sessionId }
@@ -193,6 +197,17 @@ describe("a create that carries the session's first prompt", () => {
     expect("goal" in created).toBe(false)
     await settle()
     expect(journal).toEqual(["lifecycle:creating", "create:ses_1", "lifecycle:created"])
+  })
+
+  test("a promptless create naming its harness in the body, as the app does, leaves the released session unattached", async () => {
+    const journal: Journal = []
+    const host = harness(journal, { releasing: true })
+    const response = await create(routes(journal, host), { id: "ses_1", title: "Quiet", harness: CODEX })
+
+    expect(response.status).toBe(201)
+    await settle()
+    expect(journal).toEqual(["lifecycle:creating", "create:ses_1", "release:ses_1", "lifecycle:created"])
+    expect(host.store.getSessionConfig("ses_1")).toMatchObject({ harness: CODEX })
   })
 
   test("refuses a delivery, a child's prompt, and a prompt beside a goal before the harness is asked to create anything", async () => {

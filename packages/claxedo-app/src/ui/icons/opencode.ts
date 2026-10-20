@@ -113,11 +113,13 @@ const OPEN_CODE_GLYPHS = [
   "providers",
   "models",
   "arrow-undo-down",
+  "bullet-list",
 ] as const satisfies readonly OpenCodeGlyphName[]
 
 const OPEN_CODE_ALIASES = {
   ...PROCESS_ICON_GLYPHS.opencode,
   "changes": "review",
+  details: "bullet-list",
   "inspect-element": "window-cursor",
   cloud: "cloud-upload",
   "folder-open": "folders",

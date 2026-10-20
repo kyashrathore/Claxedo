@@ -1,4 +1,5 @@
 import { trimToUndefined } from "@claxedo/helpers/string"
+import { sessionHostRootOf } from "@claxedo/workspace-relay-protocol"
 
 // Where new relay DOs are placed when nothing better is known. APAC
 // (Singapore/Mumbai) is the closest Cloudflare hint for the India/South-Asia
@@ -6,6 +7,27 @@ import { trimToUndefined } from "@claxedo/helpers/string"
 // deployment-wide FLOOR; `relayLocationHint()` prefers a per-workspace signal.
 // Override via the CLAXEDO_RELAY_LOCATION_HINT env var.
 export const DEFAULT_RELAY_LOCATION_HINT = "apac"
+
+/**
+ * Where a session's Durable Object lives, and so where the relay room of a
+ * workspace whose sessions run on their objects is created.
+ *
+ * A Durable Object is created near whoever first reaches it and never moves,
+ * so without a hint a session opened from India can land in HKG, where
+ * api.anthropic.com answers every request 403 `forbidden` "Request not
+ * allowed" whatever the credential. Every turn the object calls its model
+ * vendor and the control plane (D1 in ENAM, the API Worker pinned to
+ * aws:us-east-1), so it lives beside them rather than beside its first viewer.
+ *
+ * The room sits on the path of every request to the object and asks the
+ * control plane (IAD) for the token's revocation and the target on a cold
+ * start and every 10 s: from apac each lookup is ~220 ms, from enam ~10 ms,
+ * while the browser's path through the room is the same ~115 ms either way
+ * (docs/perf/pi-durable-latency-2026-10-18/README.md). A machine's room stays
+ * beside its machine, where those lookups would cost a browser in apac
+ * +220 ms a request.
+ */
+export const SESSION_HOST_LOCATION_HINT = "enam"
 
 /**
  * The complete set of Cloudflare Durable Object location hints.
@@ -149,18 +171,31 @@ export type RelayRoomPlacement = {
 }
 
 /**
- * Where a workspace's room is created, decided from what the request declares,
- * and the request as the room should see it. The declaration is consumed here
- * because the room forwards a request's remaining query and headers to the
- * runtime, whose routes have no use for the relay's placement input.
+ * What the request's own credential says once its signature verifies for the
+ * room's workspace: the host it reaches. A `session-do:` host is the control
+ * plane's signed statement that the workspace's sessions run on their own
+ * Durable Objects.
+ */
+export type RelayPlacementCredential = { hostId: string }
+
+/**
+ * Where a workspace's room is created, decided from what the request declares
+ * and what its credential proves, and the request as the room should see it.
+ * The declaration is consumed here because the room forwards a request's
+ * remaining query and headers to the runtime, whose routes have no use for the
+ * relay's placement input.
  *
+ * A credential naming a session's Durable Object places the room beside that
+ * object (`SESSION_HOST_LOCATION_HINT`), whatever the request declares: the
+ * host id is signed by the control plane, so no query parameter or header can
+ * drag the room elsewhere, and a forged token verifies for no workspace.
  * Request-declared inputs (region, edge country) move the hint off the
- * configured floor only when the request's own credential verifies, so
- * anonymous first-touch traffic cannot pin a workspace's room placement.
+ * configured floor only when the credential verifies, so anonymous first-touch
+ * traffic cannot pin a workspace's room placement.
  */
 export async function relayRoomPlacement(
   request: Request,
-  input: { configured?: string; authenticated: () => Promise<boolean> },
+  input: { configured?: string; credential: () => Promise<RelayPlacementCredential | undefined> },
 ): Promise<RelayRoomPlacement> {
   const configured = trimToUndefined(input.configured)
   const region = relayRequestRegion(request)
@@ -173,8 +208,10 @@ export async function relayRoomPlacement(
   })
   const headers = new Headers(request.headers)
   headers.delete(RELAY_REGION_HEADER)
+  const credential = await input.credential()
+  const sessionHost = credential !== undefined && sessionHostRootOf(credential.hostId) !== undefined
   return {
-    locationHint: declared === floor || (await input.authenticated()) ? declared : floor,
+    locationHint: sessionHost ? SESSION_HOST_LOCATION_HINT : credential || declared === floor ? declared : floor,
     url: withoutQueryParams(request.url, RELAY_REGION_QUERY_PARAMS),
     headers,
   }

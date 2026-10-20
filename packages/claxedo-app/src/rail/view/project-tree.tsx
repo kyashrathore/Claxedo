@@ -70,6 +70,7 @@ export function ProjectTree(): JSX.Element {
                     onSelect={select}
                     onNewTerminal={(section) => section.placementId && terminals.startNew(section.placementId)}
                     onActivate={navigation.open}
+                    onPress={navigation.press}
                     markerOf={navigation.markerOf}
                     prepareDrag={navigation.prepareDrag}
                     onRename={actions.onRename}

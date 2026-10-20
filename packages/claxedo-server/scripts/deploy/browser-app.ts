@@ -2,7 +2,10 @@ import { spawn } from "node:child_process"
 import { createHash } from "node:crypto"
 import { readFile, readdir, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
+import { promisify } from "node:util"
+import { brotliCompress, constants } from "node:zlib"
 
+import { PRECOMPRESSED_ASSET, brotliSibling } from "./app-asset-encoding"
 import { SERVER_ROOT } from "./wrangler-cli"
 
 export const APP_ROOT = path.resolve(SERVER_ROOT, "../claxedo-app")
@@ -16,7 +19,31 @@ async function runBun(args: readonly string[], env: NodeJS.ProcessEnv) {
   if (code !== 0) throw new Error(`bun ${args.join(" ")} exited with ${code}`)
 }
 
-/** Drop the Pages-only `_redirects` file and upload-only source maps; the assets Worker serves neither. */
+const brotli = promisify(brotliCompress)
+
+/** Write a quality-11 Brotli copy beside each script, style and sprite under `assets/` that it makes smaller. */
+async function writeBrotliSiblings(assets: string) {
+  const sources = (await readdir(assets, { recursive: true, withFileTypes: true }))
+    .filter((entry) => entry.isFile() && PRECOMPRESSED_ASSET.test(entry.name))
+    .map((entry) => path.join(entry.parentPath, entry.name))
+  await Promise.all(sources.map(async (source) => {
+    const bytes = await readFile(source)
+    const encoded = await brotli(bytes, {
+      params: {
+        [constants.BROTLI_PARAM_QUALITY]: constants.BROTLI_MAX_QUALITY,
+        [constants.BROTLI_PARAM_MODE]: constants.BROTLI_MODE_TEXT,
+        [constants.BROTLI_PARAM_SIZE_HINT]: bytes.byteLength,
+      },
+    })
+    if (encoded.byteLength < bytes.byteLength) await writeFile(brotliSibling(source), encoded)
+  }))
+}
+
+/**
+ * Drop the Pages-only `_redirects` file and upload-only source maps, which the
+ * assets Worker serves neither, and add the Brotli copies it serves instead of
+ * leaving those assets to the edge's faster, larger compression.
+ */
 export async function prepareBrowserArtifactsForWorkers(directory: string) {
   const root = path.resolve(directory)
   await rm(path.join(root, "_redirects"), { force: true })
@@ -28,6 +55,7 @@ export async function prepareBrowserArtifactsForWorkers(directory: string) {
     }
   }
   await removeSourceMaps(root)
+  await writeBrotliSiblings(path.join(root, "assets"))
 }
 
 /** A path-and-bytes identity of the built app, excluding the attestation that carries it. */
@@ -56,10 +84,21 @@ export async function browserArtifactBuildId(directory: string) {
   return `sha256:${digest.digest("hex")}`
 }
 
-/** Build the Better Auth browser app against the deployment's API and relay origins, which its CSP names, and stamp it with its build identity. */
-export async function buildBrowserApp(apiOrigin: string, relayOrigin: string) {
-  await runBun(["run", "build"], { ...process.env, VITE_CLAXEDO_SERVER_URL: apiOrigin, CLAXEDO_RELAY_ORIGINS: relayOrigin })
+/** Build the Better Auth browser app, which reaches the control plane and the relay on its own origin, and stamp it with its build identity. */
+export async function buildBrowserApp() {
+  await runBun(["run", "build"], process.env)
   await prepareBrowserArtifactsForWorkers(BROWSER_DIRECTORY)
+}
+
+/**
+ * Write the control plane's bootstrap and auth descriptor into the built
+ * shell and the signed-out document, so a browser boots without asking the
+ * API for either, and stamp the result with its build identity. It reads them through the public origin,
+ * whose app Worker forwards `/api` to the control plane, so the origin must
+ * already front it when this runs.
+ */
+export async function publishBrowserApp(origin: string) {
+  await runBun(["scripts/publish-deployment.ts", origin, BROWSER_DIRECTORY], process.env)
   const browserBuildId = await browserArtifactBuildId(BROWSER_DIRECTORY)
   await writeFile(
     path.join(BROWSER_DIRECTORY, BROWSER_BUILD_ATTESTATION),

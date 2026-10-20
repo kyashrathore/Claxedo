@@ -10,10 +10,10 @@ row 0:
 row 1:
 - paragraph: ok
 - button "Copy response"
-- text: Build · default · <duration>
+- text: default · <duration>
 row 2:
 - group: Message from Reviewer
 row 3:
 - paragraph: ok
 - button "Copy response"
-- text: Build · default · <duration>
+- text: default · <duration>

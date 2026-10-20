@@ -46,10 +46,22 @@ function heartbeat(socket: HeartbeatSocket, ms: number) {
 
 export function McpStdioRelayRoutes(options: McpStdioRelayOptions) {
   const open = new Set<OwnedStdioMcpTransport>()
+  const closing = new Map<OwnedStdioMcpTransport, Promise<void>>()
   const baseEnv = mcpStdioBaseEnv(options.env)
+  // A transport stays in `open` until its server has stopped, so `dispose`
+  // also waits out a retirement a socket's close started moments before.
   const close = (transport: OwnedStdioMcpTransport) => {
-    open.delete(transport)
-    return transport.close().catch((error: unknown) => log.warn("MCP server did not stop", { error: String(error) }))
+    let done = closing.get(transport)
+    if (!done) {
+      done = transport.close()
+        .catch((error: unknown) => log.warn("MCP server did not stop", { error: String(error) }))
+        .finally(() => {
+          open.delete(transport)
+          closing.delete(transport)
+        })
+      closing.set(transport, done)
+    }
+    return done
   }
   const routes = new Hono<Env>().get("/:serverName", async (c, next) => {
     const server = pluginStdioServer(options.piProjection(), c.req.param("serverName"))

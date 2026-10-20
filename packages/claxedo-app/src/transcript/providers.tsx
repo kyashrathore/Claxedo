@@ -1,7 +1,7 @@
 import type { ParentProps } from "solid-js"
 import { SurfaceRichTextProvider, type SurfaceRichText } from "@/surface"
 import { DialogProvider, FileComponentProvider, MarkedProvider } from "@/ui"
-import { File } from "./file"
+import { File } from "./code-view-lazy"
 import { Markdown } from "./markdown"
 import { handleTranscriptLinkClick } from "./transcript-link"
 

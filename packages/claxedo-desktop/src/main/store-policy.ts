@@ -13,6 +13,9 @@
  * impossible under `bun test`, so the checks live here.
  */
 
+import { CLI_SIGN_IN_MODE_KEY } from "./account/cli-credential-file"
+import { DEFAULT_SERVER_URL_KEY, SETTINGS_STORE, WSL_ENABLED_KEY } from "./constants"
+
 // The longest legitimate name is a server-workspace store (~80 chars).
 const STORE_NAME_MAX = 160
 const STORE_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
@@ -36,6 +39,32 @@ export function assertStoreKey(key: unknown): asserts key is string {
   if (typeof key !== "string" || key.length === 0 || key.length > STORE_KEY_MAX) {
     throw new Error("invalid settings store key")
   }
+}
+
+/**
+ * Settings main reads to decide what it does with the account or where it
+ * connects. A renderer value reaches the default server and WSL keys only
+ * through their own validating handlers, and never reaches `cliSignInMode`,
+ * which can put the refresh token in a plaintext file. `store-clear` can
+ * still reset all three to their defaults, which grants nothing.
+ */
+const MAIN_OWNED_SETTINGS_KEYS: ReadonlySet<string> = new Set([
+  CLI_SIGN_IN_MODE_KEY,
+  DEFAULT_SERVER_URL_KEY,
+  WSL_ENABLED_KEY,
+])
+
+/**
+ * The key check for the generic `store-*` channels. An omitted name opens the
+ * settings store (`getStore`'s default). electron-store reads keys as
+ * dot-paths with backslash escapes, so the first segment, escapes removed, is
+ * what names the setting.
+ */
+export function assertRendererStoreKey(name: unknown, key: unknown): asserts key is string {
+  assertStoreKey(key)
+  if (name !== undefined && name !== SETTINGS_STORE) return
+  const setting = key.replaceAll("\\", "").split(/[.[]/, 1)[0] ?? ""
+  if (MAIN_OWNED_SETTINGS_KEYS.has(setting)) throw new Error("settings store key is owned by the main process")
 }
 
 export function assertStoreValue(value: unknown): asserts value is string {

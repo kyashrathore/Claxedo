@@ -1,13 +1,14 @@
-import type { JSX } from "solid-js"
+import { Show, type JSX } from "solid-js"
 import { ButtonV2 as Button } from "@opencode-ai/ui/v2/button-v2"
-import { DialogV2 as Dialog, DialogBody, DialogHeader, DialogTitle } from "@opencode-ai/ui/v2/dialog-v2"
+import { DialogV2 as Dialog, DialogBody, DialogFooter, DialogHeader, DialogTitle } from "@opencode-ai/ui/v2/dialog-v2"
 import type { useDialog } from "@opencode-ai/ui/context/dialog"
 
 export type ConfirmOptions = {
   readonly title: string
-  readonly body: string
+  readonly body?: string
   readonly confirmLabel: string
   readonly cancelLabel: string
+  readonly destructive: boolean
 }
 
 function ConfirmBody(props: {
@@ -20,17 +21,21 @@ function ConfirmBody(props: {
       <DialogHeader>
         <DialogTitle>{props.options.title}</DialogTitle>
       </DialogHeader>
-      <DialogBody class="flex min-w-[340px] max-w-[440px] flex-col gap-4 px-4 pb-4">
-        <p class="whitespace-pre-line text-13-regular text-text-weak">{props.options.body}</p>
-        <div class="flex justify-end gap-2">
-          <Button variant="ghost" onClick={() => props.onCancel()}>
-            {props.options.cancelLabel}
-          </Button>
-          <Button variant="contrast" onClick={() => props.onConfirm()}>
-            {props.options.confirmLabel}
-          </Button>
-        </div>
-      </DialogBody>
+      <Show when={props.options.body}>
+        {(body) => (
+          <DialogBody class="px-4">
+            <p class="whitespace-pre-line text-13-regular text-text-weak">{body()}</p>
+          </DialogBody>
+        )}
+      </Show>
+      <DialogFooter>
+        <Button variant="ghost" onClick={() => props.onCancel()}>
+          {props.options.cancelLabel}
+        </Button>
+        <Button variant={props.options.destructive ? "danger" : "contrast"} onClick={() => props.onConfirm()}>
+          {props.options.confirmLabel}
+        </Button>
+      </DialogFooter>
     </Dialog>
   )
 }

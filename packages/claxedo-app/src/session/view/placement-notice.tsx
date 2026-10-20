@@ -7,7 +7,7 @@ import { isOfflineMachine, isStartingCloud, useServer, type PlacementId, type Wo
 import { placementNotice } from "./placement-notice-text"
 import { useSessionScreenText } from "./text"
 
-export function usePlacementNotice(placementId: Accessor<PlacementId | undefined>, composerKey: Accessor<ComposerKey>): Accessor<ComposerNotice | undefined> {
+export function usePlacementNotice(placementId: Accessor<PlacementId | undefined>, composerKey: Accessor<ComposerKey>, draft: boolean): Accessor<ComposerNotice | undefined> {
   const t = useSessionScreenText()
   const server = useServer()
   const named = useWorkspaceName()
@@ -39,18 +39,19 @@ export function usePlacementNotice(placementId: Accessor<PlacementId | undefined
       ...(time ? { retryTime: time } : {}),
       offline: isOfflineMachine(placement),
       harnessRunsInSessionHost: runsInSessionHost(harness()),
+      draft,
       wake: () => wakeWorkspace(id),
       startFresh: { label: startFresh.label, run: () => startFresh.run(id, name) },
     })
   }
 }
 
-export function PlacementNotice(props: { readonly placementId: PlacementId; readonly composerKey: ComposerKey }) {
+export function PlacementNotice(props: { readonly placementId: PlacementId; readonly composerKey: ComposerKey; readonly draft: boolean }) {
   const server = useServer()
   createEffect(() => {
     if (isStartingCloud(server.placements.byId(props.placementId))) void server.cloud.follow(props.placementId)
   })
-  publishComposerNotice(usePlacementNotice(() => props.placementId, () => props.composerKey))
+  publishComposerNotice(usePlacementNotice(() => props.placementId, () => props.composerKey, props.draft))
   return null
 }
 
@@ -58,7 +59,7 @@ export function PlacementNoticeSlot(props: { readonly placementId: PlacementId; 
   const channel = createComposerNoticeChannel()
   return (
     <ComposerNoticeProvider channel={channel}>
-      <PlacementNotice placementId={props.placementId} composerKey={props.composerKey} />
+      <PlacementNotice placementId={props.placementId} composerKey={props.composerKey} draft={false} />
       <ComposerNoticeRow notices={channel.notices()} />
       <div classList={{ "relative z-10 -mt-2": channel.notices().length > 0 }}>{props.children}</div>
     </ComposerNoticeProvider>

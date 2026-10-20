@@ -1,4 +1,4 @@
-import { bundledLanguages, type BundledLanguage } from "shiki"
+import { bundledLanguages, type BundledLanguage } from "shiki/langs"
 
 export type HighlightLanguage = BundledLanguage | "text"
 

@@ -36,17 +36,12 @@ export function ShowSidebarButton(props: { readonly peek: boolean }): JSX.Elemen
 
 export function WorkbenchHeader(props: { readonly global: boolean; readonly tabs?: JSX.Element }): JSX.Element {
   const layout = useShellLayout()
-  const toggleShown = () => !props.global
   return (
     <div
       data-testid="workbench-shell-header"
       data-surface="header"
       data-window-drag-region
-      class="relative flex h-9 shrink-0 items-center gap-1 overflow-hidden border-b border-border-weaker-base bg-background-base"
-      classList={{
-        "pr-10": toggleShown() && !layout.panelShown(),
-        "pr-1": !toggleShown() || layout.panelShown(),
-      }}
+      class="relative flex h-9 shrink-0 items-center gap-1 overflow-hidden border-b border-border-weaker-base bg-background-base pr-1"
     >
       <div class="flex min-w-0 flex-1 items-center gap-1 px-1" data-clear-window-controls={layout.sidebarPinned() ? undefined : ""}>
         <Show when={!layout.sidebarPinned()}>
@@ -58,10 +53,8 @@ export function WorkbenchHeader(props: { readonly global: boolean; readonly tabs
       </div>
       <div data-testid="workbench-header-controls" class="flex shrink-0 items-center gap-1">
         <ScopeButtons />
-        <Show when={toggleShown()}>
-          <div class="absolute inset-y-0 right-1 z-40 flex items-center gap-0.5">
-            <PanelToggle />
-          </div>
+        <Show when={!props.global}>
+          <PanelToggle />
         </Show>
       </div>
     </div>

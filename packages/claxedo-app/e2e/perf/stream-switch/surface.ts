@@ -46,7 +46,7 @@ export async function turnStarted(surface: Surface, sessionId: string, before: n
   while ((await surface.api.messages(surface.workspace.directory, sessionId)).length < before + 2) await dwell(100)
 }
 
-async function withValues(workspace: Workspace) {
+export async function withValues(workspace: Workspace) {
   await fs.mkdir(path.join(workspace.directory, "src"), { recursive: true })
   await fs.writeFile(path.join(workspace.directory, "src/values.ts"), "export const value0 = 0\n")
   await git(workspace.directory, "add", "--", "src/values.ts")

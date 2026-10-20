@@ -227,7 +227,35 @@ export const serverWorkerd: Policy = {
   // indexes, the hosted plugin builder and the routes; `documents/compose.ts`
   // replaces `documents/hosted-plugin.ts` and hands it this host's sharing
   // authority and runtime broker. 168/23, no headroom.
-  ceilings: { modules: 168, packages: 23 },
+  // +1 module (owner: the hosted shell routes): a workspace runtime's harness
+  // health and OpenCode catalog, read over the relay with the runtime's
+  // identity beside them under one token (`workspace/harness-runtime.ts`),
+  // split from `routes/hosted/shell.ts`. It adds no package edge.
+  // +1 module (owner: the Better Auth D1 foundation): unauthenticated OAuth
+  // client registration refuses an https redirect outside the hosted MCP
+  // clients and a name that imitates this deployment's own apps
+  // (`platform/auth/oauth-client-registration-policy.ts`). It adds no package
+  // edge: Better Auth was already in the Worker.
+  // +3 modules (owner: the Better Auth D1 foundation): a password reset or
+  // "sign out everywhere" deletes the person's OAuth tokens too
+  // (`platform/auth/oauth-session-revocation.ts`), a device code request may
+  // not pre-bind a user (`platform/auth/device-code-request-policy.ts`), and
+  // every desktop authorization shows the consent screen
+  // (`platform/auth/desktop-consent-policy.ts`). They add no package edge:
+  // Better Auth and the helpers were already in the Worker.
+  // +1 module (owner: the runtime session authority): a turn's admission
+  // (`session/runtime-turn-admission.ts`), the one `/session-authorize` request
+  // that takes the lease, where the turn authority decides the actor's
+  // `agent_turn` write, and hands a session's own host its delivery, split
+  // from the route when the three requests it replaced became one. It adds no
+  // package edge.
+  // +1 module (owner: the Better Auth D1 foundation): the session cookie's
+  // name (`platform/auth/session-cookie.ts`) is a leaf the app Worker bundles
+  // without Better Auth, to tell a signed-in browser's shell request from a
+  // signed-out one; the foundation and the auth descriptor read it from there.
+  // It adds no package edge.
+  // 175/23, no headroom.
+  ceilings: { modules: 175, packages: 23 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

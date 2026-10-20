@@ -54,7 +54,6 @@ export default {
   "settings.appearance.theme.description": "Настройте оформление Claxedo.",
   "settings.keybindings.palette": "Палитра команд",
   "settings.connections.reconnect": "Переподключить",
-  "settings.connections.confirm": "Подтвердить",
   "settings.section.connections": "Подключения",
   "settings.section.machines": "Машины",
   "settings.common.remove": "Удалить",

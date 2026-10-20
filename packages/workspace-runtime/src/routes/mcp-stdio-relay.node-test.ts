@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { existsSync } from "node:fs"
 import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -16,18 +17,19 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
   if (message.method === "debug/env") return reply({ env: process.env });
   if (message.method === "tools/list") return reply({ tools: [{ name: "guide", description: "Read the guide", inputSchema: { type: "object", properties: {} } }] });
 });
+if (process.env.HOLD_TERM_MARKER) process.on("SIGTERM", () => { require("node:fs").writeFileSync(process.env.HOLD_TERM_MARKER, ""); setTimeout(() => process.exit(0), 1000); });
 `
 
 const cleanups: Array<() => Promise<unknown>> = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 
-async function relay(input: { env?: NodeJS.ProcessEnv; mcpHeartbeatMs?: number } = {}) {
+async function relay(input: { env?: NodeJS.ProcessEnv; mcpHeartbeatMs?: number; serverEnv?: Record<string, string> } = {}) {
   const directory = await realpath(await mkdtemp(path.join(tmpdir(), "wr-mcp-relay-node-")))
   // Windows can hold a just-retired server's folder for a moment after it exits.
   cleanups.push(() => rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }))
   const script = path.join(directory, "stdio-mcp.cjs")
   await writeFile(script, STDIO_SERVER)
-  const stdio = { kind: "stdio" as const, command: process.execPath, args: [script], env: { SERVER_VAR: "from-projection" } }
+  const stdio = { kind: "stdio" as const, command: process.execPath, args: [script], env: { SERVER_VAR: "from-projection", ...input.serverEnv } }
   const projection: PluginProjection = {
     generation: "g1", pluginRoots: [], notApplied: [],
     mcpServers: [{ ...stdio, name: "tools", origin: "plugin" }, { ...stdio, name: "configured", origin: "configured" }],
@@ -131,3 +133,24 @@ void test("stopping the runtime retires a server whose socket is still open", as
   await server.close()
   assert.equal(await waitForPidExit(pid, 10_000), true, `MCP server ${pid} outlived the runtime`)
 })
+
+// The server holds on SIGTERM for a second, so its retirement is in flight
+// once the marker exists; Windows has no SIGTERM for it to hold on.
+void test("stopping the runtime waits for a server whose socket closed a moment before", { skip: process.platform === "win32" }, async () => {
+  const marker = path.join(tmpdir(), `wr-mcp-relay-term-${process.pid}-${Date.now()}`)
+  cleanups.push(() => rm(marker, { force: true }))
+  const { server, url } = await relay({ serverEnv: { HOLD_TERM_MARKER: marker } })
+  const { socket, pid } = await openedServer(url("tools"), await server.headers({ sessionId: "ses_1" }))
+  socket.close()
+  await waitForFile(marker, 10_000)
+  await server.close()
+  assert.equal(pidRunning(pid), false, `MCP server ${pid} was still retiring when the runtime's stop returned`)
+})
+
+async function waitForFile(file: string, ms: number) {
+  const deadline = Date.now() + ms
+  while (!existsSync(file)) {
+    if (Date.now() >= deadline) throw new Error(`${file} was not written within ${ms}ms`)
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+}

@@ -199,6 +199,7 @@ export function createHostedMcpRuntimePreparer(input: HostedMcpRuntimePreparerIn
         resourceUrl,
         fetch: oauthFetch,
         resolve: input.oauth.resolve,
+        loopback: false,
         ...(input.oauth.preRegistered ? { preRegistered: input.oauth.preRegistered } : {}),
         ...(input.oauth.clientIdMetadataDocumentUrl
           ? { clientIdMetadataDocumentUrl: input.oauth.clientIdMetadataDocumentUrl }
@@ -275,6 +276,7 @@ export function createHostedMcpRuntimePreparer(input: HostedMcpRuntimePreparerIn
                   resourceUrl: server.url,
                   fetch: oauthFetch,
                   resolve: input.oauth.resolve,
+                  loopback: false,
                   selectedIssuer,
                   ...(input.oauth.preRegistered ? { preRegistered: input.oauth.preRegistered } : {}),
                   ...(input.oauth.clientIdMetadataDocumentUrl

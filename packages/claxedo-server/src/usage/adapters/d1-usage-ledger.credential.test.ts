@@ -27,7 +27,7 @@ async function credentialRow(database: D1Database, row: { id: string; owner: str
   `).bind(row.id, row.owner, row.orgId ?? "org_acme", row.providerId ?? "anthropic", row.kind ?? "api_key", row.label ?? null).run()
 }
 
-/** Alice founded org_acme, Bob is a member, and each holds a personal account beside the org's team key. */
+/** Alice founded org_acme, Bob is a member, and each holds a personal account beside the organization account. */
 async function organization() {
   const handle = await miniflareControlPlaneDatabase()
   databases.push(handle)
@@ -39,7 +39,7 @@ async function organization() {
   ])
   await credentialRow(database, { id: "cred_alice_plan", owner: "user_alice", kind: "oauth_token", label: "Alice's plan", providerId: "claude-sdk" })
   await credentialRow(database, { id: "cred_bob_key", owner: "user_bob", label: "Bob's key" })
-  await credentialRow(database, { id: "cred_team", owner: null, label: "Team key" })
+  await credentialRow(database, { id: "cred_team", owner: null, label: "Acme key" })
   await credentialRow(database, { id: "cred_boat", owner: null, kind: "sandbox_driver", providerId: "boat" })
   await credentialRow(database, { id: "cred_elsewhere", owner: null, orgId: "org_other" })
   return { database, ledger: createD1UsageLedger({ database, now: () => 7_000 }) }
@@ -138,33 +138,33 @@ describe("spend per credential", () => {
   const summary = (rows: readonly Record<string, unknown>[] | undefined) =>
     rows?.map((row) => [row.source, row.credential_id, row.credential_kind, row.label, row.turn_count, row.output_tokens])
 
-  test("a person sees what they spent on each credential they ran on, their own accounts and the team's, and no one else's", async () => {
+  test("a person sees what they spent on each credential they ran on, their own accounts and the organization account, and no one else's", async () => {
     const { ledger } = await spentByBoth()
 
     expect(summary(await ledger.credentialSpend({ ...ALICE, ...RANGE, scope: "mine" }))).toEqual([
       ["machine", null, null, null, 1, 300],
-      ["org", "cred_team", "api_key", "Team key", 1, 200],
+      ["org", "cred_team", "api_key", "Acme key", 1, 200],
       ["personal", "cred_alice_plan", "oauth_token", "Alice's plan", 1, 100],
     ])
     expect(summary(await ledger.credentialSpend({ ...BOB, ...RANGE, scope: "mine" }))).toEqual([
-      ["org", "cred_team", "api_key", "Team key", 1, 400],
+      ["org", "cred_team", "api_key", "Acme key", 1, 400],
       ["personal", "cred_bob_key", "api_key", "Bob's key", 1, 500],
     ])
   })
 
-  test("an organization's admin sees each member's spend on the team's keys and none of their personal accounts; a member is refused", async () => {
+  test("an organization's admin sees each member's spend on the organization accounts and none of their personal accounts; a member is refused", async () => {
     const { ledger } = await spentByBoth()
 
     const spent = await ledger.credentialSpend({ ...ALICE, ...RANGE, scope: "org" })
     expect(spent?.map((row) => [row.source, row.credential_id, row.spender, row.label, row.turn_count, row.output_tokens])).toEqual([
-      ["org", "cred_team", "user_alice", "Team key", 1, 200],
-      ["org", "cred_team", "user_bob", "Team key", 1, 400],
+      ["org", "cred_team", "user_alice", "Acme key", 1, 200],
+      ["org", "cred_team", "user_bob", "Acme key", 1, 400],
     ])
     expect((await ledger.credentialSpend({ ...ALICE, ...RANGE, scope: "mine" }))?.every((row) => row.spender === null)).toBe(true)
     expect(await ledger.credentialSpend({ ...BOB, ...RANGE, scope: "org" })).toBeUndefined()
   })
 
-  test("the usage API answers each credential priced by its models, and refuses the team's spend to a member", async () => {
+  test("the usage API answers each credential priced by its models, and refuses the organization accounts' spend to a member", async () => {
     const { ledger } = await spentByBoth()
     const orgMembers = vi.fn(async () => [{ userId: "user_alice", name: "Alice Liddell" }])
     const as = (identity: typeof ALICE) => UsageRoutes({ ledger, identity: async () => identity, orgMembers, pricing: tokenTrackerPricing("bundled") })
@@ -177,7 +177,7 @@ describe("spend per credential", () => {
     expect(body.credentials.map(({ source, credentialId, kind, label, providerId, turnCount, output }) => ({ source, credentialId, kind, label, providerId, turnCount, output })))
       .toEqual(expect.arrayContaining([
         { source: "personal", credentialId: "cred_alice_plan", kind: "oauth_token", label: "Alice's plan", providerId: "claude-sdk", turnCount: 1, output: 100 },
-        { source: "org", credentialId: "cred_team", kind: "api_key", label: "Team key", providerId: "anthropic", turnCount: 1, output: 200 },
+        { source: "org", credentialId: "cred_team", kind: "api_key", label: "Acme key", providerId: "anthropic", turnCount: 1, output: 200 },
         { source: "machine", credentialId: undefined, kind: undefined, label: undefined, providerId: undefined, turnCount: 1, output: 300 },
       ]))
     expect(body.credentials.every((spend) => spend.estimatedUsd > 0 && spend.unpricedTokens === 0)).toBe(true)
@@ -195,7 +195,7 @@ describe("spend per credential", () => {
     expect(teamKey?.members?.reduce((total, member) => total + member.estimatedUsd, 0)).toBeCloseTo(teamKey?.estimatedUsd ?? 0, 10)
     const refused = await read(BOB, "&scope=org")
     expect(refused.status).toBe(403)
-    expect(await refused.json()).toEqual({ error: { code: "usage_scope_forbidden", message: expect.any(String) } })
+    expect(await refused.json()).toEqual({ error: { code: "usage_scope_forbidden", message: "Only an owner or admin of the organization can see its organization accounts' spend." } })
     expect((await read(ALICE, "&scope=everyone")).status).toBe(400)
     expect(orgMembers).toHaveBeenCalledTimes(1)
   })

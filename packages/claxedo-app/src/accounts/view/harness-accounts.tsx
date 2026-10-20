@@ -2,7 +2,7 @@ import { Show } from "solid-js"
 import { useElapsed } from "@/lib/delay"
 import { formatRelativeTime } from "@/lib/relative-time"
 import { useI18n } from "@/i18n"
-import { SettingsEmpty, SettingsList } from "@/settings"
+import { SettingsEmpty } from "@/settings"
 import { useAccountsText } from "../i18n"
 import type { AccountsSnapshot, Harness } from "../model"
 import type { Accounts } from "../store"
@@ -61,15 +61,13 @@ export function AgentHarnessAccounts(props: { readonly harness: Harness; readonl
   return (
     <Show when={snapshot()} fallback={<LoadingNote onMachine={props.accounts.onMachine()} machineName={props.accounts.machineName()} />}>
       {(current) => (
-        <SettingsList>
-          <AgentHarnessRow
-            harness={props.harness}
-            snapshot={current()}
-            accounts={props.accounts}
-            {...(props.headerless ? { headerless: true } : {})}
-            {...(props.onAddAccountRef ? { onAddAccountRef: props.onAddAccountRef } : {})}
-          />
-        </SettingsList>
+        <AgentHarnessRow
+          harness={props.harness}
+          snapshot={current()}
+          accounts={props.accounts}
+          {...(props.headerless ? { headerless: true } : {})}
+          {...(props.onAddAccountRef ? { onAddAccountRef: props.onAddAccountRef } : {})}
+        />
       )}
     </Show>
   )

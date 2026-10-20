@@ -1,7 +1,7 @@
 import type { D1Database } from "@cloudflare/workers-types"
 import { Hono } from "hono"
 import { z } from "zod"
-import { pluginManifestSchema } from "@claxedo/plugin-api/manifest"
+import { pluginManifestSchema } from "@claxedo/plugin-api/manifest-schema"
 import { AuthenticationError, type ControlPlanePrincipal } from "@claxedo/server-core/platform/auth/authentication"
 import { D1WorkspaceAuthority } from "../../authority/adapters/d1/workspace-authority"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"

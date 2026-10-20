@@ -37,6 +37,7 @@ const PLACEHOLDER = {
   requestLimiterNamespaceId: "3999999999",
   documentsBucket: "claxedo-documents-boundary-dry-run",
   agentPluginsBucket: "claxedo-agent-plugins-boundary-dry-run",
+  publicOriginHost: "app.boundary-dry-run.test",
 }
 
 const CONFIG_FILE = path.join(SERVER_ROOT, ".claxedo-workerd-boundary-wrangler.toml")
@@ -54,6 +55,7 @@ function boundaryWranglerConfig(target: WorkerdBoundaryTarget, controlPlaneMigra
     controlPlaneMigrationsDir,
     requestLimiterNamespaceId: PLACEHOLDER.requestLimiterNamespaceId,
     documentsBucket: PLACEHOLDER.documentsBucket,
+    publicOriginHost: PLACEHOLDER.publicOriginHost,
     ...(artifact.agentPlugins ? { agentPluginsBucket: PLACEHOLDER.agentPluginsBucket } : {}),
     variables: { CLAXEDO_SANDBOX_POSTURE: artifact.sandboxPosture },
   })

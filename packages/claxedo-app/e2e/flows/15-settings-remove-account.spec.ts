@@ -1,5 +1,5 @@
 import { HARNESS_TABLE } from "@claxedo/agent-runtime-contract"
-import { expect, test } from "../harness"
+import { expect, expectFooterAtDialogInset, test } from "../harness"
 import { saveOrgAccount } from "../harness/saved-org-account"
 
 test("15 settings: the local operator removes a saved organization account, cancellation preserves it, and the machine login stays protected", async ({ stack, app, isMobile }) => {
@@ -16,7 +16,7 @@ test("15 settings: the local operator removes a saved organization account, canc
   const saved = accounts.locator('[data-slot="account-row"]').filter({ hasText: "Saved Claude account" })
   const machine = accounts.locator('[data-slot="account-row"][data-account="machine"]')
   await expect(saved).toBeVisible()
-  await machine.getByText(/^Login on /).click()
+  await machine.getByText(/^Claude Code login on /).click()
   await expect(machine.getByRole("radio")).toBeChecked()
   await expect(machine.getByRole("button", { name: "Remove", exact: true })).toHaveCount(0)
   const remove = saved.getByRole("button", { name: "Remove", exact: true })
@@ -26,13 +26,18 @@ test("15 settings: the local operator removes a saved organization account, canc
     expect(box?.height).toBeGreaterThanOrEqual(44)
     expect(box?.width).toBeGreaterThanOrEqual(44)
   }
+  await expect(saved.getByRole("button", { name: "Check now", exact: true })).toBeEnabled()
+  const confirm = app.getByRole("dialog").filter({ hasText: "Remove Saved Claude account?" })
   await remove.click()
-  await expect(saved.getByRole("button", { name: "Cancel", exact: true })).toBeVisible()
+  await expect(confirm.getByText("Used by Claude Code and Pi", { exact: true })).toBeVisible()
+  await expectFooterAtDialogInset(confirm, confirm.getByRole("button", { name: "Remove", exact: true }))
   expect(await app.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-  await saved.getByRole("button", { name: "Cancel", exact: true }).click()
+  await confirm.getByRole("button", { name: "Cancel", exact: true }).click()
+  await expect(confirm).toHaveCount(0)
   expect((await read()).org.some((account) => account.id === id)).toBe(true)
+  await expect(saved).toBeVisible()
   await remove.click()
-  await remove.click()
+  await confirm.getByRole("button", { name: "Remove", exact: true }).click()
   await expect(saved).toHaveCount(0)
   await expect(accounts.locator('[data-account="org"]')).toHaveCount(0)
   expect((await read()).org.some((account) => account.id === id)).toBe(false)
@@ -49,9 +54,9 @@ test("15 settings: a chosen organization account that was removed says so and di
   const json = (method: string, body: unknown) => ({ method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
   const sources = (source: string) => fetch(`${stack.url}/api/claxedo/credentials/account-sources`, json("PUT", { provider_ids: HARNESS_TABLE.cursor.providerIds, source }))
   expect((await sources("org")).status).toBe(409)
-  const team = await fetch(`${stack.url}/api/claxedo/credentials`, json("PUT", { provider_id: "cursor", kind: "api_key", owner: "org", label: "Team Cursor", secret: "key_team_cursor" }))
-  expect(team.status).toBe(200)
-  const { credential } = await team.json() as { credential: { id: string } }
+  const added = await fetch(`${stack.url}/api/claxedo/credentials`, json("PUT", { provider_id: "cursor", kind: "api_key", owner: "org", label: "Acme Cursor", secret: "key_org_cursor" }))
+  expect(added.status).toBe(200)
+  const { credential } = await added.json() as { credential: { id: string } }
   expect((await sources("org")).status).toBe(200)
   expect((await fetch(`${stack.url}/api/claxedo/credentials/${credential.id}`, json("DELETE", {}))).status).toBe(200)
   await app.goto(`${stack.url}/settings/models`)
@@ -59,8 +64,8 @@ test("15 settings: a chosen organization account that was removed says so and di
   const missing = accounts.locator('[data-account="org"]')
   await expect(missing.getByRole("radio")).toBeChecked()
   await expect(missing.getByRole("radio")).toBeDisabled()
-  await expect(missing.getByText("Your organization has no Cursor API key. Ask an admin to add a team key, or choose your own account.", { exact: true })).toBeVisible()
-  await accounts.getByText(/^Login on /).click()
+  await expect(missing.getByText("Your organization has no Cursor API key. Ask an admin to add an organization account, or choose your own account.", { exact: true })).toBeVisible()
+  await accounts.getByText(/^Cursor login on /).click()
   await expect(missing).toHaveCount(0)
   const read = await fetch(`${stack.url}/api/claxedo/credentials/account-sources`)
   expect(read.status).toBe(200)

@@ -1,11 +1,9 @@
 import { createMemo, For, Show, type JSX } from "solid-js"
 import type { AppError, CodeHostConnection, CodeHostRepository, CodeHostRepositoryListing } from "@/server"
-import { Field, Select } from "@/ui"
+import { Field, Select, TextField } from "@/ui"
 import { useProjectsText } from "../i18n"
 import { shownRepositoryAccess } from "../repository-access"
 import { RepositoryAccessHint } from "./project-repository-access"
-
-export const FIELD_BOX = "h-10 rounded-lg border border-border-base bg-surface-inset-base px-3"
 
 export function AccountSelect(props: { connections: readonly CodeHostConnection[]; current: CodeHostConnection; onSelect: (id: string) => void }) {
   const t = useProjectsText()
@@ -86,15 +84,15 @@ export function RepositoryList(props: RepositoryListProps) {
   const access = () => shownRepositoryAccess(props.listing, matches().length)
   return (
     <div class="flex flex-col gap-2">
-      <input
+      <TextField
         type="search"
-        value={props.query}
-        onInput={(event) => props.onQuery(event.currentTarget.value)}
+        label={t("projects.add.search")}
+        hideLabel
         placeholder={t("projects.add.search")}
-        aria-label={t("projects.add.search")}
+        value={props.query}
+        onChange={props.onQuery}
         autocomplete="off"
         spellcheck={false}
-        class={`${FIELD_BOX} text-14-regular w-full min-w-0 text-text-strong placeholder:text-text-weak/60 focus:outline-none focus:border-border-interactive-base`}
       />
       <div
         role="radiogroup"

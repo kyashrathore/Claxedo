@@ -4,8 +4,11 @@ import { connectSubject, connectVars, type ConnectContext } from "@/lib/harness-
 import { toAppError, useServer, type ProviderAuthMethod } from "@/server"
 import { showToast } from "@/ui"
 import { connectMethodOptions, type ConnectMethodOption } from "./connect-methods"
-import { createConnectState } from "./connect-state"
+import { createConnectState, type ConnectAudience } from "./connect-state"
 import { useAccountsText, type AccountsKey } from "./i18n"
+import type { OrganizationTarget } from "./model"
+
+export type OrganizationConnect = OrganizationTarget & { readonly servedBy: string }
 
 export type ConnectFormInput = {
   readonly provider: string
@@ -13,6 +16,7 @@ export type ConnectFormInput = {
   readonly context: ConnectContext
   readonly credentialId?: string
   readonly replaces?: (methodType: string) => string | undefined
+  readonly organization?: OrganizationConnect
   readonly onConnected?: () => void | Promise<void>
 }
 
@@ -25,7 +29,7 @@ export const CONTEXT_COPY = {
   connected: { harness: "provider.connect.toast.connected.description.harness", engine: "provider.connect.toast.connected.description.engine" },
 } as const satisfies Record<string, ContextCopy>
 
-function useConnectMethods(input: ConnectFormInput) {
+function useConnectMethods(input: ConnectFormInput, audience: () => ConnectAudience) {
   const server = useServer()
   const codexBundle = () => input.harness === "pi" && input.provider === "openai-codex"
   const auth = useQuery(() => ({ ...server.queries.providerConnect.authMethods(input.harness), staleTime: 0 }))
@@ -34,22 +38,27 @@ function useConnectMethods(input: ConnectFormInput) {
     loading: () => auth.isPending,
     error: () => (auth.error ? toAppError(auth.error).message : undefined),
     authProviderId: () => (codexBundle() ? "codex-app-server" : input.provider),
-    options: createMemo(() => connectMethodOptions(input.provider, methods())),
+    options: createMemo(() => {
+      const options = connectMethodOptions(input.provider, methods())
+      return audience() === "org" ? options.filter((option) => option.type === "api") : options
+    }),
   }
 }
 
-function useComplete(input: ConnectFormInput) {
+function useComplete(input: ConnectFormInput, audience: () => ConnectAudience) {
   const t = useAccountsText()
   return async () => {
     const vars = connectVars(input.context)
-    showToast({ title: t("provider.connect.toast.connected.title", vars), description: t(CONTEXT_COPY.connected[input.context.kind], vars) })
+    const organization = audience() === "org" ? input.organization : undefined
+    if (organization) showToast({ title: t("provider.connect.toast.org.title"), description: t("provider.connect.toast.org.description", { harnesses: organization.servedBy }) })
+    else showToast({ title: t("provider.connect.toast.connected.title", vars), description: t(CONTEXT_COPY.connected[input.context.kind], vars) })
     await input.onConnected?.()
   }
 }
 
 function useOAuth(input: ConnectFormInput, methods: ReturnType<typeof useConnectMethods>, state: ReturnType<typeof createConnectState>) {
   const server = useServer()
-  const complete = useComplete(input)
+  const complete = useComplete(input, () => state.store.audience)
   const { store, setStore, fail } = state
   const finish = async (code?: string) => {
     if (store.methodIndex === undefined) return
@@ -78,14 +87,14 @@ function useOAuth(input: ConnectFormInput, methods: ReturnType<typeof useConnect
 function useSaveKey(input: ConnectFormInput, state: ReturnType<typeof createConnectState>, method: () => ConnectMethodOption | undefined) {
   const server = useServer()
   const t = useAccountsText()
-  const complete = useComplete(input)
+  const complete = useComplete(input, () => state.store.audience)
   const { store, setStore } = state
   const write = (secret: string, label: string) => {
     if (input.credentialId) return server.providerConnect.reconnect(input.credentialId, secret)
+    if (store.audience === "org" && input.organization) return server.accounts.saveOrgAccount(input.organization.vendorProvider, secret, label)
     return server.providerConnect.saveKey({ providerId: input.provider, label, secret, kind: method()?.type === "token" ? "oauth_token" : "api_key" })
   }
-  return async (event: SubmitEvent) => {
-    event.preventDefault()
+  return async () => {
     const secret = store.value.trim()
     const label = store.label.trim()
     const missing = !secret ? t("provider.connect.apiKey.required") : !input.credentialId && !label ? t("provider.connect.label.required") : undefined
@@ -107,8 +116,8 @@ function useSaveKey(input: ConnectFormInput, state: ReturnType<typeof createConn
 
 export function createProviderConnect(input: ConnectFormInput) {
   const t = useAccountsText()
-  const methods = useConnectMethods(input)
   const state = createConnectState()
+  const methods = useConnectMethods(input, () => state.store.audience)
   const oauth = useOAuth(input, methods, state)
   const selected = createMemo((): ConnectMethodOption | undefined => {
     const list = methods.options()
@@ -118,7 +127,8 @@ export function createProviderConnect(input: ConnectFormInput) {
   const vars = () => connectVars(input.context)
   const replaces = createMemo(() => {
     const method = selected()
-    return method && !input.credentialId ? input.replaces?.(method.type) : undefined
+    if (!method || input.credentialId) return undefined
+    return state.store.audience === "org" ? input.organization?.replaces : input.replaces?.(method.type)
   })
   createEffect(on(replaces, (label) => {
     if (label && !untrack(() => state.store.label)) state.setStore("label", label)
@@ -131,12 +141,13 @@ export function createProviderConnect(input: ConnectFormInput) {
     selected,
     replaces,
     vars,
+    organization: () => (input.credentialId ? undefined : input.organization),
     subject: () => connectSubject(input.context),
     methodCopy: (option: ConnectMethodOption, part: "title" | "for" | "how") => t(option.spec.copy[part], vars()),
     pastes: () => selected()?.type === "api" || selected()?.type === "token",
     startOAuth: oauth.start,
     finishOAuth: oauth.finish,
-    saveApiKey: useSaveKey(input, state, selected),
+    saveKey: useSaveKey(input, state, selected),
   }
 }
 

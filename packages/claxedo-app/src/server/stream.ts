@@ -1,6 +1,6 @@
 import { batch } from "solid-js"
 import { createParser, type EventSourceMessage } from "eventsource-parser"
-import { EVENT_STREAM_STALL_TIMEOUT_MS } from "@claxedo/agent-runtime-contract"
+import { EVENT_CURSOR_HEADER, EVENT_STREAM_STALL_TIMEOUT_MS } from "@claxedo/agent-runtime-contract"
 import { machine, unreachable, type Machine } from "../lib/machine"
 import { responseError, ServerError, toAppError } from "./errors"
 import type { ConnectionState } from "./events"
@@ -23,7 +23,7 @@ export type Stream = {
   readonly close: () => void
 }
 
-type ConnectionEvent = { readonly type: "opened" } | { readonly type: "dropped" } | { readonly type: "refused"; readonly reason: string }
+type ConnectionEvent = { readonly type: "opened"; readonly since?: string } | { readonly type: "dropped" } | { readonly type: "refused"; readonly reason: string }
 
 type StreamRun = {
   readonly options: StreamOptions
@@ -33,6 +33,7 @@ type StreamRun = {
   attempt: AbortController | undefined
   reconnectTimer: ReturnType<typeof setTimeout> | undefined
   watchdog: ReturnType<typeof setTimeout> | undefined
+  heardAt: number
 }
 
 const RECONNECT_BASE_MS = 250
@@ -46,7 +47,7 @@ function reconnectDelayMs(attempt: number, random: () => number = Math.random) {
 function connectionTransition(state: ConnectionState, event: ConnectionEvent): ConnectionState {
   switch (event.type) {
     case "opened":
-      return { kind: "connected" }
+      return { kind: "connected", ...(event.since ? { since: event.since } : {}) }
     case "dropped": {
       const attempt = state.kind === "reconnecting" ? state.attempt + 1 : 1
       const afterLive = state.kind === "connected" || (state.kind === "reconnecting" && state.afterLive)
@@ -64,9 +65,18 @@ function send(run: StreamRun, event: ConnectionEvent) {
   run.options.onState?.(run.connection.state())
 }
 
+function watchSilence(run: StreamRun, afterMs: number) {
+  run.watchdog = setTimeout(() => {
+    const silentMs = Date.now() - run.heardAt
+    if (silentMs < EVENT_STREAM_STALL_TIMEOUT_MS) return watchSilence(run, EVENT_STREAM_STALL_TIMEOUT_MS - silentMs)
+    run.attempt?.abort(new ServerError({ class: "network", message: "No heartbeat within the timeout" }))
+  }, afterMs)
+}
+
 function armWatchdog(run: StreamRun) {
   if (run.watchdog) clearTimeout(run.watchdog)
-  run.watchdog = setTimeout(() => run.attempt?.abort(new ServerError({ class: "network", message: "No heartbeat within the timeout" })), EVENT_STREAM_STALL_TIMEOUT_MS)
+  run.heardAt = Date.now()
+  watchSilence(run, EVENT_STREAM_STALL_TIMEOUT_MS)
 }
 
 function parsedFrame(data: string): unknown {
@@ -80,7 +90,7 @@ function parsedFrame(data: string): unknown {
 
 function deliver(run: StreamRun, message: EventSourceMessage) {
   if (message.id) run.cursor = message.id
-  armWatchdog(run)
+  run.heardAt = Date.now()
   const frame = parsedFrame(message.data)
   if (frame === undefined) return
   const signal = streamSignalOf(frame)
@@ -126,7 +136,7 @@ async function openResponse(run: StreamRun, controller: AbortController) {
   const response = await run.options.open({ headers, signal: controller.signal })
   if (!response.ok) throw await responseError(response, "Event stream")
   if (!response.body) throw new ServerError({ class: "internal", message: "The event stream answered without a body" })
-  return response.body
+  return { body: response.body, since: response.headers.get(EVENT_CURSOR_HEADER) ?? undefined }
 }
 
 async function openStreamAttempt(run: StreamRun) {
@@ -134,8 +144,8 @@ async function openStreamAttempt(run: StreamRun) {
   const controller = new AbortController()
   run.attempt = controller
   try {
-    const body = await openResponse(run, controller)
-    send(run, { type: "opened" })
+    const { body, since } = await openResponse(run, controller)
+    send(run, { type: "opened", ...(since ? { since } : {}) })
     armWatchdog(run)
     await readBody(run, body)
     scheduleReconnect(run)
@@ -185,6 +195,7 @@ export function openEventStream(options: StreamOptions): Stream {
     attempt: undefined,
     reconnectTimer: undefined,
     watchdog: undefined,
+    heardAt: 0,
   }
   void openStreamAttempt(run)
   return { state: run.connection.state, cursor: () => run.cursor, retry: () => retry(run), close: () => close(run) }

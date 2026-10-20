@@ -7,6 +7,11 @@ In August 2026 we tried to make Claxedo feel light. The product is a coding-agen
 This is not the experiment log. Hundreds of agents ran packaged builds, ablations, and false wins. Most of that work was thrown away. What follows is what actually changed, and what we learned about making a workbench like this cheaper to hold.
 
 Agents looking for what we already tried — and should not try again without a new reason — should read [AGENTS.md](./AGENTS.md).
+The web app's measured baseline at dev `8b2d1e949b`, every cost ranked with its owner and lane, is [2026-10-18-web-baseline.md](./2026-10-18-web-baseline.md); `bun run e2e:perf-web` reproduces it.
+The serial D1 rounds a signed control-plane read pays, what one costs on staging and where the databases run, is [d1-signed-reads-2026-10-18](./d1-signed-reads-2026-10-18/README.md).
+Serving the API and the relay from the app's own origin, so a boot sends no CORS preflight and opens one connection, is measured and its deploy steps listed in [2026-10-18-web-one-origin.md](./2026-10-18-web-one-origin.md).
+How often a control-plane request from India lands on a cold isolate, what the 0.5 s it then pays is made of, and the composition that was rebuilt on a quarter of warm requests until its readiness ran under `waitUntil`, is [worker-cold-starts-2026-10-19](./worker-cold-starts-2026-10-19/README.md).
+A signed-out visitor's first page, the sign-in form, served as its own document by the edge from the cookie alone (945 ms and 656 kB to 361 ms and 153 kB at 100 ms RTT), and the build change that keeps a second entry's graph to what it uses, is [signed-out-document-2026-10-20](./signed-out-document-2026-10-20/README.md).
 The account-port bench is the `desktop/account-port` entry in the performance-tools catalog; the write-up of its numbers was retired with the other one-off perf notes.
 
 ## The weight was not one thing
@@ -33,6 +38,8 @@ A hash-safe `modulepreload` of the four boot chunks removed about a second of se
 
 The eager main chunk went from 2,585 kB (748 kB gzip) to about 940 kB (286 kB gzip). CSS dropped from 475 kB to 417 kB.
 
+Diagrams draw with pele instead of mermaid.js, on the web and on the desktop, which no longer packages a native Mermaid helper. A first flowchart fetches about 53 kB gzip of renderer instead of 219 kB, a diagram renders in 0.2–3.1 ms instead of one 17–168 ms task (Chromium, 1x CPU, 26 diagrams), and the web build ships 2.7 MB (0.67 MB gzip) less JavaScript.
+
 The remaining eager cost is real product: session UI, Kobalte, the API client, the English fallback dictionary, and the icon record used to build a sprite at runtime.
 
 ## Start less
@@ -47,6 +54,8 @@ What moved:
 - Lazy-load the provider `database` object. Serve the already-built catalog from the handler instead of rebuilding it.
 - Bound third-party plugin construction at 1 s so an uncached network fetch in someone else's `~/.config` cannot wedge boot for 5 s.
 - Minify Electron main, preload, and renderer — the presets default off. Exclude node-pty's Windows PDBs and node-gyp trees. One PTY module (`@lydell/node-pty`) instead of two. That last change is about 33 MB off the Windows download.
+
+The hosted control plane Worker had the same problem on Cloudflare. Its full-hosted bundle was 10,953 KiB in 2,650 modules, and Cloudflare reported its startup at 167–297 ms over the five staging deploys before 2026-10-18; the session-host Worker, half the size, reported 20–23 ms. Cloudflare's startup time is the parse and execution of the global scope ([Worker limits](https://developers.cloudflare.com/workers/platform/limits/#worker-startup-time)), and a cold start also fetches and compiles the script before the first request runs ([shard and conquer](https://blog.cloudflare.com/eliminating-cold-starts-2-shard-and-conquer/)). Four things were in it that no request needed: the Pi launch catalog constructed Pi's providers, which carry the OpenAI, Anthropic and Google SDKs, when it only reads their model tables; Wrangler resolved the `zod/v4` alias to zod's CommonJS build, a second zod with every locale; the MCP SDK built its protocol schemas at startup in isolates that never serve MCP; and `@opentelemetry/semantic-conventions` arrived as its untreeshakable CommonJS build. Without them the bundle is 7,396 KiB in 1,513 modules, a cold workerd isolate is ready in about 160 ms instead of 270 on an M4 Pro, and under Node the script compiles in 58 ms instead of 82 and evaluates in 51 instead of 76. Cloudflare prints the deployed startup time as `Worker Startup Time` in the deploy log, and every response's `Server-Timing` carries `cold` on an isolate's first request and `compose` on the request that built the control plane.
 
 A plugin-init budget does not reclaim the 350–400 ms a well-behaved plugin still spends on boot. Reclaiming that needs lazy construction per harness, which we did not build. Isolation of the operator's global OpenCode config is a measurement pin, not a product fix: it takes the plugin out of the number, not out of the user's machine.
 

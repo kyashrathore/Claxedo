@@ -32,7 +32,7 @@ import {
   type RuntimeCredentialClaims,
 } from "../server"
 import { registerSessionTools } from "./sessions"
-import { controlPlaneWorkspaceRow, workspaceListHostRows } from "../client/control-plane-workspaces.fixture"
+import { controlPlaneWorkspaceRow } from "../client/control-plane-workspaces.fixture"
 
 type SessionRuntime = Awaited<ReturnType<Parameters<typeof createSessionRoutes>[0]["runtime"]>>
 
@@ -413,7 +413,7 @@ function controlPlane(workspaces: readonly Workspace[], created: Workspace[]) {
           remote_directory: row.directory,
           ...(row.name ? { display_name: row.name } : {}),
         }))
-      return Response.json({ workspaces: workspaceListHostRows(rows, url.searchParams.get("host")) })
+      return Response.json({ workspaces: rows })
     }
     if (url.pathname === "/api/control/session-list") {
       const row = [...workspaces, ...created].find((candidate) => candidate.id === url.searchParams.get("workspaceId"))

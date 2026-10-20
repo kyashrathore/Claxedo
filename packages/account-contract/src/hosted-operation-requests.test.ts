@@ -55,18 +55,14 @@ describe("CORE_HOSTED_OPERATIONS", () => {
     expect(/:[A-Za-z]/.test("/api/workspace?host=:host".split("?")[1] ?? "")).toBe(true)
   })
 
-  test("lists workspaces per host, with the host fixed in the path", () => {
-    // The defect this pair replaced: `GET /api/workspace` with no `host`
-    // answers `{ workspaces: [] }` unconditionally, so the single host-less row
-    // could never return a workspace. Pinned because the value is load-bearing:
-    // `provisioner` and `machine` are the only two the hosted handler acts on.
+  test("lists the account's workspaces with the host fixed in the path", () => {
+    // `GET /api/workspace` with no `host` answers `{ workspaces: [] }`
+    // unconditionally, and `host=provisioner`, the one host the route answers
+    // for, is every workspace the account may open, so the read the catalog
+    // needs is pinned here.
     expect(CORE.resolve("workspace.list.provisioner")).toEqual({
       method: "GET",
       path: "/api/workspace?host=provisioner",
-    })
-    expect(CORE.resolve("workspace.list.machine")).toEqual({
-      method: "GET",
-      path: "/api/workspace?host=machine",
     })
     // And the host cannot be talked out of the path by a caller.
     expect(CORE.resolve("workspace.list.provisioner", { host: "machine" }).path).toBe(
@@ -98,6 +94,13 @@ describe("resolve", () => {
       path: "/api/control/session-list?scope=project&projectId=prj_1&limit=50&sort=human_turn_desc&after=key_1",
     })
     expect(() => CORE.resolve("session.page", { limit: 50 })).toThrow(MissingOperationParameter)
+  })
+  test("the first pages of every project keep their fixed scope and take no cursor", () => {
+    expect(CORE.resolve("session.pages", { limit: 5, sort: "human_turn_desc", settled: "active", after: "key_1", projectId: "prj_1" })).toEqual({
+      method: "GET",
+      path: "/api/control/session-list?scope=projects&limit=5&sort=human_turn_desc&settled=active",
+    })
+    expect(() => CORE.resolve("session.pages", {})).toThrow(MissingOperationParameter)
   })
   test("the every-session page keeps its fixed scope and may name one session", () => {
     expect(CORE.resolve("session.activity.page", { limit: 20, settled: "all", sessionId: "ses_1", projectId: "prj_1" })).toEqual({

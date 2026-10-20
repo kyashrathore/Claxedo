@@ -19,7 +19,7 @@ export type CredentialRefusals = {
    * A vendor answered 401 to `credential`'s stored value at `revision`. The
    * first refusal of a person's value is remembered; the second inside the
    * window, with no Check by the owner in between, marks the account
-   * `auth_failed`. An organization's team key is marked only by the plane's
+   * `auth_failed`. An organization account is marked only by the plane's
    * own check of it, since whoever runs the sandbox controls the request the
    * vendor refused; a key that check keeps is not checked again inside the
    * window. Returns what the refusal did.
@@ -39,13 +39,13 @@ export type CredentialRefusals = {
 export function createCredentialRefusals(input: {
   credentials: (orgId: string) => ControlPlaneCredentials
   now?: () => number
-  /** How the plane reaches a vendor to check a team key itself; the global fetch when absent. */
+  /** How the plane reaches a vendor to check an organization account itself; the global fetch when absent. */
   fetch?: typeof fetch
 }): CredentialRefusals {
   const now = input.now ?? Date.now
   /** Consecutive vendor refusals per credential, in this isolate. */
   const refusals = new Map<string, { revision: number; count: number; at: number }>()
-  /** When the plane's own check last kept each team key's revision, in this isolate. */
+  /** When the plane's own check last kept each organization account's revision, in this isolate. */
   const kept = new Map<string, number>()
   const teamKeyRefused = async (orgId: string, credential: CredentialMetadata, key: string, at: number) => {
     const keptAt = kept.get(key)
@@ -60,7 +60,7 @@ export function createCredentialRefusals(input: {
       return "marked" as const
     }
     kept.set(key, at)
-    log.info("A vendor refusal of a team key was reported; the plane's own check kept it", { credential_id: credential.id, provider_id: credential.provider_id })
+    log.info("A vendor refusal of an organization account was reported; the plane's own check kept it", { credential_id: credential.id, provider_id: credential.provider_id })
     return "kept" as const
   }
   return {

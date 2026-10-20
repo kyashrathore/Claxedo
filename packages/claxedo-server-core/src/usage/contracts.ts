@@ -71,7 +71,7 @@ export type TurnUsageCredential = { kind: "stored"; credentialId: string } | { k
 
 /**
  * What the plane filed a turn's credential as, read against its stored rows:
- * a personal account the session spends, the organization's team key, the
+ * a personal account the session spends, an organization account, the
  * harness's own login, a stored id that is no row the turn could spend, or
  * nothing the runtime named.
  */

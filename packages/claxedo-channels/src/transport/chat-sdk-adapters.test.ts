@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { createChatSdkBot, createChatSdkChannelBot } from "./chat-sdk-adapters"
 import { createChannelRegistry, type ChannelRegistration } from "../registry"
@@ -15,6 +16,7 @@ const registrations: ChannelRegistration[] = [{
   transport: "chat-sdk",
   reason: "test",
   webhookPath: "/github",
+  adapterConfig: { webhookSecret: "hook" },
 }, {
   channel: "telegram",
   enabled: true,
@@ -72,7 +74,7 @@ describe("createChatSdkBot", () => {
       },
     })
 
-    expect(configs).toStrictEqual({ github: undefined, telegram: { botToken: "bot", secretToken: "secret" } })
+    expect(configs).toStrictEqual({ github: { webhookSecret: "hook" }, telegram: { botToken: "bot", secretToken: "secret" } })
   })
 
   test("refuses to build a bot when Telegram ingress is enabled without a webhook secret", async () => {
@@ -86,6 +88,26 @@ describe("createChatSdkBot", () => {
         return { Chat: FakeChat }
       },
     })).rejects.toThrow(/TELEGRAM_WEBHOOK_SECRET_TOKEN/)
+
+    expect(loaded).toEqual([])
+  })
+
+  test.each([
+    ["github", "GITHUB_WEBHOOK_SECRET"],
+    ["slack", "SLACK_SIGNING_SECRET"],
+    ["discord", "DISCORD_PUBLIC_KEY"],
+    ["whatsapp", "WHATSAPP_APP_SECRET"],
+  ] as const)("refuses to build a bot when %s ingress is enabled without %s", async (channel, envKey) => {
+    const loaded: string[] = []
+
+    await expect(createChatSdkBot({
+      registrations: [{ channel, enabled: true, transport: "chat-sdk", reason: "test", webhookPath: `/${channel}` }],
+      userName: "claxedo",
+      async importer(specifier) {
+        loaded.push(specifier)
+        return { Chat: FakeChat }
+      },
+    })).rejects.toThrow(envKey)
 
     expect(loaded).toEqual([])
   })
@@ -168,6 +190,7 @@ describe("createChatSdkBot", () => {
         transport: "chat-sdk",
         reason: "test",
         webhookPath: "/whatsapp",
+        adapterConfig: { appSecret: "app" },
       }],
       userName: "claxedo",
       async importer(specifier) {
@@ -194,12 +217,14 @@ describe("createChatSdkBot", () => {
         transport: "chat-sdk",
         reason: "test",
         webhookPath: "/slack",
+        adapterConfig: { signingSecret: "signing" },
       }, {
         channel: "discord",
         enabled: true,
         transport: "chat-sdk",
         reason: "test",
         webhookPath: "/discord",
+        adapterConfig: { publicKey: "a".repeat(64) },
       }],
       userName: "claxedo",
       async importer(specifier) {
@@ -359,5 +384,64 @@ describe("Telegram webhook verification through @chat-adapter/telegram", () => {
 
     expect(status).toBeUndefined()
     expect(handleInbound).not.toHaveBeenCalled()
+  })
+})
+
+describe("GitHub webhook verification through @chat-adapter/github", () => {
+  const body = JSON.stringify({ zen: "Keep it logically awesome.", hook_id: 1 })
+
+  async function post(input: { env: Record<string, string | undefined>; signature?: string }) {
+    const handleInbound = vi.fn(async () => {})
+    const registry = createChannelRegistry(input.env)
+    const bot = await createChatSdkChannelBot({
+      registrations: registry.registrations,
+      userName: "claxedo",
+      core: { handleInbound, onApproval: vi.fn(async () => ({ ok: true as const })) },
+    })
+    const response = await bot.webhooks?.github?.(
+      new Request("https://claxedo.test/github", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-github-event": "ping",
+          ...(input.signature === undefined ? {} : { "x-hub-signature-256": input.signature }),
+        },
+        body,
+      }),
+      { waitUntil: () => {} },
+    )
+    return { status: response?.status, registry }
+  }
+
+  const sign = (secret: string) => `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`
+
+  beforeEach(() => {
+    vi.stubEnv("GITHUB_WEBHOOK_SECRET", undefined)
+    vi.stubEnv("GITHUB_TOKEN", "process-env-token")
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      throw new Error("no network in tests")
+    }))
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
+  })
+
+  const env = { CLAXEDO_CHANNEL_GITHUB_APP_ID: "1", CLAXEDO_CHANNEL_GITHUB_WEBHOOK_SECRET: "alias-secret" }
+
+  test("accepts a delivery signed with the secret the registry resolved from its alias", async () => {
+    expect((await post({ env, signature: sign("alias-secret") })).status).toBe(200)
+  })
+
+  test("rejects a delivery signed with another secret, or unsigned", async () => {
+    expect((await post({ env, signature: sign("forged") })).status).toBe(401)
+    expect((await post({ env })).status).toBe(401)
+  })
+
+  test("mounts no GitHub webhook at all when no webhook secret is configured", async () => {
+    const { status, registry } = await post({ env: { GITHUB_APP_ID: "1" }, signature: sign("anything") })
+    expect(status).toBeUndefined()
+    expect(registry.byPath.get("/github")?.enabled).toBe(false)
   })
 })

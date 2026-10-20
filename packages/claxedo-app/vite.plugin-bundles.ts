@@ -29,12 +29,15 @@ export function workspacePackageManifest(name: string): string | undefined {
   return undefined
 }
 
-export function workspaceSourceExport(name: string, subpath: string): string | undefined {
+export type WorkspaceSourceModule = { readonly path: string; readonly sideEffects: boolean }
+
+export function workspaceSourceExport(name: string, subpath: string): WorkspaceSourceModule | undefined {
   const manifestPath = workspacePackageManifest(name)
   if (!manifestPath) return undefined
   const manifest: unknown = JSON.parse(readFileSync(manifestPath, "utf8"))
   const development = field(field(field(manifest, "exports"), subpath), "development")
-  return typeof development === "string" ? realpathSync(`${dirname(manifestPath)}/${development}`) : undefined
+  if (typeof development !== "string") return undefined
+  return { path: realpathSync(`${dirname(manifestPath)}/${development}`), sideEffects: field(manifest, "sideEffects") !== false }
 }
 
 export class PluginBundleError extends Error {
@@ -47,7 +50,7 @@ export class PluginBundleError extends Error {
 async function bundleModule(rootDir: string): Promise<string> {
   const cli = workspaceSourceExport("@claxedo/plugin-build", "./app-bundle-cli")
   if (!cli) throw new PluginBundleError("@claxedo/plugin-build does not export its app bundle command")
-  const { stdout } = await run("bun", [cli, rootDir], { maxBuffer: BUNDLE_OUTPUT_MAX_BYTES })
+  const { stdout } = await run("bun", [cli.path, rootDir], { maxBuffer: BUNDLE_OUTPUT_MAX_BYTES })
   return `export default ${stdout}`
 }
 

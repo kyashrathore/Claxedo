@@ -1,3 +1,4 @@
+import type { TurnDelivery } from "@claxedo/harness/contract"
 import { errorBody } from "./routes/error-body"
 import type { RuntimeSessionTime } from "./session/session-time"
 
@@ -157,6 +158,12 @@ export type SessionTurnLeaseDecision =
        * lease ends — absent where the composition mints none.
        */
       connectionCredential?: string
+      /**
+       * What the authority hands a host that serves this session alone, with
+       * the lease that proves it: the turn's credentials, plugins and provider
+       * definitions. Absent for a runtime the authority delivers to another way.
+       */
+      delivery?: TurnDelivery
     }
   | Exclude<SessionAccessDecision, { allowed: true }>
 /** What proves a released turn to the usage report, until `expiresAt`, for the usage its work leaves after it ended. */
@@ -221,6 +228,9 @@ export type SessionAccessPolicy = {
     lease?: string,
   ): Promise<SessionAccessStreamDecision> | SessionAccessStreamDecision
   /**
+   * Acquiring a turn is the actor's `agent_turn` authorization on the
+   * session: the authority decides the write class with the lease, so a
+   * caller that acquires does not ask `authorize` first.
    * `grant` stands in for `credential` on a turn the runtime starts for
    * itself; a remote authority refuses a request that presents neither.
    */

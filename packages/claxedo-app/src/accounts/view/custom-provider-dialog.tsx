@@ -2,7 +2,7 @@ import { isRecord } from "@claxedo/helpers/guards"
 import { batch, createSignal, For } from "solid-js"
 import { createStore, produce, type SetStoreFunction } from "solid-js/store"
 import { toAppError, useServer } from "@/server"
-import { ClaxedoIconButton as IconButton, showToast, useDialog, Button, Dialog, Icon, ProviderIcon, TextField, DialogBody, DialogHeader, DialogTitle } from "@/ui"
+import { ClaxedoIconButton as IconButton, showToast, useDialog, Button, FormDrawer, Icon, TextField } from "@/ui"
 import { headerRow, modelRow, validateCustomProvider, type FormState } from "../custom-provider"
 import { useAccountsText, type AccountsKey } from "../i18n"
 
@@ -84,8 +84,7 @@ function useSave(props: { readonly existing: ReadonlySet<string>; readonly onSav
   const server = useServer()
   const dialog = useDialog()
   const [saving, setSaving] = createSignal(false)
-  const save = async (event: SubmitEvent) => {
-    event.preventDefault()
+  const save = async () => {
     if (saving()) return
     const output = validateCustomProvider(form, t, props.existing)
     batch(() => {
@@ -115,33 +114,27 @@ export function DialogCustomProvider(props: { readonly existing: ReadonlySet<str
   const [form, setForm] = createStore<FormState>({ providerId: "", name: "", baseURL: "", apiKey: "", keyHeader: "Authorization", models: [modelRow()], headers: [headerRow()], err: {} })
   const { saving, save } = useSave(props, form, setForm)
   return (
-    <Dialog size="large" fit containerClass="long-dialog-container">
-      <DialogHeader>
-        <DialogTitle>
-          <IconButton tabIndex={-1} icon="arrow-left" variant="ghost" onClick={() => dialog.close()} aria-label={t("common.goBack")} />
-        </DialogTitle>
-      </DialogHeader>
-      <DialogBody class="flex flex-col gap-6 px-4 pb-4">
-        <div class="flex gap-4 items-center">
-          <ProviderIcon id="synthetic" class="size-5 shrink-0 icon-strong-base" />
-          <div class="text-16-medium text-text-strong">{t("provider.custom.title")}</div>
-        </div>
-        <form onSubmit={(event) => void save(event)} class="flex flex-col gap-6">
-          <p class="text-14-regular text-text-base">
-            {t("provider.custom.description.prefix")}
-            <a href={DOCS_URL} target="_blank" rel="noreferrer" tabIndex={-1} class="text-text-strong underline">
-              {t("provider.custom.description.link")}
-            </a>
-            {t("provider.custom.description.suffix")}
-          </p>
-          <ProviderFields form={form} setForm={setForm} />
-          <PairRows list="models" form={form} setForm={setForm} />
-          <PairRows list="headers" form={form} setForm={setForm} />
-          <Button class="w-auto self-start" type="submit" size="large" variant="contrast" disabled={saving()}>
-            {saving() ? t("common.saving") : t("common.submit")}
-          </Button>
-        </form>
-      </DialogBody>
-    </Dialog>
+    <FormDrawer
+      title={t("provider.custom.title")}
+      description={
+        <>
+          {t("provider.custom.description.prefix")}
+          <a href={DOCS_URL} target="_blank" rel="noreferrer" class="text-text-strong underline">
+            {t("provider.custom.description.link")}
+          </a>
+          {t("provider.custom.description.suffix")}
+        </>
+      }
+      submitLabel={t("common.submit")}
+      busyLabel={t("common.saving")}
+      cancelLabel={t("common.cancel")}
+      busy={saving()}
+      onSubmit={() => void save()}
+      onCancel={() => dialog.close()}
+    >
+      <ProviderFields form={form} setForm={setForm} />
+      <PairRows list="models" form={form} setForm={setForm} />
+      <PairRows list="headers" form={form} setForm={setForm} />
+    </FormDrawer>
   )
 }

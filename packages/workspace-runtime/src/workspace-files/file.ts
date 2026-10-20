@@ -2,14 +2,16 @@ import fs from "fs"
 import path from "path"
 import fuzzysort from "fuzzysort"
 import { runGit } from "../git"
-import { resolveWorkspacePath } from "../target"
+import { resolveWorkspacePathSpellings } from "../target"
 import { readWorkingTreeText } from "./working-tree"
 import { machineFileIndex } from "@claxedo/workspace-runtime/file-index"
 
 export type WorkspaceFileKind = "file" | "directory" | "any"
 
-export async function resolveWorkspaceFile(root: string, input?: string) {
-  return await resolveWorkspacePath(root, input)
+export type WorkspaceFileTarget = { named: string; real: string }
+
+export async function resolveWorkspaceFile(root: string, input?: string): Promise<WorkspaceFileTarget> {
+  return await resolveWorkspacePathSpellings(root, input)
 }
 
 export async function searchWorkspaceFiles(
@@ -26,9 +28,10 @@ export async function searchWorkspaceFiles(
   return fuzzysort.go(q, items, { limit }).map((hit) => hit.target)
 }
 
-export async function listWorkspaceDirectory(root: string, dir: string) {
+export async function listWorkspaceDirectory(root: string, target: WorkspaceFileTarget) {
   const exclude = new Set([".git", ".DS_Store"])
-  const rows = await fs.promises.readdir(dir, { withFileTypes: true })
+  const dir = target.named
+  const rows = await fs.promises.readdir(target.real, { withFileTypes: true })
   return rows
     .filter((item) => !exclude.has(item.name))
     .map((item) => ({

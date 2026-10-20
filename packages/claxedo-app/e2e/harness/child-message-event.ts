@@ -21,6 +21,9 @@ export async function playChildMessageEvent(stack: Stack, api: ClaxedoApi) {
     const messages = await api.messages(arranged.workspace.directory, arranged.session.id)
     return messages.flatMap((message) => message.parts).some((part) => part.type === "notice" && isRecord(part.notice) && part.notice.kind === "agent-message")
   }, { timeout: 30_000 }).toBe(true)
+  const claudeOwnTurns = 2
+  const turns = 1 + claudeOwnTurns
+  await expect.poll(async () => (await api.messages(arranged.workspace.directory, arranged.session.id)).filter((message) => message.info.role === "user").length, { timeout: 30_000 }).toBe(turns)
   await expect.poll(async () => (await api.status(arranged.workspace.directory))[arranged.session.id]?.type ?? "idle").toBe("idle")
-  return { workspace: arranged.workspace, target: { directory: arranged.workspace.directory, sessionId: arranged.session.id }, turns: 1, live: [] }
+  return { workspace: arranged.workspace, target: { directory: arranged.workspace.directory, sessionId: arranged.session.id }, turns, live: [] }
 }

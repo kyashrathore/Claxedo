@@ -12,9 +12,10 @@ type Input = {
   gitUrl: string
   relayUrl: string
   credentials: { key: string; certificate: string }
-  apiOrigin: string
-  appOrigin: string
+  origin: string
   emailPassword?: boolean
+  workerEnv?: Readonly<Record<string, string>>
+  requestLimit?: number
 }
 
 /**
@@ -79,7 +80,7 @@ function requestProvisioning(child: ChildProcess, input: Record<string, string>,
 
 export async function startHostedControlPlane(input: Input) {
   const credentials = input.credentials
-  const config = await writeHostedE2eWranglerConfig()
+  const config = await writeHostedE2eWranglerConfig(HOSTED_E2E_PUBLIC_HOSTNAME)
   const attemptsFile = path.join(input.root, "hosted-outbound-attempts.jsonl")
   const child = spawn(process.env.CLAXEDO_E2E_NODE ?? "node", [
     "--import", "tsx", "scripts/e2e/hosted-miniflare.ts",
@@ -96,7 +97,7 @@ export async function startHostedControlPlane(input: Input) {
         key: credentials.key, sandboxOrigin: input.sandboxOrigin, gitUrl: input.gitUrl,
         relayUrl: input.relayUrl, signingPrivateKey: HOSTED_SIGNING_PRIVATE_KEY,
         signingPublicKey: HOSTED_SIGNING_PUBLIC_KEY,
-        apiOrigin: input.apiOrigin, appOrigin: input.appOrigin, emailPassword: input.emailPassword,
+        origin: input.origin, emailPassword: input.emailPassword, workerEnv: input.workerEnv ?? {}, requestLimit: input.requestLimit,
       }),
     },
   })

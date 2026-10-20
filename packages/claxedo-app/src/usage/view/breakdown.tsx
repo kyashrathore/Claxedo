@@ -71,9 +71,9 @@ export function Breakdown(props: {
   const t = useTranslator(usageDictionary)
   const titleId = createUniqueId()
   return (
-    <section class="usage-breakdown" aria-labelledby={titleId}>
-      <div class="usage-breakdown-head">
-        <h3 id={titleId} class="usage-group-title">{t("usage.breakdown")}</h3>
+    <section class="usage-section" aria-labelledby={titleId}>
+      <div class="usage-section-head">
+        <h3 id={titleId} class="usage-section-title">{t("usage.breakdown")}</h3>
         <Choices label={t("usage.group")} choices={GROUPS} value={props.group} onChange={props.onGroup} />
       </div>
       <Show when={props.rows.length > 0} fallback={<p class="usage-empty">{t("usage.breakdown.empty")}</p>}>

@@ -112,15 +112,14 @@ type HttpFlowControl = {
 
 const DEFAULT_WS_OPEN_TIMEOUT_MS = 10_000
 // Frames the relay may forward while this host's upstream socket is still
-// connecting. Both bounds must be crossed to close, so this is the secondary
-// one — it caps the per-entry bookkeeping the byte bound cannot see, and is
-// deliberately far above any interactive burst.
+// connecting. Crossing either this or the byte bound closes the channel, so it
+// is deliberately far above any interactive burst.
 const DEFAULT_WS_PRE_OPEN_QUEUE_MAX_FRAMES = 8_192
-// Bytes are the resource this queue actually consumes, so they are the real
-// bound. Mirrors `UPSTREAM_WS_PRE_OPEN_QUEUE_MAX_BYTES_DEFAULT` on the relay
-// side (workspace-relay/src/cloudflare.ts) on purpose: the two legs queue the
-// same stream during the same connect window, and a host that admitted less
-// than the relay would just move the same startup failure one hop inward.
+// Both bounds mirror `UPSTREAM_WS_PRE_OPEN_QUEUE_MAX_FRAMES_DEFAULT` and
+// `UPSTREAM_WS_PRE_OPEN_QUEUE_MAX_BYTES_DEFAULT` on the relay side
+// (workspace-relay/src/cloudflare.ts) on purpose: the two legs queue the same
+// stream during the same connect window, and a host that admitted less than
+// the relay would just move the same startup failure one hop inward.
 //
 // Overflow CLOSES the channel rather than dropping frames, deliberately: this
 // queue carries an ordered byte stream (terminal input, PTY data), so shedding
@@ -128,6 +127,9 @@ const DEFAULT_WS_PRE_OPEN_QUEUE_MAX_FRAMES = 8_192
 // The tunnel protocol has no acknowledgement, so there is no backpressure
 // signal to send instead — a clean, named close is the honest failure.
 const DEFAULT_WS_PRE_OPEN_QUEUE_MAX_BYTES = 8 * 1024 * 1024
+// Charged per queued frame on top of its payload, so the byte bound also
+// counts the entries an empty frame would otherwise add for free.
+const WS_PRE_OPEN_QUEUE_FRAME_OVERHEAD_BYTES = 64
 const DEFAULT_RECONNECT_INTERVAL_MS = 1_000
 const DEFAULT_RECONNECT_MAX_INTERVAL_MS = 30_000
 const DEFAULT_RECONNECT_JITTER_RATIO = 0.2
@@ -238,10 +240,10 @@ function encoded(input: ArrayBuffer | ArrayBufferView) {
   return Buffer.from(input.buffer, input.byteOffset, input.byteLength).toString("base64")
 }
 
-/** Byte size of a frame awaiting the upstream socket, for the pre-open bound. */
+/** What a frame awaiting the upstream socket costs the pre-open byte bound. */
 function preOpenFrameBytes(input: string | Uint8Array<ArrayBuffer>) {
-  if (typeof input === "string") return Buffer.byteLength(input)
-  return input.byteLength
+  const payload = typeof input === "string" ? Buffer.byteLength(input) : input.byteLength
+  return payload + WS_PRE_OPEN_QUEUE_FRAME_OVERHEAD_BYTES
 }
 
 function encodedFrame(input: MessageEvent["data"]): { binary: boolean; data_base64: string } | undefined {
@@ -559,15 +561,10 @@ function forwardFrame(
     channels.delete(message.channel_id)
     return
   }
-  // Admit on EITHER bound — see the constants. A burst of small frames during
-  // the few milliseconds before upstream opens costs almost nothing to hold,
-  // and closing on frame count alone loses the whole channel to a startup race
-  // a client cannot avoid: a single client that pipelines 65 keystroke-sized
-  // frames faster than the upstream socket opens got 0 of them delivered.
   const frameBytes = preOpenFrameBytes(payload)
   if (
     channel.queue.length >= (input.wsPreOpenQueueMaxFrames ?? DEFAULT_WS_PRE_OPEN_QUEUE_MAX_FRAMES)
-    && channel.queuedBytes + frameBytes > (input.wsPreOpenQueueMaxBytes ?? DEFAULT_WS_PRE_OPEN_QUEUE_MAX_BYTES)
+    || channel.queuedBytes + frameBytes > (input.wsPreOpenQueueMaxBytes ?? DEFAULT_WS_PRE_OPEN_QUEUE_MAX_BYTES)
   ) {
     closeChannel(tunnel, channels, message.channel_id, channel, 1013, "Host upstream WebSocket pre-open queue limit exceeded")
     return

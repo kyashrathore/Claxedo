@@ -67,11 +67,6 @@ describe("People route contract", () => {
     { thrown: "session_share_admin_required", status: 403, code: "session_share_admin_required" },
     { thrown: "session_share_target_required", status: 400, code: "session_share_target_required" },
     { thrown: "session_share_target_not_found", status: 404, code: "session_share_target_not_found" },
-    {
-      thrown: "session_share_target_outside_organization",
-      status: 403,
-      code: "session_share_target_outside_organization",
-    },
   ] as const
 
   for (const [name, routeFactory] of routeFactories) {

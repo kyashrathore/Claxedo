@@ -18,6 +18,7 @@ export function useStartFreshConfirm(): StartFreshConfirm {
       body: t("cloud.startFresh.body"),
       confirmLabel: t("cloud.startFresh"),
       cancelLabel: t("cloud.startFresh.cancel"),
+      destructive: true,
     }),
   }
 }

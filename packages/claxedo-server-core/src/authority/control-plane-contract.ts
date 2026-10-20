@@ -77,6 +77,9 @@ export type CredentialSyncResult = {
  * selects the named single-tenant partition (`__local__`), never a wildcard, so
  * an un-threaded call site fails closed rather than reading across tenants.
  */
+/** A stored secret, still sealed, with the row revision it was read at. */
+export type SealedCredentialSecret = { credentialId: string; revision: number; sealed: string }
+
 export type ControlPlaneCredentials = {
   listCredentials: (org?: string) => Promise<CredentialMetadata[]>
   /** The rows the fanout would send for a scope, one per provider, secrets withheld. */
@@ -111,6 +114,10 @@ export type ControlPlaneCredentials = {
   getCredential?: (id: string, org?: string) => Promise<CredentialMetadata | undefined>
   resolveCredentialSecret?: (providerId: string, org?: string) => Promise<string | null>
   resolveCredentialSecretById?: (id: string, org?: string) => Promise<string | null>
+  /** The secret as it is stored, sealed: readable beside work that has not yet decided the caller may have it. */
+  sealedCredentialSecret?: (id: string, org?: string) => Promise<SealedCredentialSecret | null>
+  /** Opens a sealed secret: the one step that reads a secret into memory. */
+  openSealedCredentialSecret?: (sealed: SealedCredentialSecret, org?: string) => Promise<string>
   putCredential: (input: CredentialWrite, org?: string) => Promise<CredentialMetadata>
   /** `administeredBy`: for the org's own row, the person who must still administer the organization when it is deleted. */
   deleteCredential: (id: string, org?: string, administeredBy?: string) => Promise<boolean>

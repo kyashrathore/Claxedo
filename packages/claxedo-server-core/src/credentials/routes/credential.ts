@@ -1,8 +1,8 @@
 /**
- * Credential management routes.
- *
- * Provides a dedicated API surface for listing, creating, and deleting
- * managed credentials. Used by the UI settings panels.
+ * Credential management routes, served by the daemon and the hosted plane
+ * alike: listing, creating, choosing and deleting managed credentials, and the
+ * model list of the account a native CLI harness runs on (`/harness-models`,
+ * which names no workspace and starts no CLI). Used by the UI settings panels.
  */
 
 import { ACCOUNT_SCOPES, ACCOUNT_SOURCES } from "@claxedo/account-contract/vocabulary"
@@ -53,6 +53,7 @@ import {
   type SandboxDriverKeys,
 } from "./sandbox-driver-keys"
 import { isOrgAccount, OrgAccountWriteRefusedError, orgAccountRefusal, orgSourceRefusal } from "./org-accounts"
+import { harnessModelsResponse } from "./harness-models"
 
 const log = Log.create({ service: "credential-routes" })
 
@@ -121,6 +122,7 @@ function redact(cred: Awaited<ReturnType<ControlPlaneCredentials["getCredentialB
     source: cred.source,
     label: cred.label,
     account_id: cred.account_id,
+    secret_hint: cred.secret_hint ?? null,
     owner: cred.owner ?? null,
     is_active: cred.is_active === true,
     activated_at: cred.activated_at ?? null,
@@ -147,7 +149,7 @@ function redact(cred: Awaited<ReturnType<ControlPlaneCredentials["getCredentialB
   }
 }
 
-/** A team account as a member reads it: its status and verdict, never the vendor's own error text. */
+/** An organization account as a member reads it: its status and verdict, never the vendor's own error text. */
 function withoutVendorError<Row extends { last_error: unknown } | null>(row: Row): Row {
   return row && { ...row, last_error: null }
 }
@@ -206,10 +208,11 @@ export type CredentialRoutesOptions = {
   /** Absent on a host that provisions no sandboxes and keeps no provider keys for them. */
   sandboxDriverKeys?: SandboxDriverKeys
   /**
-   * Whether the caller adds, checks, rotates and removes the organization's
-   * team accounts: its owners and admins on a host whose organizations have
-   * roles. Absent, the loopback operator of a single-tenant install does,
-   * since that install's organization is theirs alone.
+   * Whether the caller adds, checks, rotates and removes organization
+   * accounts: the organization's owners and admins on a host whose
+   * organizations have roles. Absent, the loopback operator of a
+   * single-tenant install does, since that install's organization is theirs
+   * alone.
    */
   managesOrgAccounts?: (request: Request, org: string) => Promise<boolean>
   /** Where each Check's verdict is recorded as `credential_checked`; absent, verdicts stay in the answer alone. */
@@ -306,7 +309,7 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
   }
   const sandboxKeysUnavailable = () => errorBody("sandbox_driver_keys_unavailable", "This host keeps no sandbox provider keys")
   const sandboxKeysForbidden = () => errorBody("sandbox_driver_keys_forbidden", "Only an organization owner or admin manages sandbox provider keys")
-  const orgAccountsForbidden = () => errorBody("org_accounts_forbidden", "Only an organization owner or admin manages its team accounts")
+  const orgAccountsForbidden = () => errorBody("org_accounts_forbidden", "Only an organization owner or admin manages its organization accounts")
   /**
    * One row, in the caller's org. Scoped before anything else runs: an
    * out-of-org id must 404 before a secret is resolved or a provider is called
@@ -317,7 +320,7 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
     credentials.getCredential
       ? await credentials.getCredential(id, scope)
       : (await credentials.listCredentials(scope)).find((item) => item.id === id)
-  /** An account the caller may check or change: their own, or a team account they manage. */
+  /** An account the caller may check or change: their own, or an organization account they manage. */
   const changeableAccount = async (request: Request, row: CredentialMetadata | undefined) =>
     !!row && (row.owner === actor(request) || (isOrgAccount(row) && await managesOrgAccounts(request)))
   const findCredential = async (request: Request, id: string) => {
@@ -448,6 +451,13 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
       const manages = rows.some(isOrgAccount) && await managesOrgAccounts(c.req.raw)
       return c.json({ scope, credentials: rows.map((row) => isOrgAccount(row) && !manages ? withoutVendorError(redact(row)) : redact(row)) })
     })
+    .get("/harness-models", (c) => harnessModelsResponse(c, {
+      store: credentials,
+      org: org(c.req.raw),
+      person: actor(c.req.raw),
+      machineLogin: !!credentials.machineLogins && localOperators.has(c.req.raw),
+      ...(options.fetch ? { fetch: options.fetch } : {}),
+    }))
     .get("/account-sources", async (c) => {
       const [selections, orgRows, manages] = await Promise.all([
         credentials.accountSelections(org(c.req.raw)),
@@ -633,7 +643,7 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
         return c.json(errorBody("credential_not_found", "Credential not found"), 404)
       }
       if (isOrgAccount(credential)) {
-        return c.json(errorBody("org_account_rotate_by_put", "Rotate a team key by adding the new key for the same vendor in Settings → Team accounts."), 409)
+        return c.json(errorBody("org_account_rotate_by_put", "Rotate an organization account by adding the new key for the same vendor in Settings → Models, under a harness's Add an account → For the organization."), 409)
       }
       if (!credentials.updateCredentialSecret || !credentials.updateCredentialHealth) {
         return c.json(errorBody("credential_reconnect_unavailable", "This host cannot replace stored credential material"), 501)

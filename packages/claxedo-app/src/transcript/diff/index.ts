@@ -1,6 +1,8 @@
-import { type BaseDiffOptions } from "@pierre/diffs"
+import { registerCustomTheme, type BaseDiffOptions } from "@pierre/diffs"
 import { codeTheme } from "../code-theme"
 import { lineCommentStyles } from "../line-comment-styles"
+
+registerCustomTheme(codeTheme.name, () => Promise.resolve(codeTheme))
 
 const unsafeCSS = `
 :host {

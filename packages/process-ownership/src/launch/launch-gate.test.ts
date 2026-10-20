@@ -134,7 +134,7 @@ test("a payload environment without PATH launches, and the payload sees only tha
   let output = ""
   for await (const chunk of owned.child.stdout!) output += String(chunk)
   expect(output).toBe("payload|unset")
-  expect((await owned.retire(budgets)).leader).toBe("exited")
+  expect(await owned.retire(budgets)).toMatchObject({ leader: "exited" })
 }, 30_000)
 
 test("what the payload writes on stderr before its caller listens still reaches the caller", async () => {
@@ -151,7 +151,7 @@ test("what the payload writes on stderr before its caller listens still reaches 
   let output = ""
   for await (const chunk of owned.child.stderr!) output += String(chunk)
   expect(output).toBe("early")
-  expect((await owned.retire(budgets)).leader).toBe("exited")
+  expect(await owned.retire(budgets)).toMatchObject({ leader: "exited" })
 }, 30_000)
 
 test.skipIf(!posix)("an acknowledged launch owns a group the payload is inside", async () => {

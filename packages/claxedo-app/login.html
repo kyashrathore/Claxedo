@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en" style="background-color: var(--background-base, var(--startup-base))">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content" />
+    <title>Claxedo</title>
+    <link rel="icon" type="image/png" href="/favicon-96x96-v3.png" sizes="96x96" />
+    <link rel="icon" type="image/svg+xml" href="/favicon-v3.svg" />
+    <link rel="shortcut icon" href="/favicon-v3.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon-v3.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="theme-color" content="#F8F7F7" />
+    <meta name="theme-color" content="#131010" media="(prefers-color-scheme: dark)" />
+    <style id="claxedo-initial-paint">
+      html {
+        --startup-base: #131010;
+        --startup-ink: #a0a0a0;
+      }
+
+      html[data-color-scheme="light"] {
+        --startup-base: #f8f7f7;
+        --startup-ink: #6f6f6f;
+      }
+
+      html,
+      body,
+      #root {
+        min-height: 100%;
+        background-color: var(--background-base, var(--startup-base));
+        color: var(--text-base, var(--startup-ink));
+      }
+
+      body {
+        margin: 0;
+      }
+    </style>
+    <link rel="preload" href="/api/auth/get-session" as="fetch" crossorigin="use-credentials" />
+    <script id="oc-theme-preload-script" src="/oc-theme-preload.js"></script>
+  </head>
+  <body class="text-12-regular">
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+    <script src="/src/login.tsx" type="module"></script>
+  </body>
+</html>

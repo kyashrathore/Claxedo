@@ -87,7 +87,7 @@ function fakeAuthority() {
     let raw = ""
     request.on("data", (chunk) => { raw += chunk })
     request.on("end", () => {
-      const body = JSON.parse(raw || "{}") as { action?: string; sessionId?: string; createdAt?: unknown; updatedAt?: unknown }
+      const body = JSON.parse(raw || "{}") as { action?: string; sessionId?: string; turnId?: string; createdAt?: unknown; updatedAt?: unknown }
       const bearer = /^Bearer\s+(.+)$/i.exec(request.headers.authorization ?? "")?.[1]
       const caller = bearer ? bearers.get(bearer) : undefined
       const sessionId = body.sessionId ?? ""
@@ -103,6 +103,10 @@ function fakeAuthority() {
       }
       const timestamp = (value: unknown) => typeof value === "number" && value >= 0
       if (body.action === "adopt" && !(timestamp(body.createdAt) && timestamp(body.updatedAt))) return refuse(400, "session_authority_request_invalid")
+      if (body.action === "turn_release") {
+        response.statusCode = 200
+        return response.end(JSON.stringify({ released: true }))
+      }
       if (!caller) return refuse(403, "workspace_authorization_denied")
       if (body.action === "adopt") {
         if (adoptionFault) return refuse(adoptionFault.status, adoptionFault.code)
@@ -117,6 +121,9 @@ function fakeAuthority() {
       }
       if (registered.get(sessionId) !== caller.actorId) return refuse(403, "workspace_authorization_denied")
       response.statusCode = 200
+      if (body.action === "turn_acquire") {
+        return response.end(JSON.stringify({ allowed: true, turnId: body.turnId, leaseId: "lease_1", fencingToken: 1, acquiredAt: Date.now(), expiresAt: Date.now() + 60_000 }))
+      }
       response.end(JSON.stringify({ allowed: true, lease: "stream_lease", expiresAt: Date.now() + 60_000 }))
     })
   })
@@ -265,6 +272,30 @@ describe("a session the machine held before remote access", () => {
       `read:${OWNER.actorId}`,
       `read:${MEMBER.actorId}`,
     ])
+  })
+
+  test("the owner's first relayed prompt claims it through the turn's acquisition; a share holder's prompt never claims it", async () => {
+    const workspaceId = await workspaceWithLocalSession("ses_before_sharing_prompt")
+    const prompt = (headers: Record<string, string>) => fetch(`${origin}/workspaces/${workspaceId}/session/ses_before_sharing_prompt/message`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...headers },
+      body: JSON.stringify({ messageID: "msg_first", parts: [{ type: "text", text: "hi" }] }),
+    })
+
+    const owner = await prompt(relayed("owner-token"))
+    expect(owner.status).not.toBe(403)
+    expect(registered.get("ses_before_sharing_prompt")).toBe(OWNER.actorId)
+    expect(authorityCalls.map((call) => `${call.action}:${call.actorId}`).slice(0, 3)).toEqual([
+      `turn_acquire:${OWNER.actorId}`,
+      `adopt:${OWNER.actorId}`,
+      `turn_acquire:${OWNER.actorId}`,
+    ])
+
+    registered.delete("ses_before_sharing_prompt")
+    authorityCalls = []
+    const member = await prompt(relayed("member-token"))
+    expect(member.status).toBe(403)
+    expect(authorityCalls.some((call) => call.action === "adopt")).toBe(false)
   })
 
   test("the claim is made once and the machine's own user never causes one", async () => {
