@@ -38,7 +38,7 @@ function documentTags(policy: string): HtmlTagDescriptor[] {
 }
 
 export async function webAppDocument(html: string): Promise<IndexHtmlTransformResult> {
-  if (!html.includes(THEME_PRELOAD_TAG)) throw new Error(`index.html no longer loads the theme preload as ${THEME_PRELOAD_TAG}`)
+  if (!html.includes(THEME_PRELOAD_TAG)) throw new Error(`the document no longer loads the theme preload as ${THEME_PRELOAD_TAG}`)
   const theme = await themePreloadScript()
   return {
     html: html.replace(THEME_PRELOAD_TAG, () => `<script>${theme}</script>`),
@@ -54,7 +54,7 @@ export function webDocumentPlugin(): Plugin {
       order: "pre",
       handler: (html, context) => {
         const document = path.basename(context.filename)
-        if (document === "index.html") return webAppDocument(html)
+        if (document === "index.html" || document === "login.html") return webAppDocument(html)
         if (document === "browser-preview.html") return documentTags(browserPreviewPolicy())
         throw new Error(`${context.filename} has no Content-Security-Policy; name one in vite.web-document.ts`)
       },

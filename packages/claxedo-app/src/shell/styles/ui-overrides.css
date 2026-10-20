@@ -306,55 +306,6 @@
   padding: 0 12px 8px;
 }
 
-html[data-theme="codex"] {
-  --font-family-sans:
-    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
-  font-family: var(--font-family-sans);
-  --font-weight-body: 400;
-  --font-weight-regular: 400;
-  --sidebar-row-height: 30px;
-  --sidebar-row-radius: var(--radius-xl);
-  --sidebar-row-font-size: var(--font-size-base);
-  --letter-spacing-ui: 0;
-  --letter-spacing-navigation: 0;
-  --letter-spacing-body-tight: 0;
-  --letter-spacing-heading: 0;
-  --letter-spacing-display: 0;
-  --letter-spacing-title: 0;
-  --letter-spacing-chat: 0;
-  --letter-spacing-tight: 0;
-  --letter-spacing-tightest: 0;
-  font-synthesis: none;
-  text-rendering: geometricPrecision;
-  -webkit-font-smoothing: antialiased;
-
-  --radius-overlay: 10px;
-
-  --elevation-stroke: 0 0 0 0.5px color-mix(in oklab, var(--text-strong) 12%, transparent);
-  --elevation-prominent: var(--elevation-stroke), 0 3px 7.5px #0000000a, 0 0 20px #0000000d;
-  --elevation-sidebar: var(--elevation-stroke), 0 3px 7.5px #00000008, 0 0 16px #00000005;
-  --surface-overlay-radius: var(--radius-overlay);
-  --surface-overlay-border: 0;
-  --surface-overlay-shadow: var(--elevation-prominent);
-  --surface-card-radius: var(--radius-overlay);
-  --surface-card-border: 0;
-  --surface-card-shadow: var(--elevation-prominent);
-  --surface-composer-background: color-mix(in oklab, var(--shell-surface-composer) 90%, transparent);
-  --surface-composer-backdrop-filter: blur(16px);
-  --surface-composer-radius: 20px;
-  --surface-composer-shadow: var(--elevation-prominent);
-  --surface-user-message: color-mix(in oklab, var(--text-strong) 5%, transparent);
-  --surface-user-message-radius: 16px;
-  --surface-sidebar-shadow: var(--elevation-sidebar);
-}
-
-html[data-theme="codex"] body {
-  font-family: var(--font-family-sans);
-  font-size: var(--font-size-base);
-  font-weight: var(--font-weight-body);
-  letter-spacing: var(--letter-spacing-normal);
-}
-
 html[data-theme="codex"] [data-testid="rail-sidebar"] {
   background-color: var(--shell-surface-sidebar);
 }
@@ -514,75 +465,6 @@ html[data-theme="codex"][data-color-scheme="dark"] .claxedo-workspace-review .ui
 html[data-theme="codex"] .claxedo-workspace-review .ui-file-icon {
   width: 14px;
   height: 14px;
-}
-
-html[data-theme="codex"][data-color-scheme="light"] {
-  --codex-surface: #ffffff;
-  --codex-ink: #0d0d0d;
-  --codex-contrast: var(--claxedo-contrast-light);
-  --codex-contrast-origin: 45;
-  --codex-control: color-mix(in srgb, var(--codex-surface), #ffffff calc(clamp(0, 0.09 + var(--codex-c) * 0.04, 1) * 100%));
-  --codex-elevated-secondary: color-mix(in srgb, var(--codex-surface), #ffffff calc(clamp(0, 0.08 + var(--codex-c) * 0.08, 1) * 100%));
-  --codex-border: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.06 + var(--codex-c) * 0.04, 1) * 100%), transparent);
-  --codex-border-light: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.04 + var(--codex-c) * 0.02, 1) * 100%), transparent);
-  --codex-border-heavy: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.09 + var(--codex-c) * 0.06, 1) * 100%), transparent);
-  --codex-hover: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.08 + var(--codex-c) * 0.04, 1) * 100%), transparent);
-  --codex-selected: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.04 + var(--codex-c) * 0.02, 1) * 100%), transparent);
-  --codex-pressed: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.16 + var(--codex-c) * 0.08, 1) * 100%), transparent);
-}
-
-html[data-theme="codex"][data-color-scheme="dark"] {
-  --codex-surface: #111111;
-  --codex-ink: #fcfcfc;
-  --codex-contrast: var(--claxedo-contrast-dark);
-  --codex-contrast-origin: 60;
-  --codex-control: color-mix(in srgb, var(--codex-surface), var(--codex-ink) calc(clamp(0, 0.06 + var(--codex-c) * 0.05, 1) * 100%));
-  --codex-elevated-secondary: color-mix(in srgb, var(--codex-surface), var(--codex-ink) calc(clamp(0, 0.04 + var(--codex-c) * 0.05, 1) * 100%));
-  --codex-border: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.06 + var(--codex-c) * 0.04, 1) * 100%), transparent);
-  --codex-border-light: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.03 + var(--codex-c) * 0.02, 1) * 100%), transparent);
-  --codex-border-heavy: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.12 + var(--codex-c) * 0.06, 1) * 100%), transparent);
-  --codex-hover: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.05 + var(--codex-c) * 0.03, 1) * 100%), transparent);
-  --codex-selected: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.04 + var(--codex-c) * 0.02, 1) * 100%), transparent);
-  --codex-pressed: color-mix(in srgb, var(--codex-ink) calc(clamp(0, 0.07 + var(--codex-c) * 0.05, 1) * 100%), transparent);
-}
-
-html[data-theme="codex"] {
-  --codex-curve: calc(var(--codex-contrast) / 100 + (var(--codex-contrast) - var(--codex-contrast-origin)) / 60 * 0.7);
-  --codex-c: max(var(--codex-curve), calc(2 * var(--codex-curve) - var(--codex-contrast-origin) / 100));
-  --background-base: var(--codex-surface);
-  --background-stronger: var(--codex-surface);
-  --shell-surface-sidebar: var(--codex-surface);
-  --shell-surface-header: var(--codex-surface);
-  --settings-surface-content: var(--codex-surface);
-  --shell-surface-composer: var(--codex-control);
-  --control-surface-active: var(--codex-control);
-  --overlay-surface: var(--codex-control);
-  --overlay-surface-hover: var(--codex-hover);
-  --overlay-surface-input: var(--codex-selected);
-  --surface-raised-base: var(--codex-elevated-secondary);
-  --surface-raised-base-hover: var(--codex-hover);
-  --surface-raised-stronger-non-alpha: var(--codex-control);
-  --settings-surface-card: var(--codex-elevated-secondary);
-  --shell-surface-context-card: var(--codex-elevated-secondary);
-  --row-surface-selected: var(--codex-selected);
-  --border-weak-base: var(--codex-border);
-  --border-weaker-base: var(--codex-border-light);
-  --border-base: var(--codex-border-heavy);
-  --shell-border-sidebar: var(--codex-border-light);
-  --shell-border-header: var(--codex-border-light);
-  --composer-border: var(--codex-border);
-  --control-border: var(--codex-border-heavy);
-  --overlay-border: var(--codex-border);
-  --v2-background-bg-base: var(--codex-surface);
-  --v2-background-bg-deep: var(--codex-surface);
-  --v2-background-bg-layer-01: var(--codex-elevated-secondary);
-  --v2-background-bg-layer-02: var(--codex-control);
-  --v2-border-border-muted: var(--codex-border-light);
-  --v2-border-border-base: var(--codex-border);
-  --v2-border-border-strong: var(--codex-border-heavy);
-  --v2-overlay-simple-overlay-hover: var(--codex-hover);
-  --v2-overlay-simple-overlay-pressed: var(--codex-pressed);
-  background-color: var(--codex-surface) !important;
 }
 
 html[data-theme="codex"] .workbench-tab[data-selected="true"] {

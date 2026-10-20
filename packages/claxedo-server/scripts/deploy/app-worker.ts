@@ -1,7 +1,6 @@
 import { PRECOMPRESSED_ASSET, acceptsBrotli, brotliSibling } from "./app-asset-encoding"
 import { RELAY_PATH_PREFIX, publicOriginRoute } from "./public-origin"
-import { shellPreloadLinks } from "./shell-preloads"
-import { carriesSessionCookie } from "../../src/platform/auth/session-cookie"
+import { shellDocument } from "./shell-document"
 
 type Fetcher = { fetch(request: Request): Promise<Response> }
 
@@ -67,19 +66,21 @@ async function brotliAsset(request: Request, url: URL, assets: Fetcher): Promise
 }
 
 /**
- * The shell for a client route, with the reads a signed-in app makes at boot
- * declared as preloads so they leave with the document's response. The cookie
- * is the only sign the edge has of a signed-in browser: a signed-out visitor
- * gets the shell as the assets serve it, and a browser whose cookie no longer
- * names a session preloads once for nothing, since the session read's answer
- * clears the cookie. A 304 carries the header too, as the browser applies the
- * revalidated shell's headers to the copy it kept.
+ * The document for a client route (`shellDocument`): the signed-out document,
+ * fetched by its own path since a client route has no file of its own, or the
+ * shell as the assets serve it, which is the single-page fallback for the
+ * route, with a signed-in boot's reads declared as preloads. A 304 carries the
+ * header too, as the browser applies the revalidated shell's headers to the
+ * copy it kept. The browser's conditional headers travel with either fetch, so
+ * a document it holds revalidates, and the other document's ETag at the same
+ * URL answers 200 when the cookie appears or goes.
  */
 async function shellForRoute(request: EdgeRequest, env: AppWorkerEnv, url: URL): Promise<Response> {
-  const response = await env.ASSETS.fetch(request)
-  if (!carriesSessionCookie(request.headers.get("cookie")) || !await isShell(response, env.ASSETS, url.origin)) return response
+  const document = shellDocument(url.pathname, request.headers.get("cookie"))
+  const response = await env.ASSETS.fetch(document.path === "/index.html" ? request : new Request(new URL(document.path, url), request))
+  if (document.link === undefined || !await isShell(response, env.ASSETS, url.origin)) return response
   const preloaded = new Response(response.body, response)
-  preloaded.headers.set("link", shellPreloadLinks())
+  preloaded.headers.set("link", document.link)
   return preloaded
 }
 

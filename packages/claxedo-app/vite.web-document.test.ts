@@ -5,9 +5,10 @@ import type { HtmlTagDescriptor } from "vite"
 import { webAppDocument } from "./vite.web-document"
 
 const INDEX_HTML = new URL("./index.html", import.meta.url)
+const LOGIN_HTML = new URL("./login.html", import.meta.url)
 
-async function document() {
-  const result = await webAppDocument(await readFile(INDEX_HTML, "utf8"))
+async function document(source: URL = INDEX_HTML) {
+  const result = await webAppDocument(await readFile(source, "utf8"))
   if (typeof result !== "object" || Array.isArray(result)) throw new Error("the web document transform returns html and tags")
   return result
 }
@@ -34,7 +35,17 @@ describe("webAppDocument", () => {
     expect(attribute(tags, "link", "rel")).toEqual([])
   })
 
-  test("refuses an index.html that no longer loads the theme preload it inlines", async () => {
+  test("the signed-out document inlines the same theme preload under the same policy and preloads its one read, the session, in its head", async () => {
+    const shell = await document()
+    const login = await document(LOGIN_HTML)
+    expect(login.tags).toEqual(shell.tags)
+    expect(login.html).not.toContain("/oc-theme-preload.js")
+    expect(login.html).toContain('<link rel="preload" href="/api/auth/get-session" as="fetch" crossorigin="use-credentials" />')
+    expect(login.html).toContain('src="/src/login.tsx"')
+    expect(shell.html).not.toContain('rel="preload"')
+  })
+
+  test("refuses a document that no longer loads the theme preload it inlines", async () => {
     await expect(webAppDocument("<!doctype html><html><head></head></html>")).rejects.toThrow("theme preload")
   })
 })

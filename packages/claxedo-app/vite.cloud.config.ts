@@ -37,8 +37,8 @@ function localeChunk(id: string): string | undefined {
 }
 
 const vendorChunks: Record<string, readonly string[]> = {
-  "vendor-solid": ["solid-js"],
-  "vendor-ui": ["@kobalte", "@floating-ui", "@corvu", "@solid-primitives", "@solidjs", "solid-prevent-scroll", "solid-presence", "solid-list", "motion", "framer-motion", "motion-dom", "motion-utils"],
+  "vendor-solid": ["solid-js", "@solid-primitives"],
+  "vendor-ui": ["@kobalte", "@floating-ui", "@corvu", "@solidjs", "solid-prevent-scroll", "solid-presence", "solid-list", "motion", "framer-motion", "motion-dom", "motion-utils"],
   "vendor-toast": ["solid-sonner"],
   "vendor-query": ["@tanstack"],
   "vendor-markdown": ["marked", "dompurify", "morphdom", "hast-util-to-html", "property-information", "character-entities-html4", "character-entities-legacy", "stringify-entities", "remend", "comma-separated-tokens", "space-separated-tokens", "html-void-elements", "ccount", "zwitch"],
@@ -52,6 +52,30 @@ function vendorChunk(id: string, binding: AccountBindingBuildSelection): string 
     if (packages.some((name) => path.includes(`/node_modules/${name}/`))) return chunk
   }
   return undefined
+}
+
+const appSourceRoots = [
+  fileURLToPath(new URL("./src/", import.meta.url)),
+  fileURLToPath(new URL("../ui/src/", import.meta.url)),
+  fileURLToPath(new URL("../account-contract/src/", import.meta.url)),
+  fileURLToPath(new URL("../agent-runtime-contract/src/", import.meta.url)),
+].map(normalizePath)
+
+/**
+ * The app's own modules, the kit's and the contracts' do nothing at load but
+ * declare (the app forbids module-level state; the kit's package.json names
+ * only its stylesheets as side effects; the contracts are tables and types), so
+ * a module none of an entry's imports use is left out of that entry's graph.
+ * Without this Rollup assigns every module reachable through a domain's
+ * index.ts to the chunk shared by both documents, and the signed-out document
+ * carried the consent and device screens, the server adapter's account modules
+ * with TanStack Query, the side panel controls and 44 kB of contract tables for
+ * an entry that renders one form. Stylesheets keep Vite's own marking.
+ */
+function moduleSideEffects(id: string): boolean {
+  const path = normalizePath(id)
+  if (path.endsWith(".css") || path.includes("?")) return true
+  return !appSourceRoots.some((root) => path.startsWith(root))
 }
 
 function manifestField(value: unknown, key: string): unknown {
@@ -158,8 +182,10 @@ export function cloudConfig({ mode }: { mode: string }, binding?: AccountBinding
       rollupOptions: {
         input: {
           main: fileURLToPath(new URL("./index.html", import.meta.url)),
+          login: fileURLToPath(new URL("./login.html", import.meta.url)),
           browserPreview: fileURLToPath(new URL("./browser-preview.html", import.meta.url)),
         },
+        treeshake: { moduleSideEffects },
         output: {
           manualChunks: (id) => localeChunk(id) ?? vendorChunk(id, accountBinding),
         },

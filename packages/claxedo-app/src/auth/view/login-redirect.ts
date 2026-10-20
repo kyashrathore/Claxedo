@@ -1,4 +1,4 @@
-import { useLocation, useNavigate } from "@solidjs/router"
+import type { Accessor } from "solid-js"
 import {
   loginDestination,
   loginOAuthContinuation,
@@ -7,17 +7,20 @@ import {
 } from "../login-continuation"
 import { appOrigin } from "../origins"
 
+export type LoginLocation = { readonly pathname: string; readonly search: string; readonly hash: string }
+
+export type LoginHost = {
+  readonly location: Accessor<LoginLocation>
+  readonly replaceWith: (path: string) => void
+}
+
 export type LoginRedirect = ReturnType<typeof loginRedirect>
 
-export function loginRedirect() {
-  const location = useLocation()
-  const navigate = useNavigate()
-  const continuation = () =>
-    loginOAuthContinuation({
-      origin: appOrigin(),
-      pathname: location.pathname,
-      search: location.search,
-    })
+export function loginRedirect(host: LoginHost) {
+  const continuation = () => {
+    const location = host.location()
+    return loginOAuthContinuation({ origin: appOrigin(), pathname: location.pathname, search: location.search })
+  }
   const freshSignInRequired = () => continuation()?.requiresFreshSignIn === true
   return {
     target: () => continuation()?.signInRedirect ?? "/",
@@ -35,7 +38,7 @@ export function loginRedirect() {
       if (current?.requiresFreshSignIn && !takeAuthorizationSignInStarted(current)) return
       const destination = loginDestination(current)
       if ("assign" in destination) window.location.assign(destination.assign)
-      else navigate(destination.navigate, { replace: true })
+      else host.replaceWith(destination.navigate)
     },
   }
 }

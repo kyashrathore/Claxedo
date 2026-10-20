@@ -333,7 +333,7 @@ export const desktopAccountComposition: Policy = {
  * never opened. `#app/styles` comes before `#app`, whose target is a file.
  */
 const RENDERER_ALIASES: Alias[] = [
-  { prefix: "#app/styles", target: `${APP}/styles.ts` },
+  { prefix: "#app/styles", target: `${APP}/styles.css` },
   { prefix: "#app", target: `${APP}/app.tsx` },
   { prefix: "#account-binding", target: `${APP}/auth/electron-binding.ts` },
   { prefix: "#terminal-backend", target: `${APP}/terminal/backend/xterm.ts` },
@@ -766,8 +766,13 @@ export const desktopRenderer: Policy = {
   // reader's scroll or toggle raises (owner: the app's session view,
   // `session/view/timeline/timeline-reader-interaction.ts`). It adds no
   // package edge.
-  // 1470/36, no headroom.
-  ceilings: { modules: 1470, packages: 36 },
+  // The app's login route, which hosts the sign-in form on the client router
+  // now that the form also renders in the web's signed-out document (owner:
+  // the app's auth domain, `auth/view/login-page.tsx`), and the Codex theme's
+  // tokens, extracted from the shell's overrides so that document shares them
+  // (owner: the app's kit, `ui/codex-tokens.css`). Neither adds a package edge.
+  // 1472/36, no headroom.
+  ceilings: { modules: 1472, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

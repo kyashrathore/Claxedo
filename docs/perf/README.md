@@ -11,6 +11,7 @@ The web app's measured baseline at dev `8b2d1e949b`, every cost ranked with its 
 The serial D1 rounds a signed control-plane read pays, what one costs on staging and where the databases run, is [d1-signed-reads-2026-10-18](./d1-signed-reads-2026-10-18/README.md).
 Serving the API and the relay from the app's own origin, so a boot sends no CORS preflight and opens one connection, is measured and its deploy steps listed in [2026-10-18-web-one-origin.md](./2026-10-18-web-one-origin.md).
 How often a control-plane request from India lands on a cold isolate, what the 0.5 s it then pays is made of, and the composition that was rebuilt on a quarter of warm requests until its readiness ran under `waitUntil`, is [worker-cold-starts-2026-10-19](./worker-cold-starts-2026-10-19/README.md).
+A signed-out visitor's first page, the sign-in form, served as its own document by the edge from the cookie alone (945 ms and 656 kB to 361 ms and 153 kB at 100 ms RTT), and the build change that keeps a second entry's graph to what it uses, is [signed-out-document-2026-10-20](./signed-out-document-2026-10-20/README.md).
 The account-port bench is the `desktop/account-port` entry in the performance-tools catalog; the write-up of its numbers was retired with the other one-off perf notes.
 
 ## The weight was not one thing

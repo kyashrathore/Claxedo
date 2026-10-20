@@ -25,6 +25,7 @@ const claxedoIcons = {
   close: `<path d="M3.75 3.75L16.25 16.25M16.25 3.75L3.75 16.25" stroke="currentColor" stroke-linecap="square"/>`,
   "close-small": `<path d="M6.75 6.75L13.25 13.25M13.25 6.75L6.75 13.25" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>`,
   copy: `<rect x="7" y="6.5" width="8.5" height="8.5" rx="2" stroke="currentColor" stroke-width="1.25"/><path d="M12.5 4.5H6.5C5.39543 4.5 4.5 5.39543 4.5 6.5V12.5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>`,
+  github: `<path d="M9.99996 2.08002C14.373 2.08002 17.915 5.62198 17.915 9.99502C17.9145 11.6534 17.3941 13.2699 16.4268 14.617C15.4595 15.9641 14.0941 16.9739 12.5229 17.5044C12.1271 17.5835 11.9787 17.3362 11.9787 17.1284C11.9787 16.8613 11.9886 16.0104 11.9886 14.9518C11.9886 14.2098 11.7413 13.7349 11.4543 13.4875C13.2154 13.2896 15.0656 12.6169 15.0656 9.57948C15.0656 8.70883 14.7589 8.00637 14.2543 7.45232C14.3334 7.25445 14.6104 6.44316 14.1751 5.35485C14.1751 5.35485 13.5122 5.13719 11.9985 6.16614C11.3653 5.98805 10.6925 5.899 10.0197 5.899C9.34697 5.899 8.6742 5.98805 8.041 6.16614C6.52726 5.14708 5.86437 5.35485 5.86437 5.35485C5.42905 6.44316 5.70607 7.25445 5.78522 7.45232C5.28064 8.00637 4.97394 8.71872 4.97394 9.57948C4.97394 12.607 6.81417 13.2896 8.57526 13.4875C8.3477 13.6854 8.13994 14.0317 8.07068 14.5461C7.61557 14.7539 6.47779 15.0903 5.76544 13.8932C5.61703 13.6557 5.17181 13.072 4.54851 13.0819C3.88562 13.0918 4.28137 13.4578 4.5584 13.6062C4.89479 13.7942 5.28064 14.4967 5.36969 14.7242C5.52799 15.1694 6.04246 16.0203 8.03111 15.6542C8.03111 16.3171 8.041 16.9404 8.041 17.1284C8.041 17.3362 7.89259 17.5736 7.49684 17.5044C5.92041 16.9796 4.54923 15.9718 3.57782 14.6239C2.60641 13.276 2.08409 11.6565 2.08496 9.99502C2.08496 5.62198 5.62692 2.08002 9.99996 2.08002Z" fill="currentColor"/>`,
   file: `<path d="M12.5 1.66667H5C4.07953 1.66667 3.33333 2.41286 3.33333 3.33333V16.6667C3.33333 17.5871 4.07953 18.3333 5 18.3333H15C15.9205 18.3333 16.6667 17.5871 16.6667 16.6667V5.83333L12.5 1.66667Z" stroke="currentColor" stroke-linecap="square"/><path d="M11.6667 1.66667V4.16667C11.6667 5.08714 12.4129 5.83333 13.3333 5.83333H16.6667" stroke="currentColor" stroke-linecap="square"/>`,
   "page-plus": `<path d="M9.5 2.5H4.5C3.94772 2.5 3.5 2.94772 3.5 3.5V16.5C3.5 17.0523 3.94772 17.5 4.5 17.5H10M9.5 2.5L12.5 5.5M9.5 2.5V4.5C9.5 5.05228 9.94772 5.5 10.5 5.5H12.5V9.5M14.5 11.5V17.5M11.5 14.5H17.5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>`,
   send: `<path d="M10 15.5V4.5M5.75 8.75L10 4.5L14.25 8.75" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>`,
@@ -99,6 +100,10 @@ const customGlyphs = {
   "codex-custom-worktree": "worktree",
 } as const satisfies Record<CodexCustomGlyph, keyof typeof claxedoIcons>
 
+const inlinedSpriteGlyphs = {
+  "codex-20-043": "github",
+} as const satisfies Partial<Record<CodexGlyphName, keyof typeof claxedoIcons>>
+
 const GLYPH_SIZES = { small: 14, medium: 18, large: 20, normal: 16 } as const
 
 function codexSvg(props: ClaxedoIconProps, bare: boolean): JSX.Element {
@@ -166,7 +171,7 @@ export function ClaxedoIconV2(props: ClaxedoIconProps) {
 }
 
 function customGlyph(name: CodexGlyphName) {
-  const glyphs: Partial<Record<CodexGlyphName, string>> = customGlyphs
+  const glyphs: Partial<Record<CodexGlyphName, string>> = { ...customGlyphs, ...inlinedSpriteGlyphs }
   return glyphs[name]
 }
 

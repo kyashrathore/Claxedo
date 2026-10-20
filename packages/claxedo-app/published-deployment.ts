@@ -3,6 +3,8 @@ import { PUBLISHED_DEPLOYMENT_ELEMENT_ID, type PublishedDeployment } from "./src
 
 type DeploymentRequest = (url: string) => Promise<Response>
 
+export const PUBLISHED_DOCUMENTS = ["index.html", "login.html"] as const
+
 const ELEMENT_OPEN = `<script id="${PUBLISHED_DEPLOYMENT_ELEMENT_ID}" type="application/json">`
 const ELEMENT = new RegExp(`${ELEMENT_OPEN.replace(/[/]/g, "\\/")}[^<]*</script>`)
 

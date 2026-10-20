@@ -17,7 +17,7 @@ function appAliases(config: UserConfig) {
   if (!Array.isArray(aliases)) throw new Error("the app's Vite config no longer declares its aliases as a list")
   return [
     { find: /^#app$/, replacement: normalize(path.join(appDir, "src/app.tsx")) },
-    { find: /^#app\/styles$/, replacement: normalize(path.join(appDir, "src/styles.ts")) },
+    { find: /^#app\/styles$/, replacement: normalize(path.join(appDir, "src/styles.css")) },
     ...aliases,
   ]
 }

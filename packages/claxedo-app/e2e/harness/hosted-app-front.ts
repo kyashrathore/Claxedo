@@ -14,8 +14,7 @@ import { abortResponse, answerHeaders, forward, forwardUpgrade, forwardedHeaders
 import { pagesHeaders, respondShaped, type FrontShaping } from "./front-shaping"
 import type { TlsFront } from "./tls-front"
 import { RELAY_PATH_PREFIX, publicOriginRoute } from "../../../claxedo-server/scripts/deploy/public-origin"
-import { shellPreloadLinks } from "../../../claxedo-server/scripts/deploy/shell-preloads"
-import { carriesSessionCookie } from "../../../claxedo-server/src/platform/auth/session-cookie"
+import { shellDocument, type ShellDocument } from "../../../claxedo-server/scripts/deploy/shell-document"
 
 function relayTarget(url: string, relayUrl: string) {
   return new URL(url.slice(RELAY_PATH_PREFIX.length), relayUrl)
@@ -28,11 +27,10 @@ export async function startHostedAppFront(input: { port: number; distDir: string
   const forwarded: string[] = []
   const answerFor = pagesHeaders(input.distDir)
   let deployment: PublishedDeployment | undefined
-  const published = async (asset: Response, pathname: string, cookie: string | undefined) => {
-    if (path.extname(pathname) && pathname !== "/index.html") return asset
-    if (!deployment) throw new Error("the app front served its shell before it read the deployment")
+  const published = async (asset: Response, document: ShellDocument) => {
+    if (!deployment) throw new Error("the app front served a document before it read the deployment")
     const shell = new Response(publishDeployment(await asset.text(), deployment), { status: asset.status, headers: asset.headers })
-    if (carriesSessionCookie(cookie)) shell.headers.set("link", shellPreloadLinks())
+    if (document.link) shell.headers.set("link", document.link)
     return shell
   }
   const held = (run: () => void) => {
@@ -62,10 +60,12 @@ export async function startHostedAppFront(input: { port: number; distDir: string
       }
       return held(relay)
     }
-    const bundled = await appBundleFile(input.distDir, pathname, request.headers.accept?.includes("text/html") ?? false)
+    const document = path.extname(pathname) ? undefined : shellDocument(pathname, request.headers.cookie)
+    const served = document?.path ?? pathname
+    const bundled = await appBundleFile(input.distDir, served, request.headers.accept?.includes("text/html") ?? false)
     if (!bundled) { response.writeHead(404).end(); return }
-    const asset = await published(bundled, pathname, request.headers.cookie)
-    if (input.shaping) return respondShaped(request, response, path.extname(pathname) ? pathname : "/index.html", asset, answerFor(path.extname(pathname) ? pathname : "/index.html"), input.shaping)
+    const asset = document ? await published(bundled, document) : bundled
+    if (input.shaping) return respondShaped(request, response, served, asset, answerFor(served), input.shaping)
     response.writeHead(asset.status, Object.fromEntries(asset.headers)).end(Buffer.from(await asset.arrayBuffer()))
   }
   const servers = [createSecureServer({ ...tls, allowHTTP1: true }, serve), createSecureServer({ ...tls, allowHTTP1: true }, serve)]

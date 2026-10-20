@@ -1,38 +1,16 @@
 import { createEffect, createSignal, For, on, Show, type Accessor } from "solid-js"
-import { useLocation } from "@solidjs/router"
 import { toAppError, useServer, type AppError } from "@/server"
 import type { BrowserAuthMethod, BrowserAuthSignInOptions } from "../browser-auth"
 import { createOrgInvitationFlow } from "../login-continuation"
 import { useAuth } from "../provider"
 import { ClaxedoIcon as Icon } from "@/ui"
 import { AuthSplit } from "./auth-split"
-import { loginRedirect, type LoginRedirect } from "./login-redirect"
+import { loginRedirect, type LoginHost, type LoginRedirect } from "./login-redirect"
 import "./auth.css"
 
 const providerName = (method: "google" | "github") => (method === "google" ? "Google" : "GitHub")
 type InvitationFlow = ReturnType<typeof createOrgInvitationFlow>
 type LoginController = ReturnType<typeof createLoginController>
-
-export function LoginPage() {
-  return <LoginForm />
-}
-
-export function OrgInvitationPage() {
-  const location = useLocation()
-  return (
-    <Show when={location.hash.slice(1)} keyed fallback={
-      <main class="auth-page">
-        <section class="auth-card">
-          <h1 class="auth-title">Invitation link is incomplete</h1>
-          <p class="auth-subtitle">Open the complete invitation link from your email, or ask your organization for a new invitation.</p>
-          <a class="auth-button" href="/">Continue to Claxedo</a>
-        </section>
-      </main>
-    }>
-      {(token) => <LoginForm invitationToken={token} />}
-    </Show>
-  )
-}
 
 async function acceptInvitation(accept: () => Promise<unknown>) {
   try {
@@ -91,14 +69,13 @@ function loginAction(input: SignInInput & {
   }
 }
 
-function createLoginController(token?: string) {
+function createLoginController(host: LoginHost, token?: string) {
   const auth = useAuth()
-  const server = useServer()
-  const invitation = token ? createOrgInvitationFlow(auth, server.acceptOrgInvitation, token) : undefined
+  const invitation = token ? createOrgInvitationFlow(auth, useServer().acceptOrgInvitation, token) : undefined
   const [email, setEmail] = createSignal("")
   const [password, setPassword] = createSignal("")
   const [action, setAction] = createSignal<"signIn" | "signUp">(invitation ? "signUp" : "signIn")
-  const redirect = loginRedirect()
+  const redirect = loginRedirect(host)
   const login = loginAction({ auth, invitation, action, email, password, redirect: redirect.target, continuation: redirect })
   createEffect(
     on(auth.state, (state) => {
@@ -133,8 +110,8 @@ function createLoginController(token?: string) {
 
 const LEAD = "Every coding agent, on any machine, from anywhere."
 
-function LoginForm(props: { invitationToken?: string }) {
-  const controller = createLoginController(props.invitationToken)
+export function LoginForm(props: { readonly host: LoginHost; readonly invitationToken?: string }) {
+  const controller = createLoginController(props.host, props.invitationToken)
   return (
     <AuthSplit
       title={controller.invitation ? "Join your organization" : "Sign in to Claxedo"}

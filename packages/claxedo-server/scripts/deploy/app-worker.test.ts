@@ -48,6 +48,8 @@ beforeAll(async () => {
   await mkdir(path.join(browser, "assets"), { recursive: true })
   await copyFile(HEADERS, path.join(browser, "_headers"))
   await writeFile(path.join(browser, "index.html"), "<!doctype html><script type=\"module\" src=\"/assets/main-new.js\"></script>")
+  await writeFile(path.join(browser, "login.html"), "<!doctype html><script type=\"module\" src=\"/assets/login-new.js\"></script>")
+  await writeFile(path.join(browser, "browser-preview.html"), "<!doctype html><title>Browser preview</title>")
   for (const [name, source] of Object.entries(SOURCE)) await writeFile(path.join(browser, "assets", name), source)
   await prepareBrowserArtifactsForWorkers(browser)
 
@@ -70,7 +72,7 @@ beforeAll(async () => {
   bareAssets = new Miniflare({
     modules: true,
     script: "export default { fetch() { return new Response(null, { status: 404 }) } }",
-    assets: { directory: browser, assetConfig: { not_found_handling: "single-page-application", html_handling: "auto-trailing-slash" } },
+    assets: { directory: browser, assetConfig: { not_found_handling: "single-page-application", html_handling: "none" } },
   })
 }, 120_000)
 
@@ -247,11 +249,52 @@ describe("the app's assets", () => {
   })
 
   test("client routes outside the control plane's and the relay's paths keep the single-page fallback", async () => {
-    for (const pathname of ["/w/workspace-1/session/ses_1", "/relay", "/relayed", "/settings"]) {
+    for (const pathname of ["/w/workspace-1/session/ses_1", "/relay", "/relayed", "/settings", "/invitations", "/device", "/oauth/consent", "/login/"]) {
       const response = await serve(pathname, { "accept-encoding": "identity" })
       expect(response.status).toBe(200)
       expect(decoded(response)).toContain("main-new.js")
     }
+  })
+
+  test("a document is served at its own path only, with no redirect", async () => {
+    for (const [pathname, marker] of [["/index.html", "main-new.js"], ["/login.html", "login-new.js"], ["/browser-preview.html", "Browser preview"]]) {
+      const response = await serve(pathname, { "accept-encoding": "identity" })
+      expect(response.status, pathname).toBe(200)
+      expect(decoded(response)).toContain(marker)
+    }
+  })
+})
+
+describe("the signed-out document", () => {
+  const signedOut: Record<string, string>[] = [{ "accept-encoding": "identity" }, { "accept-encoding": "identity", cookie: "theme=dark; __Secure-claxedo.session_token=" }]
+
+  test("a browser without the session cookie gets it at the home and at /login, revalidating as its own document, and the shell nowhere else", async () => {
+    for (const headers of signedOut) {
+      for (const pathname of ["/", "/login", "/login?response_type=code&client_id=c&redirect_uri=r&state=s"]) {
+        const response = await serve(pathname, headers)
+        expect(response.status, pathname).toBe(200)
+        expect(decoded(response)).toContain("login-new.js")
+        expect(response.headers.link).toBeUndefined()
+        expect(response.headers["cache-control"]).toBe("no-transform, public, max-age=0, must-revalidate")
+        const revalidated = await serve(pathname, { ...headers, "if-none-match": response.headers.etag! })
+        expect(revalidated.status).toBe(304)
+      }
+      const elsewhere = await serve("/w/workspace-1/session/ses_1", headers)
+      expect(decoded(elsewhere)).toContain("main-new.js")
+    }
+  })
+
+  test("the cookie turns the same URL into the shell with its preloads, and a stale ETag of the other document answers 200", async () => {
+    const session = { cookie: "__Secure-claxedo.session_token=held", "accept-encoding": "identity" }
+    const login = await serve("/", { "accept-encoding": "identity" })
+    const shell = await serve("/", { ...session, "if-none-match": login.headers.etag! })
+    expect(shell.status).toBe(200)
+    expect(decoded(shell)).toContain("main-new.js")
+    expect(shell.headers.link).toBe(shellPreloadLinks())
+    expect((await serve("/login", session)).headers.link).toBe(shellPreloadLinks())
+    const signedOutAgain = await serve("/", { "accept-encoding": "identity", "if-none-match": shell.headers.etag! })
+    expect(signedOutAgain.status).toBe(200)
+    expect(decoded(signedOutAgain)).toContain("login-new.js")
   })
 })
 

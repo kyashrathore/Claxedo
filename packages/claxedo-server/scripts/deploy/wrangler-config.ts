@@ -222,7 +222,12 @@ export const APP_WORKER = path.join(SERVER_ROOT, "scripts/deploy/app-worker.ts")
  * paths, the hashed chunks whose fallback it refuses, and the shell whose
  * response names a signed-in boot's preloads. The control plane's paths never
  * reach it on a deployed origin: they are the control plane's own routes on
- * the same host (`renderWorkerWranglerConfig`).
+ * the same host (`renderWorkerWranglerConfig`). The assets serve a document
+ * only at its own path (`html_handling = "none"`): the Worker fetches
+ * `/login.html` by name for a signed-out visitor, and `/login` itself has no
+ * file, so a signed-in browser there gets the single-page fallback, the shell,
+ * as on every client route; `auto-trailing-slash` would have served the
+ * signed-out document to anyone at `/login` and redirected `/index.html`.
  */
 export function renderAppWranglerConfig(input: Readonly<{
   appWorkerName: string
@@ -239,7 +244,7 @@ preview_urls = false
 directory = ${quote(path.resolve(input.browserDirectory))}
 binding = "ASSETS"
 not_found_handling = "single-page-application"
-html_handling = "auto-trailing-slash"
+html_handling = "none"
 run_worker_first = true
 
 [[services]]

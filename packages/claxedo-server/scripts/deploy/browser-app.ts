@@ -92,8 +92,8 @@ export async function buildBrowserApp() {
 
 /**
  * Write the control plane's bootstrap and auth descriptor into the built
- * shell, so a browser boots without asking the API for either, and stamp the
- * result with its build identity. It reads them through the public origin,
+ * shell and the signed-out document, so a browser boots without asking the
+ * API for either, and stamp the result with its build identity. It reads them through the public origin,
  * whose app Worker forwards `/api` to the control plane, so the origin must
  * already front it when this runs.
  */
