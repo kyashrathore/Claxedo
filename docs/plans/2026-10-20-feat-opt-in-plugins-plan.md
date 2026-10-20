@@ -106,7 +106,7 @@ export type SignedPluginRelease = { release: PluginRelease; signature: string /*
 
 **1.3 Signing and integrity**
 - **Keys.** Ed25519 keys are pinned in source as `PLUGIN_REGISTRY_KEYS: Record<keyId, publicKeyBase64>` (`@claxedo/plugin-api/release`). The private key is a GitHub Actions secret. A test key is accepted only when `CLAXEDO_APP_PLUGIN_REGISTRY_TEST_KEY` is set, and a product-boundary authoritative check forbids that reader in production entries.
-- **Who verifies.** Servers only: the hosted Worker and the local daemon (WebCrypto Ed25519; verify in P0 that both workerd and Electron's Node support it). Each checks the signature, then each blob's sha256 and size before storing it.
+- **Who verifies.** The hosted Worker only (WebCrypto Ed25519; verify it in P0). Each checks the signature, then each blob's sha256 and size before storing it.
 - **Re-check at load.**
 - The supervisor already re-hashes a bundle (`bundles.ts:38`).
 - The app re-hashes the app bundle it fetched against the sha256 its own server listed before loading it (`crypto.subtle.digest`). A mismatch is a load failure shown in Settings.
@@ -417,7 +417,6 @@ The owner ruled that every user may download the catalog's building blocks: "eve
 - The Worker Loader id includes org, plugin, generation and epoch (`supervisor.cf.ts:152`).
 - Outbound is limited to manifest hosts over https on the default port while the epoch is live (`entrypoints.cf.ts:24-38`); Tasks and Documents declare none.
 - The plugin frame has an opaque origin and no network (`frame/document.ts:21-35`).
-- Locally, `workerd` runs with an empty env, a private loopback port and secret, and no filesystem binding beyond its DO dir.
 - **Identity.** Caller handles replace the forgeable user-id header (§3.1). Platform calls refuse undeclared permissions and dead epochs, and system wakes carry no user authority.
 - **Install prompts.** The admin's install prompt and each member's enable prompt list the permissions, outbound hosts and core routes. A permission change in an update shows the diff and needs a new consent before the new epoch serves that user; the app's `accessChange` logic moves server-side.
 - **Data deletion.** Uninstall deletes the supervisor storage, blob prefix, enablements, links, origin rows and grants (§1.5). Org disable keeps data.
