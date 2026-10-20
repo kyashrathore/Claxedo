@@ -57,6 +57,7 @@ export type {
   Confirmation,
   CreateSessionInput,
   I18nApi,
+  PluginBackendClient,
   PluginContext,
   PluginPlatform,
   ProjectSummary,

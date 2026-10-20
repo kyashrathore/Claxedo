@@ -2,7 +2,7 @@ import type { PluginDefinition, PluginManifest } from "@claxedo/plugin-api"
 import type { LivePlugin } from "@/server"
 import type { PluginServerCalls } from "../api"
 import { frameDefinition } from "../frame/definition"
-import type { FrameSource } from "../frame/open"
+import type { FrameHost } from "../frame/open"
 import type { PluginBuild, PluginOrigin } from "../model"
 import { throwingDefinition } from "../bundle"
 import { importInApp } from "../in-app"
@@ -61,10 +61,11 @@ export async function loadLiveBuild(row: LiveRow, calls: PluginServerCalls): Pro
   }
 }
 
-export async function loadFrameBuild(row: LiveRow, calls: PluginServerCalls, frame: Omit<FrameSource, "code">): Promise<PluginBuild> {
+export async function loadFrameBuild(row: LiveRow, calls: PluginServerCalls, frame: FrameHost): Promise<PluginBuild> {
   try {
     const code = await calls.liveBundle(row.id, row.hash)
-    return { manifest: rowManifest(row), origin: originOf(row, row.hash), definition: frameDefinition({ ...frame, code }) }
+    const manifest = rowManifest(row)
+    return { manifest, origin: originOf(row, row.hash), definition: frameDefinition({ ...frame, code, backend: Boolean(manifest.backend) }) }
   } catch (error) {
     return failingBuild(row, row.hash, error)
   }

@@ -8,7 +8,10 @@ import { failureReason } from "../failure"
 import { usePluginsText, type PluginsKey, type PluginsText } from "../i18n"
 import { failureOf, liveOriginOf, type PluginState, type PluginSummary } from "../model"
 import { usePluginHost } from "../provider"
+import { useShellRegistries, useShellRoute } from "@/shell"
 import { PluginManifestSummary } from "./plugin-manifest"
+
+const MARKETPLACE_PAGE_ID = "marketplace"
 
 function stateKey(state: PluginState): PluginsKey {
   switch (state.kind) {
@@ -86,17 +89,48 @@ function RowActions(props: { readonly plugin: PluginSummary; readonly expanded: 
   )
 }
 
-export function PluginRow(props: { readonly plugin: PluginSummary }): JSX.Element {
+function originKey(plugin: PluginSummary): PluginsKey | undefined {
+  if (plugin.origin.kind === "bundled") return "plugins.builtIn"
+  return plugin.origin.kind === "installed" ? "plugins.installed" : undefined
+}
+
+function ManageInMarketplace(): JSX.Element {
+  const t = usePluginsText()
+  const registries = useShellRegistries()
+  const routing = useShellRoute()
+  const open = () => {
+    const page = registries.pages.list().find((entry) => entry.id === MARKETPLACE_PAGE_ID)
+    if (page) routing.navigate(page.path)
+  }
+  return (
+    <Button type="button" variant="neutral" size="small" onClick={open}>
+      {t("plugins.manageInMarketplace")}
+    </Button>
+  )
+}
+
+function RowSwitch(props: { readonly plugin: PluginSummary }): JSX.Element {
   const host = usePluginHost()
   const t = usePluginsText()
-  const i18n = useI18n()
-  const [expanded, setExpanded] = createSignal(false)
-  const details = () => detailsOf(t, props.plugin, i18n.intlTag())
   const toggle = (on: boolean) => {
     if (!on) return host.switchOff(props.plugin.id)
     if (!approvalLetsRun(props.plugin.approval)) return host.requestApproval(props.plugin.id)
     host.switchOn(props.plugin.id)
   }
+  return (
+    <Show when={props.plugin.origin.kind !== "installed"} fallback={<ManageInMarketplace />}>
+      <Switch checked={props.plugin.switchedOn && approvalLetsRun(props.plugin.approval)} onChange={toggle} hideLabel>
+        {t("plugins.switch", { name: props.plugin.name })}
+      </Switch>
+    </Show>
+  )
+}
+
+export function PluginRow(props: { readonly plugin: PluginSummary }): JSX.Element {
+  const t = usePluginsText()
+  const i18n = useI18n()
+  const [expanded, setExpanded] = createSignal(false)
+  const details = () => detailsOf(t, props.plugin, i18n.intlTag())
   return (
     <li class="plugin-row" data-plugin={props.plugin.id} aria-label={props.plugin.name}>
       <div class="plugin-row-main">
@@ -104,18 +138,14 @@ export function PluginRow(props: { readonly plugin: PluginSummary }): JSX.Elemen
           <div class="plugin-row-heading">
             <span class="plugin-row-name">{props.plugin.name}</span>
             <span class="plugin-row-version">{props.plugin.version}</span>
-            <Show when={props.plugin.origin.kind === "bundled"}>
-              <span class="plugin-row-origin">{t("plugins.builtIn")}</span>
-            </Show>
+            <Show when={originKey(props.plugin)}>{(key) => <span class="plugin-row-origin">{t(key())}</span>}</Show>
             <span class="plugin-row-state" data-state={props.plugin.state.kind}>
               {t(stateKey(props.plugin.state))}
             </span>
           </div>
           <For each={details()}>{(text) => <p class="plugin-row-detail">{text}</p>}</For>
         </div>
-        <Switch checked={props.plugin.switchedOn && approvalLetsRun(props.plugin.approval)} onChange={toggle} hideLabel>
-          {t("plugins.switch", { name: props.plugin.name })}
-        </Switch>
+        <RowSwitch plugin={props.plugin} />
       </div>
       <RowActions plugin={props.plugin} expanded={expanded()} toggle={() => setExpanded((open) => !open)} />
       <Show when={expanded()}>

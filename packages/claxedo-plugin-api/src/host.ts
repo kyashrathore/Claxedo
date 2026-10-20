@@ -37,9 +37,14 @@ export interface ProjectsApi {
   currentId(): string | undefined
 }
 
+export interface PluginBackendClient {
+  fetch(path: string, init?: RequestInit): Promise<Response>
+}
+
 export interface ServerApi {
   fetch(path: string, init?: RequestInit): Promise<Response>
   operation(name: string, input?: unknown): Promise<unknown>
+  backend(): PluginBackendClient
 }
 
 export type PluginPlatform = "desktop" | "web"

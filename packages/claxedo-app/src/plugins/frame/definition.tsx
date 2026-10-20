@@ -6,6 +6,7 @@ import type { FrameControl } from "./host-port"
 import type { FrameSlots } from "./host-registrations"
 import { openFrame, type FrameSource } from "./open"
 import { FrameSlot } from "./slot"
+import { appSourceOrigin } from "./styles"
 
 export class FrameActivationError extends Error {
   constructor(readonly pluginId: string, reason: string) {
@@ -19,7 +20,7 @@ function controlFrame(pluginId: string): HTMLIFrameElement {
   frame.setAttribute("sandbox", "allow-scripts")
   frame.hidden = true
   frame.title = pluginId
-  frame.srcdoc = frameDocument(location.origin)
+  frame.srcdoc = frameDocument(appSourceOrigin())
   return frame
 }
 

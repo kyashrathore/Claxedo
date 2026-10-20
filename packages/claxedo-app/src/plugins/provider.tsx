@@ -16,6 +16,8 @@ import { pluginsDictionary, usePluginsText } from "./i18n"
 import { createFrameRuntimeSource, type FrameRuntime } from "./frame/runtime-source"
 import { FIRST_PARTY_BUNDLES } from "./first-party/bundles"
 import { frameBundleLoader, inAppBundleLoader, loadFirstPartyPlugins } from "./first-party/load"
+import { createInstalledReconciler } from "./installed/controller"
+import { loadInstalledBuild } from "./installed/load"
 import { createLiveReconciler } from "./live/controller"
 import { liveListState, type LiveListState } from "./live/list-state"
 import { loadFrameBuild, loadLiveBuild, type LiveRow } from "./live/load"
@@ -27,6 +29,7 @@ import { requestApproval } from "./view/approval-request"
 export type PluginsContext = PluginHost & {
   readonly platform: PluginPlatform
   readonly liveList: Accessor<LiveListState>
+  readonly signedIn: Accessor<boolean>
   readonly requestApproval: (pluginId: string) => void
 }
 
@@ -80,10 +83,17 @@ function useLiveList(host: PluginHost, services: HostServices, runtime: FrameRun
   const loadBuild = (row: LiveRow) =>
     services.platform === "desktop" ? loadLiveBuild(row, services.calls) : loadFrameBuild(row, services.calls, { runtime, services })
   const reconciler = createLiveReconciler(host, loadBuild)
-  const offered = () => services.server.capabilities()?.features.livePlugins === true
+  const offered = () => services.platform === "desktop" && services.server.queries.appPlugins.offered && services.server.capabilities()?.features.livePlugins === true
   const list = useQuery(() => ({ ...services.calls.livePlugins(), enabled: offered() }))
   createEffect(on(() => list.data, (rows) => rows && reconciler.reconcile(rows)))
   return createMemo(() => liveListState({ offered: offered(), listed: list.data !== undefined, error: list.error }))
+}
+
+function useInstalledPlugins(host: PluginHost, services: HostServices, runtime: FrameRuntime): void {
+  const reconciler = createInstalledReconciler(host, (plugin) => loadInstalledBuild(plugin, services.calls, { runtime, services }))
+  const offered = () => services.server.queries.appPlugins.offered && !host.safeMode()
+  const list = useQuery(() => ({ ...services.calls.installedPlugins(), enabled: offered() }))
+  createEffect(on([() => list.data, offered], ([plugins, running]) => running && plugins && reconciler.reconcile(plugins)))
 }
 
 function useLiveApprovals(host: PluginHost, services: HostServices): (pluginId: string) => void {
@@ -122,10 +132,12 @@ export function PluginHostProvider(props: { readonly scope: string; readonly chi
   onCleanup(host.dispose)
   const runtime = createFrameRuntimeSource()
   useBundledPlugins(host, services, runtime)
+  useInstalledPlugins(host, services, runtime)
   const value: PluginsContext = {
     ...host,
     platform: services.platform,
     liveList: useLiveList(host, services, runtime),
+    signedIn: () => services.server.queries.appPlugins.offered,
     requestApproval: useLiveApprovals(host, services),
   }
   return <PluginHostContext.Provider value={value}>{props.children}</PluginHostContext.Provider>

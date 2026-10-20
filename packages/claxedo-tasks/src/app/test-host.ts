@@ -106,6 +106,9 @@ export function tasksServer() {
       return host.request(`http://tasks.test${path}`, init)
     },
     operation: async () => undefined,
+    backend: () => {
+      throw new Error("the Tasks plugin declares no backend")
+    },
   }
   return { server, store, bridge, requests, client: tasksClientOf(server) }
 }

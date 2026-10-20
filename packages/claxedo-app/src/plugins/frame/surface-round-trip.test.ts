@@ -57,7 +57,7 @@ function hostSide(port: MessagePort) {
 function frameSide(port: MessagePort, page: (api: PluginApi) => SurfacePageDefinition) {
   const link = createFrameLink(port, MIRROR)
   const entries: FrameEntries = { pages: new Map(), settings: new Map(), overlays: new Map(), commands: new Map(), mentions: new Map() }
-  const api = createFrameApi({ link, context: { pluginId: "fixture", pluginVersion: "0.1.0", platform: "web" }, entries, dictionary: undefined, forward: true, signal: new AbortController().signal })
+  const api = createFrameApi({ link, context: { pluginId: "fixture", pluginVersion: "0.1.0", platform: "web", backend: false }, entries, dictionary: undefined, forward: true, signal: new AbortController().signal })
   const surfaces = createFrameSurfaces(entries, link.send)
   link.onInvoke((invoke) => answerInvoke(entries, surfaces, invoke))
   api.pages.register(page(api))

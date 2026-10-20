@@ -36,6 +36,7 @@ export type FrameContext = {
   readonly pluginId: string
   readonly pluginVersion: string
   readonly platform: PluginPlatform
+  readonly backend: boolean
 }
 
 export type RenderTarget =
@@ -78,6 +79,7 @@ export type HostCall =
   | { readonly method: "workspaces.followStart"; readonly workspaceId: string }
   | { readonly method: "server.fetch"; readonly path: string; readonly init: FrameRequestInit }
   | { readonly method: "server.operation"; readonly name: string; readonly input: unknown }
+  | { readonly method: "server.backend.fetch"; readonly path: string; readonly init: FrameRequestInit }
   | { readonly method: "ui.toast"; readonly toast: Toast }
   | { readonly method: "ui.confirm"; readonly confirmation: Confirmation }
 

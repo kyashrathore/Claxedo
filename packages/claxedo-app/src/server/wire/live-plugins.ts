@@ -2,6 +2,7 @@ import { isRecord } from "@claxedo/helpers/guards"
 import type { PluginManifest } from "@claxedo/plugin-api"
 import { ServerError } from "../errors"
 import type { LivePlugin, LivePluginStatus } from "../live-plugin-types"
+import { manifestReader, type ReadManifest } from "./plugin-manifest"
 
 const STATUSES: ReadonlySet<string> = new Set<LivePluginStatus>(["building", "ready", "failed"])
 
@@ -28,16 +29,8 @@ function statusOrThrow(value: unknown, label: string): LivePluginStatus {
   throw new ServerError({ class: "internal", message: `${label} has an unknown status` })
 }
 
-type ReadManifest = (value: unknown, label: string) => PluginManifest | null
-
-async function manifestReader(): Promise<ReadManifest> {
-  const { pluginManifestSchema } = await import("@claxedo/plugin-api/manifest-schema")
-  return (value, label) => {
-    if (value === null) return null
-    const parsed = pluginManifestSchema.safeParse(value)
-    if (parsed.success) return parsed.data
-    throw new ServerError({ class: "internal", message: `${label} carries an invalid manifest: ${parsed.error.issues.map((issue) => issue.message).join("; ")}` })
-  }
+function nullableManifest(readManifest: ReadManifest, value: unknown, label: string): PluginManifest | null {
+  return value === null ? null : readManifest(value, label)
 }
 
 function livePlugin(value: unknown, index: number, readManifest: ReadManifest): LivePlugin {
@@ -50,7 +43,7 @@ function livePlugin(value: unknown, index: number, readManifest: ReadManifest): 
     directory: textOrThrow(row.directory, `${label} folder`),
     status: statusOrThrow(row.status, label),
     hash: nullableTextOrThrow(row.hash, `${label} hash`),
-    manifest: readManifest(row.manifest, label),
+    manifest: nullableManifest(readManifest, row.manifest, label),
     builtAt: nullableTextOrThrow(row.builtAt, `${label} build time`),
     lastError: nullableTextOrThrow(row.lastError, `${label} error`),
   }

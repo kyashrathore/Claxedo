@@ -26,6 +26,9 @@ export function PluginsSettings(): JSX.Element {
           </Button>
         </div>
       </Show>
+      <Show when={!host.signedIn()}>
+        <p role="status">{t("plugins.signedOut")}</p>
+      </Show>
       <Switch>
         <Match when={host.liveList().kind === "notOwner"}>
           <p role="status">{t("plugins.list.notOwner")}</p>

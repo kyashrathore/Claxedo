@@ -2,6 +2,7 @@ import { createSignal, onCleanup, Show, type JSX } from "solid-js"
 import { failureReason } from "../failure"
 import { frameDocument } from "./document"
 import type { HostLink } from "./host-link"
+import { appSourceOrigin } from "./styles"
 
 export function FrameSlot(props: { readonly title: string; readonly open: (frame: HTMLIFrameElement) => Promise<HostLink> }): JSX.Element {
   const [failure, setFailure] = createSignal<string>()
@@ -28,7 +29,7 @@ export function FrameSlot(props: { readonly title: string; readonly open: (frame
           </p>
         )}
       </Show>
-      <iframe class="plugin-frame" title={props.title} sandbox="allow-scripts" srcdoc={frameDocument(location.origin)} onLoad={(event) => void load(event.currentTarget)} />
+      <iframe class="plugin-frame" title={props.title} sandbox="allow-scripts" srcdoc={frameDocument(appSourceOrigin())} onLoad={(event) => void load(event.currentTarget)} />
     </>
   )
 }

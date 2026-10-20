@@ -132,6 +132,20 @@ function actionApi(scope: FrameScope): Pick<PluginApi, "commands" | "mentions" |
   }
 }
 
+export class FrameBackendError extends Error {
+  constructor(pluginId: string) {
+    super(`${pluginId} may not call a backend: its manifest does not name it`)
+    this.name = "FrameBackendError"
+  }
+}
+
+function backendClient(scope: FrameScope): ReturnType<PluginApi["server"]["backend"]> {
+  if (!scope.context.backend) throw new FrameBackendError(scope.context.pluginId)
+  return {
+    fetch: async (path, init) => responseFromFrame(frameResponseFromHost(await scope.link.call({ method: "server.backend.fetch", path, init: requestInit(init) }))),
+  }
+}
+
 function dataApi(scope: FrameScope): Pick<PluginApi, "sessions" | "workspaces" | "projects" | "server" | "context" | "ui" | "i18n"> {
   const { link, context } = scope
   return {
@@ -149,9 +163,12 @@ function dataApi(scope: FrameScope): Pick<PluginApi, "sessions" | "workspaces" |
     server: {
       fetch: async (path, init) => responseFromFrame(frameResponseFromHost(await link.call({ method: "server.fetch", path, init: requestInit(init) }))),
       operation: (name, input) => link.call({ method: "server.operation", name, input }),
+      backend: () => backendClient(scope),
     },
     context: {
-      ...context,
+      pluginId: context.pluginId,
+      pluginVersion: context.pluginVersion,
+      platform: context.platform,
       get locale() {
         return link.mirror.locale
       },

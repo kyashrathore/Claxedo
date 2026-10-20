@@ -2,6 +2,7 @@ import { isPluginId } from "@claxedo/plugin-api/id"
 import { CREDENTIAL_OPERATIONS } from "./credential-operations"
 import { sharedSessions } from "./shared-sessions"
 import { USAGE_OPERATIONS } from "./usage-operations"
+import { APP_PLUGIN_OPERATIONS } from "./app-plugin-operations"
 import {
   defineOperation, operationPath, requiredParameter, optionalParameter, bodyField,
   selectBody, operationHeaders, pluginMethod, pluginBody, connectedRepositoryBody,
@@ -14,6 +15,7 @@ import { object, withStrings, array, withArrays, sessionPeople, withRecord, null
 export const CORE_HOSTED_OPERATIONS = {
   ...CREDENTIAL_OPERATIONS,
   ...USAGE_OPERATIONS,
+  ...APP_PLUGIN_OPERATIONS,
   "session.shared.list": defineOperation({
     method: "GET", path: operationPath("/api/workspace/shared-sessions"),
     input: operationInput({}), output: sharedSessions, retry: "safe",
@@ -600,11 +602,15 @@ export const CORE_HOSTED_OPERATIONS = {
     exposure: { renderer: true, app: false },
     body: selectBody("event", "properties"),
   }),
+  // App-exposed for the plugin host's `server.backend()` binding on a signed
+  // desktop, which names the calling plugin's own id; a plugin's manifest
+  // cannot name it (`server.operation` refuses it), so no plugin reaches
+  // another's backend through it.
   "plugin.request": defineOperation({
     method: (input) => input.method, path: operationPath("/api/plugins/:pluginId/*", { accepts: { pluginId: isPluginId } }),
     input: operationInput({ pluginId: requiredParameter, method: pluginMethod, path: requiredParameter, body: bodyField }),
     output: statusResult, retry: "never",
-    exposure: { renderer: true, app: false },
+    exposure: { renderer: true, app: true },
     body: pluginBody,
     response: "http",
   }),

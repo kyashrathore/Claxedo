@@ -1,7 +1,7 @@
 import { throwingDefinition } from "../bundle"
 import { failureReason } from "../failure"
 import { frameDefinition } from "../frame/definition"
-import type { FrameSource } from "../frame/open"
+import type { FrameHost } from "../frame/open"
 import { importInApp } from "../in-app"
 import type { PluginBuild } from "../model"
 import type { FirstPartyBundle, PluginBundle } from "./model"
@@ -22,8 +22,8 @@ export function inAppBundleLoader(): BundleLoader {
   }
 }
 
-export function frameBundleLoader(frame: Omit<FrameSource, "code">): BundleLoader {
-  return (bundle) => Promise.resolve(bundledBuild(bundle, { definition: frameDefinition({ ...frame, code: bundle.code }) }))
+export function frameBundleLoader(frame: FrameHost): BundleLoader {
+  return (bundle) => Promise.resolve(bundledBuild(bundle, { definition: frameDefinition({ ...frame, code: bundle.code, backend: Boolean(bundle.manifest.backend) }) }))
 }
 
 export class FirstPartyBundleError extends Error {

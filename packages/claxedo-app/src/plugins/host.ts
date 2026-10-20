@@ -36,16 +36,21 @@ function createBuildPolicy(deps: PluginHostDeps): BuildPolicy {
   const missing = (build: PluginBuild): readonly PluginCapability[] =>
     build.manifest.requires.filter((capability) => !deps.offered(capability))
   const approval = (build: PluginBuild): ApprovalCheck => {
-    if (build.origin.kind === "bundled") return { kind: "approved" }
-    if (build.origin.builtAt === undefined) return { kind: "unapproved" }
-    return approvalCheck(preferences.approval(build.manifest.id), { manifest: build.manifest, hash: build.origin.hash, builtAt: build.origin.builtAt })
+    const live = liveOriginOf(build)
+    if (!live) return { kind: "approved" }
+    if (live.builtAt === undefined) return { kind: "unapproved" }
+    return approvalCheck(preferences.approval(build.manifest.id), { manifest: build.manifest, hash: live.hash, builtAt: live.builtAt })
   }
-  const stoppedBySafeMode = (build: PluginBuild) => build.origin.kind === "live" && preferences.safeMode()
+  const stoppedBySafeMode = (build: PluginBuild) => build.origin.kind !== "bundled" && preferences.safeMode()
   const wanted = (build: PluginBuild) => {
-    if (!preferences.switchedOn(build.manifest.id) || missing(build).length > 0) return false
+    if (!switchedOn(preferences, build) || missing(build).length > 0) return false
     return !stoppedBySafeMode(build) && approvalLetsRun(approval(build))
   }
   return { missing, approval, wanted }
+}
+
+function switchedOn(preferences: PluginPreferences, build: PluginBuild): boolean {
+  return build.origin.kind === "installed" || preferences.switchedOn(build.manifest.id)
 }
 
 function pluginSummaryOf(lifecycle: PluginLifecycle, policy: BuildPolicy, preferences: PluginPreferences): PluginSummary {
@@ -56,7 +61,7 @@ function pluginSummaryOf(lifecycle: PluginLifecycle, policy: BuildPolicy, prefer
     version: build.manifest.version,
     manifest: build.manifest,
     origin: build.origin,
-    switchedOn: preferences.switchedOn(lifecycle.id),
+    switchedOn: switchedOn(preferences, build),
     missing: policy.missing(build),
     approval: policy.approval(build),
     state: lifecycle.state(),
