@@ -22,6 +22,7 @@ import type { ChildSessionHost } from "./session-children"
 import type { AttachmentReader } from "./tool-image"
 import type { SessionStatusSnapshot } from "./session-status-snapshot"
 import type { HeldTurnLeases } from "./session-turn-lease"
+import type { SessionLifecycleHooks } from "./session-lifecycle"
 
 export type SessionLifecycleEvent = {
   type: "session.lifecycle"
@@ -127,9 +128,8 @@ export type SessionRouteOptions = {
   ) => Promise<void> | void
   beforeDeleteSession?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<void> | void
   afterMessageCheckpoint?: (c: Ctx, directory: RuntimeDirectory, sessionId: string, messages: AgentMessage[]) => Promise<void> | void
-  disposeSessionDocuments?: (sessionId: string) => Promise<void>
   readAttachment?: AttachmentReader
-  flushSessionDocuments?: (sessionId: string) => Promise<void>
+  sessionLifecycle?: readonly SessionLifecycleHooks[]
   exposeCommandRoute?: boolean
   publishGlobal: (event: AgentEventEnvelope) => void
   publishSessionLifecycle?: (event: SessionLifecycleEvent) => void

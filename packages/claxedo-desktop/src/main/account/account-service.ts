@@ -24,11 +24,7 @@ import { DesktopAuthDescriptorError, type BoundDesktopCredential } from "./auth-
 import { CredentialStoreConflict, type CredentialStore, type StoredDesktopCredential } from "./credential-store"
 import type { DesktopNativeAuth, RefreshOutcome } from "./desktop-native-auth"
 import { shouldRefresh } from "./secure-storage"
-import {
-  isStreamHostedOperation,
-  resolveHostedOperation,
-  type HostedOperationName,
-} from "@claxedo/account-contract"
+import { DESKTOP_HOSTED_OPERATIONS, type DesktopHostedOperationName } from "./hosted-operations"
 import { decodeHostedResponse, fetchHosted, hostedError } from "./hosted-transport"
 import { identityFromAccessToken } from "./identity"
 import type { CliCredentialFilePort } from "./cli-credential-file"
@@ -648,8 +644,8 @@ export function createAccountService(options: AccountServiceOptions) {
       }
     },
 
-    async run(name: HostedOperationName, input: Record<string, unknown> = {}): Promise<unknown> {
-      if (isStreamHostedOperation(name)) {
+    async run(name: DesktopHostedOperationName, input: Record<string, unknown> = {}): Promise<unknown> {
+      if (DESKTOP_HOSTED_OPERATIONS.isStream(name)) {
         throw new Error(`hosted operation "${name}" is a stream; use account.stream.open`)
       }
       const startedIn = era
@@ -657,7 +653,7 @@ export function createAccountService(options: AccountServiceOptions) {
       if (!access.ok) throw new Error(access.detail)
       const held = credential
       if (startedIn !== era || !held) throw new Error("not signed in")
-      const request = resolveHostedOperation(name, input)
+      const request = DESKTOP_HOSTED_OPERATIONS.resolve(name, input)
       // One bounded attempt per hosted call — see hosted-transport.ts.
       const issue = (token: string) =>
         fetchHosted(
@@ -691,12 +687,12 @@ export function createAccountService(options: AccountServiceOptions) {
      * caller (IPC) forwards text chunks to the renderer that opened it.
      */
     async openStream(input: {
-      name: HostedOperationName
+      name: DesktopHostedOperationName
       params?: Record<string, unknown>
       signal?: AbortSignal
       onChunk: (text: string) => void
     }): Promise<void> {
-      if (!isStreamHostedOperation(input.name)) {
+      if (!DESKTOP_HOSTED_OPERATIONS.isStream(input.name)) {
         throw new Error(`hosted operation "${input.name}" is not a stream`)
       }
       const startedIn = era
@@ -704,7 +700,7 @@ export function createAccountService(options: AccountServiceOptions) {
       if (!access.ok) throw new Error(access.detail)
       const held = credential
       if (startedIn !== era || !held) throw new Error("not signed in")
-      const request = resolveHostedOperation(input.name, input.params ?? {})
+      const request = DESKTOP_HOSTED_OPERATIONS.resolve(input.name, input.params ?? {})
       const controller = new AbortController()
       activeRequests.add(controller)
       const onAbort = () => controller.abort()

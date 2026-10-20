@@ -1,8 +1,6 @@
 import type { Translations } from "@/i18n"
 
 const en = {
-  "rail.tasks": "Tasks",
-  "rail.openTasks": "Open Tasks",
   "rail.marketplace": "Marketplace",
   "rail.openMarketplace": "Open Marketplace",
   "rail.projects": "Projects",

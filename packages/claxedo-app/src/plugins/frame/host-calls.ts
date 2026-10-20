@@ -1,13 +1,16 @@
 import type { PluginApi } from "@claxedo/plugin-api"
 import { unreachable } from "@/lib/machine"
-import type { FrameResponse, HostCall } from "./protocol"
+import type { HostCall } from "./protocol"
+import { frameResponseOf } from "./response-body"
 
-async function fetched(api: PluginApi, call: Extract<HostCall, { method: "server.fetch" }>): Promise<FrameResponse> {
-  const response = await api.server.fetch(call.path, { method: call.init.method, headers: (call.init.headers ?? []).map(([name, value]): [string, string] => [name, value]), body: call.init.body })
-  return { status: response.status, statusText: response.statusText, headers: [...response.headers.entries()], body: await response.text() }
+export type CallProgress = (text: string | undefined) => void
+
+async function fetched(api: PluginApi, call: Extract<HostCall, { method: "server.fetch" }>) {
+  const headers = (call.init.headers ?? []).map(([name, value]): [string, string] => [name, value])
+  return frameResponseOf(await api.server.fetch(call.path, { method: call.init.method, headers, body: call.init.body }))
 }
 
-export async function performCall(api: PluginApi, call: HostCall): Promise<unknown> {
+export async function performCall(api: PluginApi, call: HostCall, progress: CallProgress): Promise<unknown> {
   switch (call.method) {
     case "pages.open":
       return api.pages.open(call.pageId, call.params)
@@ -15,6 +18,8 @@ export async function performCall(api: PluginApi, call: HostCall): Promise<unkno
       return api.overlays.open(call.overlayId)
     case "overlays.close":
       return api.overlays.close(call.overlayId)
+    case "settings.open":
+      return api.settings.open(call.sectionId)
     case "commands.run":
       return api.commands.run(call.commandId)
     case "workbench.activate":
@@ -27,6 +32,8 @@ export async function performCall(api: PluginApi, call: HostCall): Promise<unkno
       return api.sessions.create(call.input)
     case "sessions.open":
       return api.sessions.open(call.ref)
+    case "workspaces.followStart":
+      return api.workspaces.followStart(call.workspaceId, progress)
     case "server.fetch":
       return fetched(api, call)
     case "server.operation":

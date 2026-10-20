@@ -1,7 +1,7 @@
 /**
  * The account's IPC surface: one channel per named operation, and nothing else.
  *
- * Registration is generated from `HOSTED_OPERATIONS` rather than written by
+ * Registration is generated from `DESKTOP_HOSTED_OPERATIONS` rather than written by
  * hand. A hand-written list is a second place the set of operations lives, and
  * the two would eventually disagree in the direction nobody notices — an extra
  * channel serving something the matrix never described.
@@ -16,14 +16,8 @@ import { randomUUID } from "node:crypto"
 import type { IpcMainInvokeEvent } from "electron"
 import { asRecord } from "@claxedo/helpers/guards"
 import { readRecord, readString } from "@claxedo/helpers/readers"
-import {
-  HOSTED_OPERATIONS,
-  hostedOperationNames,
-  isHostedOperationName,
-  isStreamHostedOperation,
-  type HostedOperationName,
-} from "@claxedo/account-contract"
 import type { AccountState } from "./account-service"
+import { DESKTOP_HOSTED_OPERATIONS, type DesktopHostedOperationName } from "./hosted-operations"
 
 export const ACCOUNT_STATE_CHANNEL = "claxedo.account.state"
 export const ACCOUNT_STATE_CHANGED_CHANNEL = "claxedo.account.stateChanged"
@@ -40,17 +34,17 @@ const ACCOUNT_STREAM_RESERVATION_TTL_MS = 30_000
 
 /**
  * Operations main performs but the renderer may not ask for: the declarations
- * with `exposure.renderer: false`, each of which says why next to it in
- * `@claxedo/account-contract`. Withheld channels stay registered, so the IPC
+ * with `exposure.renderer: false`, each of which says why next to it where it
+ * is declared. Withheld channels stay registered, so the IPC
  * surface equals the operation table and a call to one is a named refusal
  * rather than a missing channel.
  */
-export const RENDERER_WITHHELD_OPERATIONS: readonly HostedOperationName[] = hostedOperationNames().filter(
-  (name) => !HOSTED_OPERATIONS[name].exposure.renderer,
+export const RENDERER_WITHHELD_OPERATIONS: readonly DesktopHostedOperationName[] = DESKTOP_HOSTED_OPERATIONS.names().filter(
+  (name) => !DESKTOP_HOSTED_OPERATIONS.operations[name].exposure.renderer,
 )
 
 /** One channel per operation: a single channel taking a name is a place for a future argument to become the route. */
-export function hostedOperationChannel(name: HostedOperationName) {
+export function hostedOperationChannel(name: DesktopHostedOperationName) {
   return `claxedo.account.operation:${name}`
 }
 
@@ -72,9 +66,9 @@ export type AccountIpcService = {
   signIn: () => Promise<unknown>
   signOut: () => Promise<void>
   cancelSignIn: () => Promise<void>
-  run: (name: HostedOperationName, input?: Record<string, unknown>) => Promise<unknown>
+  run: (name: DesktopHostedOperationName, input?: Record<string, unknown>) => Promise<unknown>
   openStream: (input: {
-    name: HostedOperationName
+    name: DesktopHostedOperationName
     params?: Record<string, unknown>
     signal?: AbortSignal
     onChunk: (text: string) => void
@@ -111,10 +105,10 @@ export function registerAccountIpc(input: { ipcMain: AccountIpcTarget; service: 
     return service.state()
   })
 
-  const withheld = new Set<HostedOperationName>(RENDERER_WITHHELD_OPERATIONS)
+  const withheld = new Set<DesktopHostedOperationName>(RENDERER_WITHHELD_OPERATIONS)
   type StreamSender = IpcMainInvokeEvent["sender"]
   type ActiveStream = {
-    operation: HostedOperationName
+    operation: DesktopHostedOperationName
     params: Record<string, unknown>
     sender: StreamSender
     controller: AbortController
@@ -137,7 +131,7 @@ export function registerAccountIpc(input: { ipcMain: AccountIpcTarget; service: 
     }
   }
 
-  for (const name of hostedOperationNames()) {
+  for (const name of DESKTOP_HOSTED_OPERATIONS.names()) {
     if (withheld.has(name)) {
       // Refused before `service.run`, so no request is made: no token is
       // minted, no nonce is burned, and no renderer-supplied public key
@@ -148,8 +142,8 @@ export function registerAccountIpc(input: { ipcMain: AccountIpcTarget; service: 
       continue
     }
 
-    if (isStreamHostedOperation(name)) {
-      // Stream ops stay registered so channel inventory matches HOSTED_OPERATIONS,
+    if (DESKTOP_HOSTED_OPERATIONS.isStream(name)) {
+      // Stream ops stay registered so channel inventory matches the operation table,
       // but unary invoke is refused — open via ACCOUNT_STREAM_OPEN_CHANNEL.
       handle(hostedOperationChannel(name), async () => {
         throw new Error(`hosted operation "${name}" is a stream; use ${ACCOUNT_STREAM_OPEN_CHANNEL}`)
@@ -169,7 +163,7 @@ export function registerAccountIpc(input: { ipcMain: AccountIpcTarget; service: 
     // Read, not declared: the payload is renderer input, so the operation name
     // has to survive a check before it can pick a stream.
     const operation = readString(payload, "operation")
-    if (!operation || !isHostedOperationName(operation) || !isStreamHostedOperation(operation)) {
+    if (!operation || !DESKTOP_HOSTED_OPERATIONS.has(operation) || !DESKTOP_HOSTED_OPERATIONS.isStream(operation)) {
       throw new Error(`hosted stream operation "${String(operation)}" is not allowed`)
     }
     if (withheld.has(operation)) {

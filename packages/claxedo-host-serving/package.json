@@ -38,11 +38,12 @@
     "test": "node ./node_modules/vitest/vitest.mjs run --reporter=default --reporter=junit --outputFile.junit=.artifacts/unit/junit.xml"
   },
   "dependencies": {
+    "@claxedo/documents": "workspace:*",
     "@claxedo/server-core": "workspace:*",
+    "@claxedo/session-core": "workspace:*",
     "@claxedo/workspace-runtime": "workspace:*",
     "@hono/node-server": "1.19.11",
-    "hono": "4.12.34",
-    "@claxedo/session-core": "workspace:*"
+    "hono": "4.12.34"
   },
   "devDependencies": {
     "@claxedo/workspace-relay": "workspace:*",

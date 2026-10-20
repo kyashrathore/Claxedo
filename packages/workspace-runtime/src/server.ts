@@ -15,7 +15,7 @@ import { terminalIo } from "./pty/io-clock"
 import { createRelayHostAuthMiddleware, type RelayHostAuthOptions } from "@claxedo/session-core/relay-host"
 import type { WorkspaceRelayHostTunnelOptions } from "./workspace-relay-host-tunnel"
 import { ConfigRoutes } from "./routes/config"
-import { RuntimeDocumentHydrationRoutes } from "./routes/document-hydration"
+import { authorizeHostCapability } from "./routes/host-capability-access"
 import {
   mountRouteContributions,
   type WorkspaceRuntimeRouteContribution,
@@ -362,6 +362,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.refreshDirectCredential ? { refreshDirectCredential: options.refreshDirectCredential } : {}),
     ...(options.harness ? { harness: options.harness } : {}),
     ...(options.afterCreateSession ? { afterCreateSession: options.afterCreateSession } : {}),
+    sessionLifecycle: (options.routeContributions ?? []).flatMap((contribution) => contribution.sessionLifecycle ? [contribution.sessionLifecycle] : []),
     sessionIdWorkspace: options.sessionIdWorkspace,
     sessionAccessPolicy,
     target: options.target ?? { workspaceId: workspaceId(), directory: workspaceDir() },
@@ -521,11 +522,6 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
   // Binding management inherits the workspace exposure/auth boundary. Tool
   // execution itself is only reachable through each Session's nonce-bound
   // loopback callback, which supplies the canonical Session identity.
-  app.route("/", RuntimeDocumentHydrationRoutes({
-    ...(options.exposure?.kind === "relay" ? { workspaceId: options.exposure.auth.workspaceId } : {}),
-    sessionAccessPolicy,
-    ...(process.env.CLAXEDO_CONTROL_PLANE_URL ? { controlPlaneOrigin: process.env.CLAXEDO_CONTROL_PLANE_URL } : {}),
-  }))
   type SessionToolRegistration = Parameters<typeof host.registerSessionTools>[0]
   const sessionToolGroups = new Map<string, Map<string, SessionToolRegistration>>()
   const dispatchSessionTool = async (url: string, call: { sessionID: string; name: string; toolCallID: string; input: unknown }) => {
@@ -575,6 +571,9 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     contributions: options.routeContributions ?? [],
     context: {
       workspaceId: options.target?.workspaceId ?? workspaceId(),
+      ...(options.exposure?.kind === "relay" ? { relayWorkspaceId: options.exposure.auth.workspaceId } : {}),
+      authorizeSessionControl: (c, sessionId) =>
+        authorizeHostCapability(c, { sessionAccessPolicy }, "contribution_write", sessionAccessContext(c), sessionId),
       directory: options.target?.directory ?? workspaceDir(),
       stateDirectory: options.storeRoot ?? workspaceRuntimeStoreDir(),
       fetch: contributionFetch,

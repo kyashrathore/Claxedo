@@ -34,8 +34,6 @@
     "createWorkspaceRuntimeJwtManagementAuth",
     "embeddedWorkspaceRuntimeExposure",
     "firstPartyMcpServerFor",
-    "flushRuntimeDocument",
-    "forgetRuntimeDocuments",
     "isLoopbackHostname",
     "loadWorkspaceRuntimeManagementVerificationKey",
     "loopbackWorkspaceRuntimeExposure",

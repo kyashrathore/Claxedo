@@ -1,11 +1,14 @@
 # Desktop hosted-operation matrix
 
-Status: **registry consolidated; hosted route coverage incomplete**. Each operation
-is declared in `packages/account-contract/src/hosted-operations.ts` with its
-method, path builder, input/output codecs, retry policy and exposure. Names and
-types derive from those declarations. Desktop and browser transports construct
-requests through `resolveHostedOperation`; desktop main owns credentials and
-`account-ipc.ts` owns renderer withholding. Nothing reads this document.
+Status: **registry consolidated; hosted route coverage incomplete**. Each core
+operation is declared in `packages/account-contract/src/hosted-operations.ts`,
+and each first-party plugin's in its own package (`documents.*` in
+`packages/claxedo-documents/src/operations.ts`), with its method, path builder,
+input/output codecs, retry policy and exposure. `hostedOperationTable(...)`
+composes them, refusing a name declared twice; names and types derive from the
+composed table. Desktop and browser transports construct requests through its
+`resolve`; desktop main owns credentials and `account-ipc.ts` owns renderer
+withholding. Nothing reads this document.
 
 ## Why this document exists
 
@@ -98,8 +101,7 @@ key. `unsafe` means an uncertain result must be surfaced, never silently
 retried — a duplicate here creates a duplicate workspace, charge, or document.
 
 **There is no client-side idempotency-key mechanism today, and the desktop
-cannot grow one on its own.** `HOSTED_OPERATIONS` in
-`packages/account-contract/src/hosted-operations.ts` declares each request's
+cannot grow one on its own.** The composed operation table declares each request's
 method, path template, body fields and headers; no declaration sends an
 idempotency key header, and every route named below that accepts a key
 accepts it as a body field its schema must declare. So an `idempotency-key` row
@@ -219,7 +221,7 @@ are withheld from the renderer (see "Withheld from the renderer" below).
 | `documents.update` | `features/documents/data/documents-api.ts` | `PATCH /documents/:id` | unary | safe | |
 | `documents.content.get` | `features/documents/data/documents-api.ts` | `GET /documents/:id/content` | unary | safe | |
 | `documents.content.put` | `features/documents/data/documents-api.ts` | `PUT /documents/:id/content` | upload | unsafe | Body is document content, not a JSON envelope. A `unary` handler here would buffer whole documents into IPC messages. |
-| `documents.export` | `features/documents/data/documents-api.ts` | `GET /documents/:id/export` | unary | safe | Binary payload returned as `{ bytesBase64, contentType? }` over IPC (not a raw Response). |
+| `documents.export` | `features/documents/data/documents-api.ts` | `GET /documents/:id/export` | unary | safe | Declared `response: "bytes"`: main returns any such answer as `{ bytesBase64, contentType? }` over IPC (not a raw Response). |
 | `documents.agentOpen` | `features/documents/data/documents-api.ts` | `POST /documents/:id/agent-open` | unary | unsafe | |
 | `documents.runtimeConflictResolve` | `features/documents/data/documents-api.ts` | `POST /documents/:id/runtime-conflict/resolve` | unary | unsafe | |
 | `documents.moveToRepository` | `features/documents/data/documents-api.ts` | `POST /documents/:id/move-to-repository` | unary | unsafe | |

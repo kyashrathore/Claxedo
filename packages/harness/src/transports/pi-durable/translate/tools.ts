@@ -1,6 +1,6 @@
-import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
+import { toolMcpFacts, type AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { asArray, asRecordOrEmpty as row, asString } from "@claxedo/helpers/guards"
-import { contentBlockImages } from "../../../translate/tool-attachments"
+import { contentBlockImages, mcpAppAttachment } from "../../../translate/tool-attachments"
 import { toolDisplayFromInput } from "../../../translate/tool-display"
 import { piStep, type PiDurableTranslatorState, type PiStep } from "./state"
 
@@ -85,6 +85,14 @@ export function piToolEnd(state: PiDurableTranslatorState, frame: Frame): PiStep
   return piStep(ended.state, [...unstarted, ...ended.events])
 }
 
+function piToolMcp(details: unknown) {
+  const facts = toolMcpFacts(row(details))
+  const app = facts?.app ? mcpAppAttachment(row(details).appDocument) : []
+  if (!facts?.app || app.length > 0) return { mcp: facts, app }
+  const { app: _unattached, ...mcp } = facts
+  return { mcp, app }
+}
+
 function piToolResult(state: PiDurableTranslatorState, frame: Frame, id: string): PiStep {
   const entry = row(frame.entry)
   const result = row(asArray(entry.model)[0])
@@ -92,13 +100,15 @@ function piToolResult(state: PiDurableTranslatorState, frame: Frame, id: string)
     return piStep(state, [{ type: "tool-error", toolCallId: id, error: `Pi tool ${String(frame.toolName)} ended without a result` }])
   }
   const content = shownContent(result.content)
+  const { mcp, app } = piToolMcp(result.details)
+  const metadata = mcp ? { metadata: { mcp } } : {}
   if (result.isError === true) {
     const error = [piResultText(content), ...diagnosticMessages(entry.data)].filter((text) => text !== "").join("\n")
-    return piStep(state, [{ type: "tool-error", toolCallId: id, error }])
+    return piStep(state, [{ type: "tool-error", toolCallId: id, error, ...metadata }])
   }
   const notes = diagnosticMessages(entry.data, "warn").map((text) => ({ type: "text", text }))
   const output = { content: [...content, ...notes], ...(entry.data === undefined ? {} : { details: entry.data }) }
-  const images = contentBlockImages(content)
-  const event: AgentRuntimeEvent = { type: "tool-output", toolCallId: id, output, ...(images.length ? { attachments: images } : {}) }
+  const attachments = [...contentBlockImages(content), ...app]
+  const event: AgentRuntimeEvent = { type: "tool-output", toolCallId: id, output, ...(attachments.length ? { attachments } : {}), ...metadata }
   return piStep(state, [event])
 }

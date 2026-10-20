@@ -28,7 +28,7 @@ export default defineConfig({
     testTimeout: 60_000,
     hookTimeout: 30_000,
     fileParallelism: false,
-    setupFiles: ["../../script/test-home/guard.mjs"],
+    setupFiles: ["../../script/test-home/guard.mjs", "./src/app/test-support/claxedo-schema.ts"],
     exclude: [...configDefaults.exclude, ...(process.env.CLAXEDO_REAL_CLI_SUITES === "skip" ? ["src/**/*.live.test.ts"] : [])],
   },
 })

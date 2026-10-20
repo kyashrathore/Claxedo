@@ -6,6 +6,6 @@ export default defineConfig({
     // PowerShell runner, 1.4 to 5.3 s on the hosted runner, so whichever test
     // writes first would otherwise race the 5 s default.
     ...(process.platform === "win32" ? { testTimeout: 15_000 } : {}),
-    setupFiles: ["../../script/test-home/guard.mjs"],
+    setupFiles: ["../../script/test-home/guard.mjs", "./src/test-support/claxedo-schema.ts"],
   },
 })

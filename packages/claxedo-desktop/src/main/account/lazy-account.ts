@@ -1,5 +1,5 @@
 import type { AccountState } from "./account-service"
-import type { HostedOperationName } from "@claxedo/account-contract"
+import type { DesktopHostedOperationName } from "./hosted-operations"
 import { registerAccountIpc, type AccountIpcService, type AccountIpcTarget } from "./account-ipc"
 import type { AccountConfigEnv } from "./account-config"
 import type { AccountAssemblyInput, createAccountAssembly } from "./index"
@@ -35,7 +35,7 @@ export function setupLazyAccount(input: {
   onStateChange?: AccountAssemblyInput["onStateChange"]
   cliSignInMode?: AccountAssemblyInput["cliSignInMode"]
   /** Observes every completed operation by name; the value never crosses. */
-  onOperation?: (name: HostedOperationName) => void
+  onOperation?: (name: DesktopHostedOperationName) => void
   load?: () => Promise<AccountModule>
 }): LazyAccount {
   let assembly: ReturnType<typeof createAccountAssembly> | undefined

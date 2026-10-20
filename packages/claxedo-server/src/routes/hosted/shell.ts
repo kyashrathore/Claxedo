@@ -59,6 +59,8 @@ export type HostedShellRouteOptions = {
   version?: string
   /** Whether the entry mounted the hosted Connections family; the bootstrap declares it. */
   connections?: boolean
+  /** The capabilities of the first-party plugins the entry mounted; the bootstrap declares them. */
+  capabilities?: readonly string[]
   /** Heartbeat cadence for the events stream (tests shrink this). */
   heartbeatMs?: number
   /**
@@ -386,7 +388,7 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
         healthy: true,
         version: version(options),
         events: { hostAggregate: false },
-        deployment: { serverKind: "hosted", issuesSessions: issuesSessions(options.authConfig), documents: false, connections: options.connections === true },
+        deployment: { serverKind: "hosted", issuesSessions: issuesSessions(options.authConfig), capabilities: options.capabilities ?? [], connections: options.connections === true },
       })
     })
     .get("/path", (c) => c.json(hostedPath(directoryInput(c))))

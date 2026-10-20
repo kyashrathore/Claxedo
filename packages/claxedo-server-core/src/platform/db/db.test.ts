@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 // The engine directly: these tests exercise the boot pipeline (migrations,
 // repair gate) against both the real journal and synthetic ones.
-import { ClaxedoDB, configureClaxedoMigrations } from "./db"
+import { ClaxedoDB, configureClaxedoSchema, queryRows, textColumns } from "./db"
 import { CLAXEDO_MIGRATION_JOURNAL } from "./journal"
 
 const previousDataDir = process.env.CLAXEDO_DATA_DIR
@@ -13,14 +13,14 @@ let root: string
 beforeEach(() => {
   root = mkdtempSync(path.join(tmpdir(), "claxedo-db-boot-"))
   process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
-  configureClaxedoMigrations(CLAXEDO_MIGRATION_JOURNAL)
+  configureClaxedoSchema({ journals: [CLAXEDO_MIGRATION_JOURNAL] })
 })
 
 afterEach(() => {
   ClaxedoDB.close()
   if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
   else process.env.CLAXEDO_DATA_DIR = previousDataDir
-  configureClaxedoMigrations(CLAXEDO_MIGRATION_JOURNAL)
+  configureClaxedoSchema({ journals: [CLAXEDO_MIGRATION_JOURNAL] })
   rmSync(root, { recursive: true, force: true })
 })
 
@@ -125,7 +125,7 @@ describe("migrations", () => {
     const sqlFile = path.join(journal, "20990101000000_lazy_probe", "migration.sql")
     mkdirSync(path.dirname(sqlFile), { recursive: true })
     writeFileSync(sqlFile, "CREATE TABLE claxedo_lazy_probe (id text PRIMARY KEY)")
-    configureClaxedoMigrations(journal)
+    configureClaxedoSchema({ journals: [journal] })
 
     expect(hasTable(boot(), "claxedo_lazy_probe")).toBe(true)
 
@@ -213,10 +213,44 @@ describe("migrations", () => {
     ])
   })
 
+  test("journals compose into one order by timestamp, so a plugin's migration lands between the host's", () => {
+    const write = (journal: string, name: string, sql: string) => {
+      mkdirSync(path.join(root, journal, name), { recursive: true })
+      writeFileSync(path.join(root, journal, name, "migration.sql"), sql)
+    }
+    write("host", "20990101000000_host_first", "CREATE TABLE claxedo_order (step text)")
+    write("host", "20990103000000_host_last", "INSERT INTO claxedo_order VALUES ('host-last')")
+    write("plugin", "20990102000000_plugin_middle", "INSERT INTO claxedo_order VALUES ('plugin-middle')")
+    configureClaxedoSchema({ journals: [path.join(root, "host"), path.join(root, "plugin")] })
+
+    const sqlite = boot()
+    expect(textColumns(queryRows(sqlite, "SELECT name FROM __claxedo_migrations ORDER BY rowid"), "name"))
+      .toEqual(["20990101000000_host_first", "20990102000000_plugin_middle", "20990103000000_host_last"])
+    expect(textColumns(queryRows(sqlite, "SELECT step FROM claxedo_order ORDER BY rowid"), "step")).toEqual(["plugin-middle", "host-last"])
+  })
+
+  test("a migration name two journals both claim refuses the boot", () => {
+    for (const journal of ["host", "plugin"]) {
+      mkdirSync(path.join(root, journal, "20990101000000_shared"), { recursive: true })
+      writeFileSync(path.join(root, journal, "20990101000000_shared", "migration.sql"), "SELECT 1")
+    }
+    configureClaxedoSchema({ journals: [path.join(root, "host"), path.join(root, "plugin")] })
+
+    expect(() => boot()).toThrow(/20990101000000_shared is in two journals/)
+  })
+
+  test("an empty plugin journal, or none configured, refuses the boot rather than open a database without its tables", () => {
+    mkdirSync(path.join(root, "empty"), { recursive: true })
+    configureClaxedoSchema({ journals: [CLAXEDO_MIGRATION_JOURNAL, path.join(root, "empty")] })
+    expect(() => boot()).toThrow(/is empty or missing/)
+    configureClaxedoSchema({ journals: [] })
+    expect(() => boot()).toThrow(/before its migration journals were configured/)
+  })
+
   test("a pending migration whose SQL cannot be read fails the boot", () => {
     const journal = path.join(root, "journal")
     mkdirSync(path.join(journal, "20990101000000_broken", "migration.sql"), { recursive: true })
-    configureClaxedoMigrations(journal)
+    configureClaxedoSchema({ journals: [journal] })
 
     expect(() => boot()).toThrow(/EISDIR/)
   })

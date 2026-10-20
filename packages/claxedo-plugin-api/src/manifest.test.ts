@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { isPluginId } from "./id"
 import type { z } from "zod"
-import { PluginManifestError, pluginBackendRouteAllowed, pluginOperationAllowed, pluginRouteAllowed, type PluginBackend, type PluginManifest, type PluginServerAccess } from "./manifest"
+import { FIRST_PARTY_PLUGIN_IDS, isFirstPartyPluginId, PluginManifestError, pluginBackendRouteAllowed, pluginOperationAllowed, pluginRouteAllowed, type PluginBackend, type PluginManifest, type PluginServerAccess } from "./manifest"
 import { pluginBackendSchema, pluginManifestSchema, pluginServerAccessSchema, readPluginManifest } from "./manifest-schema"
 
 const packageJson = {
@@ -45,6 +45,10 @@ describe("readPluginManifest", () => {
     expect(manifest.backend).toEqual({ entry: "./backend.ts", objects: [], outbound: [], routes: ["GET /"] })
   })
 
+  test("reads any capability id a server may report, since the server decides what it offers", () => {
+    expect(readPluginManifest({ claxedo: { ...appOnly, requires: ["tasks", "claxedo-review"] } }).requires).toEqual(["tasks", "claxedo-review"])
+  })
+
   test("keeps every declared field", () => {
     expect(readPluginManifest(packageJson)).toEqual(packageJson.claxedo)
   })
@@ -55,7 +59,7 @@ describe("readPluginManifest", () => {
     ["an id ending in a dash", { claxedo: { ...packageJson.claxedo, id: "notes-" } }, "claxedo.id"],
     ["an app entry outside the package", { claxedo: { ...packageJson.claxedo, app: "src/app.tsx" } }, "claxedo.app"],
     ["a route outside the Claxedo server", { claxedo: { ...packageJson.claxedo, server: { routes: ["/api/wr/session"] } } }, "claxedo.server.routes.0"],
-    ["an unknown capability", { claxedo: { ...packageJson.claxedo, requires: ["network"] } }, "claxedo.requires.0"],
+    ["a capability that is not an id", { claxedo: { ...packageJson.claxedo, requires: ["Tasks!"] } }, "claxedo.requires.0"],
     ["an operation with no namespace", { claxedo: { ...packageJson.claxedo, server: { operations: ["list"] } } }, "claxedo.server.operations.0"],
     ["a field the manifest does not know", { claxedo: { ...packageJson.claxedo, sandbox: true } }, "claxedo"],
     ["a backend entry outside the package", { claxedo: { ...appOnly, backend: { ...packageJson.claxedo.backend, entry: "/src/backend.ts" } } }, "claxedo.backend.entry"],
@@ -142,5 +146,14 @@ describe("isPluginId", () => {
     expect(isPluginId("counter")).toBe(true)
     expect(isPluginId("a".repeat(64))).toBe(true)
     for (const id of ["", ".", "..", "../admin", "Counter", "counter-", "-counter", "a".repeat(65)]) expect(isPluginId(id), id).toBe(false)
+  })
+})
+
+describe("first-party plugin ids", () => {
+  test("name the host's bundled plugins, which are valid plugin ids no live plugin may take", () => {
+    expect(FIRST_PARTY_PLUGIN_IDS).toEqual(["claxedo-tasks", "claxedo-documents"])
+    expect(FIRST_PARTY_PLUGIN_IDS.every(isPluginId)).toBe(true)
+    expect(isFirstPartyPluginId("claxedo-tasks")).toBe(true)
+    expect(isFirstPartyPluginId("tasks")).toBe(false)
   })
 })

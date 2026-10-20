@@ -20,6 +20,7 @@ export type {
   ShellRegistries,
   SidebarItem,
   ThemeEntry,
+  ToolCardEntry,
 } from "./types"
 export type { FirstPartyEntries } from "./registries"
 export { isJson } from "./json"

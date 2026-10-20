@@ -283,6 +283,7 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - Re-based to the measured 2,348 with no headroom. v1's comparable directory code is about 3,160 lines.
 
 ## Orchestrator, 2026-09-26: Tasks budget re-based: an app domain at v1 parity, not the plan's Tasks plugin
+- Reversed by "Owner, 2026-10-18: Tasks and Documents are first-party plugins": Tasks is no longer an app domain, and the budget has no Tasks part.
 - The plan's 2.5k was the Tasks plugin's number. The handoff recorded Tasks becoming an app domain (`src/tasks`), over budget and "awaiting a scope review, not squeezed". Presets as a Settings section then added 1,195 lines.
 - A duplicate status-change runner and unreachable selection state went first (4,449 → 4,414).
 - Re-based to the measured 4,414 with no headroom. v1's `features/tasks` is 4,636 lines. Cutting detail editing, subtasks, the properties rail or the presets picker needs an owner ruling under the parity rule.
@@ -384,4 +385,12 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - Owner ruling (unreleased, no users, no backward compatibility): a runtime that receives the provider projection's new `account` field before its rebuild refuses the whole snapshot, and that is accepted. The validator and the broker that sends the field changed in one commit, ungated; a separately deployed runtime picks it up with its next build.
 
 ## Owner, 2026-09-28: Pages removed pending a real build
+- Reversed in part by "Owner, 2026-10-18: Tasks and Documents are first-party plugins": the app ships bundled first-party plugins again, and the documents service is the Documents plugin's. Pages is still not built.
 - The empty Pages plugin stub (`plugins/pages`) is removed with the app's bundled-plugin path and the editor dependencies only Pages would have used; the app runs only the machine's live plugins. Pages comes back when it is actually built. The server's documents service stays.
+
+## Owner, 2026-10-18: Tasks and Documents are first-party plugins
+- Tasks and Documents are 100% plugins, backend and frontend, each in its own first-party package: `packages/claxedo-tasks` (`@claxedo/tasks`, id `claxedo-tasks`) and `packages/claxedo-documents` (`@claxedo/documents`, id `claxedo-documents`). They run in-process on the desktop, local web and hosted. The hosts (local daemon, hosted Worker, workspace runtime, session-core, MCP, CLI, app) gain only generic extension points and keep no Tasks or Documents code. Plan: `docs/plans/2026-10-18-feat-first-party-plugins-plan.md`.
+- Reverses "Orchestrator, 2026-09-26: Tasks budget re-based: an app domain at v1 parity, not the plan's Tasks plugin": `src/tasks` is deleted. The Tasks page and Settings → Presets are the Tasks plugin's A2UI surfaces, drawn by the app's renderer with no Tasks stylesheet (the surface look replaces `tasks.css`, R5 in the plan), and the budget's Tasks part is gone.
+- Reverses "Owner, 2026-09-28: Pages removed pending a real build" where it says the app runs only the machine's live plugins: the app ships Tasks and Documents as bundled plugins (`src/plugins/first-party/`), loaded through the same loaders as a live plugin, approved because the host ships them, and kept on in safe mode. Documents is a backend move only: its app entry draws its two transcript cards and no page, so Pages is still not built.
+- Existing data and tables are kept (SQLite, D1, R2): migration names and order, the D1 baseline's bytes, the MCP group ids `tasks` and `documents`, the tool names and the IPC channels are unchanged.
+- The sandboxed plugin backends (`claxedo-server/src/plugin-backends/`) are not used for either plugin.

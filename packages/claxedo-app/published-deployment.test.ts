@@ -4,7 +4,7 @@ import { publishDeployment, readPublishedDeployment } from "./published-deployme
 import { PUBLISHED_DEPLOYMENT_ELEMENT_ID, publishedDeployment } from "./src/server/published-deployment"
 
 const API = "https://api.claxedo.test"
-const HOSTED = { healthy: true, version: "1.0.0", events: { hostAggregate: false }, deployment: { serverKind: "hosted", issuesSessions: true, documents: false, connections: true } }
+const HOSTED = { healthy: true, version: "1.0.0", events: { hostAggregate: false }, deployment: { serverKind: "hosted", issuesSessions: true, capabilities: ["documents"], connections: true } }
 
 function descriptor(expiresAt = Date.now() + 60_000) {
   return { adapter: "better-auth", deploymentId: "staging", configurationVersion: "v1", expiresAt, issuer: `${API}/api/auth`, methods: ["github"], native: { cli: { clientId: "</script><script>alert(1)</script>" } } }

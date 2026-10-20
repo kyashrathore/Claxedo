@@ -18,7 +18,13 @@ export type SessionStatus = "idle" | "running" | "running_in_background" | "wait
 export interface SessionsApi {
   create(input: CreateSessionInput): Promise<SessionRef>
   status(ref: SessionRef): SessionStatus
-  open(ref: SessionRef): void
+  open(ref: SessionRef): Promise<void>
+}
+
+export type WorkspaceStartResult = { kind: "running" } | { kind: "failed"; message: string }
+
+export interface WorkspacesApi {
+  followStart(workspaceId: string, onProgress: (text: string | undefined) => void): Promise<WorkspaceStartResult>
 }
 
 export interface ProjectSummary {

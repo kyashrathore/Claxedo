@@ -1,0 +1,189 @@
+[data-slot="surface-file-picker"] {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  border-radius: var(--radius-lg);
+
+  &:focus-visible {
+    outline: 2px solid var(--v2-border-border-focus);
+    outline-offset: 2px;
+  }
+}
+
+[data-slot="surface-file-drop"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 12px;
+  border: 1px dashed var(--v2-border-border-base);
+  border-radius: var(--radius-lg);
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
+
+  [data-slot="surface-file-picker"][data-drop-target="true"] & {
+    border-color: var(--v2-border-border-focus);
+    background: var(--v2-background-bg-layer-01);
+  }
+}
+
+[data-slot="surface-file-hint"] {
+  color: var(--v2-text-text-muted);
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-20);
+}
+
+[data-slot="surface-combobox"] {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+[data-slot="surface-combobox-input"] {
+  box-sizing: border-box;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-md);
+  outline: 1px solid transparent;
+  background: var(--v2-background-bg-base);
+  box-shadow: var(--v2-elevation-button-neutral);
+  color: var(--v2-text-text-base);
+  font: inherit;
+  font-size: var(--font-size-compact);
+
+  &::placeholder {
+    color: var(--v2-text-text-muted);
+  }
+
+  &:focus {
+    outline-color: var(--v2-border-border-focus);
+    box-shadow: none;
+  }
+}
+
+[data-slot="surface-combobox-popup"] {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 240px;
+  padding: 4px;
+  overflow-y: auto;
+  border: 1px solid var(--v2-border-border-muted);
+  border-radius: var(--radius-lg);
+  background: var(--v2-background-bg-base);
+}
+
+[data-slot="surface-combobox-list"] {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-slot="surface-combobox-option"] {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+
+  &:hover,
+  &[data-active="true"] {
+    background: var(--v2-overlay-simple-overlay-hover);
+  }
+
+  &[aria-selected="true"] [data-slot="surface-combobox-option-label"] {
+    font-weight: 600;
+  }
+}
+
+[data-slot="surface-combobox-option-label"] {
+  color: var(--v2-text-text-base);
+  font-size: var(--font-size-compact);
+  line-height: var(--line-height-20);
+}
+
+[data-slot="surface-combobox-option-description"],
+[data-slot="surface-combobox-empty"],
+[data-slot="surface-combobox-status"] {
+  color: var(--v2-text-text-muted);
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-20);
+}
+
+[data-slot="surface-combobox-empty"],
+[data-slot="surface-combobox-status"] {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+}
+
+[data-slot="surface-combobox-chips"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+[data-slot="surface-combobox-chip"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 24px;
+  padding: 0 2px 0 8px;
+  border-radius: var(--radius-md);
+  background: var(--v2-background-bg-layer-01);
+  box-shadow: 0 0 0 0.5px var(--v2-border-border-base);
+  color: var(--v2-text-text-base);
+  font-size: var(--font-size-small);
+}
+
+[data-slot="surface-combobox-chip-remove"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--v2-icon-icon-muted);
+  cursor: pointer;
+
+  &:hover,
+  &:focus-visible {
+    background: var(--v2-overlay-simple-overlay-hover);
+    color: var(--v2-icon-icon-base);
+  }
+}
+
+[data-slot="surface-agent-configuration"] {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+
+  [data-action="prompt-harness-model"] {
+    justify-content: flex-start;
+    width: min(100%, 280px);
+    max-width: 100%;
+    height: 28px;
+    padding: 0 8px;
+    border-radius: var(--radius-md);
+    background: var(--v2-background-bg-base);
+    box-shadow: var(--v2-elevation-button-neutral);
+
+    > .ui-icon:last-child {
+      margin-inline-start: auto;
+    }
+  }
+}

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "vitest"
 import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 import { createD1SandboxPassRegister } from "./d1-sandbox-pass-register"
-import { memorySandboxPassRegister, type SandboxPassRecord, type SandboxPassRegister } from "./sandbox-pass-register"
+import { memorySandboxPassRegister, type SandboxPassRecord, type SandboxPassRegister } from "@claxedo/server-core/platform/auth/sandbox-pass-register"
 
 const active: ControlPlaneDatabase[] = []
 

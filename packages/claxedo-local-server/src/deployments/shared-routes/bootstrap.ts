@@ -45,6 +45,8 @@ type Options = {
   hostEnrollmentId?: () => string | undefined
   /** The name this machine derives for itself; an enrolled machine's control-plane name is its owner's rename. */
   hostName?: () => string
+  /** The capabilities of the first-party plugins this composition mounted, which app plugins name in `requires`. */
+  capabilities: readonly string[]
 }
 
 
@@ -78,7 +80,7 @@ function declaresSessions(options: Options) {
 }
 
 function deployment(options: Options) {
-  return { serverKind: "daemon", issuesSessions: declaresSessions(options), documents: true, connections: false }
+  return { serverKind: "daemon", issuesSessions: declaresSessions(options), capabilities: options.capabilities, connections: false }
 }
 
 function bootstrapHostIdentity(options: Options) {

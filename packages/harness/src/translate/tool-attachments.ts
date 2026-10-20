@@ -1,6 +1,6 @@
 import { asRecord } from "@claxedo/helpers/guards"
 import type { RuntimeToolAttachment } from "@claxedo/agent-runtime-contract"
-import { asText as text } from "@claxedo/agent-runtime-contract"
+import { asText as text, MCP_APP_MAX_BYTES, MCP_APP_MIME } from "@claxedo/agent-runtime-contract"
 
 export const TOOL_ATTACHMENT_INLINE_MAX_BYTES = 128 * 1024
 
@@ -60,4 +60,10 @@ export function imageUrlAttachment(url: unknown): RuntimeToolAttachment[] {
   const value = text(url)
   const mime = value ? /^data:([^;,]+)[;,]/.exec(value)?.[1] : undefined
   return value && mime ? [imageAttachment({ mime, data: value })] : []
+}
+
+export function mcpAppAttachment(document: unknown): RuntimeToolAttachment[] {
+  const url = text(document)
+  if (!url?.startsWith(`data:${MCP_APP_MIME};base64,`) || attachmentBytes(url) > MCP_APP_MAX_BYTES) return []
+  return [{ kind: "inline", mime: MCP_APP_MIME, url, filename: "mcp-app.html" }]
 }

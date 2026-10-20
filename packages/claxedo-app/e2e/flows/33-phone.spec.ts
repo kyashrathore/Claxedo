@@ -163,3 +163,24 @@ test("33 phone: an invitation link uses the auth screen without horizontal scrol
   expect(target?.width).toBeGreaterThanOrEqual(44)
   expect(target?.height).toBeGreaterThanOrEqual(44)
 })
+
+test("33 phone: the drawer opened before the built-in plugins register their pages stays open", async ({ stack, api, app }) => {
+  const arranged = await arrange(stack, api)
+  let release = () => {}
+  const held = new Promise<void>((resolve) => (release = resolve))
+  await app.route(/\/claxedo-tasks-[^/]*\.js$/, async (route) => {
+    await held
+    await route.continue()
+  })
+  await app.goto(`${stack.url}/s/${arranged.first.id}`)
+  await app.getByRole("button", { name: UI.openRail }).tap()
+  const close = app.getByRole("button", { name: "Close navigation sidebar" })
+  await expect(close).toBeVisible()
+  const nav = app.getByRole("navigation", { name: UI.rail })
+  await expect(nav.getByRole("button", { name: "Tasks", exact: true })).toHaveCount(0)
+  release()
+  await expect(nav.getByRole("button", { name: "Tasks", exact: true })).toBeAttached()
+  await expect(close).toBeVisible()
+  await expect(app).toHaveURL(new RegExp(`/s/${arranged.first.id}$`))
+  expect((await api.session(arranged.workspace.directory, arranged.first.id)).title).toBe("First")
+})

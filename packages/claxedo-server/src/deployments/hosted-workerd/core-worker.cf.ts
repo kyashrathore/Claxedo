@@ -16,13 +16,10 @@ import {
   securityHeaderEntries,
   withSecurityHeaders,
 } from "@claxedo/server-core/platform/http/security-headers"
-import { asRecord } from "@claxedo/server-core/platform/json/index"
-import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { keepAlivePastResponse } from "@claxedo/server-core/platform/http/background-work"
 import { isClaxedoError } from "@claxedo/server-core/platform/errors/base"
 
 import type { D1AccessContext } from "../../authority/adapters/d1/access-context"
-import { d1DocumentAccess } from "../../authority/adapters/d1/document-authority"
 import type { HostedControlPlane } from "../../authority/hosted-services"
 import { createIdempotencyCoordinator, d1ProjectionCommandIdempotency } from "../../authority/http/idempotency"
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
@@ -37,16 +34,25 @@ import {
   createHostedCoreApp,
   type HostedCoreAppOptions,
 } from "../hosted-shared/hosted-core-app"
-import { CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
+import { mcpToolGroups, type ServerPluginBase } from "@claxedo/server-core/plugins/server-plugin"
 import { createClaxedoMcpClient } from "@claxedo/mcp/client"
 import { LiveSyncRoom } from "./live-sync-room.cf"
 import type { CompositionLifetime } from "./settled-composition-cache"
 import type { LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
-import { createHostedDocumentsBackend } from "../../documents/backends/hosted/backend"
-import type { R2BucketBinding } from "../../documents/backends/hosted/r2-object-store.cf"
-import { createHostedDocumentRuntimeBroker } from "../../documents/backends/hosted/runtime-broker"
+import { HOSTED_DOCUMENTS_PLUGIN_BASE, type R2BucketBinding } from "@claxedo/documents/hosted"
+import { composeHostedDocumentsPlugin } from "../../documents/compose"
 
 export { LiveSyncRoom }
+
+/**
+ * Every group the hosted MCP mount serves: the core groups, Documents (which
+ * this Worker composes in every profile), then the entry's own plugins'. The
+ * Agent Plugins catalog lists the same set, and builds it before the Worker
+ * composes Documents.
+ */
+export function hostedMcpToolGroups(entryPlugins: readonly ServerPluginBase[]) {
+  return mcpToolGroups([HOSTED_DOCUMENTS_PLUGIN_BASE, ...entryPlugins])
+}
 
 export type HostedCoreWorkerEnv = Record<string, unknown> & {
   CLAXEDO_DOCUMENTS?: R2BucketBinding
@@ -60,7 +66,7 @@ export type HostedCoreWorkerComposition<Env extends HostedCoreWorkerEnv> = (
   lifetime?: CompositionLifetime,
 ) => {
   plane: HostedControlPlane
-  options: Omit<HostedCoreAppOptions, "liveSyncRoom" | "sharedRateLimitStore" | "idempotency" | "documents">
+  options: Omit<HostedCoreAppOptions, "liveSyncRoom" | "sharedRateLimitStore" | "idempotency">
   documentAccess: D1AccessContext
 }
 
@@ -134,31 +140,29 @@ export function createHostedCoreWorker<Env extends HostedCoreWorkerEnv>(
     const existing = appByPlane.get(key)
     if (existing) return existing
 
-    const documents = createHostedDocumentsBackend(documentsBucket, {
-      env: selected.plane.env,
-      access: (index) => d1DocumentAccess(selected.documentAccess, index),
-      runtime: createHostedDocumentRuntimeBroker(selected.plane.services, selected.plane.env),
-      resolveSessionWorkspace: async (auth, sessionId) => {
-        const authority = requireAuthority(selected.plane.services)
-        if (!authority.resolveSession) throw new Error("Session placement resolution is unavailable")
-        const resolved = asRecord(await authority.resolveSession(auth, { sessionId }))
-        if (typeof resolved?.workspace_id !== "string") throw new Error("Session placement is unavailable")
-        return resolved.workspace_id
-      },
+    const sharedRateLimitStore = cloudflareRateLimitStore(limiter, { periodSeconds: 60 })
+    const authentication = timedAuthentication(selected.options.authentication)
+    const documents = composeHostedDocumentsPlugin({
+      bucket: documentsBucket,
+      plane: selected.plane,
+      access: selected.documentAccess,
+      authentication,
+      rateLimit: async (key) => (await sharedRateLimitStore.check(key)).allowed,
     })
+    const plugins = [documents, ...(selected.options.plugins ?? [])]
     const app = createHostedCoreApp(selected.plane, {
       ...selected.options,
-      authentication: timedAuthentication(selected.options.authentication),
-      documents,
+      authentication,
+      plugins,
       idempotency: createIdempotencyCoordinator(d1ProjectionCommandIdempotency(controlPlaneDatabase)),
       liveSyncRoom,
-      sharedRateLimitStore: cloudflareRateLimitStore(limiter, { periodSeconds: 60 }),
+      sharedRateLimitStore,
       // Every profile serves the same endpoint: the control plane runs no
       // workspace itself, so its client reaches each workspace's runtime
       // through the relay with the caller's own credential.
       firstPartyMcp: {
         createClient: (input) => createClaxedoMcpClient(input),
-        registerTools: CLAXEDO_MCP_TOOL_GROUPS,
+        registerTools: hostedMcpToolGroups(selected.options.plugins ?? []),
       },
     })
     const errors = workerErrorCapture(selected.plane.env)

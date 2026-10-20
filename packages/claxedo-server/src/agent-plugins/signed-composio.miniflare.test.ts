@@ -220,6 +220,7 @@ async function runtimeVm(workspaceId: string, env: NodeJS.ProcessEnv) {
       sessionDrivenOnlyBy: () => false,
       registerSessionTools: () => async () => {},
       unregisterSessionTools: () => async () => {},
+      authorizeSessionControl: async () => undefined,
     },
   })
   return app

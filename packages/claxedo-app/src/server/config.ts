@@ -1,4 +1,4 @@
-import type { RunHostedOperation } from "@claxedo/account-contract"
+import type { RunAppHostedOperation } from "./operations"
 import { ServerError } from "./errors"
 import type { RelayLinkStorage } from "./relay"
 
@@ -6,7 +6,7 @@ export type AccountEvents = (init: { readonly lastEventId?: string; readonly sig
 
 export type ServerConfig = {
   readonly serverUrl?: string
-  readonly account?: RunHostedOperation
+  readonly account?: RunAppHostedOperation
   readonly accountEvents?: AccountEvents
   readonly cookies?: boolean
   readonly onSignInRefused?: () => void

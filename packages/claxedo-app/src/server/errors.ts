@@ -208,6 +208,11 @@ export function isHarnessHostedElsewhere(error: unknown): boolean {
   return toAppError(error).code === "workspace_harness_hosted_elsewhere"
 }
 
+export function isOperationUnavailable(error: unknown): boolean {
+  const failure = toAppError(error)
+  return failure.code === "unsupported_operation" || failure.class === "runtime_unreachable" || failure.status === 502
+}
+
 export function isSessionMissing(error: unknown): boolean {
   return toAppError(error).code === "session_not_found"
 }

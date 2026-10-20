@@ -1,5 +1,6 @@
-import type { HostedOperationName, ResolvedRequest } from "@claxedo/account-contract"
+import type { ResolvedRequest } from "@claxedo/account-contract"
 import { readFiniteNumber, readRecord, readString } from "@claxedo/helpers/readers"
+import type { DesktopHostedOperationName } from "./hosted-operations"
 
 /**
  * One HTTP attempt, bounded by a single deadline — and the hosted
@@ -107,7 +108,7 @@ export function hostedError(value: unknown): Record<string, unknown> | undefined
 }
 
 export function connectionRetryResult(
-  name: HostedOperationName,
+  name: DesktopHostedOperationName,
   response: Response,
   value: unknown,
 ): { status: "provisioning"; retryAfterMs: number; failure?: string } | undefined {
@@ -124,7 +125,7 @@ export function connectionRetryResult(
   return undefined
 }
 
-export function operationFailure(name: HostedOperationName, status: number, value: unknown) {
+export function operationFailure(name: DesktopHostedOperationName, status: number, value: unknown) {
   const error = hostedError(value)
   if (!error) return new Error(`operation "${name}" failed: ${status}`)
   const detail = [readString(error, "code")?.trim() ?? "", readString(error, "message")?.trim() ?? ""]
@@ -138,7 +139,7 @@ export function operationFailure(name: HostedOperationName, status: number, valu
  * the session that issued the request has ended, after every read of the body.
  */
 export async function decodeHostedResponse(
-  name: HostedOperationName,
+  name: DesktopHostedOperationName,
   shape: ResolvedRequest["response"],
   response: Response,
   assertCurrent: () => void,
@@ -177,9 +178,9 @@ export async function decodeHostedResponse(
     )
   }
   assertCurrent()
-  // Binary export: never return a raw Response (headers include auth
+  // A binary answer: never return a raw Response (headers include auth
   // surface). Envelope the bytes so IPC stays JSON-shaped.
-  if (name === "documents.export") {
+  if (shape === "bytes") {
     const bytes = Buffer.from(await response.arrayBuffer())
     return {
       bytesBase64: bytes.toString("base64"),

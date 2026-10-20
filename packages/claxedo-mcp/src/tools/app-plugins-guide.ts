@@ -53,7 +53,7 @@ Asking for more access makes the app ask the person again.
 | Primitive | Signature | Purpose |
 | --- | --- | --- |
 | \`api.sidebar.item\` | \`({ id, label, pageId, icon?, order?, badge? }) => dispose\` | A row in the main sidebar that opens a page |
-| \`api.pages.register\` | \`({ id, path, title, render(props) }) => dispose\` | A page in the page tab, with its own path |
+| \`api.pages.register\` | \`({ id, path, title, render(props) }) => dispose\` or \`({ id, path, title, surface(channel, props) }) => dispose\` | A page in the page tab, with its own path: drawn by the plugin's JSX, or a surface page the app draws (below) |
 | \`api.pages.open\` | \`(pageId, params?) => void\` | Open a registered page |
 | \`api.panes.register\` | \`({ kind, title(state), render(props), restore: { parse, serialize } }) => dispose\` | A pane kind in the workbench, restored across restarts |
 | \`api.panes.open\` | \`(kind, state) => void\` | Open a pane |
@@ -117,6 +117,75 @@ export default definePlugin({
         api.sessions.open(await api.sessions.create({ projectId, prompt: "Summarize what changed since yesterday." }))
       },
     })
+  },
+})
+~~~
+
+## Surface pages
+
+A surface page sends data, not JSX: the app draws it natively with its own components, in its theme, inside a frame that names the plugin. On the web its logic stays in the plugin's sandboxed frame and only the messages cross. Prefer it for lists, forms and dashboards.
+
+\`surface(channel, props)\` runs each time the page opens. \`channel.surfaceId\` is assigned by the app for that open page; address every message to it. Return \`{ action?(action), dispose?() }\`: \`action\` receives the person's actions, \`dispose\` runs when the page closes.
+
+Messages are A2UI v0.9, sent with \`channel.send(...messages)\`, each \`{ version: "v0.9", <kind>: {...} }\`:
+
+- \`createSurface: { surfaceId, catalogId: "https://claxedo.dev/a2ui/v0.9/catalog.json" }\`, first.
+- \`updateComponents: { surfaceId, components }\`: a flat list; each component has an \`id\` and a \`component\` name, and names its children by id. The root's id is \`root\`. Sending a component again with the same id replaces it.
+- \`updateDataModel: { surfaceId, path?, value? }\`: sets the JSON value at a JSON Pointer (\`/\` or no path for the whole model); no \`value\` deletes it. Send the smallest change, such as \`/items/3\`.
+- \`deleteSurface: { surfaceId }\`.
+
+Components: \`Header\`, \`Section\`, \`Grid\`, \`Stat\`, \`ListItem\`, \`Callout\`, \`KeyValue\`, \`Footer\`, \`Text\` (\`variant\`: h1–h5, caption, body), \`Markdown\`, \`Code\`, \`Icon\`, \`Badge\`, \`Link\`, \`Row\`, \`Column\`, \`List\`, \`Card\`, \`Tabs\`, \`Collapsible\`, \`Divider\`, \`Button\`, \`TextField\`, \`CheckBox\`, \`Switch\`, \`ChoicePicker\`, \`Slider\`, \`DateTimeInput\`, \`Progress\`, \`Spinner\`, \`Table\`, \`DiffStat\` and \`EmptyState\`. The \`SurfaceComponent\` type from \`@claxedo/plugin-api\` has every prop; the check refuses anything else. There are no images, video, dialogs or overlays.
+
+Lay the page out with \`ui_guide\` (\`SURFACE_DESIGN_GUIDE\` in \`@claxedo/plugin-api/surface\`) before writing it: a Header with the page's actions, a Section per group, fields in a Grid, a Footer with one primary Button last, state as Badges and Callouts, and \`api.ui.confirm\` before a destructive action.
+
+- A prop is a literal or \`{ path }\` bound to the data model. Inside a \`List\` template (\`children: { componentId, path }\`) a path without a leading \`/\` reads the current item.
+- An input bound with \`value: { path }\` writes what the person types into the model in the app; the plugin learns it from an action's \`context\`.
+- A \`Button\`'s \`action: { event: { name, context } }\` reaches \`action\` as \`{ name, surfaceId, sourceComponentId, timestamp, context }\`, with \`context\` read from the model when it fires.
+
+A message outside the protocol, or an \`action\` that throws, stops the page and shows why.
+
+~~~tsx
+import { definePlugin, type SurfaceComponent } from "@claxedo/plugin-api"
+
+const components: SurfaceComponent[] = [
+  { id: "root", component: "Column", children: ["header", "saved", "new-item"] },
+  { id: "header", component: "Header", title: "Items", subtitle: "Everything you saved in this workspace" },
+  { id: "saved", component: "Section", title: "Saved", child: "items" },
+  { id: "items", component: "List", children: { componentId: "item", path: "/items" } },
+  { id: "item", component: "ListItem", title: { path: "name" } },
+  { id: "new-item", component: "Section", title: "New item", actions: ["add"], child: "name" },
+  { id: "name", component: "TextField", label: "Name", value: { path: "/query" } },
+  { id: "add", component: "Button", child: "add-label", variant: "primary", icon: "add", action: { event: { name: "addItem", context: { name: { path: "/query" } } } } },
+  { id: "add-label", component: "Text", text: "Add item" },
+]
+
+export default definePlugin({
+  activate(api) {
+    api.pages.register({
+      id: "items",
+      path: "/items",
+      title: "Items",
+      surface(channel) {
+        const { surfaceId } = channel
+        const items = [{ name: "First" }]
+        channel.send(
+          { version: "v0.9", createSurface: { surfaceId, catalogId: "https://claxedo.dev/a2ui/v0.9/catalog.json" } },
+          { version: "v0.9", updateComponents: { surfaceId, components } },
+          { version: "v0.9", updateDataModel: { surfaceId, path: "/", value: { query: "", items } } },
+        )
+        return {
+          action(action) {
+            if (action.name !== "addItem" || typeof action.context.name !== "string" || !action.context.name.trim()) return
+            items.push({ name: action.context.name.trim() })
+            channel.send(
+              { version: "v0.9", updateDataModel: { surfaceId, path: \`/items/\${items.length - 1}\`, value: items[items.length - 1] } },
+              { version: "v0.9", updateDataModel: { surfaceId, path: "/query", value: "" } },
+            )
+          },
+        }
+      },
+    })
+    api.sidebar.item({ id: "items", label: "Items", pageId: "items" })
   },
 })
 ~~~

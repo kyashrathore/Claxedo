@@ -1,6 +1,7 @@
 import type { ControlPlaneRouteContribution } from "@claxedo/server-core/platform/http/route-contribution"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
+import type { McpServiceContribution } from "@claxedo/server-core/plugins/server-plugin"
 import {
   CLAXEDO_MCP_PATH,
   createClaxedoMcpRoutes,
@@ -19,6 +20,8 @@ export type FirstPartyMcpContributionInput = Readonly<{
   app: { request: (input: Request) => Response | Promise<Response> }
   authority: Pick<WorkspaceAuthority, "auditAllow"> | undefined
   options: FirstPartyMcpOptions
+  /** The services the composed plugins grant an account credential, entering this app with the caller's own authorization. */
+  services: readonly McpServiceContribution[]
   /** The signed identity behind a request, or undefined when it carries none this deployment accepts. */
   signedAuth: (request: Request) => Promise<SignedControlPlaneAuth | undefined>
   /** A consented OAuth access token, resolved by `resolveOAuthMcpCredential`. */
@@ -39,6 +42,10 @@ export function firstPartyMcpContribution(input: FirstPartyMcpContributionInput)
   const { sessionMcp } = input
   const enabledToolGroups = input.options.enabledToolGroups
   const registered = (input.options.registerTools ?? []).map((group) => group.id)
+  const groupsFor = async (credential: McpCredential): Promise<readonly string[]> => {
+    if (credential.kind === "runtime") return sessionMcp ? await sessionMcp.toolGroups(credential) : []
+    return enabledToolGroups ? await enabledToolGroups(credential) : registered
+  }
   const mount = createClaxedoMcpRoutes({
     mount: "hosted",
     ...(sessionMcp ? { verifyRuntimeCredential: (token: string) => sessionMcp.verify(token) } : {}),
@@ -60,24 +67,23 @@ export function firstPartyMcpContribution(input: FirstPartyMcpContributionInput)
           ...(credential.sessionId ? { ownSession: { sessionId: credential.sessionId, fetch: sessionMcp.sessionHostFetch(credential) } } : {}),
         })
       }
+      if (credential.kind !== "user") return input.options.createClient({ deployment: "hosted", credential, request })
       const authorization = request.headers.get("authorization")
+      const asCaller = (headers: Readonly<Record<string, string>>) =>
+        inProcessFetch((call) => input.app.request(call), { ...headers, ...(authorization ? { authorization } : {}) })
+      const enabledGroups = await groupsFor(credential)
+      const granted = await Promise.all(input.services.map(async (service) =>
+        [service.id, await service.grant({ enabledGroups, inProcessFetch: asCaller })] as const))
       return input.options.createClient({
         deployment: "hosted",
         credential,
         request,
-        ...(credential.kind === "user"
-          ? {
-              controlPlane: { fetch: inProcessFetch((call) => input.app.request(call), authorization ? { authorization } : {}) },
-              documents: { fetch: inProcessFetch((call) => input.app.request(call), authorization ? { authorization } : {}) },
-            }
-          : {}),
+        controlPlane: { fetch: asCaller({}) },
+        services: Object.fromEntries(granted.flatMap(([id, grant]) => (grant ? [[id, grant]] : []))),
       })
     },
     registerTools: input.options.registerTools ?? [],
-    enabledToolGroups: async (credential: McpCredential) => {
-      if (credential.kind === "runtime") return sessionMcp ? await sessionMcp.toolGroups(credential) : []
-      return enabledToolGroups ? await enabledToolGroups(credential) : registered
-    },
+    enabledToolGroups: groupsFor,
     audit: async (event: McpAuditEvent) => {
       const record = mcpAuditRecord(event)
       const auth = auths.get(event.credential)

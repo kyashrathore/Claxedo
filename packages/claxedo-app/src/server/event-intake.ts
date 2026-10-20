@@ -46,7 +46,7 @@ function publisher(input: IntakeInput, listeners: Listeners, writes: TurnWrites)
       return
     }
     batch(() => {
-      invalidateFor(input.queryClient, input.serverUrl, admission.event, writes.endsWritingTurn(admission.event))
+      void invalidateFor(input.queryClient, input.serverUrl, admission.event, writes.endsWritingTurn(admission.event))
       for (const listener of listeners) listener(admission.event)
     })
   }

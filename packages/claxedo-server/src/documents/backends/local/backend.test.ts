@@ -1,5 +1,5 @@
-import { documentTestAccess } from "../../../test-support/document-access"
-import { findDocumentIndexEntry } from "@claxedo/server-core/documents/index-store"
+import { documentTestAccess } from "@claxedo/documents/testing"
+import { findDocumentIndexEntry } from "@claxedo/documents/host/index-store"
 import { execFile } from "node:child_process"
 import fs from "node:fs/promises"
 import os from "node:os"
@@ -7,11 +7,11 @@ import path from "node:path"
 import { promisify } from "node:util"
 import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { Hono } from "hono"
-import { DocumentsRoutes } from "@claxedo/server-core/documents/routes/index"
+import { DocumentsRoutes } from "@claxedo/documents/host/routes/index"
 import { ClaxedoDB } from "../../../platform/db"
 import { d1Authority } from "../../../test-support/d1-authority"
-import { disposeHydratedSessionDocuments, hydratedSessionDocumentPaths, syncHydratedSessionDocuments } from "@claxedo/server-core/documents/session-hydration"
-import { createLocalDocumentsBackend, type LocalDocumentsBackendDependencies } from "@claxedo/server-core/documents/backends/local/backend"
+import { disposeHydratedSessionDocuments, hydratedSessionDocumentPaths, syncHydratedSessionDocuments } from "@claxedo/documents/host/session-hydration"
+import { createLocalDocumentsBackend, type LocalDocumentsBackendDependencies } from "@claxedo/documents/host/backends/local/backend"
 
 const roots: string[] = []
 const execFileAsync = promisify(execFile)

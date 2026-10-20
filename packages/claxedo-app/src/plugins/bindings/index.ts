@@ -8,7 +8,9 @@ import { paneBindings } from "./panes"
 import { regionBindings } from "./regions"
 import { serverBinding } from "./server"
 import type { BindingScope, HostServices } from "./services"
+import { transcriptBinding } from "./transcript"
 import { presentationBindings } from "./ui"
+import { workspacesBinding } from "./workspaces"
 
 export { createClaims } from "./claims"
 export { createOverlayTracker } from "./overlays"
@@ -25,6 +27,8 @@ export function createApiFactory(services: HostServices): (build: PluginBuild, a
       ...appearanceBindings(scope),
       ...dataBindings(scope),
       server: serverBinding(scope),
+      workspaces: workspacesBinding(scope),
+      transcript: transcriptBinding(scope),
       ...presentationBindings(scope),
     }
   }

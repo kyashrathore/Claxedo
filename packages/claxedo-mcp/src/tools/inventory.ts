@@ -8,8 +8,7 @@
  * spells a `write` flag of its own for read-only mode to trust.
  */
 import { SESSION_CORE_ROUTE_ACCESS, sessionAccessRequiresWrite, type SessionAccessOperation } from "@claxedo/session-core/access-policy"
-import type { TasksOperation } from "../client/contract"
-import type { McpAudience, McpScope, McpToolAccess } from "../context"
+import type { McpAudience, McpScope, McpToolAccess, McpToolService } from "../context"
 
 export type RuntimeOperationEntry = Readonly<{
   operation: SessionAccessOperation
@@ -97,6 +96,9 @@ export const MCP_OPERATIONS_WITHOUT_TOOLS = {
   goal_stop: "Goal internals are the runtime's own autonomous-loop state, not a host-facing surface.",
   goal_delete: "Goal internals are the runtime's own autonomous-loop state, not a host-facing surface.",
   background_task_stop: "Stopping one background task is the control on the task row a client shows; session_cancel_turn stops the turn.",
+  mcp_tools_list: "An MCP App's host lists its server's tools over the session owner's own MCP connection; it is not an operation on the session.",
+  mcp_tool_call: "An MCP App calls its server's tools through its host over the session owner's own MCP connection, which no other client borrows.",
+  mcp_resource_read: "An MCP App reads its server's resources through its host over the session owner's own MCP connection, which no other client borrows.",
 } as const satisfies Partial<Record<SessionAccessOperation, string>>
 
 export type McpToolGating = Readonly<{
@@ -140,26 +142,26 @@ export function runtimeToolAccess(tool: McpRuntimeToolName, gating: McpToolGatin
 }
 
 /**
- * Access for a tool over a surface the session-core inventory does not cover —
- * the diff routes, the control plane's workspace routes, the documents
- * service, the Tasks routes and app plugin authoring.
- * Their write class is declared because no machine-checked table classifies
- * them; anything over a session-core route must take `runtimeToolAccess`
- * instead.
+ * Access for a tool the session-core inventory does not cover — the diff
+ * routes, the control plane's workspace routes, the documents service, the
+ * Tasks routes, app plugin authoring, and `ui_show` and `ui_guide`, which
+ * call nothing. Their write class is declared because no machine-checked
+ * table classifies them; anything over a session-core route must take
+ * `runtimeToolAccess` instead.
  *
- * `operation` is the Tasks grant a tool needs and `appPlugins` the authoring
+ * `service` is the service grant a tool needs and `appPlugins` the authoring
  * grant; they are the parts of an access declaration checked against the
  * client rather than the credential.
  */
 export function declaredToolAccess(
-  gating: McpToolGating & Readonly<{ write: boolean; operation?: TasksOperation; appPlugins?: true }>,
+  gating: McpToolGating & Readonly<{ write: boolean; service?: McpToolService; appPlugins?: true }>,
 ): McpToolAccess {
   return {
     audiences: gating.audiences,
     write: gating.write,
     scope: gating.scope,
     ...(gating.destructive ? { destructive: true } : {}),
-    ...(gating.operation ? { operation: gating.operation } : {}),
+    ...(gating.service ? { service: gating.service } : {}),
     ...(gating.appPlugins ? { appPlugins: true } : {}),
     ...(gating.ownerDriven ? { ownerDriven: true } : {}),
   }

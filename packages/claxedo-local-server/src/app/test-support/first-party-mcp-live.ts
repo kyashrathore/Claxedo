@@ -7,11 +7,13 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
-import { closeTasksStore } from "@claxedo/server-core/tasks-host/sqlite-store"
+import { closeTasksStore } from "@claxedo/tasks/storage/sqlite"
 import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { ensureEmbeddedWorkspaceRuntime, shutdownEmbeddedWorkspaceRuntimes } from "../../deployments/local/embedded-workspace-runtime"
 import { createLocalAgentPluginsComposition } from "../../agent-plugins/local-composition"
-import { createLocalTasksComposition } from "../../tasks/local-composition"
+import { createLocalTasksPlugin } from "@claxedo/tasks/local"
+import { createLocalDocumentsPlugin } from "@claxedo/documents/local"
+import { mcpToolGroups } from "@claxedo/server-core/plugins/server-plugin"
 import { createLocalControlPlaneServices } from "../local-services"
 import { startLocalServer, type LocalServer } from "../start-local-server"
 import { testDaemon } from "./daemon"
@@ -72,7 +74,7 @@ export async function startLiveFirstPartyMcp(options: Pick<Parameters<typeof sta
 
   const port = await freePort()
   const identity = testDaemon()
-  const tasks = createLocalTasksComposition()
+  const plugins = [createLocalTasksPlugin(), createLocalDocumentsPlugin()]
   const server: LocalServer = startLocalServer({
     port,
     daemon: identity.daemon,
@@ -81,10 +83,11 @@ export async function startLiveFirstPartyMcp(options: Pick<Parameters<typeof sta
     // The Marketplace the desktop entry mounts. Without it a session's tool
     // surface would be whatever the defaults say and nothing could change it,
     // which is the half of this composition worth proving.
-    routeContributions: [...createLocalAgentPluginsComposition().routeContributions, ...tasks.routeContributions],
-    // Both halves the desktop entry composes together: the Tasks routes, and
-    // the grants the MCP mount issues its sessions to reach them as themselves.
-    tasksGrants: tasks.grants,
+    routeContributions: createLocalAgentPluginsComposition(process.env, { toolGroups: mcpToolGroups(plugins) }).routeContributions,
+    // The first-party plugins the desktop entry composes: their routes, and
+    // the service grants the MCP mount hands its sessions to reach them as
+    // themselves.
+    plugins,
     ...options,
   })
   await server.ready

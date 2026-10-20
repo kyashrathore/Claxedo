@@ -22,6 +22,8 @@ export type HarnessCapabilities = Omit<AgentCapabilities, "harness" | "modelSele
   goals: boolean
   /** Whether the harness can stop one background task while its session and other tasks go on. */
   backgroundTasks: boolean
+  /** Whether the harness lists, calls and reads on its session's MCP connections outside a turn, as an MCP App's host needs. */
+  mcp: boolean
   /**
    * Which effort levels this harness accepts, per model. Required because a
    * missing catalog reads as `unresolved` to every consumer, which accepts —
@@ -44,7 +46,7 @@ export type HarnessCapabilities = Omit<AgentCapabilities, "harness" | "modelSele
  */
 export function harnessCapabilitiesFor(
   handle: Pick<HarnessHandle, "runner" | "kind">,
-  transport: Pick<HarnessTransport, "config" | "history" | "commands" | "fork" | "backgroundTasks">,
+  transport: Pick<HarnessTransport, "config" | "history" | "commands" | "fork" | "backgroundTasks" | "mcp">,
   declared: TransportCapabilities,
   session: { child: boolean },
 ): HarnessCapabilities {
@@ -55,6 +57,7 @@ export function harnessCapabilitiesFor(
     harness: handle.runner.id,
     goals: declared.goals.implemented,
     backgroundTasks: transport.backgroundTasks !== undefined,
+    mcp: transport.mcp !== undefined,
     effortLevels: declared.effortLevels,
     instructionChannel: declared.instructionChannel,
   }

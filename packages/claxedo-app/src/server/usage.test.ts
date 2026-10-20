@@ -29,9 +29,9 @@ test("a usage change refreshes an open spend per account, and a workspace change
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const { queryKey } = usageQueries(transport([]), undefined).accountSpend({ since: 1, until: 2, scope: "mine" })
   queryClient.setQueryData(queryKey, { since: 1, until: 2, scope: "mine", accounts: [] })
-  invalidateFor(queryClient, SERVER, { type: "placementsChanged" }, false)
+  void invalidateFor(queryClient, SERVER, { type: "placementsChanged" }, false)
   expect(queryClient.getQueryState(queryKey)?.isInvalidated).toBe(false)
-  invalidateFor(queryClient, SERVER, { type: "usageChanged" }, false)
+  void invalidateFor(queryClient, SERVER, { type: "usageChanged" }, false)
   expect(queryClient.getQueryState(queryKey)?.isInvalidated).toBe(true)
 })
 

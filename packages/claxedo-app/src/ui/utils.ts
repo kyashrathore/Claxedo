@@ -22,3 +22,4 @@ export {
   type PairedTranscriptTypography,
   type ResolvedTranscriptTypography,
 } from "@opencode-ai/ui/theme/transcript-typography"
+export { readThemeColorScheme, readThemeTokens, watchThemeTokens, type ThemeColorScheme } from "./theme-tokens"

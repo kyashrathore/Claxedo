@@ -17,6 +17,7 @@ import {
   type SessionPromptTurnResult,
 } from "../session/service"
 import type { QueuedPromptRequester, SessionDeliveryOwner } from "../session/delivery-owner"
+import { settleSessionTurn } from "./session-lifecycle"
 import {
   sessionAccessContext,
   sessionAccessDenied,
@@ -69,12 +70,8 @@ export async function settleChildTurn(opts: Opts, sessionId: string, directory: 
   }
 }
 
-export async function flushDocumentsAfterTurn(opts: Opts, sessionId: string) {
-  try {
-    await opts.flushSessionDocuments?.(sessionId)
-  } catch (error) {
-    console.error(`[runtime-document] end-of-turn write-back failed for ${sessionId}:`, error)
-  }
+export async function settleTurnLifecycle(opts: Opts, sessionId: string) {
+  await settleSessionTurn(opts.sessionLifecycle, sessionId)
 }
 
 export function messageIdConflict(c: Ctx) {
@@ -432,7 +429,7 @@ export function createPromptAdmission(opts: Opts, requestErrorResponse: (err: un
         } finally {
           const leaseLost = turnAdmission.lease?.lost() ?? false
           if (!leaseLost) {
-            await flushDocumentsAfterTurn(opts, id)
+            await settleTurnLifecycle(opts, id)
             if (opts.afterMessageCheckpoint) {
               await after(opts.afterMessageCheckpoint(c, directory, id, await runtime.events.list(id, directory)))
             }

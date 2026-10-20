@@ -3,10 +3,12 @@ import { describe, expect, test } from "vitest"
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import type { SessionAccessOperation } from "@claxedo/session-core"
 import type { ClaxedoMcpClient } from "../client/contract"
-import type { McpAudience, McpCredential, McpToolAccess, McpToolContext } from "../context"
+import { assertToolAccess, type McpAudience, type McpCredential, type McpToolAccess, type McpToolContext } from "../context"
+import type { McpToolGroup } from "../tool-group"
 import { createToolRegistry } from "./registry"
 import { CLAXEDO_MCP_TOOL_GROUPS, claxedoMcpToolGroupInventory } from "./index"
 import {
+  declaredToolAccess,
   MCP_OPERATIONS_SERVED_ELSEWHERE,
   MCP_OPERATIONS_WITHOUT_TOOLS,
   MCP_TOOL_OPERATIONS,
@@ -18,6 +20,7 @@ import {
 const client = {
   deployment: "loopback",
   runtime: async () => async () => new Response(null, { status: 204 }),
+  services: {},
   resolveTarget: async () => ({ kind: "loopback" as const, baseUrl: "", headers: {} }),
   server: () => Promise.reject(new Error("the surface is registered, never called, in this test")),
   workspaces: async () => [],
@@ -40,11 +43,27 @@ const userCredential = (readOnly = false): McpCredential => ({
 })
 
 /** Registers every group against one credential and reports what it declared and what it listed. */
-function surface(credential: McpCredential, grants: Pick<ClaxedoMcpClient, "tasks" | "appPlugins" | "ownerDriven"> = {}) {
-  const ctx: McpToolContext = { credential, client: { ...client, ...grants }, audit: () => undefined }
+function surface(
+  credential: McpCredential,
+  grants: Partial<Pick<ClaxedoMcpClient, "services" | "appPlugins" | "ownerDriven">> = {},
+  groups: readonly McpToolGroup[] = CLAXEDO_MCP_TOOL_GROUPS,
+) {
+  const ctx: McpToolContext = { credential, client: { ...client, ...grants, services: grants.services ?? client.services }, audit: () => undefined }
   const registry = createToolRegistry(new McpServer({ name: "claxedo", version: "0.0.0" }), ctx)
-  for (const group of CLAXEDO_MCP_TOOL_GROUPS) group.register(registry)
+  for (const group of groups) group.register(registry)
   return { declared: registry.declared, listed: [...registry.listed].toSorted() }
+}
+
+/** A plugin's group whose two tools act through a service, one of them through an operation of it. */
+const SERVICE_GROUP: McpToolGroup = {
+  id: "fixture",
+  reach: "account",
+  register: (registry) => {
+    const access = (operation?: string) =>
+      declaredToolAccess({ audiences: ["runtime", "user"], write: false, scope: "read", service: { id: "fixture", label: "Fixture", ...(operation ? { operation } : {}) } })
+    registry.tool("fixture_read", { description: "", inputSchema: {}, access: access() }, async () => ({ content: [] }))
+    registry.tool("fixture_write", { description: "", inputSchema: {}, access: access("write") }, async () => ({ content: [] }))
+  },
 }
 
 const operations = () => [...RUNTIME_OPERATIONS.keys()].toSorted()
@@ -137,8 +156,6 @@ describe("the registered surface", () => {
   test("lists the inside-session set for a runtime credential", () => {
     expect(surface(runtimeCredential).listed).toEqual([
       "create_subagent",
-      "documents_list",
-      "documents_open",
       "question_reply",
       "session_cancel_turn",
       "session_create",
@@ -150,6 +167,8 @@ describe("the registered surface", () => {
       "subagent_capabilities",
       "subagent_list",
       "subagent_status",
+      "ui_guide",
+      "ui_show",
     ])
   })
 
@@ -158,10 +177,22 @@ describe("the registered surface", () => {
     expect(surface(runtimeCredential, { ownerDriven: () => true }).listed.filter((name) => !without.has(name))).toEqual(["session_delete"])
   })
 
-  test("adds the Tasks tools the grant covers, and nothing else", () => {
-    const granted = surface(runtimeCredential, { tasks: { fetch: async () => new Response(null, { status: 204 }), operations: ["read", "create", "start"] } })
-    const without = new Set(surface(runtimeCredential).listed)
-    expect(granted.listed.filter((name) => !without.has(name))).toEqual(["task_create", "task_edit", "task_get", "task_list", "task_start"])
+  test("lists a plugin group's service tools only while the client carries that service, and an operation's only while the grant names it", () => {
+    const grant = (operations: readonly string[]) => ({ services: { fixture: { fetch: async () => new Response(null, { status: 204 }), operations } } })
+    const fixture = (grants: Parameters<typeof surface>[1]) =>
+      surface(runtimeCredential, grants, [SERVICE_GROUP]).listed
+    expect(fixture({})).toEqual([])
+    expect(fixture(grant([]))).toEqual(["fixture_read"])
+    expect(fixture(grant(["write"]))).toEqual(["fixture_read", "fixture_write"])
+  })
+
+  test("refuses at the call what tools/list withheld, naming the service and the operation", () => {
+    const access = { audiences: ["runtime", "user"] as const, write: false, scope: "read" as const, service: { id: "fixture", label: "Fixture", operation: "write" } }
+    expect(() => assertToolAccess(runtimeCredential, "fixture_write", access, { services: {} }))
+      .toThrow("fixture_write needs the Fixture service, which this Claxedo deployment does not serve")
+    expect(() => assertToolAccess(runtimeCredential, "fixture_write", access, { services: { fixture: [] } }))
+      .toThrow("fixture_write needs the write Fixture operation, which this session was not granted")
+    expect(() => assertToolAccess(runtimeCredential, "fixture_write", access, { services: { fixture: ["write"] } })).not.toThrow()
   })
 
   test("adds the app plugin tools to a session granted authoring, and never to a person's account", () => {
@@ -179,8 +210,6 @@ describe("the registered surface", () => {
 
   test("lists the outside-in set for a user credential", () => {
     expect(surface(userCredential()).listed).toEqual([
-      "documents_list",
-      "documents_open",
       "permission_reply",
       "question_reject",
       "question_reply",
@@ -210,7 +239,6 @@ describe("the registered surface", () => {
     expect(writes.length).toBeGreaterThan(0)
     expect(listed.filter((name) => writes.includes(name))).toEqual([])
     expect(listed).toEqual([
-      "documents_list",
       "session_changes",
       "session_get",
       "session_transcript",
@@ -243,7 +271,7 @@ test("checkpoint_write is an operation the session-core routes never name", () =
 describe("the tool names the catalog publishes", () => {
   test("are exactly the names a real mount registers, group by group", () => {
     const declared = surface(userCredential()).declared
-    const published = claxedoMcpToolGroupInventory()
+    const published = claxedoMcpToolGroupInventory(CLAXEDO_MCP_TOOL_GROUPS)
 
     // The catalog derives its names by running each registration against a
     // sink with no server, no context and no credential behind it. This is the
@@ -256,19 +284,20 @@ describe("the tool names the catalog publishes", () => {
     expect(new Set(published.flatMap((group) => group.tools)).size).toBe(declared.size)
   })
 
-  test("declare a reach, and only the three that leave the runtime say so", () => {
-    const published = claxedoMcpToolGroupInventory()
+  test("declare a reach, and only the two that leave the runtime say so", () => {
+    const published = claxedoMcpToolGroupInventory(CLAXEDO_MCP_TOOL_GROUPS)
     // What a project inherits is computed from these, so a group that reaches
     // past the session and says "runtime" is granted to every project that has
     // decided nothing. The list is short on purpose: adding to it is the
     // decision, and this is where it gets read.
-    expect(published.filter((group) => group.reach === "account").map((group) => group.id)).toEqual(["tasks"])
-    expect(published.filter((group) => typeof group.reach === "object").map((group) => group.id)).toEqual(["app-plugins", "documents"])
+    expect(published.filter((group) => group.reach === "account").map((group) => group.id)).toEqual([])
+    expect(published.filter((group) => typeof group.reach === "object").map((group) => group.id)).toEqual(["app-plugins"])
     expect(published.filter((group) => group.reach === "runtime").map((group) => group.id)).toEqual([
       "attention",
       "review",
       "sessions",
       "subagents",
+      "surfaces",
       "workspaces",
     ])
   })
@@ -277,12 +306,12 @@ describe("the tool names the catalog publishes", () => {
 describe("the transcript's first-party roster", () => {
   // Read as text, not imported: the app is a UI package this server package
   // must not resolve.
-  test("names exactly the tools the groups register, so a renamed or added tool cannot render as a generic row", () => {
+  test("names every tool the core groups register, so a renamed or added tool cannot render as a generic row", () => {
     const source = readFileSync(new URL("../../../claxedo-app/src/transcript/claxedo-tool-view.ts", import.meta.url), "utf8")
-    const block = source.split("export const CLAXEDO_TOOL_TITLE_KEYS = {")[1]?.split("} as const")[0] ?? ""
+    const block = source.split("export const CLAXEDO_TOOL_TITLE_KEYS: Partial<Record<ClaxedoToolName, TranscriptTextKey>> = {")[1]?.split("\n}")[0] ?? ""
     const roster = [...block.matchAll(/^\s*([a-z_]+):\s*"transcript\.claxedoTool\.[a-z_]+",$/gm)].map((match) => match[1]).sort()
-    const registered = claxedoMcpToolGroupInventory().flatMap((group) => group.tools).sort()
+    const registered = claxedoMcpToolGroupInventory(CLAXEDO_MCP_TOOL_GROUPS).flatMap((group) => group.tools).sort()
     expect(roster.length).toBeGreaterThan(0)
-    expect(roster).toEqual(registered)
+    expect(registered.filter((tool) => !roster.includes(tool))).toEqual([])
   })
 })

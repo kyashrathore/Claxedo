@@ -1,8 +1,9 @@
 import { placementId, sessionId, terminalId } from "@/server"
 import { isLocalPlacement, type Placement, type PlacementId, type SessionId, type SessionLocation, type TerminalId } from "@/server"
+import { sameRouteParams, type RouteParams } from "@/lib/route-params"
 import type { PageEntry, PaneRoute, RouteEntry } from "./types"
 
-export type RouteParams = Readonly<Record<string, string>>
+export type { RouteParams } from "@/lib/route-params"
 
 export type ShellRoute =
   | { readonly kind: "home" }
@@ -109,6 +110,26 @@ export function parseRoute(
     if (params) return { kind: "page", page, params }
   }
   return { kind: "unknown", path: pathname }
+}
+
+export function sameRoute(a: ShellRoute, b: ShellRoute): boolean {
+  switch (a.kind) {
+    case "home":
+      return b.kind === "home"
+    case "draft":
+      return b.kind === "draft" && a.placementId === b.placementId
+    case "session":
+      return b.kind === "session" && a.placementId === b.placementId && a.sessionId === b.sessionId
+    case "localSession":
+      return b.kind === "localSession" && a.sessionId === b.sessionId
+    case "terminal":
+      return b.kind === "terminal" && a.placementId === b.placementId && a.terminalId === b.terminalId
+    case "page":
+      return b.kind === "page" && a.page === b.page && sameRouteParams(a.params, b.params)
+    case "screen":
+      return b.kind === "screen" && a.screen === b.screen && sameRouteParams(a.params, b.params)
+  }
+  return b.kind === "unknown" && a.path === b.path
 }
 
 export function placementOf(route: ShellRoute): PlacementId | undefined {

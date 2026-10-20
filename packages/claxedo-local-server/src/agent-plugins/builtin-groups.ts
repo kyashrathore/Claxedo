@@ -1,4 +1,4 @@
-import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
+import { claxedoMcpToolGroupInventory, type McpToolGroup } from "@claxedo/mcp"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { SqliteUnsignedAgentPluginActivationStore } from "./activation/sqlite-store"
 import {
@@ -25,8 +25,11 @@ export const LOCAL_BUILTIN_DEPLOYMENT: BuiltinDeployment = { inProcessServices: 
  * Unsigned activation is machine-wide and written for every harness at once,
  * so `opencode`'s row answers for all of them.
  */
-export function localBuiltinToolGroups(activations: UnsignedAgentPluginActivationStore): readonly string[] {
-  return claxedoMcpToolGroupInventory()
+export function localBuiltinToolGroups(
+  activations: UnsignedAgentPluginActivationStore,
+  groups: readonly McpToolGroup[],
+): readonly string[] {
+  return claxedoMcpToolGroupInventory(groups)
     .filter((group) => {
       const { machineOverride } = activations.read(builtinPluginInstanceId(group.id), "opencode")
       return resolveBuiltinGroupActivation({
@@ -47,10 +50,10 @@ export function localBuiltinToolGroups(activations: UnsignedAgentPluginActivatio
  * mount and the embedded runtime are both wired before the database is, and a
  * reader built eagerly would open it too early.
  */
-export function localBuiltinToolGroupsReader(): () => readonly string[] {
+export function localBuiltinToolGroupsReader(groups: readonly McpToolGroup[]): () => readonly string[] {
   let activations: SqliteUnsignedAgentPluginActivationStore | undefined
   return () => {
     activations ??= new SqliteUnsignedAgentPluginActivationStore(ClaxedoDB.raw())
-    return localBuiltinToolGroups(activations)
+    return localBuiltinToolGroups(activations, groups)
   }
 }

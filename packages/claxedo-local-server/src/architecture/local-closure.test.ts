@@ -182,7 +182,6 @@ describe("@claxedo/local-server closure", () => {
     //    narrows through instead of writing its own `record`/`text` pair.
     //  - `shell/event-stream-response.ts` — the one writer that serves the
     //    daemon's `cp/events` over HTTP SSE or a loopback WebSocket alike.
-    //  - `app/local-documents.ts` — the desktop composition of shared Documents.
     //  - `credentials/broker.ts` — the credential authority that derives a
     //    binding per active registry row and hands the loopback broker its
     //    handler. The table naming each provider's vendor host, methods, paths
@@ -195,9 +194,6 @@ describe("@claxedo/local-server closure", () => {
     //  - `usage/adapters/token-tracker-usage-limits.ts` — the plan probe for
     //    every agent installed on this machine, which only a server running on
     //    that machine can ask.
-    //  - `tasks/` — the route composition and the session bridge it hands the
-    //    kit; the kit itself is reached through server-core's tasks-host
-    //    owners, and nothing outside `src/tasks/` imports either module.
     //  - `shell/host-events.ts` — the host aggregate `wr/events`: one
     //    connection carrying every embedded runtime's frames, read from the
     //    taps only a process that hosts those runtimes can reach.
@@ -282,8 +278,12 @@ describe("@claxedo/local-server closure", () => {
     //    projection: the retained skill roots and the projected MCP servers
     //    the embedded `transports/pi-durable` connects itself, beside the
     //    other harnesses' adapters.
+    //
+    // 96 modules and 28 packages, measured once the desktop-local Tasks
+    // composition moved to `@claxedo/tasks/local`, which the desktop entry
+    // composes; no headroom.
     const { modules, packages } = closure({ runtimeOnly: true })
-    expect(modules.size).toBeLessThanOrEqual(104)
-    expect(packages.size).toBeLessThanOrEqual(30)
+    expect(modules.size).toBeLessThanOrEqual(96)
+    expect(packages.size).toBeLessThanOrEqual(28)
   })
 })

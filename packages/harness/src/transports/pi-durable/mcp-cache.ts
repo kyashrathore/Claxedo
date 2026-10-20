@@ -2,7 +2,7 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context"
 import { defineDoc, type JsonObject } from "@earendil-works/pi-durable"
 import type { PiSessionRuntime } from "./placement"
 
-export type McpListedTool = { name: string; description?: string; inputSchema: JsonObject }
+export type McpListedTool = { name: string; description?: string; inputSchema: JsonObject; annotations?: JsonObject; _meta?: JsonObject }
 export type McpToolLists = Record<string, McpListedTool[]>
 
 const McpToolsDoc = defineDoc<{ key: string; servers: McpToolLists }>({
@@ -15,19 +15,23 @@ const McpToolsDoc = defineDoc<{ key: string; servers: McpToolLists }>({
   checkpointWhen: () => true,
 })
 
+const LIST_SHAPE = "tool-meta"
+
+const shapedKey = (key: string) => `${LIST_SHAPE}:${key}`
+
 const detached = (servers: McpToolLists): McpToolLists => JSON.parse(JSON.stringify(servers))
 
 export function cachedMcpTools(runtime: PiSessionRuntime, key: string): Promise<McpToolLists> {
   return runtime.harness.commit(async (tx) => {
     const doc = await tx.doc(McpToolsDoc, runtime.conversation.id)
-    return doc.key === key ? detached(doc.servers) : {}
+    return doc.key === shapedKey(key) ? detached(doc.servers) : {}
   }, BACKGROUND_CONTEXT)
 }
 
 export async function recordMcpTools(runtime: PiSessionRuntime, key: string, lists: McpToolLists): Promise<void> {
   await runtime.harness.commit(async (tx) => {
     const doc = await tx.doc(McpToolsDoc, runtime.conversation.id)
-    doc.key = key
+    doc.key = shapedKey(key)
     doc.servers = lists
   }, BACKGROUND_CONTEXT)
 }

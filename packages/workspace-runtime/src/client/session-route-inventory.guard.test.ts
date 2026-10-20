@@ -20,6 +20,9 @@ const ids = {
   seq: 1,
   action: "cancel",
   operationId: "op",
+  server: "srv",
+  tool: "refresh",
+  uri: "ui://srv/app",
   request: { requestId: "req", action: "inspect", target: { scope: "session", workspaceId: "w", sessionId: "sid", ownerGeneration: "g" }, scopeRevision: "g", attempt: 1 },
 }
 
@@ -30,6 +33,7 @@ function inventoryPattern(method: string, pathname: string) {
     .replace(/^\/session\/sid\/message\/msg\/attachment\/attachment$/, "/session/:id/message/:messageId/attachment/:attachmentId")
     .replace(/^\/session\/sid\/message\/msg\/part\/part$/, "/session/:id/message/:messageId/part/:partId")
     .replace(/^\/session\/sid\/recovery\/operations\/[^/]+$/, "/session/:id/recovery/operations/:operationId")
+    .replace(/^\/session\/sid\/mcp\/srv\//, "/session/:id/mcp/:server/")
     .replace(/^\/session\/sid(?=\/|$)/, "/session/:id")
     .replace(/^\/session-start\/sid(?=\/|$)/, "/session-start/:id")
     .replace(/^\/question\/qid(?=\/|$)/, "/question/:id")

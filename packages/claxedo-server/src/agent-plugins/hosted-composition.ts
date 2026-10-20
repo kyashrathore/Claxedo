@@ -1,4 +1,4 @@
-import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
+import { claxedoMcpToolGroupInventory, type McpToolGroup } from "@claxedo/mcp"
 import { createSessionHostPlugins, machineServing } from "./runtime/session-host-launch"
 import type { SandboxInFlight } from "../workspace/sandbox-start"
 import type { RuntimeConfigSnapshotPlugins } from "@claxedo/harness/contract"
@@ -48,7 +48,7 @@ import { dohAddressResolver } from "@claxedo/server-core/agent-plugins/mcp/dns-r
 import { createSafeEndpointFetch } from "@claxedo/server-core/agent-plugins/mcp/discovery"
 import { HostedAgentPluginSourceRoutes } from "./sources/routes"
 import { createHostedAgentPluginRuntimeProvisioner, desiredAgentPluginSelections } from "./runtime/provision"
-import { createBuiltinGroupReader, createCloudRootEnvironment, createCloudRootToolGroups, type CloudRootIdentity } from "./runtime/cloud-root-environment"
+import { createBuiltinGroupReader, createCloudRootEnvironment, createCloudRootToolGroups } from "./runtime/cloud-root-environment"
 import { createHostedAgentPluginSelfRuntime } from "./runtime/self-runtime"
 import { hostedAgentPluginConnectionIntegrations } from "./mcp/connections"
 import { HostedMcpGatewayRoutes } from "./mcp/routes"
@@ -61,12 +61,12 @@ import { hostedMcpCatalogAuthentication } from "./mcp/catalog-auth"
 import { hostedMcpClientMetadata } from "./mcp/client-metadata"
 import { createD1McpOAuthClientRegistry } from "./mcp/d1-client-registry"
 import { asRecord, isRecord, parseJson, stringField } from "@claxedo/server-core/platform/json/index"
-import { BUILTIN_SUBAGENTS_TOOL_GROUP, BUILTIN_TASKS_TOOL_GROUP } from "@claxedo/server-core/agent-plugins/builtin/plugin"
-import type { SandboxPassRegister } from "../platform/auth/sandbox-pass-register"
+import { BUILTIN_SUBAGENTS_TOOL_GROUP } from "@claxedo/server-core/agent-plugins/builtin/plugin"
+import type { CloudRootGrantContribution, CloudRootIdentity } from "@claxedo/server-core/plugins/server-plugin"
+import type { SandboxPassRegister } from "@claxedo/server-core/platform/auth/sandbox-pass-register"
 import type { AgentPluginRuntimeContribution } from "@claxedo/server-core/agent-config/runtime-snapshot"
 import { OWNER_GRANT_AUDIENCE } from "../session/owner-grant"
-import { TASKS_CAPABILITY_AUDIENCE } from "../tasks/capability"
-import { createGrantWithdrawal } from "../tasks/grant-withdrawal"
+import { createGrantWithdrawal } from "./runtime/grant-withdrawal"
 import type { HostedEgressBroker } from "../credentials/hosted-egress-broker"
 import { hostedRepositoryBindings } from "../credentials/hosted-egress-broker/repository-binding"
 import { hostedRepositoryCloneDelivery } from "../workspace/repository-clone"
@@ -104,10 +104,11 @@ export type HostedAgentPluginsComposition = {
   sessionHostToolGroups: (root: CloudRootIdentity) => Promise<readonly string[]>
   /** Revokes every pass `prepareRuntime` minted for a root whose workspace is now deleted. */
   releaseRuntime: (context: WorkspaceRuntimeContext) => Promise<void>
-  /** Whether the root's project has Tasks on now, read as the launch environment reads it. */
-  tasksGroupEnabled: (root: CloudRootIdentity) => Promise<boolean>
-  /** Whether the root's project has subagents on now, read the same way; what the owner grant's renewal asks. */
-  subagentsGroupEnabled: (root: CloudRootIdentity) => Promise<boolean>
+  /**
+   * Whether the root's project has `group` on now, read as the launch
+   * environment reads it: what a grant's renewal asks before it renews.
+   */
+  groupEnabled: (group: string, root: CloudRootIdentity) => Promise<boolean>
 }
 
 function required(value: string | undefined, name: string) {
@@ -203,15 +204,16 @@ export function createHostedAgentPluginsComposition(input: {
   plane: HostedControlPlane
   database: D1Database
   authentication: RequestAuthenticationAdapter
-  /** The grant a root whose project turned Tasks on is launched with. */
-  tasksGrant: (root: CloudRootIdentity) => Promise<Record<string, string>>
+  /** The groups the plane's MCP mounts serve, which the Marketplace lists as the built-in plugin's. */
+  toolGroups: readonly McpToolGroup[]
+  /** The composed plugins' grants, each launched with a root whose project has its group on. */
+  rootGrants: readonly CloudRootGrantContribution[]
   /** The grant a root whose project turned subagents on is launched with: its runtime acts as the workspace's owner. */
   ownerGrant: (root: CloudRootIdentity) => Promise<Record<string, string>>
   /**
    * The register every pass a root is launched with is written to, and the
-   * one its gateway checks. The Tasks and owner grants are minted by
-   * `tasksGrant` and `ownerGrant` and have to be minted into the same
-   * register, which is the entry's to hold.
+   * one its gateway checks. Every root grant and the owner grant have to be
+   * minted into the same register, which is the entry's to hold.
    */
   passes: SandboxPassRegister
   /** Refreshes the caller's running sandboxes after an activation change; absent on a plane that hosts no sandboxes. */
@@ -234,7 +236,7 @@ export function createHostedAgentPluginsComposition(input: {
   // Hosted, documents are an account service a session reaches across the
   // network rather than a store in this process, so that group is a decision
   // rather than an inheritance.
-  const builtIn = { groups: claxedoMcpToolGroupInventory(), deployment: { inProcessServices: [] } }
+  const builtIn = { groups: claxedoMcpToolGroupInventory(input.toolGroups), deployment: { inProcessServices: [] } }
   const activations = new D1SignedAgentPluginActivationStore({ database: input.database, authority })
   // GitHub reads are cached at the edge across isolates (see github-edge-cache.ts);
   // `caches` exists only inside a Worker isolate, so it is looked up per call.
@@ -352,23 +354,23 @@ export function createHostedAgentPluginsComposition(input: {
   // that machine itself (`GET /runtime/self`), so the
   // connection mint for it must not fail closed on a rail that does not apply.
   const cloudWorkspace = (workspaceId: string) => isCloudRoot(input.database, workspaceId)
-  const rootEnvironment = createCloudRootEnvironment({ activations, builtIn, tasksGrant: input.tasksGrant, ownerGrant: input.ownerGrant })
-  const tasksGroupEnabled = createBuiltinGroupReader({ activations, builtIn }, BUILTIN_TASKS_TOOL_GROUP)
-  const subagentsGroupEnabled = createBuiltinGroupReader({ activations, builtIn }, BUILTIN_SUBAGENTS_TOOL_GROUP)
-  const withdrawals = {
-    [BUILTIN_TASKS_TOOL_GROUP]: createGrantWithdrawal({
-      passes: input.passes,
-      audience: TASKS_CAPABILITY_AUDIENCE,
-      reason: "tasks_group_disabled",
-      groupEnabled: tasksGroupEnabled,
-    }),
-    [BUILTIN_SUBAGENTS_TOOL_GROUP]: createGrantWithdrawal({
-      passes: input.passes,
+  const rootGrants: readonly CloudRootGrantContribution[] = [
+    {
+      group: BUILTIN_SUBAGENTS_TOOL_GROUP,
       audience: OWNER_GRANT_AUDIENCE,
-      reason: "subagents_group_disabled",
-      groupEnabled: subagentsGroupEnabled,
-    }),
-  }
+      withdrawalReason: "subagents_group_disabled",
+      mint: input.ownerGrant,
+    },
+    ...input.rootGrants,
+  ]
+  const rootEnvironment = createCloudRootEnvironment({ activations, builtIn, grants: rootGrants })
+  const groupEnabled = (group: string, root: CloudRootIdentity) => createBuiltinGroupReader({ activations, builtIn }, group)(root)
+  const withdrawals = new Map(rootGrants.map((grant) => [grant.group, createGrantWithdrawal({
+    passes: input.passes,
+    audience: grant.audience,
+    reason: grant.withdrawalReason,
+    groupEnabled: (root) => groupEnabled(grant.group, root),
+  })]))
   const prepareRuntime = async ({ workspaceId, capabilities }: WorkspaceRuntimeContext): Promise<WorkspaceRuntimePreparation> => {
     if (await cloudRootBacking(input.database, workspaceId) !== "cloud") return {}
     const snapshot = await activations.runtimeSnapshot(workspaceId)
@@ -455,9 +457,7 @@ export function createHostedAgentPluginsComposition(input: {
     mcpGatewayRoutes: gateway,
     selfRuntime: createHostedAgentPluginSelfRuntime({ activations, artifacts, preparer }),
     builtInConsentChanged: async (auth, groupId) => {
-      const withdrawal = groupId === BUILTIN_TASKS_TOOL_GROUP || groupId === BUILTIN_SUBAGENTS_TOOL_GROUP
-        ? withdrawals[groupId]
-        : undefined
+      const withdrawal = withdrawals.get(groupId)
       if (withdrawal) await withdrawal.reconcile(await authority.resolveOrgId(auth))
     },
   })
@@ -492,8 +492,7 @@ export function createHostedAgentPluginsComposition(input: {
     sessionHostToolGroups: createCloudRootToolGroups({ activations, builtIn }),
     // A workspace that is gone takes every pass minted for it, whatever the audience.
     releaseRuntime: async ({ workspaceId }) => { await input.passes.revoke({ workspaceId, reason: "workspace_deleted" }) },
-    tasksGroupEnabled,
-    subagentsGroupEnabled,
+    groupEnabled,
   }
 }
 

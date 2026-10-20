@@ -1,5 +1,6 @@
 import { asRecord } from "@claxedo/helpers/guards"
 import type { AgentToolPart, AgentToolState } from "./content"
+import { toolMcpHeader } from "./mcp-app"
 import { canonicalToolName, claxedoToolName } from "./tool-names"
 
 export type ToolOpenSettings = { readonly shell: boolean; readonly edit: boolean }
@@ -93,7 +94,7 @@ const ALWAYS_KEPT_INPUT = ["intent"]
 
 function headerState(state: AgentToolState, shape: HeaderShape | undefined): AgentToolState {
   const input = shape ? fieldsNamed(state.input, [...shape.input, ...ALWAYS_KEPT_INPUT]) : state.input
-  const metadata = (value: Fields | undefined) => (value && shape?.metadata ? shape.metadata(value) : {})
+  const metadata = (value: Fields | undefined) => ({ ...(value && shape?.metadata ? shape.metadata(value) : {}), ...toolMcpHeader(value) })
   switch (state.status) {
     case "pending":
       return { status: "pending", input, raw: "" }

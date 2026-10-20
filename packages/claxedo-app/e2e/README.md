@@ -124,7 +124,7 @@ Rules the checks enforce:
 | `log()` | Everything the daemon wrote to stdout and stderr |
 | `acpScriptDir`, `dataDir`, `url`, `port` | Paths and address |
 
-The unsigned daemon runs `packages/harness/e2e/harness/local-daemon-entry.ts`, which composes `packages/claxedo-local-server`'s `startLocalServer`, Agent Plugins and Tasks. It runs from the spec's data directory, in the environment described under [Isolation](#isolation), with `CLAXEDO_DATA_DIR` there. The test bundle handler serves `CLAXEDO_APP_DIST_DIR` after an unmatched GET; API responses retain the local server's headers. It counts as started once its health route answers and its own log says it is listening on the stack's URL. Pi is the default native harness.
+The unsigned daemon runs `packages/harness/e2e/harness/local-daemon-entry.ts`, which composes `packages/claxedo-local-server`'s `startLocalServer`, Agent Plugins and the Tasks and Documents plugins. It runs from the spec's data directory, in the environment described under [Isolation](#isolation), with `CLAXEDO_DATA_DIR` there. The test bundle handler serves `CLAXEDO_APP_DIST_DIR` after an unmatched GET; API responses retain the local server's headers. It counts as started once its health route answers and its own log says it is listening on the stack's URL. Pi is the default native harness.
 
 ### `stack.gitRemote(name)`
 

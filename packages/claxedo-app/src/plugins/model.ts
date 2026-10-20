@@ -3,7 +3,11 @@ import type { Translations } from "@/i18n"
 import { machine, unreachable, type Machine } from "@/lib/machine"
 import type { ApprovalCheck } from "./approval"
 
-export type PluginOrigin = { readonly hash: string; readonly directory: string; readonly builtAt?: string; readonly buildError?: string }
+export type LiveOrigin = { readonly kind: "live"; readonly hash: string; readonly directory: string; readonly builtAt?: string; readonly buildError?: string }
+
+export type BundledOrigin = { readonly kind: "bundled"; readonly hash: string }
+
+export type PluginOrigin = LiveOrigin | BundledOrigin
 
 export type PluginBuild = {
   readonly manifest: PluginManifest
@@ -39,6 +43,10 @@ export type PluginSummary = {
   readonly missing: readonly PluginCapability[]
   readonly approval: ApprovalCheck
   readonly state: PluginState
+}
+
+export function liveOriginOf(plugin: { readonly origin: PluginOrigin }): LiveOrigin | undefined {
+  return plugin.origin.kind === "live" ? plugin.origin : undefined
 }
 
 export function buildIdOf(build: PluginBuild): string {

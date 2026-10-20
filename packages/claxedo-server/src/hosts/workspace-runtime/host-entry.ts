@@ -11,6 +11,7 @@
  */
 import fs from "node:fs"
 import { runWorkspaceRuntimeHost } from "./host-run"
+import { tasksRuntimeHostPlugin } from "@claxedo/tasks/runtime-host"
 import { claxedoWorkspaceRuntimeBootFromEnv } from "./runtime-boot"
 
 if (process.argv[2] === "--version") {
@@ -20,4 +21,4 @@ if (process.argv[2] === "--version") {
 
 // This is Claxedo's runnable host process — it owns the process lifecycle, so
 // it opts in to signal/exit handling (the kit default is off).
-await runWorkspaceRuntimeHost(() => claxedoWorkspaceRuntimeBootFromEnv())
+await runWorkspaceRuntimeHost(() => claxedoWorkspaceRuntimeBootFromEnv(process.env, { plugins: [tasksRuntimeHostPlugin] }))

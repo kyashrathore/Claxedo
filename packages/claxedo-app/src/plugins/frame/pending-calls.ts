@@ -9,21 +9,25 @@ export class FrameCallError extends Error {
 
 export type Settled = { readonly id: number; readonly ok: true; readonly value: unknown } | { readonly id: number; readonly ok: false; readonly reason: string }
 
+export type CallProgressListener = (text: string | undefined) => void
+
 export type PendingCalls = {
-  readonly open: () => { readonly id: number; readonly result: Promise<unknown> }
+  readonly open: (progress?: CallProgressListener) => { readonly id: number; readonly result: Promise<unknown> }
+  readonly progress: (id: number, text: string | undefined) => void
   readonly settle: (settled: Settled) => void
   readonly failAll: (reason: string) => void
 }
 
 export function createPendingCalls(): PendingCalls {
-  const pending = new Map<number, { readonly resolve: (value: unknown) => void; readonly reject: (error: Error) => void }>()
+  const pending = new Map<number, { readonly resolve: (value: unknown) => void; readonly reject: (error: Error) => void; readonly progress?: CallProgressListener }>()
   let next = 1
   return {
-    open: () => {
+    open: (progress) => {
       const id = next++
-      const result = new Promise<unknown>((resolve, reject) => pending.set(id, { resolve, reject }))
+      const result = new Promise<unknown>((resolve, reject) => pending.set(id, { resolve, reject, progress }))
       return { id, result }
     },
+    progress: (id, text) => pending.get(id)?.progress?.(text),
     settle: (settled) => {
       const waiting = pending.get(settled.id)
       if (!waiting) return

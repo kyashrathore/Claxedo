@@ -13,6 +13,7 @@ import type { RuntimeRoute, Transport } from "./transport"
 import type { CloudWorkspace } from "./cloud-types"
 import type { AppError, Project, SessionLocation } from "./types"
 import { isStoppedCloud } from "./placement-runtime"
+import { cloudSessionHosts, hostedRoute, rememberSessionHost, sessionHostKey, type HostFinder, type SessionHosts } from "./session-hosts"
 import { workspaceStopped } from "./wire/connection"
 import { bootstrapCatalog, type BootstrapCatalog, type PlacementRecord } from "./wire/placements"
 import type { Address } from "./wire/session-row"
@@ -39,12 +40,15 @@ export type Workspaces = Pick<PlacementsApi, "byId" | "list" | "complete" | "ope
   readonly load: () => Promise<BootstrapCatalog>
   readonly boot: () => Promise<BootstrapCatalog>
   readonly refresh: () => Promise<void>
+  readonly locateSession: (ref: SessionAddress) => Promise<Pick<SessionLocation, "placementId" | "sessionId">>
   readonly accountProjects: () => Promise<readonly Project[]>
   readonly cloudWorkspaces: () => Promise<readonly CloudWorkspace[]>
   readonly accountProjectIds: (projectId: ProjectId) => readonly ProjectId[]
   readonly accountKnows: (workspaceId: string) => boolean
   readonly dispose: () => void
 }
+
+export type SessionAddress = { readonly workspaceId: string; readonly sessionId: string }
 
 const BOOTSTRAP_PATH = "/api/claxedo/bootstrap"
 const WORKSPACE_DIRECTORY_PREFIX = "workspace:"
@@ -98,39 +102,6 @@ function placementReads(records: () => readonly PlacementRecord[]) {
         return record ? { placementId: record.placement.id, projectId: record.placement.projectId } : undefined
       },
     },
-  }
-}
-
-type SessionHosts = { readonly roots: Map<string, string>; readonly askedOrServedByWorkspace: Map<string, Promise<unknown>>; readonly learned: Set<() => void> }
-
-function rememberSessionHost(hosts: SessionHosts, key: string, root: string) {
-  if (hosts.roots.get(key) === root) return
-  hosts.roots.set(key, root)
-  for (const listener of hosts.learned) listener()
-}
-
-const sessionHostKey = (ref: Pick<SessionLocation, "placementId" | "sessionId">) => JSON.stringify([ref.placementId, ref.sessionId])
-
-function hostedRoute(record: PlacementRecord, hosts: SessionHosts, ref: Pick<SessionLocation, "placementId" | "sessionId">): RuntimeRoute | undefined {
-  const root = hosts.roots.get(sessionHostKey(ref))
-  return root ? { ...record.route, sessionHost: { sessionId: root } } : undefined
-}
-
-type HostFinder = Transport["findSessionHost"]
-
-function cloudSessionHosts(find: HostFinder, hosts: SessionHosts) {
-  return async (record: PlacementRecord, ref: Pick<SessionLocation, "placementId" | "sessionId">) => {
-    if (record.placement.kind !== "cloud") return hostedRoute(record, hosts, ref)
-    const key = sessionHostKey(ref)
-    const pending = hosts.askedOrServedByWorkspace.get(key) ?? find(record.route.workspaceId, ref.sessionId).then((root) => {
-      if (root) rememberSessionHost(hosts, key, root)
-    }, (error: unknown) => {
-      hosts.askedOrServedByWorkspace.delete(key)
-      throw error
-    })
-    hosts.askedOrServedByWorkspace.set(key, pending)
-    await pending
-    return hostedRoute(record, hosts, ref)
   }
 }
 
@@ -247,6 +218,22 @@ function catalogReads(transport: Transport, queryClient: QueryClient, accountPla
   }
 }
 
+function sessionLocator(workspaces: Pick<Workspaces, "byId" | "shared" | "refresh">): Workspaces["locateSession"] {
+  return async (ref) => {
+    const location = { placementId: placementId(ref.workspaceId), sessionId: asSessionId(ref.sessionId) }
+    if (!workspaces.byId(location.placementId) && !workspaces.shared.find(location)) await workspaces.refresh()
+    return location
+  }
+}
+
+function catalogRefresh(rereadBoth: () => Promise<unknown>, relearned: Set<string>, shared: SharedSessions, queryClient: QueryClient, serverUrl: string) {
+  return async () => {
+    relearned.clear()
+    await Promise.all([rereadBoth(), shared.refresh()])
+    await invalidatePlacementReads(queryClient, serverUrl)
+  }
+}
+
 export function createWorkspaces(transport: Transport, queryClient: QueryClient, account?: HostedAccount): Workspaces {
   const shared = createSharedSessions(account, transport.serverUrl, queryClient)
   const accountPlacements = account ? createAccountPlacements(account, transport.serverUrl, queryClient) : undefined
@@ -255,6 +242,7 @@ export function createWorkspaces(transport: Transport, queryClient: QueryClient,
   const reads = placementReads(() => merged.published.catalog()?.placements ?? [])
   const { recordOf, hosts } = reads
   const forgetSessionHosts = transport.onSessionHost(reads.learnSessionHost)
+  const refresh = catalogRefresh(rereadBoth, relearned, shared, queryClient, transport.serverUrl)
   return {
     shared,
     ...reads.published,
@@ -272,11 +260,8 @@ export function createWorkspaces(transport: Transport, queryClient: QueryClient,
     ...merged.published,
     load,
     boot,
-    refresh: async () => {
-      relearned.clear()
-      await Promise.all([rereadBoth(), shared.refresh()])
-      await invalidatePlacementReads(queryClient, transport.serverUrl)
-    },
+    refresh,
+    locateSession: sessionLocator({ byId: reads.published.byId, shared, refresh }),
     ...accountReads(merged.linked, accountPlacements !== undefined, load),
     dispose: () => { forgetSessionHosts(); shared.dispose(); merged.dispose() },
   }

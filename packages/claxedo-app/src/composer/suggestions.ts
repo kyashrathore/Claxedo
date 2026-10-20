@@ -25,8 +25,6 @@ type SuggestionInput = {
   query: Accessor<SuggestionQuery>
 }
 
-const DOCUMENTS_COMMAND = "documents.open"
-
 function createAtItems(input: SuggestionInput, atQuery: Accessor<string | undefined>) {
   const server = useServer()
   const files = useQuery(() => {
@@ -65,7 +63,7 @@ function createSlashItems(input: SuggestionInput, slashQuery: Accessor<string | 
   const items = createMemo((): SlashItem[] => {
     const query = slashQuery()
     if (query === undefined) return []
-    const all = promptSlashCommands({ commandOptions: input.commandOptions(), customCommands: harnessCommands.commands() }).filter((command) => command.id !== DOCUMENTS_COMMAND)
+    const all = promptSlashCommands({ commandOptions: input.commandOptions(), customCommands: harnessCommands.commands() })
     if (!query) return all
     return fuzzysort.go(query, all, { keys: ["trigger", "title"] }).map((result) => result.obj)
   })

@@ -304,8 +304,8 @@ Paths marked **new** are proposed. Read the owning packages' instructions when i
 
 ### Unit 6 — Task consumer and operational acceptance (R1, R9–R11)
 
-- **Extend, if this placement is adopted:** `packages/claxedo-tasks/src/ports/session-bridge.ts` and `packages/claxedo-server-core/src/tasks-host/session-bridge-core.ts` for explicit Worker session placement. Reuse the existing Task memory namespace and wake contract; no replacement plugin or second memory store.
-- **New:** `packages/claxedo-server/src/tasks/hosted-agent-placement.test.ts`. Task supplies authorized context and continuation identity; core supplies ordinary session execution. No task-specific branch in the Pi loop.
+- **Extend, if this placement is adopted:** `packages/claxedo-tasks/src/ports/session-bridge.ts` and `packages/claxedo-tasks/src/host/session-bridge-core.ts` for explicit Worker session placement. Reuse the existing Task memory namespace and wake contract; no replacement plugin or second memory store.
+- **New:** `packages/claxedo-server/src/deployments/hosted-workerd/tasks-plugin/hosted-agent-placement.test.ts`. Task supplies authorized context and continuation identity; core supplies ordinary session execution. No task-specific branch in the Pi loop.
 - Cases: Task Start explicitly selects Worker placement; Pi reads the same notes previously written by local/cloud sessions; a wake admits one continuation despite duplicate delivery; memory revision/access rules match across runtimes; changed/revoked authority refuses; general chat works without Tasks. Support cases and human handoff are not acceptance prerequisites.
 - **Exit for this future integration:** Worker placement adds execution capability while reusing Task memory/wakes and preserving native execution. Publish capacity/cost measurements and retention limits. Run affected package checks and architecture ratchets for new production imports; document any unverified public flow explicitly. None of this blocks the current memory-tool and durable-wake scope.
 

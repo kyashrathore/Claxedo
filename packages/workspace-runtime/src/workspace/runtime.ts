@@ -28,7 +28,6 @@ import {
 } from "@claxedo/session-core"
 import { deriveChildSessionId } from "../host/child-identity"
 import { readSessionAttachment } from "../host/attachment-files"
-import { flushRuntimeSessionDocuments, disposeRuntimeSessionDocuments } from "../routes/document-hydration"
 import { realDirectoryPath } from "@claxedo/helpers/real-path"
 import { inside } from "@claxedo/helpers/path"
 import { withSessionCore } from "../session-context"
@@ -537,8 +536,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         machine: {
           checkpoint,
           readAttachment: readSessionAttachment,
-          flushSessionDocuments: flushRuntimeSessionDocuments,
-          disposeSessionDocuments: disposeRuntimeSessionDocuments,
+          sessionLifecycle: options.sessionLifecycle ?? [],
           sessionToolPrompt: (sessionId) => {
             const registration = sessionToolPrompts.get(sessionId)
             return registration ? scopedToolPrompt(sessionId, registration) : undefined

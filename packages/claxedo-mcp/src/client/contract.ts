@@ -25,19 +25,17 @@ export type ResolvedTarget = Readonly<{
 
 export type ClaxedoFetch = (path: string, init?: RequestInit) => Promise<Response>
 
-/** What a Tasks grant may do: read a project's tasks, create one, start a task's session. */
-export type TasksOperation = "read" | "create" | "start"
-
 /**
- * The Tasks routes this caller may reach, and what it may do there.
+ * A service a composition grants this caller: the routes it reaches it at, and
+ * what it may do there.
  *
  * The operations are the control plane's answer rather than the tools': hosted,
  * they are the scope of the capability the mount presents; locally, the whole
  * surface of the single actor.
  */
-export type TasksGrant = Readonly<{
+export type McpServiceGrant = Readonly<{
   fetch: ClaxedoFetch
-  operations: readonly TasksOperation[]
+  operations: readonly string[]
   /**
    * The project this grant is confined to, when it is confined to one. A
    * cloud runtime host knows it from the grant itself and has no project route
@@ -101,10 +99,12 @@ export interface ClaxedoMcpClient {
   readonly ownWorkspace?: WorkspaceTarget
   /** Control-plane routes (`/api/control/*`, `/api/workspace/*`); undefined when no account credential is reachable. */
   readonly controlPlane?: ClaxedoFetch
-  /** Document routes authorized for this caller; independent of account control-plane access. */
-  readonly documents?: ClaxedoFetch
-  /** Tasks routes (`/api/claxedo/tasks/*`) and the operations this caller was granted; undefined where the deployment serves no Tasks. */
-  readonly tasks?: TasksGrant
+  /**
+   * The services the composition granted this caller, keyed by the id a
+   * tool's access names (`tasks`, `documents`). A service the deployment does
+   * not serve, or does not grant this caller, has no entry.
+   */
+  readonly services: Readonly<Record<string, McpServiceGrant>>
   /** App plugin authoring; undefined unless this caller is a session of the machine's owner. */
   readonly appPlugins?: AppPluginsGrant
   /**

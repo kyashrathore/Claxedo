@@ -129,6 +129,7 @@ test("35 a live plugin on the web asks again when its code changes, keeps its la
   await app.goto(`${stack.url}/settings/app-plugins?safe-mode`)
   await expect(app.getByRole("status").filter({ hasText: "Safe mode" })).toBeVisible()
   await expect(appPluginRow(app, "Fixture")).toContainText("Off")
+  await expect(appPluginRow(app, "Tasks"), "the built-in plugin safe mode keeps on").toContainText("On")
   await app.getByRole("button", { name: "Leave safe mode" }).click()
   await expect(appPluginRow(app, "Fixture")).toContainText("On")
 
@@ -142,7 +143,7 @@ test("35 a live plugin on the web asks again when its code changes, keeps its la
   await expect(removeFixture).toHaveAttribute("data-variant", "danger")
   await removeFixture.click()
   await expect(appPluginRow(app, "Fixture")).toHaveCount(0)
-  await expect(app.getByText("No app plugins yet.")).toBeVisible()
+  await expect(appPluginRow(app, "Tasks"), "the built-in plugin a removal leaves").toContainText("Built in")
   expect((await listLivePlugins(stack.url)).plugins).toEqual([])
   await expect(fs.access(path.join(folder, "package.json"))).resolves.toBeUndefined()
 })

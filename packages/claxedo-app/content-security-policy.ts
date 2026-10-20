@@ -1,3 +1,7 @@
+import { MCP_APP_BOOTSTRAP_HASH } from "./src/mcp-apps/bootstrap"
+
+export const MCP_APP_BOOTSTRAP_SOURCE = `'${MCP_APP_BOOTSTRAP_HASH}'`
+
 export type ContentSecurityPolicyInput = {
   readonly servers: readonly string[]
   readonly scripts?: readonly string[]
@@ -34,7 +38,7 @@ export function contentSecurityPolicy(input: ContentSecurityPolicyInput): string
   const sockets = servers.map(socketOrigin)
   return [
     "default-src 'self'",
-    `script-src ${sources(["'self'", "'wasm-unsafe-eval'", "blob:"], input.scripts ?? [])}`,
+    `script-src ${sources(["'self'", "'wasm-unsafe-eval'", "blob:", MCP_APP_BOOTSTRAP_SOURCE], input.scripts ?? [])}`,
     "style-src 'self' 'unsafe-inline'",
     `img-src ${sources(["'self'", "data:", "blob:", "https:"], servers)}`,
     "font-src 'self' data:",

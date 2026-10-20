@@ -1,0 +1,6 @@
+export { createHostedDocumentsPlugin, HOSTED_DOCUMENTS_PLUGIN_BASE, type HostedDocumentsPorts } from "./plugin"
+export { createHostedDocumentsBackend, type HostedDocumentsRuntime } from "./backend"
+export { createHostedDocumentIndex } from "./document-index"
+export * from "./managed"
+export * from "./project-index"
+export * from "./r2-object-store.cf"

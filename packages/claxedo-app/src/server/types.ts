@@ -285,15 +285,11 @@ export type Capabilities = {
   readonly servingMachine: ServingMachine | undefined
   readonly harnesses: readonly HarnessInfo[]
   readonly features: {
-    readonly documents: boolean
     readonly connections: boolean
     readonly cloud: boolean
     readonly livePlugins: boolean
   }
+  readonly plugins: ReadonlySet<string>
 }
-
-export type FeatureAvailability =
-  | { readonly kind: "available" }
-  | { readonly kind: "unavailable"; readonly reason: string }
 
 export type FetchQuery<T> = SolidQueryOptions<T, AppError, T> & { readonly initialData?: undefined }

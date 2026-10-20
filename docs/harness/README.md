@@ -198,6 +198,13 @@ prompt. `POST /session/:id/background-task/stop` with a `toolCallId` reaches
 a transport without the operation answers `unsupported`, and a session with no
 running harness process answers `not_found` without launching one.
 
+The `/session/:id/mcp/:server/*` routes reach
+[`createSessionMcp`](../../packages/session-core/src/host/mcp.ts), which asks the
+held attachment's `HarnessTransport.mcp` in the same way: `unsupported` without
+the group, `not_found` for a session with no running harness process. Pi's
+[`PiMcpTools`](../../packages/harness/src/transports/pi-durable/mcp.ts) also
+captures an MCP App's document when its tool completes; its README says how.
+
 ## Provider events and versions
 
 Each transport's README lists the provider events it maps and ignores; unknown

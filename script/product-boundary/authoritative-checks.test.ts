@@ -10,9 +10,11 @@ describe("product boundary authoritative checks", () => {
   test("every product policy composes existing gates without recursing into verify:closure", () => {
     expect(Object.keys(AUTHORITATIVE_CHECKS).sort()).toEqual([
       "@claxedo/desktop",
+      "@claxedo/documents",
       "@claxedo/host-connector",
       "@claxedo/local-server",
       "@claxedo/server",
+      "@claxedo/tasks",
     ])
 
     const commands = Object.values(AUTHORITATIVE_CHECKS)
@@ -46,6 +48,8 @@ describe("product boundary authoritative checks", () => {
       "hosted workerd built entry smoke",
       "Worker deployment closures",
     ])
+    expect(AUTHORITATIVE_CHECKS["@claxedo/tasks"]?.map((check) => check.label)).toEqual(["tasks app entry"])
+    expect(AUTHORITATIVE_CHECKS["@claxedo/documents"]?.map((check) => check.label)).toEqual(["documents app entry"])
     expect(commands.filter((command) => command.includes("verify:closure"))).toEqual([])
   })
 

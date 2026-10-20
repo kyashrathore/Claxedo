@@ -1,6 +1,6 @@
 import type { PluginApi, SessionAttachment, SessionRef, SessionStatus } from "@claxedo/plugin-api"
-import { encodeAttachmentData } from "@claxedo/tasks"
 import { uuid } from "@/lib/uuid"
+import { encodeBase64 } from "../base64"
 import { sessionId, type Placement, type PromptAttachment } from "@/server"
 import { sessionActivity, type SessionActivity, type SessionRowView } from "@/session"
 import { sessionPath } from "@/shell"
@@ -12,7 +12,7 @@ const PLACEMENT_PREFERENCE: readonly Placement["kind"][] = ["folder", "worktree"
 
 function promptAttachment(scope: BindingScope, attachment: SessionAttachment): PromptAttachment {
   const mime = attachment.mimeType
-  if (mime.startsWith("image/")) return { kind: "image", dataUrl: `data:${mime};base64,${encodeAttachmentData(attachment.bytes)}`, name: attachment.name, mime }
+  if (mime.startsWith("image/")) return { kind: "image", dataUrl: `data:${mime};base64,${encodeBase64(attachment.bytes)}`, name: attachment.name, mime }
   if (mime.startsWith("text/") || mime === "application/json") {
     return { kind: "text", text: new TextDecoder().decode(attachment.bytes), label: attachment.name }
   }
@@ -55,10 +55,8 @@ function sessionBindings(scope: BindingScope): PluginApi["sessions"] {
       return { sessionId: ref.sessionId, workspaceId: ref.placementId }
     },
     status: (ref) => sessionStatusOf(sessionRowOf(scope, ref)),
-    open: (ref) => {
-      const row = sessionRowOf(scope, ref)
-      if (!row) throw new PluginEntryError(scope.manifest.id, `session ${ref.sessionId} is not in the session list`)
-      routing.navigate(sessionPath(row.ref))
+    open: async (ref) => {
+      routing.navigate(sessionPath(await scope.services.server.placements.locateSession(ref)))
     },
   }
 }

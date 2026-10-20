@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import { Miniflare } from "miniflare"
-import { createR2ConditionalObjectStore, type R2BucketBinding } from "./r2-object-store.cf"
+import { createR2ConditionalObjectStore, type R2BucketBinding } from "@claxedo/documents/hosted"
 
 describe("Conditional object store against Miniflare", () => {
   let miniflare: Miniflare

@@ -1,4 +1,5 @@
 import type { Component, JSX } from "solid-js"
+import type { ToolCardTemplate } from "@claxedo/plugin-api"
 import type { PlacementId, ProjectId, SessionId, TerminalId } from "@/server"
 
 export type Json = null | boolean | number | string | readonly Json[] | { readonly [key: string]: Json }
@@ -132,6 +133,12 @@ export type RouteEntry = {
   readonly requiresSignIn?: true
 }
 
+export type ToolCardEntry = {
+  readonly id: string
+  readonly template: ToolCardTemplate
+  readonly pageHref: (pageId: string, params: Readonly<Record<string, string>>) => string | undefined
+}
+
 export type Registry<Entry> = {
   readonly list: () => readonly Entry[]
   readonly add: (entry: Entry) => Disposer
@@ -149,4 +156,5 @@ export type ShellRegistries = {
   readonly themes: Registry<ThemeEntry>
   readonly iconSkins: Registry<IconSkin>
   readonly routes: Registry<RouteEntry>
+  readonly toolCards: Registry<ToolCardEntry>
 }

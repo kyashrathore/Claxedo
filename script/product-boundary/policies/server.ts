@@ -31,6 +31,11 @@ export const serverWorkerd: Policy = {
   ],
   forbiddenModules: [
     "packages/claxedo-local-server",
+    // The Documents plugin's local placements: the repository and managed
+    // backends over the machine's files, and the daemon's plugin.
+    "packages/claxedo-documents/src/host/backends/local",
+    "packages/claxedo-documents/src/host/repository",
+    "packages/claxedo-documents/src/local",
   ],
 
   control: {
@@ -59,11 +64,10 @@ export const serverWorkerd: Policy = {
   // the org, team and People routes share one typed refusal envelope
   // (`platform/http/public-api-error-response.ts`). Hosted
   // Pages are mounted by the core Worker: the D1 document authority
-  // (`authority/adapters/d1/document-authority.ts`), the R2 documents backend
-  // with its index and managed store (`documents/backends/hosted/`), and the
-  // runtime broker that hydrates a page into a session
-  // (`documents/backends/hosted/runtime-broker.ts` with its relay client
-  // `documents/relay-http.ts`). The hosted runtime delivery asks a workspace's
+  // (`authority/adapters/d1/document-authority.ts`) and the runtime broker
+  // that hydrates a page into a session (`documents/runtime-broker.ts` with
+  // its relay client `documents/relay-http.ts`), handed to `@claxedo/documents`
+  // by `documents/compose.ts`. The hosted runtime delivery asks a workspace's
   // recorded backing before it provisions a sandbox for it
   // (`workspace/cloud-root-backing.ts`), so a machine-placed workspace gets none.
   // The D1 workspace authority's refusal type, its owner identity and
@@ -208,6 +212,21 @@ export const serverWorkerd: Policy = {
   // joins (draft accounts, OpenCode, Pi) are wired from their own module
   // (`deployments/hosted-shared/hosted-draft-catalogs.ts`), split from the
   // core app. It adds no package edge: the harness was already in the Worker.
+  // 174/22, no headroom.
+  // +1 module (owner: hosted Pages, composed in every profile):
+  // `documents/hosted-plugin.ts` builds the Documents server plugin the core
+  // Worker root hands the core app, which mounts its `/documents` and `/p`
+  // routes and reports its capability. It reaches only owners already here.
+  // 175/22, no headroom.
+  // -2 modules: the sandbox pass family (`platform/auth/sandbox-pass.ts`,
+  // `platform/auth/runtime-token-keys.ts`) moved to `@claxedo/server-core`,
+  // where the Tasks plugin's capability signs with it too.
+  // 173/22, no headroom.
+  // -5 modules, +1 package: `@claxedo/documents` (owner: the Documents plugin,
+  // composed in every profile) holds the R2 backend, its document and project
+  // indexes, the hosted plugin builder and the routes; `documents/compose.ts`
+  // replaces `documents/hosted-plugin.ts` and hands it this host's sharing
+  // authority and runtime broker. 168/23, no headroom.
   // +1 module (owner: the hosted shell routes): a workspace runtime's harness
   // health and OpenCode catalog, read over the relay with the runtime's
   // identity beside them under one token (`workspace/harness-runtime.ts`),
@@ -235,8 +254,8 @@ export const serverWorkerd: Policy = {
   // without Better Auth, to tell a signed-in browser's shell request from a
   // signed-out one; the foundation and the auth descriptor read it from there.
   // It adds no package edge.
-  // 181/22, no headroom.
-  ceilings: { modules: 181, packages: 22 },
+  // 175/23, no headroom.
+  ceilings: { modules: 175, packages: 23 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

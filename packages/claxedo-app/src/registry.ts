@@ -8,10 +8,9 @@ import { onboardingRoute } from "@/onboarding"
 import { panelDictionary } from "@/panel"
 import { pluginsSettingsSection } from "@/plugins"
 import { projectsDictionary, projectsSettingsSection } from "@/projects"
-import { marketplacePage, railDictionary, tasksPage } from "@/rail"
+import { marketplacePage, railDictionary } from "@/rail"
 import { reviewDictionary } from "@/review"
 import { settingsDictionary, settingsSections } from "@/settings"
-import { presetsSettingsSection } from "@/tasks"
 import { draftSessionPaneKind, sessionDetailsPanelView, sessionPaneKind, sessionScreenDictionary, subagentPanelView } from "@/session"
 import { transcriptDictionary } from "@/transcript"
 import { usageDictionary } from "@/usage"
@@ -20,7 +19,7 @@ import { pageTabPaneKind, paneKindEntry, settingsPage, shellDictionary, type Fir
 import { workbenchDictionary } from "@/workbench"
 
 export const firstParty: FirstPartyEntries = {
-  pages: [settingsPage, tasksPage, marketplacePage],
+  pages: [settingsPage, marketplacePage],
   paneKinds: [
     paneKindEntry(sessionPaneKind),
     paneKindEntry(draftSessionPaneKind),
@@ -29,7 +28,7 @@ export const firstParty: FirstPartyEntries = {
     paneKindEntry(pageTabPaneKind),
   ],
   panelViews: [subagentPanelView, sessionDetailsPanelView],
-  settingsSections: [...settingsSections, modelsSettingsSection, sandboxSettingsSection, projectsSettingsSection, pluginsSettingsSection, presetsSettingsSection],
+  settingsSections: [...settingsSections, modelsSettingsSection, sandboxSettingsSection, projectsSettingsSection, pluginsSettingsSection],
   sidebarItems: [],
   overlays: [],
   commands: [],
@@ -37,6 +36,7 @@ export const firstParty: FirstPartyEntries = {
   themes: [],
   iconSkins: [],
   routes: [onboardingRoute, ...authRoutes],
+  toolCards: [],
 }
 
 export const firstPartyDictionaries: readonly Translations[] = [

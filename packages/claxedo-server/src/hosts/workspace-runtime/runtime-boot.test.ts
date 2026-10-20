@@ -323,15 +323,19 @@ describe.skipIf(process.platform === "win32")("claxedo workspace-runtime boot po
     expect(boot.options.hostTunnel).toBeUndefined()
   })
 
-  test("forwards the host entry's route contributions and always mounts the first-party MCP beside them", async () => {
+  test("forwards the host entry's route contributions and always mounts Documents hydration and the first-party MCP beside them", async () => {
     const contribution = { id: "agent-plugins", mount: () => ({ path: "/", routes: {} as never, dispose() {} }) }
     const env = { WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_test", WORKSPACE_RUNTIME_DIRECTORY: process.cwd() }
     const boot = await claxedoWorkspaceRuntimeBootFromEnv(env, { routeContributions: [contribution as never] })
     expect(boot.options.routeContributions?.map((entry) => entry.id))
-      .toEqual(["agent-plugins", FIRST_PARTY_MCP_RUNTIME_CONTRIBUTION_ID])
+      .toEqual(["claxedo-documents", "agent-plugins", FIRST_PARTY_MCP_RUNTIME_CONTRIBUTION_ID])
+    expect(boot.options.routeContributions?.[0]?.sessionLifecycle).toEqual({
+      turnSettled: expect.any(Function),
+      beforeSessionDelete: expect.any(Function),
+    })
     const plain = await claxedoWorkspaceRuntimeBootFromEnv(env)
     expect(plain.options.routeContributions?.map((entry) => entry.id))
-      .toEqual([FIRST_PARTY_MCP_RUNTIME_CONTRIBUTION_ID])
+      .toEqual(["claxedo-documents", FIRST_PARTY_MCP_RUNTIME_CONTRIBUTION_ID])
   })
 
   test("selects either an explicit native harness or a configured connection", () => {

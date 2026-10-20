@@ -4,8 +4,8 @@ import { createRoot } from "solid-js"
 import { createCapabilities } from "./capabilities"
 import type { BootstrapDeclaration } from "./wire/placements"
 
-const daemon: BootstrapDeclaration = { serverKind: "daemon", issuesSessions: false, documents: true, connections: false, hostAggregate: true, machineName: "Ada's Mac" }
-const worker: BootstrapDeclaration = { serverKind: "hosted", issuesSessions: true, documents: false, connections: true, hostAggregate: false }
+const daemon: BootstrapDeclaration = { serverKind: "daemon", issuesSessions: false, capabilities: ["documents", "tasks"], connections: false, hostAggregate: true, machineName: "Ada's Mac" }
+const worker: BootstrapDeclaration = { serverKind: "hosted", issuesSessions: true, capabilities: [], connections: true, hostAggregate: false }
 
 function declared(declaration: BootstrapDeclaration, hostedAccount: boolean) {
   return createRoot((dispose) => {
@@ -22,4 +22,9 @@ test("capabilities: the hosted account is the scope's own fact, while issuing se
   expect(declared(daemon, false)).toMatchObject({ issuesSessions: false, hostedAccount: false, features: { cloud: false } })
   expect(declared(worker, true)).toMatchObject({ issuesSessions: true, hostedAccount: true, features: { cloud: true }, servingMachine: undefined })
   expect(declared(worker, false)).toMatchObject({ issuesSessions: true, hostedAccount: false, features: { cloud: true } })
+})
+
+test("capabilities: the plugins a server offers are the capabilities its bootstrap declares, and nothing is probed for them", () => {
+  expect([...(declared(daemon, false)?.plugins ?? [])]).toEqual(["documents", "tasks"])
+  expect([...(declared(worker, false)?.plugins ?? [])]).toEqual([])
 })

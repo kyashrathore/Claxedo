@@ -1,6 +1,6 @@
 # @claxedo/plugin-api
 
-The contract between a Claxedo plugin and the app that hosts it. Every plugin is a user plugin registered with the daemon.
+The contract between a Claxedo app plugin and the app that hosts it. A plugin is either first-party, a workspace package the app ships as a bundle (Tasks, `@claxedo/tasks`, and Documents, `@claxedo/documents`), or a live plugin, a folder the machine's owner registered with the daemon. Both kinds get the same API. `FIRST_PARTY_PLUGIN_IDS` (`claxedo-tasks`, `claxedo-documents`) reserves the first-party ids: the daemon refuses a live plugin that takes one.
 
 ## The manifest
 
@@ -26,11 +26,11 @@ A plugin is a package whose `package.json` carries a `claxedo` block:
 
 | Field | Meaning |
 | --- | --- |
-| `id` | Lowercase letters, digits and dashes, at most 64 characters. The key of every registry entry the plugin makes. |
-| `name` | Shown in Settings → Plugins. |
+| `id` | Lowercase letters, digits and dashes, at most 64 characters, and not one of `FIRST_PARTY_PLUGIN_IDS` for a live plugin. The key of every registry entry the plugin makes. |
+| `name` | Shown in Settings → App plugins. |
 | `version` | Semantic version of the plugin. |
 | `app` | The app entry, relative to the package root, whose default export is `definePlugin(...)`. |
-| `requires` | Capabilities the connected server must have before the plugin activates: `tasks`, `documents`. |
+| `requires` | Server capabilities the plugin needs before it activates, as open ids (`^[a-z][a-z0-9-]*$`). One is offered when the server's bootstrap lists it in `deployment.capabilities`, which names the capability of each first-party server plugin it mounted: `tasks`, `documents`. |
 | `server.routes` | Claxedo server route prefixes `api.server.fetch` may call. |
 | `server.operations` | Control-plane operations `api.server.operation` may run; `documents.*` allows a namespace. Results are `unknown`; the plugin validates the response before using it. |
 | `backend` | Optional. A backend the hosted Worker loads per organization: `entry` (the module, relative to the package root), `objects` (the Durable Object classes it exports), `outbound` (the hosts it may fetch over https) and `routes` (`METHOD /path` patterns, where `:name` matches one segment and a trailing `*` one or more). `packages/claxedo-server/src/plugin-backends/README.md` describes the platform. |
@@ -44,20 +44,30 @@ A plugin is a package whose `package.json` carries a `claxedo` block:
 | Primitive | Purpose |
 | --- | --- |
 | `sidebar.item` | A row in the main sidebar that opens a page |
-| `pages.register`, `pages.open` | A page in the page tab, with its own path |
+| `pages.register`, `pages.open` | A page with its own path, rendered or a surface page (`surface(channel, props)`). A surface page with `tab: true` opens in the page tab the app's own tab pages share, and `icon` names its glyph. A path with params (`/tasks/:taskId?`) keeps one program while the params change: the host calls `navigated(props)` instead of opening it again |
 | `panes.register`, `panes.open` | A pane kind in the workbench, with its restore state |
-| `settings.section` | A section in the settings sidebar and page |
+| `settings.section`, `settings.open` | A section in the settings sidebar and page, rendered (`render`) or a surface (`surface(channel)`, with an optional `group`, `workspace` or `app`); `open` shows one of the plugin's sections |
 | `overlays.register`, `overlays.open`, `overlays.close` | A keyboard-invoked overlay |
 | `commands.register`, `commands.run` | Commands with keybindings |
 | `mentions.register` | Items in the composer's `@` menu |
 | `workbench` | List tabs with status, activate, close, move |
 | `themes.register`, `icons.registerSkin` | Themes and icon skins |
-| `sessions` | Create with a prompt and attachments, status, open |
+| `sessions` | Create with a prompt and attachments, status, open (also a session the app has not listed yet: the host rereads the workspace catalog once, then navigates) |
+| `workspaces` | `followStart(workspaceId, onProgress)`: follow a cloud workspace's start, with each step in the words the session screen uses, until it runs or fails |
 | `projects` | List, and the current project's id |
-| `server` | `fetch` and `operation`, limited to what the manifest names |
+| `server` | `fetch` and `operation`, limited to what the manifest names; a response body arrives byte for byte on every platform |
 | `context` | Plugin id and version, platform, locale, current project and session, an abort signal disposed with the plugin |
 | `ui` | `toast`, `confirm` |
 | `i18n` | `t` |
+| `transcript` | `toolCards(templates)`: declarative cards for the plugin's agent tools in the transcript (`transcript.ts`, checked by `readToolCardTemplates`): a title, subject, status with its glyphs and tones, facts, rows and links to the plugin's page or a session, read by JSON Pointer from the tool's `{ args, result }`. A tool that already has a card is refused |
+
+## Surfaces
+
+`@claxedo/plugin-api/surface` is the A2UI v0.9 contract an agent's `ui_show` reply and a plugin's surface page share: the catalog (`catalog.ts`), the messages (`messages.ts`), the spec check (`spec.ts`), and `SURFACE_DESIGN_GUIDE` (`design-guide.ts`), the design guidance the `ui_guide` MCP tool serves. Every recipe in the guide is a complete spec that `design-guide.test.ts` checks.
+
+## CLI commands
+
+`@claxedo/plugin-api/cli` declares `CliCommand` (`name`, `usage`, `run(args, context)`) and `CliCommandContext`, which the `claxedo` CLI hands a first-party plugin's command: the signed-in control plane's URL, its request path, the access token and the environment, so a command carries no credential handling of its own. The CLI composes them in `cli/src/plugin-commands.ts`; Documents contributes `claxedo documents`.
 
 ## The runtime global
 

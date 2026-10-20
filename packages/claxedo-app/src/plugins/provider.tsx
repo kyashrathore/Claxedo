@@ -13,11 +13,13 @@ import { pluginServerCalls } from "./api"
 import { createApiFactory, createClaims, createOverlayTracker, type HostServices } from "./bindings"
 import { createPluginHost, type PluginHost } from "./host"
 import { pluginsDictionary, usePluginsText } from "./i18n"
-import { createFrameRuntimeSource } from "./frame/runtime-source"
+import { createFrameRuntimeSource, type FrameRuntime } from "./frame/runtime-source"
+import { FIRST_PARTY_BUNDLES } from "./first-party/bundles"
+import { frameBundleLoader, inAppBundleLoader, loadFirstPartyPlugins } from "./first-party/load"
 import { createLiveReconciler } from "./live/controller"
 import { liveListState, type LiveListState } from "./live/list-state"
 import { loadFrameBuild, loadLiveBuild, type LiveRow } from "./live/load"
-import type { PluginBuild } from "./model"
+import { liveOriginOf, type PluginBuild } from "./model"
 import { createPluginPreferences, safeModeRequested } from "./preferences"
 import { approvalLetsRun } from "./approval"
 import { requestApproval } from "./view/approval-request"
@@ -69,8 +71,12 @@ function createActivate(services: HostServices) {
   return (build: PluginBuild, onCrash: (reason: string) => void): Promise<Activation> => activatePlugin({ build, buildApi, onCrash, owner: services.owner })
 }
 
-function useLiveList(host: PluginHost, services: HostServices): Accessor<LiveListState> {
-  const runtime = createFrameRuntimeSource()
+function useBundledPlugins(host: PluginHost, services: HostServices, runtime: FrameRuntime): void {
+  const load = services.platform === "desktop" ? inAppBundleLoader() : frameBundleLoader({ runtime, services })
+  onCleanup(loadFirstPartyPlugins(FIRST_PARTY_BUNDLES, load, host.put))
+}
+
+function useLiveList(host: PluginHost, services: HostServices, runtime: FrameRuntime): Accessor<LiveListState> {
   const loadBuild = (row: LiveRow) =>
     services.platform === "desktop" ? loadLiveBuild(row, services.calls) : loadFrameBuild(row, services.calls, { runtime, services })
   const reconciler = createLiveReconciler(host, loadBuild)
@@ -90,7 +96,7 @@ function useLiveApprovals(host: PluginHost, services: HostServices): (pluginId: 
   createEffect(() => {
     if (host.safeMode()) return
     for (const plugin of host.plugins()) {
-      if (plugin.origin.builtAt === undefined || approvalLetsRun(plugin.approval)) continue
+      if (liveOriginOf(plugin)?.builtAt === undefined || approvalLetsRun(plugin.approval)) continue
       const build = `${plugin.id}:${plugin.origin.hash}`
       if (asked.has(build)) continue
       asked.add(build)
@@ -100,13 +106,8 @@ function useLiveApprovals(host: PluginHost, services: HostServices): (pluginId: 
   return request
 }
 
-function useOfferedCapabilities(services: HostServices, required: Accessor<ReadonlySet<PluginCapability>>) {
-  const tasks = useQuery(() => ({ ...services.server.queries.tasks.availability(), enabled: required().has("tasks") }))
-  const offered: Record<PluginCapability, () => boolean> = {
-    documents: () => services.server.capabilities()?.features.documents === true,
-    tasks: () => tasks.data?.kind === "available",
-  }
-  return (capability: PluginCapability) => offered[capability]()
+function offeredCapability(services: HostServices) {
+  return (capability: PluginCapability) => services.server.capabilities()?.plugins.has(capability) === true
 }
 
 export function PluginHostProvider(props: { readonly scope: string; readonly children: JSX.Element }): JSX.Element {
@@ -114,16 +115,17 @@ export function PluginHostProvider(props: { readonly scope: string; readonly chi
   onCleanup(services.i18n.add(pluginsDictionary))
   const host = createPluginHost({
     preferences: createPluginPreferences(props.scope, safeModeRequested(window.location.search)),
-    offered: (capability) => offered(capability),
+    offered: offeredCapability(services),
     activate: createActivate(services),
     removeLive: services.calls.removeLive,
   })
-  const offered = useOfferedCapabilities(services, host.required)
   onCleanup(host.dispose)
+  const runtime = createFrameRuntimeSource()
+  useBundledPlugins(host, services, runtime)
   const value: PluginsContext = {
     ...host,
     platform: services.platform,
-    liveList: useLiveList(host, services),
+    liveList: useLiveList(host, services, runtime),
     requestApproval: useLiveApprovals(host, services),
   }
   return <PluginHostContext.Provider value={value}>{props.children}</PluginHostContext.Provider>

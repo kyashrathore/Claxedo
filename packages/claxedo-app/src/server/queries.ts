@@ -1,4 +1,4 @@
-import type { QueryClient } from "@tanstack/solid-query"
+import type { Query, QueryClient } from "@tanstack/solid-query"
 import type { HostedAccount } from "./account"
 import { agentConnectionQueries } from "./agent-connections"
 import { integrationQueries } from "./integrations"
@@ -21,7 +21,6 @@ import { organizationQueries } from "./organizations"
 import { projectQueries } from "./projects"
 import { projectEnvironmentQuery } from "./project-environment"
 import { queryKeys } from "./query-keys"
-import { taskQueries } from "./tasks"
 import { terminalQueries } from "./terminals"
 import type { Transport } from "./transport"
 import type { FetchQuery, Placement } from "./types"
@@ -52,7 +51,6 @@ export function createQueries(transport: Transport, workspaces: Workspaces, acco
     accounts: accountQueries(transport, account),
     usage: usageQueries(transport, account),
     marketplace: marketplaceQueries(transport),
-    tasks: taskQueries(transport),
     codeHost: cloud.codeHost,
     cloud: cloud.cloud,
     terminals: terminalQueries(transport, workspaces),
@@ -103,8 +101,16 @@ function invalidationKeys(server: string, event: ServerEvent, endsWritingTurn: b
   }
 }
 
-export function invalidateFor(queryClient: QueryClient, server: string, event: ServerEvent, endsWritingTurn: boolean) {
+function isFirstReadInFlight(query: Query): boolean {
+  return query.state.data === undefined && query.state.fetchStatus === "fetching"
+}
+
+export async function invalidateFor(queryClient: QueryClient, server: string, event: ServerEvent, endsWritingTurn: boolean): Promise<void> {
+  const refreshes: Promise<void>[] = []
   for (const queryKey of invalidationKeys(server, event, endsWritingTurn)) {
-    void queryClient.invalidateQueries({ queryKey })
+    const joined = queryClient.getQueryCache().findAll({ queryKey, predicate: isFirstReadInFlight })
+    const refreshed = queryClient.invalidateQueries({ queryKey })
+    refreshes.push(joined.length === 0 ? refreshed : refreshed.then(() => queryClient.invalidateQueries({ queryKey, predicate: (query) => joined.includes(query) })))
   }
+  await Promise.all(refreshes)
 }

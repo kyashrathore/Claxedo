@@ -1,5 +1,5 @@
 import { createSignal, type Accessor } from "solid-js"
-import { PLUGIN_CAPABILITIES, type PluginCapability } from "@claxedo/plugin-api"
+import { isPluginCapability } from "@claxedo/plugin-api"
 import { persistedSignal, preferenceKey } from "@/lib/persisted"
 import { isRecord, isStringList } from "@claxedo/helpers/guards"
 import type { Approval } from "./approval"
@@ -19,10 +19,6 @@ export type PluginPreferences = {
 
 const NO_SWITCHES: PluginSwitches = { off: [] }
 const NO_APPROVALS: PluginApprovals = {}
-
-function isPluginCapability(value: string): value is PluginCapability {
-  return (PLUGIN_CAPABILITIES as readonly string[]).includes(value)
-}
 
 function readSwitches(value: unknown): PluginSwitches | undefined {
   return isRecord(value) && isStringList(value.off) ? { off: value.off } : undefined

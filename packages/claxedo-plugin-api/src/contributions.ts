@@ -1,4 +1,5 @@
 import type { JSX } from "solid-js"
+import type { SurfaceActionEvent, SurfaceMessage } from "./surface"
 
 export type Disposer = () => void
 
@@ -24,12 +25,34 @@ export interface PageProps {
   params: Readonly<Record<string, string>>
 }
 
-export interface PageDefinition {
+export interface RenderedPageDefinition {
   id: string
   path: string
   title: string
   render(props: PageProps): JSX.Element
 }
+
+export interface SurfaceChannel {
+  readonly surfaceId: string
+  send(...messages: readonly SurfaceMessage[]): void
+}
+
+export interface SurfaceProgram {
+  action?(action: SurfaceActionEvent): void | Promise<void>
+  navigated?(props: PageProps): void
+  dispose?(): void
+}
+
+export interface SurfacePageDefinition {
+  id: string
+  path: string
+  title: string
+  tab?: true
+  icon?: IconName
+  surface(channel: SurfaceChannel, props: PageProps): SurfaceProgram | void
+}
+
+export type PageDefinition = RenderedPageDefinition | SurfacePageDefinition
 
 export interface PagesApi {
   register(page: PageDefinition): Disposer
@@ -68,8 +91,22 @@ export interface SettingsSection {
   render(): JSX.Element
 }
 
+export type SettingsGroup = "workspace" | "app"
+
+export interface SurfaceSettingsSection {
+  id: string
+  title: string
+  icon?: IconName
+  order?: number
+  group?: SettingsGroup
+  surface(channel: SurfaceChannel): SurfaceProgram | void
+}
+
+export type SettingsSectionDefinition = SettingsSection | SurfaceSettingsSection
+
 export interface SettingsApi {
-  section(section: SettingsSection): Disposer
+  section(section: SettingsSectionDefinition): Disposer
+  open(sectionId: string): void
 }
 
 export interface OverlayProps {

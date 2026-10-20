@@ -7,6 +7,7 @@ const client: ClaxedoMcpClient = {
   resolveTarget: async () => ({ kind: "loopback", baseUrl: "", headers: {} }),
   server: () => Promise.reject(new Error("the fixture has no typed client")),
   workspaces: async () => [],
+  services: {},
 }
 
 const mount = createClaxedoMcpRoutes({

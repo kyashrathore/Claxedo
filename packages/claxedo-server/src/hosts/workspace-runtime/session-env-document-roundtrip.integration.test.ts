@@ -12,7 +12,7 @@ import {
   hydrateSessionDocument,
   hydratedSessionDocumentPaths,
   syncHydratedSessionDocuments,
-} from "@claxedo/server-core/documents/session-hydration"
+} from "@claxedo/documents/host/session-hydration"
 
 const clock = { now: () => Date.now(), setTimeout: (callback: () => void, ms: number) => setTimeout(callback, ms), clearTimeout: clearOpaqueTimer }
 const log = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} }

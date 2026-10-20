@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest"
 import { exportPKCS8, exportSPKI, generateKeyPair, jwtVerify } from "jose"
 import { runtimeAccessTokenAudience } from "@claxedo/workspace-relay"
 import { MCP_GATEWAY_TOKEN_AUDIENCE, mintMcpGatewayToken, verifyMcpGatewayToken } from "./runtime-token"
-import { memorySandboxPassRegister } from "../../platform/auth/sandbox-pass-register"
+import { memorySandboxPassRegister } from "@claxedo/server-core/platform/auth/sandbox-pass-register"
 
 async function fixture() {
   const key = await generateKeyPair("EdDSA", { extractable: true })

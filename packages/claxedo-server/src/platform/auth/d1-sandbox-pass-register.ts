@@ -1,5 +1,5 @@
 import type { D1Database } from "@cloudflare/workers-types"
-import type { SandboxPassRecord, SandboxPassRegister } from "./sandbox-pass-register"
+import type { SandboxPassRecord, SandboxPassRegister } from "@claxedo/server-core/platform/auth/sandbox-pass-register"
 
 type PassRow = {
   jti: string

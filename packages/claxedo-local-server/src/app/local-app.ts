@@ -73,9 +73,11 @@ import {
   mcpAuditRecord,
   type LoopbackFirstPartyMcpOptions,
 } from "@claxedo/mcp"
-import { TASKS_OPERATIONS } from "@claxedo/server-core/tasks-host/capability"
-import { BUILTIN_TASKS_TOOL_GROUP } from "@claxedo/server-core/agent-plugins/builtin/plugin"
-import type { TasksSessionGrants } from "@claxedo/server-core/tasks-host/session-grants"
+import {
+  assertDistinctServerPlugins,
+  serverPluginCapabilities,
+  type LocalServerPlugin,
+} from "@claxedo/server-core/plugins/server-plugin"
 import { BROKER_ROUTE_PATTERN, isBrokerPath, loopbackBrokerRoutes } from "@claxedo/egress-broker"
 import type { LocalDaemonLifecycle, MachineRecoveryCaller } from "./local-daemon-lifecycle"
 import {
@@ -87,7 +89,6 @@ import {
   type RecoveryRequest,
 } from "@claxedo/agent-runtime-contract"
 import { localHostOwnerActorId } from "../deployments/local/host-session-authority"
-import { localDocumentsRoutes } from "./local-documents"
 import { appPluginAuthoring } from "../plugins/authoring"
 import { LivePluginRoutes } from "../plugins/routes"
 import { LIVE_PLUGINS_ROUTE_PATH } from "../plugins/service"
@@ -176,20 +177,17 @@ export type LocalAppOptions = {
   /** Explicit build/composition contributions; absent in the disabled product. */
   routeContributions?: readonly ControlPlaneRouteContribution[]
   /**
+   * The first-party plugins this product composed: their routes, the
+   * capabilities the bootstrap reports for them, and the MCP services their
+   * tools reach. A plugin left out is neither mounted nor imported.
+   */
+  plugins?: readonly LocalServerPlugin[]
+  /**
    * The first-party MCP endpoint for the sessions this server launches. The
    * verifier is the runtime's own credential issuer; the client factory is
    * handed this app's in-process fetch for the credential's workspace.
    */
   firstPartyMcp?: LoopbackFirstPartyMcpOptions
-  /**
-   * The Tasks grants this machine's own sessions present. The MCP mount
-   * issues one per session and the Tasks routes — mounted by the caller as
-   * route contributions — verify it, so the two are handed to this
-   * composition together. Absent, a session's task call is answered as the
-   * person at this machine: no project confinement, no agent-start gates,
-   * and a link recorded as a person's (security review P105).
-   */
-  tasksGrants?: TasksSessionGrants
   /** Machine-local daemon control surface. Never exposed to the renderer. */
   daemon?: {
     identity: {
@@ -239,6 +237,8 @@ export function localSecurityHeaders(): MiddlewareHandler {
 export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   const { services } = options
   const env = options.env ?? process.env
+  const plugins = options.plugins ?? []
+  assertDistinctServerPlugins(plugins)
   if (!services.localExecution.enabled) {
     throw new Error("createLocalApp is the desktop-local composition; it requires localExecution")
   }
@@ -450,6 +450,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     // every sign-out.
     hostEnrollmentId: hostServingEnrollmentId,
     hostName: localMachineName,
+    capabilities: serverPluginCapabilities(plugins),
     ...authRouteOptions(services),
   }))
   app.route("/", ProviderAuthRoutes({ service: createProviderAuthService(services.credentials), ...authRouteOptions(services) }))
@@ -496,7 +497,6 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     env,
     ...authRouteOptions(services),
   }))
-  app.route("/documents", localDocumentsRoutes(authRouteOptions(services)))
   app.route("/api/claxedo/agent-config", AgentConfigRoutes({
     services,
     ...authRouteOptions(services),
@@ -526,11 +526,12 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   app.route("/api/claxedo/network-policy", NetworkPolicyRoutes(authRouteOptions(services)))
   app.route("/api/claxedo/host-serving", HostServingRoutes())
   app.route("/api/claxedo/host-provider-config", HostProviderConfigRoutes())
-  // Optional product route families (Agent Plugins today) arrive as
-  // contributions from the composition rather than as imports here, so this
-  // module keeps one mounting path and no knowledge of which products exist.
+  // Optional product route families (Agent Plugins, the first-party plugins)
+  // arrive from the composition rather than as imports here, so this module
+  // keeps one mounting path and no knowledge of which products exist.
+  const pluginHost = authRouteOptions(services)
   mountControlPlaneRouteContributions({
-    contributions: options.routeContributions ?? [],
+    contributions: [...(options.routeContributions ?? []), ...plugins.flatMap((plugin) => plugin.routeContributions(pluginHost))],
     mount: (contribution) => app.route(contribution.path, contribution.routes),
   })
   if (options.firstPartyMcp) {
@@ -548,20 +549,20 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
           ? () => embeddedSessionDrivenOnlyByMachineUser(credential.workspaceId, sessionId, localHostOwnerActorId())
           : undefined
         const localFetch = inProcessFetch(inProcess, { "x-workspace-id": credential.workspaceId })
-        // A session reaches the Tasks routes as itself: the registry issues a
-        // handle for its workspace and session, and the capability branch of
-        // the Tasks door resolves it to the workspace's owner, its project and
-        // the start gates. The consent read that lists the tools is the same
-        // one that withholds the handle — a session whose Tasks group is off,
-        // or a composition with no registry, keeps the bare loopback fetch
-        // that reads as the person at this machine.
-        const enabled = await firstPartyMcp.enabledToolGroups?.(credential)
-        const grant = enabled?.includes(BUILTIN_TASKS_TOOL_GROUP)
-          ? await options.tasksGrants?.issue({
-              workspaceId: credential.workspaceId,
-              ...(credential.sessionId ? { sessionId: credential.sessionId } : {}),
-            })
-          : undefined
+        // The consent read that lists the tools is the one each service's
+        // grant is decided by, so a session whose group is off is handed no
+        // more than the person at this machine would be.
+        const enabledGroups = (await firstPartyMcp.enabledToolGroups?.(credential)) ?? []
+        const granted = await Promise.all(plugins.flatMap((plugin) => {
+          const service = plugin.mcp?.service
+          if (!service) return []
+          return [service.grant({
+            workspaceId: credential.workspaceId,
+            ...(sessionId ? { sessionId } : {}),
+            enabledGroups,
+            inProcessFetch: (headers) => inProcessFetch(inProcess, headers),
+          }).then((grant) => [service.id, grant] as const)]
+        }))
         return firstPartyMcp.createClient({
           deployment: "loopback",
           credential,
@@ -569,11 +570,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
           ...(ownerDriven
             ? { ownerDriven, appPlugins: appPluginAuthoring({ roots: [workspace.directory], ownerDriven }) }
             : {}),
-          documents: { fetch: localFetch },
-          tasks: {
-            fetch: grant ? inProcessFetch(inProcess, { authorization: `Bearer ${grant}` }) : localFetch,
-            operations: TASKS_OPERATIONS,
-          },
+          services: Object.fromEntries(granted.flatMap(([id, grant]) => (grant ? [[id, grant]] : []))),
           local: {
             fetch: localFetch,
             workspace: { workspaceId: credential.workspaceId, directory: workspace.directory },

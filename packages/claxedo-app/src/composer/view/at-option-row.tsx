@@ -26,33 +26,23 @@ export function AtOptionRow(props: {
 }
 
 function atOptionClass(item: AtOption) {
-  if (item.type === "document") return "w-full flex items-center justify-between gap-3 rounded-md px-2 py-1"
+  if (item.type === "mention") return "w-full flex items-center justify-between gap-3 rounded-md px-2 py-1"
   return "w-full flex items-center gap-x-2 rounded-md px-2 py-0.5"
 }
 
 function AtOptionContent(props: { item: AtOption }) {
-  if (props.item.type === "document") return <DocumentOption item={props.item} />
-  if (props.item.type === "agent") return <AgentOption item={props.item} />
+  if (props.item.type === "mention") return <MentionOption item={props.item} />
   return <FileOption item={props.item} />
 }
 
-function DocumentOption(props: { item: Extract<AtOption, { type: "document" }> }) {
+function MentionOption(props: { item: Extract<AtOption, { type: "mention" }> }) {
   return (
     <>
       <span class="flex items-center gap-2 min-w-0">
         <Icon name="prompt" size="small" class="text-icon-base shrink-0" />
         <span class="text-14-regular text-text-strong truncate">{props.item.display}</span>
       </span>
-      <span class="text-11-regular text-text-weak shrink-0">{props.item.status}</span>
-    </>
-  )
-}
-
-function AgentOption(props: { item: Extract<AtOption, { type: "agent" }> }) {
-  return (
-    <>
-      <Icon name="brain" size="small" class="text-icon-info-active shrink-0" />
-      <span class="text-14-regular text-text-strong whitespace-nowrap">@{props.item.display}</span>
+      <span class="text-11-regular text-text-weak shrink-0">{props.item.group}</span>
     </>
   )
 }

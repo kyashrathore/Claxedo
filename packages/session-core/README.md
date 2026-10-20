@@ -40,7 +40,7 @@ core that created that PTY.
 | `transports`, `launch` | Supply harness resolution, launch configuration, credentials and execution bindings. |
 | `childSessions.deriveSessionId(identity)` | Derive a stable keyed child id synchronously or asynchronously. The machine adapter supplies HMAC; the core receives no key or synchronous crypto implementation. |
 | `readAttachment(key, maximumBytes)` | Read bounded bytes as `Uint8Array`. Optional; absent capability answers image unavailable. The machine adapter validates filesystem reads; other hosts may use object keys. |
-| `flushSessionDocuments`, `disposeSessionDocuments` | Optional Pages lifecycle capabilities. There is no machine implementation selected by the core. |
+| `sessionLifecycle` | Each host contribution's `turnSettled` and `beforeSessionDelete` hooks, run in contribution order. A failed `turnSettled` is logged; a failed `beforeSessionDelete` keeps the session. The core selects none. |
 | `log.warn` | The diagnostic sink for failures the core recovers from (a title the harness refused or timed out). Required. |
 
 `composeSessionRoutes(input)` is the one composition of a host's session routes:

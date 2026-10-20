@@ -14,6 +14,7 @@ export type PartGroup =
       key: string
       type: "part"
       ref: PartRef
+      answer?: true
     }
   | {
       key: string
@@ -43,6 +44,8 @@ export const EDIT_TOOL_NAMES = new Set(["edit", "write", "apply_patch"])
 export const WEB_TOOL_NAMES = new Set(["webfetch", "websearch"])
 
 const HIDDEN_TOOLS = new Set(["todowrite"])
+
+const ANSWER_TOOLS = new Set(["ui_show"])
 
 const GROUPABLE_PART_TYPES = new Set(["compaction", "handoff", "notice", "text", "reasoning", "tool", "file"])
 
@@ -92,6 +95,11 @@ function isClaxedoToolPart(part: { type: string; tool?: string; state?: { input?
   return claxedoToolName(part.tool, asRecord(part.state?.input)) !== undefined
 }
 
+function isAnswerToolPart(part: AgentContentPart): boolean {
+  if (part.type !== "tool") return false
+  return ANSWER_TOOLS.has(claxedoToolName(part.tool, asRecord(part.state.input)) ?? "")
+}
+
 export function isSubagentToolPart(part: { type: string; tool?: string; state?: { input?: unknown } }): boolean {
   if (part.type !== "tool") return false
   if (part.tool && isSubagentSpawnToolName(part.tool)) return true
@@ -124,7 +132,8 @@ function workGroupTool(slice: GroupablePart[]): WorkGroupTool {
 }
 
 function partGroup(item: GroupablePart): PartGroup {
-  return { key: `part:${item.messageId}:${item.part.id}`, type: "part", ref: partRef(item) }
+  const group = { key: `part:${item.messageId}:${item.part.id}`, type: "part", ref: partRef(item) } as const
+  return isAnswerToolPart(item.part) ? { ...group, answer: true } : group
 }
 
 export function groupParts(input: GroupablePart[]) {
@@ -247,7 +256,7 @@ export function assistantMessageSettled(message: AgentAssistantMessage) {
 }
 
 function holdsTool(group: PartGroup, part: FoldablePartLookup): boolean {
-  return group.type !== "part" || part(group.ref)?.type === "tool"
+  return group.type !== "part" || (!group.answer && part(group.ref)?.type === "tool")
 }
 
 function answerGroups(groups: readonly PartGroup[], part: FoldablePartLookup): PartGroup[] {
@@ -265,7 +274,7 @@ export function answerPartRefs(groups: readonly PartGroup[], part: FoldablePartL
 
 function isFoldableGroup(group: PartGroup, part: FoldablePartLookup, answerKeys: ReadonlySet<string>): boolean {
   if (group.type !== "part") return true
-  if (answerKeys.has(group.key)) return false
+  if (group.answer || answerKeys.has(group.key)) return false
   const resolved = part(group.ref)
   if (!resolved) return false
   return resolved.type === "text" || resolved.type === "reasoning" || resolved.type === "tool"

@@ -16,6 +16,7 @@ function context(): WorkspaceRuntimeRouteContext {
     sessionDrivenOnlyBy: () => false,
     registerSessionTools: () => async () => {},
     unregisterSessionTools: () => async () => {},
+    authorizeSessionControl: async () => undefined,
   }
 }
 
