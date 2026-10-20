@@ -19,6 +19,17 @@ export const PLUGIN_REGISTRY_KEYS: Readonly<Record<string, string>> = Object.fre
 
 export type PluginReleaseBlob = { sha256: string; size: number }
 
+export const PLUGIN_TOOL_NAME_PATTERN = /^[a-z][a-z0-9_]{1,47}$/
+
+/** One agent tool a backend serves, as the release declares it for the platform's MCP proxy. */
+export type PluginToolDeclaration = {
+  name: string
+  title: string
+  description: string
+  inputSchema: Record<string, unknown>
+  access: "read" | "write"
+}
+
 export type PluginRelease = {
   id: string
   version: string
@@ -27,10 +38,22 @@ export type PluginRelease = {
   backend?: PluginReleaseBlob | undefined
   /** A forward-only storage generation: a host refuses to replace a release with one whose storage is lower. */
   storage: number
+  /** The agent tools the backend serves, present exactly when the manifest declares `backend.tools`. */
+  tools?: PluginToolDeclaration[] | undefined
   builtAt: string
 }
 
 export type SignedPluginRelease = { release: PluginRelease; signature: string; keyId: string }
+
+const toolDeclarationSchema = z
+  .object({
+    name: z.string().regex(PLUGIN_TOOL_NAME_PATTERN),
+    title: z.string().trim().min(1).max(80),
+    description: z.string().trim().min(1).max(2048),
+    inputSchema: z.record(z.string(), z.unknown()),
+    access: z.enum(["read", "write"]),
+  })
+  .strict()
 
 const blobSchema = z.object({ sha256: z.string().regex(SHA256_PATTERN), size: z.number().int().positive().max(PLUGIN_BUNDLE_MAX_BYTES) }).strict()
 
@@ -42,10 +65,14 @@ export const pluginReleaseSchema = z
     app: blobSchema,
     backend: blobSchema.optional(),
     storage: z.number().int().nonnegative(),
+    tools: z.array(toolDeclarationSchema).max(64).refine((tools) => new Set(tools.map((tool) => tool.name)).size === tools.length, "tool names must be distinct").optional(),
     builtAt: z.iso.datetime(),
   })
   .strict()
   .superRefine((release, context) => {
+    if (Boolean(release.manifest.backend?.tools) !== Boolean(release.tools)) {
+      context.addIssue({ code: "custom", path: ["tools"], message: "a release declares tools exactly when its manifest's backend declares a tool group" })
+    }
     if (release.manifest.id !== release.id) context.addIssue({ code: "custom", path: ["manifest", "id"], message: `the manifest names ${release.manifest.id}, not ${release.id}` })
     if (release.manifest.version !== release.version) {
       context.addIssue({ code: "custom", path: ["manifest", "version"], message: `the manifest is version ${release.manifest.version}, not ${release.version}` })

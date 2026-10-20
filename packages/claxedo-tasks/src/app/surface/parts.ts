@@ -80,6 +80,6 @@ export function callout(id: string, tone: CalloutTone, title: Text, options: Cal
   }
 }
 
-export function footer(id: string, end: readonly string[], start: readonly string[] = []): SurfaceComponent {
-  return { id, component: "Footer", end: [...end], ...(start.length > 0 ? { start: [...start] } : {}) }
+export function footer(id: string, end: readonly string[], start: readonly string[] = [], options: { readonly sticky?: boolean } = {}): SurfaceComponent {
+  return { id, component: "Footer", end: [...end], ...(start.length > 0 ? { start: [...start] } : {}), ...(options.sticky ? { sticky: true } : {}) }
 }

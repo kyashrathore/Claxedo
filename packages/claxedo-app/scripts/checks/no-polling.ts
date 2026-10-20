@@ -7,7 +7,7 @@ const timerOwners: Readonly<Record<string, string>> = {
   "src/lib/age-clock.ts": "the app's one age clock: one timeout at the next instant a visible age label changes, none while the page is hidden",
   "src/server/stream.ts": "the event stream's stall watchdog: one timeout per open attempt that, firing before the stream has been silent for the stall timeout, waits out the rest of it instead of being re-armed on every frame",
   "src/lib/second-ticker.ts": "the clock's ref-counted 1 s tick, running only while a running tool's elapsed time or a retry countdown reads it",
-  "src/surface/search-debounce.ts": "a surface Combobox's search debounce: one timeout 250 ms after the last keystroke, replaced by the next keystroke and cancelled with the component",
+  "src/surface/input-debounce.ts": "a surface input's debounce (a Combobox search, a TextField's or RichTextEditor's change): one timeout 250 ms after the last keystroke, replaced by the next keystroke, flushed on blur and cancelled with the component",
 }
 const pacingOwners: Readonly<Record<string, string>> = {
   "src/transcript/message-part.tsx": "paced reveal of streamed text more than 512 chars behind, in 24 ms steps, as today; exp-stream owns any change to it",

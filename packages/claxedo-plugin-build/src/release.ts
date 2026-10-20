@@ -3,6 +3,7 @@ import type { PluginIndex, PluginIndexEntry, SignedPluginIndex } from "@claxedo/
 import { pluginReleaseSigningBytes, type PluginRelease, type PluginReleaseBlob, type SignedPluginRelease } from "@claxedo/plugin-api/release"
 import { buildPluginBackend } from "./backend"
 import { buildPluginApp } from "./build"
+import { PluginBuildError } from "./errors"
 
 export type PluginReleaseBuild = {
   release: PluginRelease
@@ -17,6 +18,9 @@ async function blobOf(code: string): Promise<PluginReleaseBlob> {
 /** Builds a plugin's app bundle, minified, and its backend when it declares one, into an unsigned release. */
 export async function buildPluginRelease(options: { rootDir: string; storage?: number; builtAt?: Date }): Promise<PluginReleaseBuild> {
   const app = await buildPluginApp({ rootDir: options.rootDir, minify: true })
+  if (app.manifest.backend?.tools) {
+    throw new PluginBuildError("manifest", [{ file: "package.json", message: "claxedo.backend.tools is declared, and a release cannot carry its tool declarations yet" }])
+  }
   const backend = app.manifest.backend ? await buildPluginBackend({ rootDir: options.rootDir }) : undefined
   const appBlob = await blobOf(app.code)
   const backendBlob = backend ? await blobOf(backend.code) : undefined

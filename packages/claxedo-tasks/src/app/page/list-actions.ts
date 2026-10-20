@@ -1,9 +1,9 @@
 import type { SurfaceActionEvent } from "@claxedo/plugin-api"
-import { isTaskCreateStatus, isTaskStatus, type TaskStatus, type TaskSummary } from "../../contracts"
+import { isTaskCreateStatus, isTaskStatus, type TaskSummary } from "../../contracts"
 import type { Json } from "../surface/json"
-import { openForm, pickedImages, type createTaskCreation } from "./create-commands"
+import { createProjectOf, openForm, pickedImages, type createTaskCreation } from "./create-commands"
 import { PAGE_EVENTS } from "./events"
-import { nextStatus, previousStatus, TASK_COLLECTIONS, TASK_DATE_FIELDS } from "./model"
+import { TASK_COLLECTIONS } from "./model"
 import type { PageModel } from "./page-model"
 import type { StartCommands } from "./start-commands"
 import { startWithPreset, type PageState } from "./state"
@@ -44,53 +44,30 @@ function observeControl(handlers: ListHandlers, path: string, action: SurfaceAct
 function controlChange(handlers: ListHandlers, action: SurfaceActionEvent): boolean {
   const { model } = handlers
   const choice = firstChoice(action)
-  switch (action.name) {
-    case PAGE_EVENTS.view:
-      observeControl(handlers, "/controls/view", action)
-      if (choice === "list" || choice === "board") model.patch({ view: choice })
-      return true
-    case PAGE_EVENTS.startWith:
-      observeControl(handlers, "/controls/startWith", action)
-      if (choice) model.patch({ startWith: choice })
-      return true
-    case PAGE_EVENTS.dateField:
-      observeControl(handlers, "/controls/date", action)
-      if (choice === TASK_DATE_FIELDS[0] || choice === TASK_DATE_FIELDS[1]) model.patch({ dateField: choice })
-      return true
-    case PAGE_EVENTS.grouped:
-      observeControl(handlers, "/controls/grouped", action)
-      model.patch({ grouped: action.context.value === true })
-      return true
-    default:
-      return false
+  if (action.name === PAGE_EVENTS.view) {
+    observeControl(handlers, "/controls/view", action)
+    if (choice === "list" || choice === "board") model.patch({ view: choice })
+    return true
   }
+  if (action.name === PAGE_EVENTS.project) {
+    observeControl(handlers, "/controls/project", action)
+    if (choice) model.patch({ chosenProjectId: choice })
+    void handlers.reload()
+    return true
+  }
+  return false
 }
 
 function filterChange(handlers: ListHandlers, action: SurfaceActionEvent): boolean {
   const { model } = handlers
-  if (action.name === PAGE_EVENTS.collection) {
-    observeControl(handlers, "/controls/collection", action)
-    const index = action.context.index
-    const collection = typeof index === "number" ? TASK_COLLECTIONS[index] : undefined
-    if (!collection) return true
-    const refetch = (collection === "all") !== (model.state().collection === "all")
-    model.patch({ collection })
-    if (refetch) void handlers.reload()
-    return true
-  }
-  if (action.name === PAGE_EVENTS.statusFilter) {
-    observeControl(handlers, "/controls/status", action)
-    const choice = firstChoice(action)
-    model.patch({ statusFilter: isTaskStatus(choice) ? choice : null })
-  } else if (action.name === PAGE_EVENTS.showChildren) {
-    observeControl(handlers, "/controls/showChildren", action)
-    model.patch({ showChildren: action.context.value === true })
-  } else if (action.name === PAGE_EVENTS.project) {
-    observeControl(handlers, "/controls/project", action)
-    const projectId = contextText(action, "value")
-    if (projectId) model.patch({ chosenProjectId: projectId })
-  } else return false
-  void handlers.reload()
+  if (action.name !== PAGE_EVENTS.collection) return false
+  observeControl(handlers, "/controls/collection", action)
+  const index = action.context.index
+  const collection = typeof index === "number" ? TASK_COLLECTIONS[index] : undefined
+  if (!collection) return true
+  const refetch = (collection === "all") !== (model.state().collection === "all")
+  model.patch({ collection })
+  if (refetch) void handlers.reload()
   return true
 }
 
@@ -112,10 +89,18 @@ function taskTool(handlers: ListHandlers, action: SurfaceActionEvent) {
   if (!task) return
   const tool = contextText(action, "tool")
   const preset = startWithPreset(state)
-  const target: TaskStatus | undefined = tool === "next" ? nextStatus(task.status) : tool === "previous" ? previousStatus(task.status) : undefined
   if (tool === "start" && preset) void handlers.starts.start(task, preset, "primary")
   else if (tool === "session") void handlers.starts.openLatest(task)
-  else if (target) void handlers.commands.setStatus(task, target)
+  else if (tool === "archive" || tool === "restore") void handlers.commands.archive(task, tool === "restore")
+}
+
+function setRowStatus(handlers: ListHandlers, action: SurfaceActionEvent) {
+  const { model } = handlers
+  const task = knownTask(model.state(), contextText(action, "taskId"))
+  const status = firstChoice(action)
+  if (!task || !isTaskStatus(status) || status === task.status) return model.patch({})
+  model.patch((state) => (state.list.kind === "ready" ? { list: { ...state.list, tasks: state.list.tasks.map((entry) => (entry.id === task.id ? { ...entry, status } : entry)) } } : {}))
+  void handlers.commands.setStatus(task, status)
 }
 
 function createAction(handlers: ListHandlers, action: SurfaceActionEvent): boolean {
@@ -140,7 +125,12 @@ function createAction(handlers: ListHandlers, action: SurfaceActionEvent): boole
       if (form.kind === "open") model.patch({ create: { ...form, images: form.images.filter((image) => image.key !== contextText(action, "key")), imageRefusals: [] } })
       return true
     case PAGE_EVENTS.submitCreate:
-      void handlers.create({ title: action.sourceComponentId === "create-title" ? contextText(action, "value") : contextText(action, "title"), description: contextText(action, "description"), status: action.context.status, projectId: contextText(action, "project") })
+      void handlers.create({
+        title: action.sourceComponentId === "create-title" ? contextText(action, "value") : contextText(action, "title"),
+        description: action.sourceComponentId === "create-description" ? contextText(action, "value") : contextText(action, "description"),
+        status: action.context.status,
+        projectId: createProjectOf(action.context.project),
+      })
       return true
     default:
       return false
@@ -165,6 +155,9 @@ export function taskListAction(handlers: ListHandlers, action: SurfaceActionEven
       return true
     case PAGE_EVENTS.taskTool:
       taskTool(handlers, action)
+      return true
+    case PAGE_EVENTS.rowStatus:
+      setRowStatus(handlers, action)
       return true
     case PAGE_EVENTS.moveTask:
       moveTask(handlers, action)

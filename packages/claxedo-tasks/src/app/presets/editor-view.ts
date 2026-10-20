@@ -41,13 +41,14 @@ function detailsSection(t: Translate, state: PresetsState, editor: OpenEditor): 
   const notice = detailsNotice(t, state, editor)
   const options = [{ label: t("claxedo-tasks.preset.local"), value: "local" }, { label: t("claxedo-tasks.preset.cloud"), value: "cloud" }]
   return [
-    surfaceSection("editor-details", "details-body", { title: t("claxedo-tasks.preset.details") }),
-    surfaceColumn("details-body", [...notice.map((entry) => entry.id), "details-grid", "draft-instructions", "draft-agents", "draft-agents-hint"]),
+    surfaceSection("editor-details", "details-body", { title: t("claxedo-tasks.preset.details") , plain: true }),
+    surfaceColumn("details-body", [...notice.map((entry) => entry.id), "details-grid", "draft-instructions-label", "draft-instructions", "draft-agents", "draft-agents-hint"]),
     ...notice,
     { id: "details-grid", component: "Grid", columns: 2, children: ["draft-name", "draft-placement"] },
     { id: "draft-name", component: "TextField", label: t("claxedo-tasks.preset.name"), value: bound("/draft/name") },
     { id: "draft-placement", component: "ChoicePicker", label: t("claxedo-tasks.preset.placement"), variant: "mutuallyExclusive", displayStyle: "chips", options, value: bound("/draft/placement"), change: { event: { name: EDITOR_EVENTS.placement, context: DRAFT } } },
-    { id: "draft-instructions", component: "TextField", label: t("claxedo-tasks.preset.instructions"), variant: "longText", value: bound("/draft/instructions") },
+    { id: "draft-instructions-label", component: "Text", variant: "caption", text: t("claxedo-tasks.preset.instructions") },
+    { id: "draft-instructions", component: "RichTextEditor", label: t("claxedo-tasks.preset.instructions"), placeholder: t("claxedo-tasks.preset.instructionsPlaceholder"), value: bound("/draft/instructions"), submit: { event: { name: EDITOR_EVENTS.save, context: DRAFT } } },
     { id: "draft-agents", component: "Switch", label: t("claxedo-tasks.preset.agentStartable"), value: bound("/draft/agentStartable") },
     { id: "draft-agents-hint", component: "Text", variant: "caption", text: t("claxedo-tasks.preset.agentStartableHint") },
   ]
@@ -83,7 +84,7 @@ function configurationsSection(t: Translate, editor: OpenEditor): SurfaceCompone
   const slots = CONFIGURATION_SLOTS.filter((slot) => editor.draft.configurations[slot] !== null)
   const options = OPTIONAL_SLOTS.map((slot) => ({ label: t(SLOT_KEYS[slot]), value: slot }))
   return [
-    surfaceSection("editor-configurations", "configurations-body", { title: t("claxedo-tasks.preset.configurations"), description: t("claxedo-tasks.preset.configurationsHint") }),
+    surfaceSection("editor-configurations", "configurations-body", { title: t("claxedo-tasks.preset.configurations"), description: t("claxedo-tasks.preset.configurationsHint"), plain: true }),
     surfaceColumn("configurations-body", ["slot-primary", "draft-slots", ...slots.filter((slot) => slot !== "primary").map((slot) => `slot-${slot}`)]),
     { id: "draft-slots", component: "ChoicePicker", label: t("claxedo-tasks.preset.moreSlots"), variant: "multipleSelection", displayStyle: "chips", options, value: bound("/draft/slots"), change: { event: { name: EDITOR_EVENTS.slots, context: DRAFT } } },
     ...slots.flatMap((slot) => slotSection(t, editor, slot)),
@@ -128,7 +129,7 @@ function capabilitiesSection(t: Translate, state: PresetsState, editor: OpenEdit
     ? callout("capabilities-guarantee", "info", t("claxedo-tasks.preset.guaranteeCloudTitle"), { text: t("claxedo-tasks.preset.guaranteeCloud") })
     : callout("capabilities-guarantee", "info", t("claxedo-tasks.preset.guaranteeLocalTitle"), { text: t("claxedo-tasks.preset.guaranteeLocal") })
   return [
-    surfaceSection("editor-capabilities", "capabilities-body", { title: t("claxedo-tasks.preset.capabilities") }),
+    surfaceSection("editor-capabilities", "capabilities-body", { title: t("claxedo-tasks.preset.capabilities") , plain: true }),
     surfaceColumn("capabilities-body", cloud ? ["capabilities-guarantee", "capabilities-grid"] : ["capabilities-guarantee"]),
     guarantee,
     ...(cloud ? capabilityPickers(t, state) : []),
@@ -163,7 +164,9 @@ export function presetEditorComponents(t: Translate, state: PresetsState, editor
   const notice = editor.changedElsewhere ? [callout("editor-notice", "warning", t("claxedo-tasks.preset.changedElsewhere"))] : []
   const closing = closingParts(t, editor)
   return [
-    surfaceColumn("root", ["editor-header", ...notice.map((entry) => entry.id), "editor-details", "editor-configurations", "editor-capabilities", ...(editor.refusal ? ["editor-problem"] : []), "editor-footer"]),
+    surfaceColumn("root", ["editor-header", ...notice.map((entry) => entry.id), "editor-details", "editor-divider-1", "editor-configurations", "editor-divider-2", "editor-capabilities", ...(editor.refusal ? ["editor-problem"] : []), "editor-footer"]),
+    { id: "editor-divider-1", component: "Divider" },
+    { id: "editor-divider-2", component: "Divider" },
     editorHeader(t, editor),
     ...notice,
     ...detailsSection(t, state, editor),

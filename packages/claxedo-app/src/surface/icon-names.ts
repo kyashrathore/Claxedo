@@ -5,9 +5,11 @@ export type SurfaceIconName = (typeof SURFACE_ICON_NAMES)[number]
 
 export const KIT_ICONS = {
   add: "plus",
+  archive: "archive",
   arrowBack: "arrow-left",
   arrowForward: "arrow-right",
   check: "check",
+  checklist: "checklist",
   close: "close",
   delete: "trash",
   download: "download",
@@ -26,6 +28,7 @@ export const KIT_ICONS = {
   share: "share",
   stop: "stop",
   upload: "cloud-upload",
+  viewList: "bullet-list",
   visibility: "eye",
   warning: "warning",
 } as const satisfies Partial<Record<SurfaceIconName, IconProps["name"]>>

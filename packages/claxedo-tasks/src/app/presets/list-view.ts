@@ -4,7 +4,7 @@ import { CONFIGURATION_SLOTS, type Preset } from "../../contracts"
 import { shortAgeText } from "../age"
 import type { Translate } from "../dictionary"
 import type { Json, JsonObject } from "../surface/json"
-import { bound, surfaceButton, callout, surfaceColumn, surfaceSection } from "../surface/parts"
+import { bound, surfaceButton, callout, surfaceColumn } from "../surface/parts"
 import { SLOT_KEYS } from "../slots"
 import type { PresetsState } from "./state"
 
@@ -44,22 +44,17 @@ function presetRow(t: Translate, preset: Preset, now: number): JsonObject {
     summary: presetSummary(t, preset, now),
     badges: presetBadges(t, preset),
     toggleLabel: t(archived ? "claxedo-tasks.preset.restore" : "claxedo-tasks.preset.archive", { name: preset.name }),
-    toggleIcon: archived ? "visibility" : "visibilityOff",
+    toggleIcon: archived ? "refresh" : "archive",
   }
 }
 
 const ROW_COMPONENTS: SurfaceComponent[] = [
-  { id: "preset-row", component: "ListItem", title: bound("name"), subtitle: bound("summary"), meta: ["preset-badges"], primaryAction: "preset-edit", actions: ["preset-toggle"] },
+  { id: "preset-row", component: "ListItem", title: bound("name"), subtitle: bound("summary"), icon: "settings", meta: ["preset-badges"], actions: ["preset-toggle"], action: { event: { name: PRESET_EVENTS.edit, context: { presetId: bound("id") } } } },
   { id: "preset-badges", component: "List", direction: "horizontal", children: { componentId: "preset-badge", path: "badges" } },
   { id: "preset-badge", component: "Badge", text: bound("text"), variant: bound("tone") },
 ]
 
-function rowButtons(t: Translate): SurfaceComponent[] {
-  return [
-    ...surfaceButton("preset-edit", t("claxedo-tasks.preset.edit"), PRESET_EVENTS.edit, { context: { presetId: bound("id") } }),
-    ...surfaceButton("preset-toggle", bound("toggleLabel"), PRESET_EVENTS.toggle, { icon: bound("toggleIcon"), context: { presetId: bound("id") } }),
-  ]
-}
+const TOGGLE_BUTTON = surfaceButton("preset-toggle", bound("toggleLabel"), PRESET_EVENTS.toggle, { variant: "borderless", icon: bound("toggleIcon"), context: { presetId: bound("id") } })
 
 function listBody(t: Translate, state: PresetsState): SurfaceComponent[] {
   const list = state.list
@@ -73,15 +68,14 @@ function listBody(t: Translate, state: PresetsState): SurfaceComponent[] {
   if (list.presets.length === 0) {
     return [{ id: "presets-content", component: "EmptyState", title: t("claxedo-tasks.preset.emptyTitle"), description: t("claxedo-tasks.preset.emptyText") }]
   }
-  return [{ id: "presets-content", component: "List", children: { componentId: "preset-row", path: "/presets" } }, ...ROW_COMPONENTS, ...rowButtons(t)]
+  return [{ id: "presets-content", component: "List", children: { componentId: "preset-row", path: "/presets" } }, ...ROW_COMPONENTS, ...TOGGLE_BUTTON]
 }
 
 export function presetListComponents(t: Translate, state: PresetsState): SurfaceComponent[] {
   return [
-    surfaceColumn("root", ["presets"]),
-    surfaceSection("presets", "presets-body", { title: t("claxedo-tasks.preset.listTitle"), description: t("claxedo-tasks.preset.listDescription"), actions: ["presets-new"] }),
-    ...surfaceButton("presets-new", t("claxedo-tasks.preset.new"), PRESET_EVENTS.create, { icon: "add" }),
-    surfaceColumn("presets-body", ["presets-content", "presets-archived"]),
+    surfaceColumn("root", ["presets-header", "presets-content", "presets-archived"]),
+    { id: "presets-header", component: "Header", title: t("claxedo-tasks.preset.listTitle"), subtitle: t("claxedo-tasks.preset.listDescription"), actions: ["presets-new"] },
+    ...surfaceButton("presets-new", t("claxedo-tasks.preset.new"), PRESET_EVENTS.create, { variant: "primary", icon: "add" }),
     { id: "presets-archived", component: "Switch", label: t("claxedo-tasks.preset.showArchived"), value: bound("/showArchived"), change: { event: { name: PRESET_EVENTS.showArchived } } },
     ...listBody(t, state),
   ]

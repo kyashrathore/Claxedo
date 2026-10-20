@@ -18,6 +18,16 @@
       "development": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./backend": {
+      "types": "./src/backend.ts",
+      "development": "./src/backend.ts",
+      "default": "./src/backend.ts"
+    },
+    "./backend-schema": {
+      "types": "./src/backend-schema.ts",
+      "development": "./src/backend-schema.ts",
+      "default": "./src/backend-schema.ts"
+    },
     "./cli": {
       "types": "./src/cli.ts",
       "development": "./src/cli.ts",

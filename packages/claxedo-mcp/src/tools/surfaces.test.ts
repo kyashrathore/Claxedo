@@ -158,6 +158,17 @@ describe("ui_show for plugin-only events", () => {
     const description = (await client.listTools()).tools.find((candidate) => candidate.name === "ui_show")?.description
     expect(description).toContain("AgentConfigurationPicker draws the person's own harness and model pickers and is for app plugin pages only")
   })
+
+  test("refuses a Dialog and a writing field's change, and the description says both are for app plugin pages", async () => {
+    const { url } = await listen()
+    const client = await connect(url)
+    const dialog = { title: "New task", components: [{ id: "root", component: "Dialog", title: "New task", open: { path: "/open" }, child: "body" }, { id: "body", component: "Text", text: "Draft" }], data: { open: true } }
+    expect(await show(client, dialog)).toEqual({ isError: true, text: "/components/0/component: the Dialog is for app plugin pages; an agent reply leaves it out" })
+    const notes = { title: "Notes", components: [{ id: "root", component: "RichTextEditor", label: "Notes", value: { path: "/notes" }, change: { event: { name: "edited" } } }], data: { notes: "" } }
+    expect(await show(client, notes)).toEqual({ isError: true, text: "/components/0/change: the RichTextEditor's change event is for app plugin pages; an agent reply leaves it out" })
+    const description = (await client.listTools()).tools.find((candidate) => candidate.name === "ui_show")?.description
+    expect(description).toContain("A Dialog and the `change` of a TextField or RichTextEditor are for app plugin pages too and are refused here")
+  })
 })
 
 describe("ui_guide", () => {

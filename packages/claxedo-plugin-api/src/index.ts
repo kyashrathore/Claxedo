@@ -77,6 +77,7 @@ export {
   PLUGIN_CAPABILITY_MAX_LENGTH,
   PLUGIN_CAPABILITY_PATTERN,
   PLUGIN_NAME_MAX_LENGTH,
+  PLUGIN_PERMISSIONS,
   PLUGIN_SERVER_ROUTE_PREFIX,
   PluginManifestError,
   PluginStatusHooksRefusedError,
@@ -86,7 +87,7 @@ export {
   pluginRouteAllowed,
 } from "./manifest"
 export { pluginBackendSchema, pluginManifestSchema, pluginPackageSchema, pluginServerAccessSchema, readPluginManifest } from "./manifest-schema"
-export type { FirstPartyPluginId, PluginBackend, PluginCapability, PluginManifest, PluginServerAccess } from "./manifest"
+export type { FirstPartyPluginId, PluginBackend, PluginBackendTools, PluginCapability, PluginManifest, PluginPermission, PluginServerAccess } from "./manifest"
 export { isPluginId, PLUGIN_ID_MAX_LENGTH, PLUGIN_ID_PATTERN } from "./id"
 export { FIRST_PARTY_PLUGIN_IDS, isFirstPartyPluginId } from "./manifest"
 export { readToolCardTemplates, TOOL_CARD_MAX_TEMPLATES, TOOL_CARD_TONES, ToolCardTemplateError, toolCardTemplatesSchema } from "./transcript"

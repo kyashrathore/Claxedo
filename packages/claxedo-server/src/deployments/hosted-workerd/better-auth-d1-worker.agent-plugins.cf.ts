@@ -1,6 +1,6 @@
 import { composeBetterAuthD1UserDeployedControlPlane } from "../../authority/adapters/worker/better-auth-d1-compose"
 import { createHostedAgentPluginsComposition } from "../../agent-plugins/hosted-composition"
-import type { AgentPluginR2Bucket } from "../../agent-plugins/artifacts/r2-artifact-adapter"
+import type { AppPluginsBucket } from "../../plugin-backends/bundles"
 import {
   betterAuthD1CompositionInput,
   createBetterAuthD1Worker,
@@ -28,7 +28,7 @@ import { timedAuthentication, timedD1, timedFetch } from "../../platform/http/se
 export { LiveSyncRoom, PluginOutbound, PluginPlatform, PluginSupervisor }
 
 export type BetterAuthD1AgentPluginsWorkerEnv = BetterAuthD1WorkerEnv & {
-  CLAXEDO_AGENT_PLUGINS?: AgentPluginR2Bucket
+  CLAXEDO_AGENT_PLUGINS?: AppPluginsBucket
   PLUGIN_SUPERVISOR?: PluginSupervisorNamespace
 }
 

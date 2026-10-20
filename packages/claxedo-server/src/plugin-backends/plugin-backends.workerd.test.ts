@@ -17,6 +17,7 @@ const COUNTER_PLUGIN = fileURLToPath(new URL("./fixtures/counter", import.meta.u
 const ORIGIN = "https://api.test"
 const REGISTRY_HOST = "registry.test"
 const DEPLOYMENT_ID = "deployment-plugin-backends"
+const BLOB_QUOTA = 64
 
 type Member = { token: string; userId: string; orgId: string }
 type Answer = { status: number; body: Record<string, unknown> }
@@ -24,6 +25,7 @@ type Answer = { status: number; body: Record<string, unknown> }
 let miniflare: Miniflare
 let database: D1Database
 let deleteBundle: (key: string) => Promise<void>
+let listBucket: (prefix: string) => Promise<string[]>
 let signingKey: CryptoKey
 let appCode: string
 let backendCode: string
@@ -184,11 +186,14 @@ beforeAll(async () => {
   miniflare = new Miniflare({
     ...hostedWorkerCompatibility(),
     modules: [{ type: "ESModule", path: "worker.js", contents: wranglerBundle(FIXTURE_WORKER) }],
-    bindings: { DEPLOYMENT_ID, CLAXEDO_APP_PLUGIN_REGISTRY_TEST_KEY: publicKey },
+    bindings: { DEPLOYMENT_ID, CLAXEDO_APP_PLUGIN_REGISTRY_TEST_KEY: publicKey, CLAXEDO_APP_PLUGIN_BLOB_QUOTA_BYTES: String(BLOB_QUOTA) },
     d1Databases: ["CONTROL_PLANE_DB"],
     r2Buckets: ["CLAXEDO_AGENT_PLUGINS"],
     workerLoaders: { PLUGIN_LOADER: {} },
-    durableObjects: { PLUGIN_SUPERVISOR: { className: "PluginSupervisor", useSQLite: true } },
+    durableObjects: {
+      PLUGIN_SUPERVISOR: { className: "PluginSupervisor", useSQLite: true },
+      LIVE_SYNC_ROOM: { className: "RecordingRoom", useSQLite: true },
+    },
     outboundService: async (outbound: Request) => {
       const url = new URL(outbound.url)
       if (url.host === REGISTRY_HOST) {
@@ -206,6 +211,7 @@ beforeAll(async () => {
   await applyControlPlaneBaseline(database)
   const bucket = await miniflare.getR2Bucket("CLAXEDO_AGENT_PLUGINS")
   deleteBundle = (key) => bucket.delete(key)
+  listBucket = async (prefix) => (await bucket.list({ prefix })).objects.map((object) => object.key)
   const built = await buildPluginRelease({ rootDir: COUNTER_PLUGIN })
   appCode = built.blobs.get(built.release.app.sha256)!
   backendCode = built.blobs.get(built.release.backend!.sha256)!
@@ -324,13 +330,13 @@ describe("a plugin backend on workerd", () => {
       headers: { authorization: `Bearer ${carol.token}`, "x-claxedo-user-id": alice.userId, "x-claxedo-caller": "f".repeat(32) },
     })
     const body = (await response.json()) as { handle: string }
-    expect(body).toEqual({ handle: expect.stringMatching(/^[0-9a-f]{32}$/), caller: { userId: carol.userId, orgId: alice.orgId }, userIdHeader: null })
+    expect(body).toEqual({ handle: expect.stringMatching(/^[0-9a-f]{32}$/), caller: { orgId: alice.orgId, origin: "person", userId: carol.userId }, userIdHeader: null })
     expect(body.handle).not.toBe("f".repeat(32))
   })
 
   test("a handle keeps naming its caller after its request answered, within the run that minted it", async () => {
     const { handle } = (await call(carol, "GET", "/counter/whoami")).body as { handle: string }
-    expect(await resolveHandle(alice, "counter", handle)).toEqual({ status: 200, body: { caller: { userId: carol.userId, orgId: alice.orgId } } })
+    expect(await resolveHandle(alice, "counter", handle)).toEqual({ status: 200, body: { caller: { orgId: alice.orgId, origin: "person", userId: carol.userId } } })
     expect(await resolveHandle(alice, "counter", "0".repeat(32))).toEqual({ status: 200, body: { caller: null } })
   })
 
@@ -468,14 +474,134 @@ describe("a plugin backend on workerd", () => {
     await appPlugins(alice, "POST", "/counter/disable")
     await appPlugins(alice, "DELETE", "/counter/disable")
     releaseHold()
-    expect(await pending).toEqual({ status: 200, body: { active: false, object: 409, outbound: 403, caller: null } })
+    expect(await pending).toEqual({ status: 200, body: { active: false, object: 409, outbound: 403, caller: null, blob: 409 } })
     expect((await call(alice, "GET", "/counter/active")).body).toEqual({ active: true })
   })
 })
 
+async function project(id: string, owner: Member) {
+  await database
+    .prepare("insert into projects (project_id, org_id, repo_key, owner_user_id, created_at, updated_at, deleted_at) values (?, ?, ?, ?, 1, 1, null)")
+    .bind(id, owner.orgId, `github.com/acme/${id}`, owner.userId)
+    .run()
+}
+
+async function roomEvents(member: Member) {
+  const response = await miniflare.dispatchFetch(`${ORIGIN}/__room?name=${encodeURIComponent(`org:${member.orgId}`)}`)
+  return (await response.json()) as { type: string; pluginId: string; topic: string; data?: unknown; recipientUserId: string }[]
+}
+
+async function wakeDue(member: Member, now: number) {
+  const response = await miniflare.dispatchFetch(`${ORIGIN}/__supervisor/wake-due`, {
+    method: "POST",
+    body: JSON.stringify({ orgId: member.orgId, pluginId: "counter", now }),
+  })
+  return ((await response.json()) as { delivered: number }).delivered
+}
+
+async function putBlob(member: Member, key: string, text: string, contentType = "text/plain") {
+  const response = await miniflare.dispatchFetch(`${ORIGIN}/api/plugins/counter/blobs/${key}`, {
+    method: "PUT",
+    headers: { authorization: `Bearer ${member.token}`, "content-type": contentType },
+    body: text,
+  })
+  return { status: response.status, body: (await response.json()) as Record<string, unknown> }
+}
+
+describe("the platform API a backend gets", () => {
+  test("identity names the request's caller and where it came from", async () => {
+    expect((await call(carol, "GET", "/counter/whoami")).body.caller).toEqual({ orgId: alice.orgId, origin: "person", userId: carol.userId })
+  })
+
+  test("projects are listed and authorized as the caller, by the authority's own rules", async () => {
+    await project("prj_alice", alice)
+    await project("prj_bob", bob)
+    expect(await call(carol, "GET", "/counter/projects")).toEqual({ status: 200, body: [{ id: "prj_alice", repoKey: "github.com/acme/prj_alice" }] })
+    expect((await call(carol, "GET", "/counter/projects/prj_alice/authorize/read")).body).toEqual({ allowed: true })
+    expect((await call(carol, "GET", "/counter/projects/prj_alice/authorize/write")).body).toEqual({ allowed: false })
+    expect((await call(alice, "GET", "/counter/projects/prj_alice/authorize/write")).body).toEqual({ allowed: true })
+    expect((await call(carol, "GET", "/counter/projects/prj_bob/authorize/read")).body).toEqual({ allowed: false })
+  })
+
+  test("a call whose permission the manifest does not declare is refused", async () => {
+    await publish("0.1.1", { id: "counter-two", manifest: { permissions: [] } })
+    expect((await appPlugins(alice, "POST", "/counter-two/update", { version: "0.1.1" })).status).toBe(200)
+    expect(await call(alice, "GET", "/counter-two/projects")).toEqual(refusal(403, "plugin_permission_not_declared"))
+    expect(await call(alice, "GET", "/counter-two/wakes")).toEqual(refusal(403, "plugin_permission_not_declared"))
+    expect((await call(alice, "GET", "/counter-two/whoami")).body.caller).toEqual({ orgId: alice.orgId, origin: "person", userId: alice.userId })
+  })
+
+  test("blobs live in the plugin's own prefix, within its quota, and nowhere another organization reads", async () => {
+    expect(await putBlob(carol, "notes/a.txt", "hello")).toEqual({
+      status: 200,
+      body: { key: "notes/a.txt", size: 5, contentType: "text/plain", uploadedAt: expect.any(Number) },
+    })
+    const read = await miniflare.dispatchFetch(`${ORIGIN}/api/plugins/counter/blobs/notes/a.txt`, { headers: { authorization: `Bearer ${alice.token}` } })
+    expect([read.status, read.headers.get("content-type"), await read.text()]).toEqual([200, "text/plain", "hello"])
+    expect((await call(alice, "GET", "/counter/blobs?prefix=notes/")).body).toEqual({ blobs: [expect.objectContaining({ key: "notes/a.txt", size: 5 })] })
+    expect(await listBucket(`plugin-data/${alice.orgId}/counter/`)).toEqual([`plugin-data/${alice.orgId}/counter/notes/a.txt`])
+    expect(await putBlob(carol, "notes/big.txt", "x".repeat(BLOB_QUOTA))).toEqual(refusal(413, "plugin_blob_quota_exceeded"))
+    expect((await putBlob(carol, "notes/a.txt", "x".repeat(BLOB_QUOTA))).status).toBe(200)
+    expect((await call(alice, "DELETE", "/counter/blobs/notes/a.txt")).status).toBe(200)
+    expect((await putBlob(carol, "notes/b.txt", "y".repeat(BLOB_QUOTA))).status).toBe(200)
+    expect((await call(alice, "GET", "/counter/blobs/notes/a.txt")).status).toBe(404)
+    expect((await call(bob, "GET", "/counter/blobs/notes/b.txt")).status).toBe(404)
+    expect((await call(alice, "GET", "/counter/blobs/notes/..%2Fescape")).body).toEqual({ error: expect.objectContaining({ code: "plugin_call_invalid" }) })
+  })
+
+  test("an event reaches, one copy each, only the members its audience names who have the plugin enabled", async () => {
+    expect((await call(carol, "POST", "/counter/events/org", { topic: "changed", data: { n: 1 } })).body).toEqual({ recipients: 2 })
+    expect((await call(carol, "POST", "/counter/events/caller", { topic: "mine" })).body).toEqual({ recipients: 1 })
+    expect((await call(carol, "POST", "/counter/events/project", { topic: "project", projectId: "prj_alice" })).body).toEqual({ recipients: 2 })
+    expect(await call(carol, "POST", "/counter/events/project", { topic: "project", projectId: "prj_bob" })).toEqual(refusal(403, "plugin_project_forbidden"))
+    expect(await call(carol, "POST", "/counter/events/org", { topic: "big", data: "x".repeat(9 * 1024) })).toEqual(refusal(413, "plugin_event_too_large"))
+    const events = (await roomEvents(alice)).filter((event) => event.type === "plugin.event")
+    expect(events.map((event) => [event.topic, event.recipientUserId])).toEqual([
+      ["changed", alice.userId],
+      ["changed", carol.userId],
+      ["mine", carol.userId],
+      ["project", alice.userId],
+      ["project", carol.userId],
+    ])
+    expect(events[0]).toMatchObject({ pluginId: "counter", data: { n: 1 } })
+    expect(events.some((event) => event.recipientUserId === erin.userId)).toBe(false)
+  })
+
+  test("a wake set ahead fires once, as a system caller, and no request reaches the platform's own paths", async () => {
+    const at = Date.now() + 60_000
+    expect((await call(alice, "POST", "/counter/wakes/tick", { at, payload: { n: 7 } })).body).toEqual({ scheduled: true })
+    expect(await call(alice, "POST", "/counter/wakes/soon", { at: Date.now() + 1_000 })).toEqual(refusal(400, "plugin_wake_too_soon"))
+    expect((await call(alice, "GET", "/counter/wakes")).body).toEqual([{ name: "tick", at, payload: { n: 7 } }])
+    expect(await call(alice, "POST", "/counter/_wake/tick")).toEqual(refusal(404, "plugin_route_reserved"))
+    expect(await wakeDue(alice, at - 1)).toBe(0)
+    expect(await wakeDue(alice, at)).toBe(1)
+    expect(await wakeDue(alice, at + 60_000)).toBe(0)
+    expect((await call(alice, "GET", "/counter/wakes/log")).body).toEqual([{ name: "tick", payload: { n: 7 }, caller: { orgId: alice.orgId, origin: "system" } }])
+    expect((await call(alice, "GET", "/counter/wakes")).body).toEqual([])
+  })
+
+  test("a public link reads its path anonymously, as a link caller who acts as nobody, until it is revoked", async () => {
+    const created = (await call(carol, "POST", "/counter/links", { path: "/public" })).body as { token: string; url: string; path: string }
+    expect(created).toEqual({ token: expect.any(String), url: `/api/claxedo/app-plugins/links/${created.token}`, path: "/public" })
+    const anonymous = await request(undefined, "GET", created.url)
+    expect(anonymous).toEqual({ status: 200, body: { public: true, caller: { orgId: alice.orgId, origin: "link" } } })
+    const toProjects = (await call(carol, "POST", "/counter/links", { path: "/projects" })).body as { url: string }
+    expect(await request(undefined, "GET", toProjects.url)).toEqual(refusal(403, "plugin_caller_not_a_person"))
+    const expired = (await call(carol, "POST", "/counter/links", { path: "/public", expiresAt: Date.now() - 1 })).body as { url: string }
+    expect(await request(undefined, "GET", expired.url)).toEqual(refusal(404, "plugin_link_not_found"))
+    expect((await call(alice, "DELETE", `/counter/links/${created.token}`)).body).toEqual({ revoked: true })
+    expect(await request(undefined, "GET", created.url)).toEqual(refusal(404, "plugin_link_not_found"))
+    expect(await call(alice, "DELETE", `/counter/links/${created.token}`)).toEqual(refusal(404, "plugin_link_not_found"))
+    expect(await request(undefined, "GET", "/api/claxedo/app-plugins/links/not-a-token")).toEqual(refusal(404, "plugin_link_not_found"))
+  })
+})
+
 describe("uninstalling an app plugin", () => {
-  test("deletes every object it stored, its running ones included, every member's choice, and nothing of another plugin", async () => {
+  test("deletes every object, blob, wake and link it stored, its running objects included, every member's choice, and nothing of another plugin", async () => {
     expect(await call(carol, "POST", "/counter/count")).toEqual({ status: 200, body: { value: 4, version: "counter-v2" } })
+    const link = (await call(carol, "POST", "/counter/links", { path: "/public" })).body as { url: string }
+    expect((await call(alice, "POST", "/counter/wakes/later", { at: Date.now() + 60_000 })).status).toBe(200)
+    expect(await listBucket(`plugin-data/${alice.orgId}/counter/`)).not.toEqual([])
     const before = await epoch(alice)
     const hold = holdOutbound()
     held = hold.released
@@ -483,7 +609,7 @@ describe("uninstalling an app plugin", () => {
     await hold.arrived
     expect(await appPlugins(alice, "DELETE", "/counter")).toEqual(noContent)
     releaseHold()
-    expect(await pending).toEqual({ status: 200, body: { active: false, object: 404, outbound: 403, caller: null } })
+    expect(await pending).toEqual({ status: 200, body: { active: false, object: 404, outbound: 403, caller: null, blob: 409 } })
     expect(await call(carol, "GET", "/counter/count")).toEqual(refusal(404, "plugin_not_activated"))
     expect(await appPlugins(carol, "GET", "/installed")).toEqual({ status: 200, body: [expect.objectContaining({ id: "counter-two" })] })
     expect(await appPlugins(alice, "DELETE", "/counter")).toEqual(refusal(404, "app_plugin_not_installed"))
@@ -493,6 +619,9 @@ describe("uninstalling an app plugin", () => {
     expect(await call(carol, "GET", "/counter/count")).toEqual(refusal(404, "plugin_not_enabled"))
     expect(await appPlugins(carol, "POST", "/counter/enable")).toEqual(noContent)
     expect(await call(carol, "GET", "/counter/count")).toEqual({ status: 200, body: { value: 0, version: "counter-v2" } })
+    expect(await listBucket(`plugin-data/${alice.orgId}/counter/`)).toEqual([])
+    expect((await call(carol, "GET", "/counter/wakes")).body).toEqual([])
+    expect(await request(undefined, "GET", link.url)).toEqual(refusal(404, "plugin_link_not_found"))
     expect(await call(alice, "GET", "/counter-two/count")).toEqual({ status: 200, body: { value: 1, version: "counter-v1" } })
   })
 })

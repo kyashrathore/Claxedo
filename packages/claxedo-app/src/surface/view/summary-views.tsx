@@ -2,7 +2,7 @@ import { createSignal, Index, Show } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { Icon, IconButton } from "@/ui"
 import { boundText } from "../binding"
-import { keyValueRows } from "../key-value"
+import { keyValueRows, type KeyValueRow } from "../key-value"
 import type { SurfaceNodeProps } from "../model"
 import { surfaceDictionary } from "../i18n"
 import { CALLOUT_ICONS } from "../tones"
@@ -60,17 +60,29 @@ export function CalloutView(props: SurfaceNodeProps<"Callout">) {
   )
 }
 
+function childOf(row: KeyValueRow): string | undefined {
+  return row.kind === "child" ? row.child : undefined
+}
+
+function valueOf(row: KeyValueRow): unknown {
+  return row.kind === "text" ? row.value : undefined
+}
+
 export function KeyValueView(props: SurfaceNodeProps<"KeyValue">) {
   const read = useSurfaceReader()
-  const rows = () => keyValueRows(read.value(props.def.items, props.scope))
+  const rows = () => keyValueRows(read.value(props.def.items, props.scope), Array.isArray(props.def.items))
   const text = (value: unknown) => boundText(read.value(value, props.scope))
   return (
     <dl data-slot="surface-key-value">
       <Index each={rows()}>
         {(row) => (
-          <div data-slot="surface-key-value-row">
+          <div data-slot="surface-key-value-row" data-value={row().kind}>
             <dt>{text(row().label)}</dt>
-            <dd>{text(row().value)}</dd>
+            <dd>
+              <Show when={childOf(row())} fallback={text(valueOf(row()))}>
+                {(child) => <SurfaceNode id={child()} scope={props.scope} />}
+              </Show>
+            </dd>
           </div>
         )}
       </Index>

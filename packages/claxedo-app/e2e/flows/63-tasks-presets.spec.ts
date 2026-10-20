@@ -17,7 +17,7 @@ test("63 Settings → Presets: create a local preset with the agent picker, edit
   const saved = (await tasksClient(stack.url).listPresets()).items
   expect(saved.map((preset) => [preset.name, preset.execution.placement, preset.configurations.primary.harness.id])).toEqual([["Careful reviewer", "local", "pi"]])
 
-  await rows.filter({ hasText: "Careful reviewer" }).getByRole("button", { name: "Edit" }).click()
+  await rows.filter({ hasText: "Careful reviewer" }).getByRole("button", { name: "Careful reviewer", exact: true }).click()
   await surface.getByRole("textbox", { name: "Name" }).fill("Careful reviewer, edited")
   await surface.getByRole("button", { name: "Save preset" }).click()
   await expect(rows.filter({ hasText: "Careful reviewer, edited" })).toContainText("Local · Pi · openai/gpt-4.1")
@@ -52,7 +52,7 @@ test("63 Settings → Presets: a saved preset opens in the editor with its own a
   await app.goto(`${stack.url}${PRESETS_SETTINGS_PATH}`)
   const surface = pluginSurface(app)
   const rows = surface.locator('[data-slot="surface-list-item"]')
-  await rows.filter({ hasText: "Seeded reviewer" }).getByRole("button", { name: "Edit" }).click()
+  await rows.filter({ hasText: "Seeded reviewer" }).getByRole("button", { name: "Seeded reviewer", exact: true }).click()
   await expect(surface.getByRole("button", { name: /^Select harness and model/ })).toContainText("GPT-4.1")
   await surface.getByRole("textbox", { name: "Name" }).fill("Seeded reviewer, renamed")
   await surface.getByRole("button", { name: "Save preset" }).click()

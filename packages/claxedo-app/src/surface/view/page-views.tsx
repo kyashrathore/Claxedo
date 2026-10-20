@@ -57,7 +57,7 @@ export function SectionView(props: SurfaceNodeProps<"Section">) {
 
 export function FooterView(props: SurfaceNodeProps<"Footer">) {
   return (
-    <footer data-slot="surface-footer">
+    <footer data-slot="surface-footer" data-sticky={props.def.sticky === true ? "true" : "false"}>
       <SurfaceGroup ids={props.def.start} scope={props.scope} slot="surface-footer-start" />
       <SurfaceGroup ids={props.def.end} scope={props.scope} slot="surface-footer-end" />
     </footer>

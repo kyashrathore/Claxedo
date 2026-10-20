@@ -41,6 +41,7 @@ export function componentReferences(component: SurfaceComponent): readonly Compo
     case "Card":
     case "Button":
     case "Collapsible":
+    case "Dialog":
       return [{ path: "/child", id: component.child }]
     case "Row":
     case "Column":
@@ -55,6 +56,7 @@ export function componentReferences(component: SurfaceComponent): readonly Compo
       return [{ path: "/child", id: component.child }, ...listReferences("/actions", component.actions)]
     case "ListItem":
       return [
+        ...(component.leading === undefined ? [] : [{ path: "/leading", id: component.leading }]),
         ...listReferences("/meta", component.meta),
         ...(component.primaryAction === undefined ? [] : [{ path: "/primaryAction", id: component.primaryAction }]),
         ...listReferences("/actions", component.actions),
@@ -63,6 +65,12 @@ export function componentReferences(component: SurfaceComponent): readonly Compo
       return component.action === undefined ? [] : [{ path: "/action", id: component.action }]
     case "Footer":
       return [...listReferences("/start", component.start), ...listReferences("/end", component.end)]
+    case "Image":
+      return listReferences("/actions", component.actions)
+    case "KeyValue":
+      return Array.isArray(component.items)
+        ? component.items.flatMap((item, index) => ("child" in item ? [{ path: `/items/${index}/child`, id: item.child }] : []))
+        : []
     case "Board":
       return [
         { path: "/item", id: component.item },
@@ -144,10 +152,38 @@ function boardIssues(component: SurfaceComponent, at: string): SurfaceIssue[] {
   )
 }
 
+function choiceIssues(component: SurfaceComponent, at: string): SurfaceIssue[] {
+  if (component.component !== "ChoicePicker") return []
+  const style = component.displayStyle ?? "checkbox"
+  const issues: SurfaceIssue[] = []
+  if (style === "menu" && component.variant === "multipleSelection") issues.push({ path: `${at}/displayStyle`, message: "a menu picks one option; a multipleSelection picker uses chips or checkbox" })
+  if (component.iconOnly && style !== "chips" && style !== "menu") issues.push({ path: `${at}/iconOnly`, message: "iconOnly draws chips or a menu; give the picker displayStyle chips or menu" })
+  if (component.iconOnly && component.label === undefined) issues.push({ path: `${at}/label`, message: "an iconOnly picker needs a label, its accessible name" })
+  if (component.iconOnly) {
+    component.options.forEach((option, index) => {
+      if (option.icon === undefined) issues.push({ path: `${at}/options/${index}/icon`, message: "every option of an iconOnly picker needs an icon" })
+    })
+  }
+  return issues
+}
+
+function gridIssues(component: SurfaceComponent, at: string): SurfaceIssue[] {
+  if (component.component !== "Grid" || component.layout !== "sidebar") return []
+  if (Array.isArray(component.children) && component.children.length >= 2) return []
+  return [{ path: `${at}/children`, message: "a sidebar Grid lists at least two children by id: the main column's blocks, then the sidebar last" }]
+}
+
 function componentIssues(components: readonly SurfaceComponent[], producer: SurfaceProducer): SurfaceIssue[] {
   return components.flatMap((component, index) => {
     const at = `/components/${index}`
-    return [...producerIssues(component, at, producer), ...eventIssues(component, at, producer), ...imageIssues(component, at), ...boardIssues(component, at)]
+    return [
+      ...producerIssues(component, at, producer),
+      ...eventIssues(component, at, producer),
+      ...imageIssues(component, at),
+      ...boardIssues(component, at),
+      ...choiceIssues(component, at),
+      ...gridIssues(component, at),
+    ]
   })
 }
 

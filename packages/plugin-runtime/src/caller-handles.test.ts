@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { PLUGIN_CALLER_HANDLE_TTL_MS, PluginCallerHandles } from "./caller-handles"
 
-const alice = { userId: "usr_alice", orgId: "org_1" }
-const bob = { userId: "usr_bob", orgId: "org_1" }
+const alice = { origin: "person" as const, userId: "usr_alice", orgId: "org_1" }
+const bob = { origin: "person" as const, userId: "usr_bob", orgId: "org_1" }
 
 function clocked() {
   let now = 1_000

@@ -3,7 +3,7 @@ import { boundText, createBoundValue } from "../binding"
 import { boundChoices, chosenValues, choose, matchingChoices, steppedActive, type ComboChoice } from "../combobox-options"
 import { isBinding, pathsOverlap, resolvePath } from "../data-path"
 import type { DataPath, SurfaceNodeProps } from "../model"
-import { createSearchDebounce } from "../search-debounce"
+import { createInputDebounce } from "../input-debounce"
 import { useSurfaceReader, useSurfaceRuntime } from "./surface-runtime"
 
 function createChoices(props: SurfaceNodeProps<"Combobox">) {
@@ -32,7 +32,7 @@ function createSearch(props: SurfaceNodeProps<"Combobox">, optionsPath: () => Da
       if (at && pathsOverlap(path, at)) setSearching(false)
     }),
   )
-  const debounce = createSearchDebounce((query) => {
+  const debounce = createInputDebounce<string>((query) => {
     if (!searches() || runtime.actionsDisabled()) return
     if (optionsPath()) setSearching(true)
     runtime.fire(props.def.search, props.def.id, props.scope, { query })

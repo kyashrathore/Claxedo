@@ -67,6 +67,7 @@ export type SurfaceGroupSlot =
   | "surface-footer-end"
   | "surface-row-primary"
   | "surface-row-secondary"
+  | "surface-image-actions"
 
 export function SurfaceGroup(props: { readonly ids: string[] | undefined; readonly scope: DataPath; readonly slot: SurfaceGroupSlot }) {
   return (

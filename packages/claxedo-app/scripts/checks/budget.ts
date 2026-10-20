@@ -24,14 +24,14 @@ const parts: readonly Part[] = [
   { name: "Plugin host", budget: 3115, folders: ["src/plugins"] },
   { name: "Web plugin frame", budget: 1626, folders: ["src/plugins/frame"] },
   { name: "MCP App host", budget: 1792, folders: ["src/mcp-apps"] },
-  { name: "Surface renderer", budget: 4037, folders: ["src/surface"] },
+  { name: "Surface renderer", budget: 5124, folders: ["src/surface"] },
   { name: "Marketplace", budget: 2294, folders: ["src/marketplace"] },
   { name: "Notifications", budget: 179, folders: ["src/notifications"] },
   { name: "Workspace panel", budget: 1903, folders: ["src/panel"] },
   { name: "State-machine helper", budget: 100, folders: ["src/lib/machine.ts"] },
   { name: "UI kit and transcript renderers", budget: 20000, folders: ["src/ui", "src/transcript"] },
 ]
-const totalBudget = 114853
+const totalBudget = 115940
 
 function main(): never {
   const appFiles = listFiles(packageRoot, ["src"], codeExtensions).filter((file) => !isTranslationFile(packageRoot, file))

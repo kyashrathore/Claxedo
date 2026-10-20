@@ -26,11 +26,38 @@ export type PluginServerAccess = {
   operations: string[]
 }
 
+/**
+ * What a backend may ask the platform to do as its caller or for itself. A
+ * platform call whose permission the manifest does not list is refused; the
+ * install and enable prompts name each one.
+ */
+export const PLUGIN_PERMISSIONS = [
+  "projects.read",
+  "sessions.read",
+  "sessions.start",
+  "workspaces.cloud",
+  "tools",
+  "blobs",
+  "events",
+  "schedule",
+  "links",
+  "session-files",
+] as const
+
+export type PluginPermission = (typeof PLUGIN_PERMISSIONS)[number]
+
+/** The agent tools a backend serves, under one tool group; `definitions` is the module that declares them. */
+export type PluginBackendTools = {
+  group: { id: string; label: string }
+  definitions: string
+}
+
 export type PluginBackend = {
   entry: string
   objects: string[]
   outbound: string[]
   routes: string[]
+  tools?: PluginBackendTools | undefined
 }
 
 export type PluginManifest = {
@@ -40,6 +67,7 @@ export type PluginManifest = {
   app: string
   requires: PluginCapability[]
   server: PluginServerAccess
+  permissions?: PluginPermission[] | undefined
   backend?: PluginBackend | undefined
   statusHooks?: undefined
 }
