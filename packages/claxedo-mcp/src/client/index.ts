@@ -1,6 +1,6 @@
 import { createWorkspaceRuntimeClient, workspaceRuntimeClientError, type WorkspaceRuntimeClient } from "@claxedo/workspace-runtime/client"
 import { asRecord } from "@claxedo/helpers/guards"
-import type { AppPluginsGrant, ClaxedoFetch, ClaxedoMcpClient, ResolvedTarget, TasksGrant, WorkspaceSummary, WorkspaceTarget } from "./contract"
+import type { AppPluginsGrant, ClaxedoFetch, ClaxedoMcpClient, ResolvedTarget, McpServiceGrant, WorkspaceSummary, WorkspaceTarget } from "./contract"
 import { ClaxedoMcpClientError } from "./errors"
 import {
   createWorkspaceConnectionCache,
@@ -18,8 +18,7 @@ export type {
   ClaxedoFetch,
   ClaxedoMcpClient,
   ResolvedTarget,
-  TasksGrant,
-  TasksOperation,
+  McpServiceGrant,
   WorkspaceSummary,
   WorkspaceTarget,
 } from "./contract"
@@ -43,8 +42,7 @@ export type ClaxedoMcpClientOptions = Readonly<{
   controlPlane?: Readonly<{ fetch: ClaxedoFetch }>
   /** The registry's session list for a caller with no control-plane credential of its own: a session read as its workspace's owner. */
   sessionList?: (workspaceId: string, limit: number) => Promise<readonly unknown[]>
-  documents?: Readonly<{ fetch: ClaxedoFetch }>
-  tasks?: TasksGrant
+  services?: Readonly<Record<string, McpServiceGrant>>
   appPlugins?: AppPluginsGrant
   ownerDriven?: () => boolean
   /** Dials the relay; defaults to the global fetch. */
@@ -193,8 +191,7 @@ export function createClaxedoMcpClient(options: ClaxedoMcpClientOptions): Claxed
   return {
     deployment,
     ...(listSessions ? { listSessions } : {}),
-    ...(options.documents ? { documents: options.documents.fetch } : {}),
-    ...(options.tasks ? { tasks: options.tasks } : {}),
+    services: options.services ?? {},
     ...(options.appPlugins ? { appPlugins: options.appPlugins } : {}),
     ...(options.ownerDriven ? { ownerDriven: options.ownerDriven } : {}),
     ...(local ? { ownWorkspace: local.workspace } : {}),

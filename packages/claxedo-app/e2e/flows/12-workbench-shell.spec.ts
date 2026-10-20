@@ -6,6 +6,10 @@ function panes(app: Page) {
   return app.getByRole("navigation", { name: "Workbench panes" })
 }
 
+function tasksRow(app: Page) {
+  return app.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: "Tasks", exact: true })
+}
+
 function divider(app: Page) {
   return app.getByRole("separator", { name: "Resize panes" })
 }
@@ -152,11 +156,11 @@ test("12 Tasks and Marketplace share one page tab that shows the last one opened
   const pageTabs = () => panes(app).getByRole("button", { name: /^(Tasks|Marketplace)$/ })
 
   await app.goto(`${stack.url}${sessionRoute(workspace.id, first.id)}`)
-  await app.getByTestId("sidebar-tasks-entry").click()
+  await tasksRow(app).click()
   await expect(app).toHaveURL(/\/tasks$/)
   await app.getByTestId("sidebar-marketplace-entry").click()
   await expect(app).toHaveURL(/\/marketplace$/)
-  await app.getByTestId("sidebar-tasks-entry").click()
+  await tasksRow(app).click()
   await app.getByRole("button", { name: UI.hideSidebar }).click()
   await expect(pageTabs()).toHaveCount(1)
   await expect(pageTabs()).toHaveAccessibleName("Tasks")
@@ -181,7 +185,7 @@ test("12 Tasks and Marketplace show no workspace panel and no panel toggle, and 
   await app.goto(`${stack.url}${sessionRoute(workspace.id, first.id)}`)
   await app.getByRole("button", { name: UI.openPanel }).click()
   await expect(panel).toBeVisible()
-  await app.getByTestId("sidebar-tasks-entry").click()
+  await tasksRow(app).click()
   await expect(app).toHaveURL(/\/tasks$/)
   await expectNoPanel()
   await app.keyboard.press("ControlOrMeta+Shift+B")
@@ -198,7 +202,7 @@ test("12 Tasks and Marketplace show no workspace panel and no panel toggle, and 
   await expect(details).toHaveCount(0)
   await app.getByRole("button", { name: "Close workspace panel" }).first().click()
   await expect(panel).toHaveCount(0)
-  await app.getByTestId("sidebar-tasks-entry").click()
+  await tasksRow(app).click()
   await expect(app).toHaveURL(/\/tasks$/)
   await expectNoPanel()
   await app.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: "First", exact: true }).click()
@@ -218,7 +222,7 @@ test("12 the page tab never splits: its pane has no drag handle, a row dropped o
   await app.goto(`${stack.url}${sessionRoute(workspace.id, first.id)}`)
   await rail.getByRole("button", { name: "Second", exact: true }).click()
   await expect(handles()).toHaveCount(1)
-  await app.getByTestId("sidebar-tasks-entry").click()
+  await tasksRow(app).click()
   await expect(app).toHaveURL(/\/tasks$/)
   await expect(handles()).toHaveCount(0)
 
@@ -228,7 +232,7 @@ test("12 the page tab never splits: its pane has no drag handle, a row dropped o
   await expect(app).toHaveURL(new RegExp(`/${first.id}$`))
   await expect(divider(app)).toHaveCount(0)
 
-  await app.getByTestId("sidebar-tasks-entry").click()
+  await tasksRow(app).click()
   await expect(app).toHaveURL(/\/tasks$/)
   await rail.getByRole("button", { name: "Second", exact: true }).click()
   await expect(app).toHaveURL(new RegExp(`/${second.id}$`))

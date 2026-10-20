@@ -2,9 +2,9 @@ import { defineConfig, loadEnv, type Plugin, type UserConfig } from "vite"
 import solidPlugin from "vite-plugin-solid"
 import tailwindcss from "@tailwindcss/vite"
 import { fileURLToPath } from "node:url"
-import { existsSync, readFileSync, realpathSync } from "node:fs"
-import { dirname } from "node:path"
+import { readFileSync } from "node:fs"
 import { resolveAccountBindingSelection, type AccountBindingBuildSelection, type AccountBindingId } from "./vite.account-binding"
+import { claxedoPluginBundles, workspaceSourceExport } from "./vite.plugin-bundles"
 import { webDocumentPlugins } from "./vite.web-document"
 
 const normalizePath = (p: string) => p.replace(/\\/g, "/")
@@ -78,37 +78,18 @@ function moduleSideEffects(id: string): boolean {
   return !appSourceRoots.some((root) => path.startsWith(root))
 }
 
-function manifestField(value: unknown, key: string): unknown {
-  if (typeof value !== "object" || value === null) return undefined
-  return new Map<string, unknown>(Object.entries(value)).get(key)
-}
 
 function claxedoWorkspaceSource(): Plugin {
-  const roots = [
-    fileURLToPath(new URL("./node_modules/", import.meta.url)),
-    fileURLToPath(new URL("../../node_modules/", import.meta.url)),
-  ]
-  const manifestFor = (name: string) => {
-    for (const root of roots) {
-      const path = `${root}${name}/package.json`
-      if (existsSync(path)) return path
-    }
-    return undefined
-  }
   return {
     name: "claxedo-workspace-source",
     enforce: "pre",
     resolveId(source) {
       const match = /^(@claxedo\/[^/]+)(\/.+)?$/.exec(source)
       if (!match) return null
-      const manifestPath = manifestFor(match[1])
-      if (!manifestPath) return null
-      const manifest: unknown = JSON.parse(readFileSync(manifestPath, "utf8"))
-      const entry = manifestField(manifestField(manifest, "exports"), match[2] ? `.${match[2]}` : ".")
-      const development = manifestField(entry, "development")
-      if (typeof development !== "string") return null
-      const id = normalizePath(realpathSync(`${dirname(manifestPath)}/${development}`))
-      return manifestField(manifest, "sideEffects") === false ? { id, moduleSideEffects: false } : id
+      const module = workspaceSourceExport(match[1], match[2] ? `.${match[2]}` : ".")
+      if (!module) return null
+      const id = normalizePath(module.path)
+      return module.sideEffects ? id : { id, moduleSideEffects: false }
     },
   }
 }
@@ -127,7 +108,7 @@ export function cloudConfig({ mode }: { mode: string }, binding?: AccountBinding
   // (src/deployments/local/port.ts) the desktop's local server listens on.
   const backendTarget = process.env.CLAXEDO_DEV_PROXY_TARGET || "http://127.0.0.1:2593"
   return {
-    plugins: [claxedoWorkspaceSource(), solidPlugin(), tailwindcss(), ...webDocumentPlugins()],
+    plugins: [claxedoPluginBundles(), claxedoWorkspaceSource(), solidPlugin(), tailwindcss(), ...webDocumentPlugins()],
     publicDir: "public",
     server: {
       host: "0.0.0.0",

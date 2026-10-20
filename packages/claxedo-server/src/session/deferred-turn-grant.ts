@@ -7,7 +7,7 @@ import {
   type SessionTurnGrant,
   type SessionTurnGrantIntent,
 } from "@claxedo/server-core/platform/auth/session-turn-authority"
-import { credentialFault, runtimeTokenSigningKey, runtimeTokenVerificationKey } from "../platform/auth/runtime-token-keys"
+import { credentialFault, runtimeTokenSigningKey, runtimeTokenVerificationKey } from "@claxedo/server-core/platform/auth/runtime-token-keys"
 
 export const DEFERRED_TURN_GRANT_AUDIENCE = "workspace-runtime-deferred-turn" as const
 export const DEFERRED_TURN_GRANT_ISSUER = "claxedo-control-plane" as const

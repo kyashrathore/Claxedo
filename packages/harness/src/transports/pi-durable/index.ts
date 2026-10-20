@@ -2,7 +2,7 @@ import type { AdapterCancelOutcome, SessionTitleRequest, SteerResult } from "@cl
 import { errorMessage } from "@claxedo/helpers"
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context"
 import { attachedSessionEntry, sessionConnectionHealth, type AttachInput, type ConfigApplied, type Deadline, type HarnessServices,
-  type HarnessSession, type HarnessTransport, type RoutedEvent, type SessionBroker, type StartInput, type TransportCapabilities,
+  type HarnessSession, type HarnessTransport, type McpOperations, type RoutedEvent, type SessionBroker, type StartInput, type TransportCapabilities,
   type TransportConfigUpdate, type TurnBroker, type TurnInput, type TurnRef } from "../../contract"
 import { withTurnAccount } from "../../translate/turn-account"
 import { createPiConfig, piModel, piModelRef, piThinkingLevel } from "./config"
@@ -130,6 +130,12 @@ export class PiDurableTransport implements HarnessTransport {
       catch (error) { withdraw(); throw error }
       return { ok: true }
     },
+  }
+
+  readonly mcp: McpOperations = {
+    listTools: async (session, server) => this.entry(session).mcp.listTools(server),
+    callTool: async (session, call) => this.entry(session).mcp.callTool(call),
+    readResource: async (session, read) => this.entry(session).mcp.readResource(read),
   }
 
   readonly config = createPiConfig({ session: (session) => this.entry(session) })

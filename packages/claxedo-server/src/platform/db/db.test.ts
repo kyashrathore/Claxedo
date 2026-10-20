@@ -2,7 +2,8 @@ import { afterEach, expect, test, vi } from "vitest"
 import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
-// Through the product wrapper, which names this product's migration journal.
+// Through the product wrapper; the suite's setup names the journals, as a
+// composition root does.
 import { ClaxedoDB } from "./index"
 
 const previousDataDir = process.env.CLAXEDO_DATA_DIR
@@ -25,7 +26,7 @@ test("creates a fresh data directory before opening claxedo.db", () => {
   expect(existsSync(path.join(data, "claxedo.db"))).toBe(true)
 })
 
-test("applies this product's migration journal, so a fresh profile has its tables", () => {
+test("applies the journals the composition named, so a fresh profile has its tables", () => {
   process.env.CLAXEDO_DATA_DIR = path.join(root, "with-schema")
 
   const tables = (ClaxedoDB.raw()
@@ -38,10 +39,10 @@ test("applies this product's migration journal, so a fresh profile has its table
 
 test("refuses to open a database whose migration journal was never named", async () => {
   process.env.CLAXEDO_DATA_DIR = path.join(root, "unconfigured")
-  // A fresh module graph: the product wrapper is what performs the
-  // configuration, so importing the engine alone leaves it unset.
+  // A fresh module graph: only a composition names the journals, so the
+  // engine imported alone has none.
   vi.resetModules()
   const engine = await import("@claxedo/server-core/platform/db/db")
 
-  expect(() => engine.ClaxedoDB.raw()).toThrow(/migration journal was configured/)
+  expect(() => engine.ClaxedoDB.raw()).toThrow(/before its migration journals were configured/)
 })

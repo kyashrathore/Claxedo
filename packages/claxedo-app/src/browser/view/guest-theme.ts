@@ -1,3 +1,4 @@
+import { readThemeTokens, watchThemeTokens } from "@/ui/utils"
 import type { BrowserWebview } from "../bridge"
 import { GUEST_THEME_CHANNEL } from "../guest"
 
@@ -11,13 +12,7 @@ const TOKEN_SOURCES = {
 } as const
 
 export function themeTokens(): Record<string, string> {
-  const styles = getComputedStyle(document.documentElement)
-  const tokens: Record<string, string> = {}
-  for (const [key, source] of Object.entries(TOKEN_SOURCES)) {
-    const value = styles.getPropertyValue(source).trim()
-    if (value) tokens[key] = value
-  }
-  return tokens
+  return readThemeTokens(TOKEN_SOURCES)
 }
 
 export function sendThemeTokens(element: BrowserWebview): void {
@@ -31,16 +26,5 @@ export function sendThemeTokens(element: BrowserWebview): void {
 }
 
 export function watchTheme(element: BrowserWebview): () => void {
-  const observer = new MutationObserver(() => sendThemeTokens(element))
-  observer.observe(document.documentElement, {
-    attributes: true,
-    attributeFilter: ["data-color-scheme", "class", "style"],
-  })
-  const media = window.matchMedia("(prefers-color-scheme: dark)")
-  const onChange = () => sendThemeTokens(element)
-  media.addEventListener("change", onChange)
-  return () => {
-    observer.disconnect()
-    media.removeEventListener("change", onChange)
-  }
+  return watchThemeTokens(() => sendThemeTokens(element))
 }

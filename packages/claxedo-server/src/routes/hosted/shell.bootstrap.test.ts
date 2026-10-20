@@ -17,7 +17,7 @@ const signedConfig: ControlPlaneAuthConfig = {
   audience: "claxedo-server",
 }
 
-function bootstrap(options: { authConfig: ControlPlaneAuthConfig; version?: string; connections?: boolean }) {
+function bootstrap(options: { authConfig: ControlPlaneAuthConfig; version?: string; connections?: boolean; capabilities?: readonly string[] }) {
   return HostedShellRoutes(options).request("http://cp.test/api/claxedo/bootstrap")
 }
 
@@ -30,7 +30,7 @@ describe("GET /api/claxedo/bootstrap on a hosted central", () => {
       healthy: true,
       version: "9.9.9-test",
       events: { hostAggregate: false },
-      deployment: { serverKind: "hosted", issuesSessions: true, documents: false, connections: false },
+      deployment: { serverKind: "hosted", issuesSessions: true, capabilities: [], connections: false },
     })
   })
 
@@ -39,6 +39,11 @@ describe("GET /api/claxedo/bootstrap on a hosted central", () => {
     expect(composed.deployment).toMatchObject({ connections: true })
     const bare = await (await bootstrap({ authConfig: signedConfig })).json() as Record<string, unknown>
     expect(bare.deployment).toMatchObject({ connections: false })
+  })
+
+  test("declares the capabilities of the plugins the entry mounted", async () => {
+    const composed = await (await bootstrap({ authConfig: signedConfig, capabilities: ["documents", "tasks"] })).json() as Record<string, unknown>
+    expect(composed.deployment).toMatchObject({ capabilities: ["documents", "tasks"] })
   })
 
   // A hosted central serves no runtime of its own, so every workspace stream it

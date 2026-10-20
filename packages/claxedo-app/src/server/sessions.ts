@@ -14,6 +14,7 @@ import { preloadSessionReads, startSessionReads } from "./session-reads"
 import { readPart, readTurnPageBefore } from "./transcript-reads"
 import type { HostedAccount } from "./account"
 import { cancelRunningTurn, stopBackgroundTask } from "./session-stop"
+import { createMcpAppsApi } from "./mcp-apps"
 import type { StatusOwner } from "./status"
 import { jsonInit, withQuery, type RuntimeRoute, type Transport } from "./transport"
 import type { AgentRequestReply, PromptDelivery, PromptInput, SessionCreateInput, SessionLocation, SessionReservation, SessionRow } from "./types"
@@ -145,5 +146,6 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
     newMessageId,
     ...createSessionQueue(context),
     controlGoal: async (ref, action) => controlGoal(transport, await workspaces.route(ref), ref, action),
+    ...createMcpAppsApi(context),
   }
 }

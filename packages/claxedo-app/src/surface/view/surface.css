@@ -1,0 +1,99 @@
+[data-component="surface"] {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--v2-border-border-muted);
+  border-radius: var(--radius-xl);
+  background: var(--v2-background-bg-base);
+  color: var(--v2-text-text-base);
+  font-family: var(--v2-font-family-sans);
+  font-size: var(--font-size-compact);
+  line-height: var(--line-height-20);
+  container: surface / inline-size;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+[data-slot="surface-source"] {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-bottom: -2px;
+  color: var(--v2-text-text-muted);
+  font-size: var(--font-size-small);
+  line-height: 16px;
+  white-space: nowrap;
+
+  span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ui-icon {
+    width: 14px;
+    height: 14px;
+    color: var(--v2-icon-icon-muted);
+  }
+}
+
+[data-slot="surface-text"] {
+  display: block;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-20);
+  overflow-wrap: anywhere;
+
+  &[data-variant="h1"] {
+    font-size: 22px;
+    font-weight: var(--font-weight-semibold);
+    line-height: 28px;
+    letter-spacing: -0.01em;
+  }
+
+  &[data-variant="h2"] {
+    font-size: 18px;
+    font-weight: var(--font-weight-semibold);
+    line-height: 24px;
+    letter-spacing: -0.005em;
+  }
+
+  &[data-variant="h3"] {
+    font-size: 15px;
+    font-weight: var(--font-weight-semibold);
+  }
+
+  &[data-variant="h4"] {
+    font-weight: var(--font-weight-semibold);
+    line-height: 18px;
+  }
+
+  &[data-variant="h5"] {
+    color: var(--v2-text-text-muted);
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-semibold);
+    line-height: 16px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  &[data-variant="caption"] {
+    color: var(--v2-text-text-muted);
+    font-size: var(--font-size-small);
+    line-height: 16px;
+  }
+}
+
+[data-slot="surface-link"] {
+  color: var(--v2-text-text-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+
+  &:hover {
+    color: var(--v2-text-text-accent-hover);
+  }
+}

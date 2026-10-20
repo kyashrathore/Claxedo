@@ -8,9 +8,9 @@ import {
   type DocumentPrincipal,
   type DocumentSharing,
   type NewDocumentShare,
-} from "@claxedo/server-core/documents/access"
-import type { DocumentsBackend } from "@claxedo/server-core/documents/backend"
-import type { DocumentIndexEntry } from "@claxedo/server-core/documents/index-contract"
+} from "@claxedo/documents/host/access"
+import type { DocumentsBackend } from "@claxedo/documents/host/backend"
+import type { DocumentIndexEntry } from "@claxedo/documents/host/index-contract"
 import type { D1AccessContext } from "./access-context"
 import { batchUnder, may, mayGuard, maySql, type BoundSql } from "./authorization"
 

@@ -5,7 +5,7 @@ import type { SharedSessions } from "./shared-sessions"
 import type { StartupState } from "./startup"
 import type { HarnessId, RuntimeCommand } from "@claxedo/agent-runtime-contract"
 import type { Account, AccountsApi, AccountSources, EffectiveAccounts, MachineLogin, SandboxKeys } from "./account-types"
-import type { CloudCreateInput, CloudStopOutcome, CloudWorkspace, CodeHostRepositoryListing, WorkspaceRuntime } from "./cloud-types"
+import type { CloudCreateInput, CloudStopOutcome, CloudWorkspace, CodeHostRepositoryListing, WorkspaceRuntime, WorkspaceStartRun } from "./cloud-types"
 import type { HarnessOptions } from "./harness-types"
 import type { ConnectionState, ServerEvent } from "./events"
 import type { AgentConnectionsApi, AgentConnectionsQueries } from "./agent-connections"
@@ -15,6 +15,7 @@ import type { ProviderCatalogQueries, ProviderCatalogsApi } from "./provider-cat
 import type { FolderQueries, FoldersApi } from "./folders"
 import type { ProjectEnvironmentApi } from "./project-environment"
 import type { HarnessConfigApi } from "./harness-config"
+import type { McpAppsApi } from "./mcp-app-types"
 import type {
   DiffFile,
   DiffScope,
@@ -33,7 +34,7 @@ import type {
 } from "./git-types"
 import type { OrgMember, OrgMembership } from "./access-types"
 import type { OrgId, PlacementId, ProjectId, RequestId, TerminalId } from "./ids"
-import type { TasksApi } from "./tasks"
+import type { Workspaces } from "./workspaces"
 import type {
   MarketplaceCatalog,
   PluginActivationInput,
@@ -57,7 +58,6 @@ import type {
 import type {
   AgentRequestReply,
   Capabilities,
-  FeatureAvailability,
   FetchQuery,
   GoalAction,
   HeldSessionReads,
@@ -90,7 +90,7 @@ import type { BackgroundTaskStop } from "./status-types"
 import type { AccountSpendReport, AccountSpendRequest, MachineTime, UsageRequest, UsageSummary } from "./usage-types"
 import type { LivePlugin } from "./live-plugin-types"
 
-export type SessionsApi = {
+export type SessionsApi = McpAppsApi & {
   readonly list: (input: SessionListInput) => Promise<SessionPage>
   readonly firstPages: (input: SessionPageQuery) => SessionFirstPages
   readonly markSeen: (ref: SessionLocation, completedAt: number) => Promise<SessionReader>
@@ -128,6 +128,7 @@ export type PlacementsApi = {
   readonly openable: () => ReadonlySet<PlacementId> | undefined
   readonly load: () => Promise<readonly Placement[]>
   readonly createWorktree: (root: PlacementId, input: WorktreeCreateInput) => Promise<Placement>
+  readonly locateSession: Workspaces["locateSession"]
 }
 
 export type TerminalsApi = {
@@ -152,6 +153,7 @@ export type CloudApi = {
   readonly start: (id: PlacementId) => Promise<void>
   readonly startFresh: (id: PlacementId) => Promise<void>
   readonly follow: (id: PlacementId) => Promise<void>
+  readonly followStart: (id: PlacementId, following: () => void) => Promise<WorkspaceStartRun>
   readonly runtime: (id: PlacementId) => WorkspaceRuntime
   readonly stop: (id: PlacementId) => Promise<CloudStopOutcome>
   readonly remove: (id: PlacementId) => Promise<void>
@@ -207,7 +209,6 @@ export type ServerQueries = {
     readonly sources: () => FetchQuery<readonly PluginSourceRecord[]>
     readonly skill: (request: PluginSkillRequest) => FetchQuery<PluginSkillDocument>
   }
-  readonly tasks: { readonly availability: () => FetchQuery<FeatureAvailability> }
   readonly codeHost: {
     readonly repositories: (connectionId: string) => FetchQuery<CodeHostRepositoryListing>
   }
@@ -256,7 +257,6 @@ export type Server = {
   readonly cloud: CloudApi
   readonly accounts: AccountsApi
   readonly marketplace: MarketplaceApi
-  readonly tasks: TasksApi
   readonly folders: FoldersApi
   readonly integrations: IntegrationsApi
   readonly agentConnections: AgentConnectionsApi

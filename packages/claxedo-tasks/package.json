@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
-  "description": "Optional Tasks and Presets kit: personal execution presets, project-owned tasks with subtasks and linked sessions, their rules, store ports, HTTP routes and client",
+  "description": "The Tasks plugin: personal execution presets, project-owned tasks with subtasks and linked sessions, their rules, store ports, HTTP routes, client, MCP tools, and the host code, SQLite and D1 storage, local, hosted and cloud-runtime contributions a server composes",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -32,6 +32,62 @@
       "import": "./src/client/index.ts",
       "default": "./src/client/index.ts"
     },
+    "./mcp": {
+      "types": "./src/mcp/index.ts",
+      "bun": "./src/mcp/index.ts",
+      "development": "./src/mcp/index.ts",
+      "import": "./src/mcp/index.ts",
+      "default": "./src/mcp/index.ts"
+    },
+    "./host/*": {
+      "types": "./src/host/*.ts",
+      "bun": "./src/host/*.ts",
+      "development": "./src/host/*.ts",
+      "import": "./src/host/*.ts",
+      "default": "./src/host/*.ts"
+    },
+    "./storage/sqlite": {
+      "types": "./src/storage/sqlite/index.ts",
+      "bun": "./src/storage/sqlite/index.ts",
+      "development": "./src/storage/sqlite/index.ts",
+      "import": "./src/storage/sqlite/index.ts",
+      "default": "./src/storage/sqlite/index.ts"
+    },
+    "./storage/d1": {
+      "types": "./src/storage/d1/index.ts",
+      "bun": "./src/storage/d1/index.ts",
+      "development": "./src/storage/d1/index.ts",
+      "import": "./src/storage/d1/index.ts",
+      "default": "./src/storage/d1/index.ts"
+    },
+    "./storage/d1/schema": {
+      "types": "./src/storage/d1/schema.ts",
+      "bun": "./src/storage/d1/schema.ts",
+      "development": "./src/storage/d1/schema.ts",
+      "import": "./src/storage/d1/schema.ts",
+      "default": "./src/storage/d1/schema.ts"
+    },
+    "./local": {
+      "types": "./src/local/index.ts",
+      "bun": "./src/local/index.ts",
+      "development": "./src/local/index.ts",
+      "import": "./src/local/index.ts",
+      "default": "./src/local/index.ts"
+    },
+    "./hosted": {
+      "types": "./src/hosted/index.ts",
+      "bun": "./src/hosted/index.ts",
+      "development": "./src/hosted/index.ts",
+      "import": "./src/hosted/index.ts",
+      "default": "./src/hosted/index.ts"
+    },
+    "./runtime-host": {
+      "types": "./src/runtime-host/index.ts",
+      "bun": "./src/runtime-host/index.ts",
+      "development": "./src/runtime-host/index.ts",
+      "import": "./src/runtime-host/index.ts",
+      "default": "./src/runtime-host/index.ts"
+    },
     "./conformance": {
       "types": "./src/conformance/index.ts",
       "bun": "./src/conformance/index.ts",
@@ -47,18 +103,41 @@
       "default": "./src/test-support/index.ts"
     }
   },
+  "claxedo": {
+    "id": "claxedo-tasks",
+    "name": "Tasks",
+    "version": "1.0.0",
+    "app": "./src/app/index.ts",
+    "requires": ["tasks"],
+    "server": { "routes": ["/api/claxedo/tasks", "/api/claxedo/plugins"], "operations": [] }
+  },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
+    "verify:closure": "bun ../../script/product-boundary/verify.ts",
     "test": "mkdir -p .artifacts/unit && node ../../script/test-deadline.mjs bun test src --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml"
   },
   "dependencies": {
     "@claxedo/agent-runtime-contract": "workspace:*",
     "@claxedo/helpers": "workspace:*",
-    "hono": "4.12.34"
+    "@claxedo/mcp": "workspace:*",
+    "@claxedo/plugin-api": "workspace:*",
+    "@claxedo/server-core": "workspace:*",
+    "drizzle-orm": "catalog:",
+    "hono": "4.12.34",
+    "jose": "6.2.4",
+    "zod": "4.4.3"
   },
   "devDependencies": {
+    "@claxedo/workspace-relay": "workspace:*",
+    "@cloudflare/workers-types": "catalog:",
+    "@hono/node-server": "1.19.11",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "@tsconfig/node-lts": "22.0.4",
     "@types/bun": "1.3.13",
+    "solid-js": "catalog:",
     "typescript": "catalog:"
+  },
+  "peerDependencies": {
+    "solid-js": "^1.9.12"
   }
 }

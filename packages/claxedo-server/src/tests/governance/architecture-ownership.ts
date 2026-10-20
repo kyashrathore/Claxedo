@@ -127,7 +127,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     owner: "Sandbox request bridge",
     reason: "Server routes use this bridge to fetch local embedded or cloud Workspace Runtime hosts without owning runner execution.",
     tests: [
-      "documents/routes/index.test.ts",
+      "../../claxedo-documents/src/host/routes/index.test.ts",
       "tests/governance/codebase-shape.test.ts",
     ],
   },
@@ -286,11 +286,11 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "route",
-    module: "../../claxedo-server-core/src/documents/routes/index.ts",
+    module: "../../claxedo-documents/src/host/routes/index.ts",
     status: OwnershipStatus.Canonical,
     owner: "Documents HTTP adapter",
     reason: "Thin Worker-safe route adapter composed with placement-specific index and DocumentWorkspace backends.",
-    tests: ["documents/routes/index.test.ts"],
+    tests: ["../../claxedo-documents/src/host/routes/index.test.ts"],
     routeSamples: ["/documents", "/documents/document_1/content"],
   },
   {

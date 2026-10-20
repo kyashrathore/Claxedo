@@ -1,9 +1,9 @@
 import { decodeJwt } from "jose"
-import type { TasksCapabilityPort } from "@claxedo/server-core/tasks-host/capability"
+import type { TasksCapabilityPort } from "@claxedo/tasks/host/capability"
 import { workspaceRuntimeOwnerGrantEnv } from "@claxedo/server-core/hosts/workspace-runtime/env"
-import { credentialFault } from "../platform/auth/runtime-token-keys"
-import { mintSandboxPass, verifySandboxPass } from "../platform/auth/sandbox-pass"
-import type { SandboxPassRegister } from "../platform/auth/sandbox-pass-register"
+import { credentialFault } from "@claxedo/server-core/platform/auth/runtime-token-keys"
+import { mintSandboxPass, verifySandboxPass } from "@claxedo/server-core/platform/auth/sandbox-pass"
+import type { SandboxPassRegister } from "@claxedo/server-core/platform/auth/sandbox-pass-register"
 import type { OwnerGrantProof, ResolveWorkspaceOwner } from "../routes/runtime-session-authority"
 
 export const OWNER_GRANT_AUDIENCE = "workspace-runtime-owner" as const

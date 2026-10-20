@@ -16,7 +16,7 @@ export type BootstrapDeclaration = {
   readonly serverKind: ServerKind
   readonly hostAggregate: boolean
   readonly issuesSessions: boolean
-  readonly documents: boolean
+  readonly capabilities: readonly string[]
   readonly connections: boolean
   readonly enrollmentId?: string
   readonly machineName?: string
@@ -102,7 +102,7 @@ export function bootstrapCatalog(body: unknown): BootstrapCatalog {
       serverKind: deployment.serverKind,
       hostAggregate: events.hostAggregate === true,
       issuesSessions: deployment.issuesSessions === true,
-      documents: deployment.documents === true,
+      capabilities: Array.isArray(deployment.capabilities) ? deployment.capabilities.filter((entry): entry is string => typeof entry === "string") : [],
       connections: deployment.connections === true,
       ...(enrollmentId ? { enrollmentId } : {}),
       ...(machineName ? { machineName } : {}),

@@ -4,6 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import { Hono } from "hono"
+import { CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { mintRelayHostToken } from "@claxedo/workspace-relay"
 import type { HarnessConnectionCapabilities } from "@claxedo/agent-runtime-contract"
@@ -20,7 +21,7 @@ import {
 } from "@claxedo/workspace-runtime"
 import { remoteWorkspaceSessionAccessPolicy } from "@claxedo/session-core"
 import { relayWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
-import { memorySandboxPassRegister } from "../../platform/auth/sandbox-pass-register"
+import { memorySandboxPassRegister } from "@claxedo/server-core/platform/auth/sandbox-pass-register"
 import { RuntimeSessionAuthorityRoutes } from "../../routes/runtime-session-authority"
 import { createOwnerGrantProof, mintOwnerGrant } from "../../session/owner-grant"
 import { testManagedSessionAuthority } from "../../test-support/managed-session-authority"
@@ -222,6 +223,7 @@ beforeAll(async () => {
       firstPartyMcpRuntimeContribution({
         verifyRuntimeCredential: issuer.verify,
         enabledToolGroups,
+        registerTools: CLAXEDO_MCP_TOOL_GROUPS,
         ownerGrant: () => grant?.current(),
         ownerActorId: () => grant?.actorId,
       }),

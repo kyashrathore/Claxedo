@@ -2,7 +2,8 @@ import { z } from "zod"
 import { PLUGIN_ID_MAX_LENGTH, PLUGIN_ID_PATTERN } from "./id"
 import {
   PLUGIN_BACKEND_METHODS,
-  PLUGIN_CAPABILITIES,
+  PLUGIN_CAPABILITY_MAX_LENGTH,
+  PLUGIN_CAPABILITY_PATTERN,
   PLUGIN_NAME_MAX_LENGTH,
   PLUGIN_SERVER_ROUTE_PREFIX,
   PluginManifestError,
@@ -48,7 +49,7 @@ export const pluginManifestSchema = z
     name: z.string().trim().min(1).max(PLUGIN_NAME_MAX_LENGTH),
     version: z.string().regex(VERSION_PATTERN),
     app: z.string().regex(ENTRY_PATTERN),
-    requires: z.array(z.enum(PLUGIN_CAPABILITIES)).default([]),
+    requires: z.array(z.string().max(PLUGIN_CAPABILITY_MAX_LENGTH).regex(PLUGIN_CAPABILITY_PATTERN)).default([]),
     server: pluginServerAccessSchema.default({ routes: [], operations: [] }),
     backend: pluginBackendSchema.optional(),
     // A template defines shell wrappers and rewrites files in the person's home,

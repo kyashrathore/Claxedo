@@ -9,8 +9,8 @@ import path from "path"
  * domains that own them, because those are a generation-time input and this is
  * the runtime artifact.
  *
- * A composition still has to name this explicitly — see
- * `configureClaxedoMigrations`. Self-configuring here would buy nothing and
- * lose the guarantee that a database cannot open before its schema is known.
+ * A composition still has to name this explicitly, beside its plugins'
+ * journals — see `configureClaxedoSchema`. Self-configuring here would lose
+ * the guarantee that a database cannot open before its whole schema is known.
  */
 export const CLAXEDO_MIGRATION_JOURNAL = path.join(import.meta.dirname, "claxedo-migration")

@@ -46,12 +46,15 @@ export async function stagePluginToolchain(nodeModules: string, target: { platfo
   const dependencies = path.join(root, "node_modules")
   fs.rmSync(root, { recursive: true, force: true })
   // The daemon bundle keeps every subpath of the package external, so each
-  // source export needs its own staged file.
+  // shipped export needs its own staged file. An export with only a
+  // `development` target is a workspace build tool (`./app-bundle-cli`, which
+  // Vite spawns under Bun) and never reaches a packaged daemon.
   const manifest: unknown = JSON.parse(fs.readFileSync(path.join(PLUGIN_BUILD_DIR, "package.json"), "utf8"))
-  const sourceExports = Object.entries(readRecord(manifest, "exports") ?? {}).map(([subpath, entry]) => {
+  const sourceExports = Object.entries(readRecord(manifest, "exports") ?? {}).flatMap(([subpath, entry]) => {
     const source = readString(entry, "default")
-    if (!source) throw new Error(`@claxedo/plugin-build export ${subpath} names no default file`)
-    return { subpath, source }
+    if (source) return [{ subpath, source }]
+    if (readString(entry, "development")) return []
+    throw new Error(`@claxedo/plugin-build export ${subpath} names no default or development file`)
   })
   await runBunBuild("Failed to bundle plugin toolchain", {
     entrypoints: sourceExports.map(({ source }) => path.join(PLUGIN_BUILD_DIR, source)),

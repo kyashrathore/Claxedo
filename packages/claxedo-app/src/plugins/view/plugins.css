@@ -8,6 +8,7 @@
 .plugins-settings-description,
 .plugin-row-detail,
 .plugin-row-version,
+.plugin-row-origin,
 .plugin-row-state {
   margin: 0;
   color: var(--v2-text-text-muted);

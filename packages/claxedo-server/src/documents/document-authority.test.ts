@@ -1,7 +1,7 @@
 import { expect, test, vi } from "vitest"
 import type { D1AccessContext } from "../authority/adapters/d1/access-context"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
-import type { DocumentsBackend } from "@claxedo/server-core/documents/backend"
+import type { DocumentsBackend } from "@claxedo/documents/host/backend"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { d1DocumentAccess } from "../authority/adapters/d1/document-authority"
 

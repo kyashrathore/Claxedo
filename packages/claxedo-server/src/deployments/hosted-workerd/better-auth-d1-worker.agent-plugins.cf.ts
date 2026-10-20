@@ -6,11 +6,11 @@ import {
   createBetterAuthD1Worker,
   type BetterAuthD1WorkerEnv,
 } from "./better-auth-d1-worker.cf"
-import { LiveSyncRoom } from "./core-worker.cf"
+import { hostedMcpToolGroups, LiveSyncRoom } from "./core-worker.cf"
 import { settledCompositionCache } from "./settled-composition-cache"
-import { hostedTasksRouteContributions } from "./tasks-contributions"
+import { composeHostedTasksPlugin } from "./tasks-plugin/compose"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
-import { createTasksRootCapability, createTasksRootGrant } from "../../tasks/root-capability"
+import { BUILTIN_SUBAGENTS_TOOL_GROUP } from "@claxedo/server-core/agent-plugins/builtin/plugin"
 import { createOwnerGrantMinter, createOwnerRootCapability } from "../../session/owner-grant"
 import { createD1SandboxPassRegister } from "../../platform/auth/d1-sandbox-pass-register"
 import type { SessionRowsPasses } from "../../session/session-rows-pass"
@@ -60,7 +60,6 @@ export function composeBetterAuthD1AgentPlugins(
   const database = timedD1(env.CONTROL_PLANE_DB)
   const authentication = timedAuthentication(base.options.authentication)
   const passes = createD1SandboxPassRegister({ database })
-  const tasksRoot = { signingEnv, passes }
   const authority = requireAuthority(base.plane.services)
   if (!authority.resolveWorkspaceOwner) {
     throw new Error("Enabled Agent Plugins build requires an authority that resolves workspace owners")
@@ -74,32 +73,7 @@ export function composeBetterAuthD1AgentPlugins(
     supervisors: env.PLUGIN_SUPERVISOR,
     services: base.plane.services,
   })
-  const feature = createHostedAgentPluginsComposition({
-    env,
-    plane: base.plane,
-    database,
-    authentication,
-    fetch: timedFetch(),
-    tasksGrant: createTasksRootCapability(tasksRoot),
-    ownerGrant: createOwnerRootCapability({ signingEnv, passes, workspaceOwner: authority.resolveWorkspaceOwner.bind(authority) }),
-    passes,
-    ...(base.runtimeDelivery ? { pluginsChanged: base.runtimeDelivery.pluginsChanged } : {}),
-    ...(base.egressBroker ? { egressBroker: base.egressBroker } : {}),
-    ...(base.options.productWorkspace?.sandboxInFlight ? { sandboxInFlight: base.options.productWorkspace.sandboxInFlight } : {}),
-  })
-  const prepareRuntime = async (context: WorkspaceRuntimeContext) => {
-    const [basePreparation, featurePreparation] = await Promise.all([
-      base.runtimeDelivery?.prepareRuntime(context),
-      feature.prepareRuntime(context),
-    ])
-    return {
-      ...featurePreparation,
-      secrets: [...(basePreparation?.secrets ?? []), ...(featurePreparation.secrets ?? [])],
-      env: { ...basePreparation?.env, ...featurePreparation.env },
-    }
-  }
-  base.runtimeDelivery?.composeRuntime({ prepareRuntime, pluginRuntime: feature.pluginRuntime })
-  const tasks = hostedTasksRouteContributions({
+  const tasks = composeHostedTasksPlugin({
     services: base.plane.services,
     database,
     authentication,
@@ -123,21 +97,53 @@ export function composeBetterAuthD1AgentPlugins(
     ...(base.options.productWorkspace?.sandboxUsage
       ? { sandboxUsage: base.options.productWorkspace.sandboxUsage }
       : {}),
-    signingEnv,
-    passes,
-    renewal: {
-      tasksGroupEnabled: feature.tasksGroupEnabled,
-      grant: createTasksRootGrant(tasksRoot),
-      ownerGrant: { enabled: feature.subagentsGroupEnabled, mint: createOwnerGrantMinter({ signingEnv, passes }) },
+    grants: {
+      signingEnv,
+      passes,
+      // Renewal asks the Agent Plugins composition below, which is built after
+      // this plugin because its catalog lists this plugin's tool group.
+      groupEnabled: (group, root) => feature.groupEnabled(group, root),
+      ownerGrant: {
+        enabled: (root) => feature.groupEnabled(BUILTIN_SUBAGENTS_TOOL_GROUP, root),
+        mint: createOwnerGrantMinter({ signingEnv, passes }),
+      },
     },
   })
+  const plugins = [tasks]
+  const feature = createHostedAgentPluginsComposition({
+    toolGroups: hostedMcpToolGroups(plugins),
+    env,
+    plane: base.plane,
+    database,
+    authentication,
+    fetch: timedFetch(),
+    rootGrants: plugins.flatMap((plugin) => plugin.rootGrants ?? []),
+    ownerGrant: createOwnerRootCapability({ signingEnv, passes, workspaceOwner: authority.resolveWorkspaceOwner.bind(authority) }),
+    passes,
+    ...(base.runtimeDelivery ? { pluginsChanged: base.runtimeDelivery.pluginsChanged } : {}),
+    ...(base.egressBroker ? { egressBroker: base.egressBroker } : {}),
+    ...(base.options.productWorkspace?.sandboxInFlight ? { sandboxInFlight: base.options.productWorkspace.sandboxInFlight } : {}),
+  })
+  const prepareRuntime = async (context: WorkspaceRuntimeContext) => {
+    const [basePreparation, featurePreparation] = await Promise.all([
+      base.runtimeDelivery?.prepareRuntime(context),
+      feature.prepareRuntime(context),
+    ])
+    return {
+      ...featurePreparation,
+      secrets: [...(basePreparation?.secrets ?? []), ...(featurePreparation.secrets ?? [])],
+      env: { ...basePreparation?.env, ...featurePreparation.env },
+    }
+  }
+  base.runtimeDelivery?.composeRuntime({ prepareRuntime, pluginRuntime: feature.pluginRuntime })
   return {
     ...base,
     options: {
       ...base.options,
       sandboxPasses: passes,
       ...(sessionRowsPasses ? { sessionRowsPasses } : {}),
-      routeContributions: [...feature.routeContributions, ...tasks, pluginBackends],
+      routeContributions: [...feature.routeContributions, pluginBackends],
+      plugins,
       integrationRoutes: feature.integrationRoutes,
       sessionHostPlugins: feature.sessionHostPlugins,
       sessionHostToolGroups: feature.sessionHostToolGroups,

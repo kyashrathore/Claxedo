@@ -2,7 +2,7 @@ import { createMemo, createSignal, type Accessor } from "solid-js"
 import type { PluginCapability } from "@claxedo/plugin-api"
 import { approvalCheck, approvalFor, approvalLetsRun, type ApprovalCheck } from "./approval"
 import { createPluginLifecycle, type Activate, type PluginLifecycle } from "./lifecycle"
-import type { PluginBuild, PluginSummary } from "./model"
+import { liveOriginOf, type PluginBuild, type PluginSummary } from "./model"
 import type { PluginPreferences } from "./preferences"
 
 export type PluginHostDeps = {
@@ -14,7 +14,6 @@ export type PluginHostDeps = {
 
 export type PluginHost = {
   readonly plugins: Accessor<readonly PluginSummary[]>
-  readonly required: Accessor<ReadonlySet<PluginCapability>>
   readonly put: (build: PluginBuild) => void
   readonly drop: (pluginId: string) => void
   readonly switchOn: (pluginId: string) => void
@@ -37,12 +36,14 @@ function createBuildPolicy(deps: PluginHostDeps): BuildPolicy {
   const missing = (build: PluginBuild): readonly PluginCapability[] =>
     build.manifest.requires.filter((capability) => !deps.offered(capability))
   const approval = (build: PluginBuild): ApprovalCheck => {
+    if (build.origin.kind === "bundled") return { kind: "approved" }
     if (build.origin.builtAt === undefined) return { kind: "unapproved" }
     return approvalCheck(preferences.approval(build.manifest.id), { manifest: build.manifest, hash: build.origin.hash, builtAt: build.origin.builtAt })
   }
+  const stoppedBySafeMode = (build: PluginBuild) => build.origin.kind === "live" && preferences.safeMode()
   const wanted = (build: PluginBuild) => {
     if (!preferences.switchedOn(build.manifest.id) || missing(build).length > 0) return false
-    return !preferences.safeMode() && approvalLetsRun(approval(build))
+    return !stoppedBySafeMode(build) && approvalLetsRun(approval(build))
   }
   return { missing, approval, wanted }
 }
@@ -63,8 +64,9 @@ function pluginSummaryOf(lifecycle: PluginLifecycle, policy: BuildPolicy, prefer
 }
 
 function approveBuild(preferences: PluginPreferences, build: PluginBuild | undefined, pluginId: string, hash: string): boolean {
-  if (build?.origin.hash !== hash || build.origin.builtAt === undefined) return false
-  preferences.approve(pluginId, approvalFor({ manifest: build.manifest, hash, builtAt: build.origin.builtAt }, new Date()))
+  const origin = build && liveOriginOf(build)
+  if (!build || origin?.hash !== hash || origin.builtAt === undefined) return false
+  preferences.approve(pluginId, approvalFor({ manifest: build.manifest, hash, builtAt: origin.builtAt }, new Date()))
   return true
 }
 
@@ -73,7 +75,6 @@ export function createPluginHost(deps: PluginHostDeps): PluginHost {
   const policy = createBuildPolicy(deps)
   const [lifecycles, setLifecycles] = createSignal<readonly PluginLifecycle[]>([])
   const summaries = createMemo<readonly PluginSummary[]>(() => lifecycles().map((lifecycle) => pluginSummaryOf(lifecycle, policy, preferences)))
-  const required = createMemo<ReadonlySet<PluginCapability>>(() => new Set(lifecycles().flatMap((lifecycle) => lifecycle.build().manifest.requires)))
   const find = (pluginId: string) => lifecycles().find((lifecycle) => lifecycle.id === pluginId)
   const drop = (pluginId: string) => {
     const lifecycle = find(pluginId)
@@ -83,7 +84,6 @@ export function createPluginHost(deps: PluginHostDeps): PluginHost {
   }
   return {
     plugins: summaries,
-    required,
     put: (build) => {
       const existing = find(build.manifest.id)
       if (existing) return existing.setBuild(build)

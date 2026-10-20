@@ -15,13 +15,12 @@ import { createEventIntake, type EventIntake } from "./event-intake"
 import type { ConnectionState } from "./events"
 import { createGitApi } from "./git"
 import { createMarketplaceApi } from "./marketplace"
-import { createTasksApi } from "./tasks"
 import { createHarnessConfigApi } from "./harness-config"
 import { createLivePluginsApi } from "./live-plugins"
 import { createOperations } from "./operations"
 import type { ProjectId } from "./ids"
 import type { SessionLocation } from "./types"
-import type { Server, ServerQueries } from "./api"
+import type { PlacementsApi, Server, ServerQueries } from "./api"
 import { createProjectsApi } from "./projects"
 import { createProjectEnvironmentApi } from "./project-environment"
 import { queryKeys } from "./query-keys"
@@ -67,6 +66,21 @@ export type ServerHandle = Server & {
   readonly dispose: () => void
 }
 
+function placementsApi(transport: Transport, workspaces: Workspaces): PlacementsApi {
+  return {
+    byId: workspaces.byId,
+    list: workspaces.list,
+    complete: workspaces.complete,
+    openable: workspaces.openable,
+    load: async () => {
+      await workspaces.load()
+      return workspaces.list()
+    },
+    createWorktree: createWorktreeCreator(transport, workspaces),
+    locateSession: workspaces.locateSession,
+  }
+}
+
 function serverApis(transport: Transport, workspaces: Workspaces, status: StatusOwner, coverage: SnapshotCoverage, events: EventIntake["subscribe"], queryClient: QueryClient, queries: ServerQueries, projection: SessionProjection, account: HostedAccount | undefined, port: HostedAccount | undefined) {
   const telemetry = createProductTelemetry(account)
   const operations = createOperations(transport, port)
@@ -78,23 +92,12 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     sessions: createSessionsApi(transport, workspaces, status, coverage, wakes, projection, telemetry, account),
     sharedSessions: workspaces.shared,
     projects: { ...createProjectsApi(transport, queryClient, workspaces, cloud.create), ...createProjectEnvironmentApi(transport, queryClient, workspaces, account) },
-    placements: {
-      byId: workspaces.byId,
-      list: workspaces.list,
-      complete: workspaces.complete,
-      openable: workspaces.openable,
-      load: async () => {
-        await workspaces.load()
-        return workspaces.list()
-      },
-      createWorktree: createWorktreeCreator(transport, workspaces),
-    },
+    placements: placementsApi(transport, workspaces),
     terminals: createTerminalsApi(transport, workspaces, telemetry, wakes),
     git: createGitApi(transport, workspaces, queryClient),
     cloud,
     accounts: createAccountsApi(transport, queryClient, account),
     marketplace: createMarketplaceApi(transport, queryClient, telemetry),
-    tasks: createTasksApi(transport, queryClient, workspaces, wakes),
     folders: createFoldersApi(transport),
     integrations: createIntegrationsApi(transport, queryClient),
     agentConnections: createAgentConnectionsApi(transport, queryClient),

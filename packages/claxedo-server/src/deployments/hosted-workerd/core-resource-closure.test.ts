@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, rmSync } from "node:fs"
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -79,7 +79,7 @@ describe("certified core resource ownership", () => {
 })
 
 const AGENT_PLUGINS_ENTRY = "src/deployments/hosted-workerd/better-auth-d1-worker.agent-plugins.cf.ts"
-const TASKS_MODULE = "src/deployments/hosted-workerd/tasks-contributions.ts"
+const TASKS_MODULE = "src/deployments/hosted-workerd/tasks-plugin/compose.ts"
 
 const temporaryDirectories: string[] = []
 
@@ -132,24 +132,15 @@ describe("the hosted Worker Tasks closure", () => {
     expect(emitted.modules).toContain(TASKS_MODULE)
     expect(emitted.modules.filter((module) => module.endsWith("/agent-settings.ts"))).toEqual([])
     expect(emitted.imports).not.toContain("@claxedo/server-core/platform/auth/cross-machine-writes")
-    expect(emitted.modules.filter((module) => module.startsWith("src/tasks/")).sort()).toEqual([
-      // The grant a cloud root launches with, and the signer that mints it.
-      "src/tasks/capability.ts",
-      "src/tasks/d1-host-reads.ts",
-      "src/tasks/d1-store.ts",
-      "src/tasks/grant-renewal.ts",
-      "src/tasks/grant-withdrawal.ts",
-      "src/tasks/hosted-composition.ts",
-      "src/tasks/root-capability.ts",
-      "src/tasks/session-bridge.ts",
-      "src/tasks/session-reservation.ts",
+    // The plugin's own code is `@claxedo/tasks`; the host adds only its ports
+    // over this deployment's owners and the cloud roots it allocates.
+    expect(emitted.modules.filter((module) => module.includes("/tasks-plugin/")).sort()).toEqual([
+      "src/deployments/hosted-workerd/tasks-plugin/cloud-roots.ts",
+      "src/deployments/hosted-workerd/tasks-plugin/compose.ts",
     ])
-    expect(emitted.imports).toContain("@claxedo/tasks")
-    expect(emitted.imports).toContain("@claxedo/server-core/tasks-host/session-bridge-core")
-    // The kit's routes are mounted through the shared contribution owner, so
-    // `@claxedo/tasks/http` reaches this artifact behind that specifier rather
-    // than as one of its own imports.
-    expect(emitted.imports).toContain("@claxedo/server-core/tasks-host/contribution")
+    expect(emitted.modules.filter((module) => module.startsWith("src/tasks/"))).toEqual([])
+    expect(emitted.modules).toContain("src/agent-plugins/runtime/grant-withdrawal.ts")
+    expect(emitted.imports).toContain("@claxedo/tasks/hosted")
   })
 
   test("the rendered config points Wrangler at the staged migrations, never at the source directory", () => {
@@ -172,5 +163,8 @@ describe("the hosted Worker Tasks closure", () => {
     stageWorkerControlPlaneMigrations({ configDirectory })
     expect(readdirSync(path.join(configDirectory, "migrations/control-plane")).sort()).toEqual(source)
     expect(readdirSync(path.join(packageRoot, "migrations/control-plane")).sort()).toEqual(source)
+    const staged = readFileSync(path.join(configDirectory, "migrations/control-plane/0001_baseline.sql"), "utf8")
+    expect(staged).toContain("CREATE TABLE task_session_links")
+    expect(readFileSync(path.join(packageRoot, "migrations/control-plane/0001_baseline.sql"), "utf8")).not.toContain("task_session_links")
   })
 })

@@ -22,6 +22,41 @@ export default definePlugin({
 })
 `
 
+const SURFACE_APP = `import { definePlugin } from "@claxedo/plugin-api"
+
+export default definePlugin({
+  activate(api) {
+    api.pages.register({
+      id: "items",
+      path: "/items",
+      title: "Items",
+      surface(channel) {
+        const { surfaceId } = channel
+        const items = [{ name: "First" }]
+        channel.send(
+          { version: "v0.9", createSurface: { surfaceId, catalogId: "https://claxedo.dev/a2ui/v0.9/catalog.json" } },
+          { version: "v0.9", updateComponents: { surfaceId, components: [
+            { id: "root", component: "Column", children: ["list", "add"] },
+            { id: "list", component: "List", children: { componentId: "item", path: "/items" } },
+            { id: "item", component: "Text", text: { path: "name" } },
+            { id: "add", component: "Button", child: "add-label", action: { event: { name: "add" } } },
+            { id: "add-label", component: "Text", text: "Add" },
+          ] } },
+          { version: "v0.9", updateDataModel: { surfaceId, path: "/items", value: items } },
+        )
+        return {
+          action(action) {
+            if (action.name !== "add") return
+            items.push({ name: "Item " + (items.length + 1) })
+            channel.send({ version: "v0.9", updateDataModel: { surfaceId, path: "/items/" + (items.length - 1), value: items[items.length - 1] } })
+          },
+        }
+      },
+    })
+  },
+})
+`
+
 const BACKEND = `import { DurableObject } from "cloudflare:workers"
 
 export class Counter extends DurableObject {
@@ -76,6 +111,15 @@ describe("checkPluginApp", () => {
     expect(checked.ok).toBe(true)
     expect(checked.manifest?.id).toBe("notes")
     expect(checked.hash).toMatch(/^[0-9a-f]{16}$/)
+  })
+
+  test("a surface page plugin typechecks and builds, and a component outside the catalog is a type error", async () => {
+    const checked = await checkPluginApp({ rootDir: await writePlugin("surface", SURFACE_APP) })
+    expect(checked.diagnostics).toEqual([])
+    expect(checked.ok).toBe(true)
+    const refused = await checkPluginApp({ rootDir: await writePlugin("modal", SURFACE_APP.replace(`component: "Text", text: "Add"`, `component: "Modal", text: "Add"`)) })
+    expect(refused.ok).toBe(false)
+    expect(refused.diagnostics[0]).toMatchObject({ stage: "typecheck", file: path.join("src", "app.tsx") })
   })
 
   test("a type error against the plugin API is reported by file, line and column, and nothing is built", async () => {

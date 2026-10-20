@@ -1,6 +1,6 @@
 import fs from "node:fs/promises"
 import path from "node:path"
-import type { PluginManifest } from "@claxedo/plugin-api"
+import { isFirstPartyPluginId, type PluginManifest } from "@claxedo/plugin-api"
 import type { PluginFolderWatch } from "@claxedo/plugin-build"
 import { controlBus, type PluginsChangedEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
@@ -163,6 +163,10 @@ export function createLivePluginService(options: LivePluginServiceOptions): Live
 
   const ready = (async () => {
     for (const entry of await readLivePluginRegistry(root)) {
+      if (isFirstPartyPluginId(entry.id)) {
+        log.error("a registered live plugin takes a built-in app plugin's id and is not loaded", { id: entry.id, directory: entry.directory })
+        continue
+      }
       const last = await readCurrentLivePluginBundle(root, entry.id)
       const record: LivePluginRecord = { entry, name: last?.manifest.name ?? null, version: last?.manifest.version ?? null, state: initialLivePluginState(last), queue: Promise.resolve() }
       plugins.set(entry.id, record)
@@ -183,6 +187,9 @@ export function createLivePluginService(options: LivePluginServiceOptions): Live
       } catch (error) {
         if (error instanceof PluginBuildError) throw new LivePluginAddError(400, "live_plugin_manifest_invalid", error.messages.join("\n"))
         throw error
+      }
+      if (isFirstPartyPluginId(manifest.id)) {
+        throw new LivePluginAddError(409, "live_plugin_id_reserved", `${manifest.id} is the id of an app plugin built into Claxedo; give this plugin another id`)
       }
       if (plugins.has(manifest.id)) throw new LivePluginAddError(409, "live_plugin_exists", `A plugin with id ${manifest.id} is already registered`)
       if (entries().some((entry) => entry.directory === real)) throw new LivePluginAddError(409, "live_plugin_directory_registered", `${real} is already registered`)

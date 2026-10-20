@@ -1,4 +1,4 @@
-import { resolveHostedOperation } from "@claxedo/account-contract"
+import { hostedOperationTable } from "@claxedo/account-contract"
 
 /**
  * The reads a signed-in browser app makes before it can draw, named so the
@@ -25,9 +25,10 @@ import { resolveHostedOperation } from "@claxedo/account-contract"
 const SESSION_READ = "/api/auth/get-session"
 const AGENT_CONNECTIONS_READ = "/api/claxedo/agent-config/connections"
 const RAIL_SESSION_PAGE = { limit: 5, sort: "human_turn_desc", settled: "active" }
+const CORE_OPERATIONS = hostedOperationTable()
 
 function hostedRead(operation: string, input?: Record<string, unknown>) {
-  return resolveHostedOperation(operation, input).path
+  return CORE_OPERATIONS.resolve(operation, input).path
 }
 
 /** The reads every signed route makes, in the order the app issues them. */

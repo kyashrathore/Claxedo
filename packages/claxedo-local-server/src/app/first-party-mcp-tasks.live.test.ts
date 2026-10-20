@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js"
-import { sqliteTasksStore } from "@claxedo/server-core/tasks-host/sqlite-store"
+import { sqliteTasksStore } from "@claxedo/tasks/storage/sqlite"
 import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { callTool, startLiveFirstPartyMcp, toolJson, toolText, type LiveMcpFixture } from "./test-support/first-party-mcp-live"
 

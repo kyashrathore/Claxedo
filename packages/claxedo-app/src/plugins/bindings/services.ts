@@ -3,7 +3,7 @@ import type { CommandContext, PluginManifest, PluginPlatform } from "@claxedo/pl
 import type { I18n } from "@/i18n"
 import type { Project, Server } from "@/server"
 import type { SessionStores } from "@/session"
-import type { Commands, ShellRegistries, ShellRouting } from "@/shell"
+import type { Commands, PageEntry, ShellRegistries, ShellRouting } from "@/shell"
 import type { useDialog } from "@/ui"
 import type { WorkbenchStore } from "@/workbench"
 import type { PluginServerCalls } from "../api"
@@ -44,6 +44,11 @@ export class PluginEntryError extends Error {
 
 export function entryId(pluginId: string, id: string): string {
   return `${pluginId}/${id}`
+}
+
+export function pageEntryFor(scope: BindingScope, pageId: string): PageEntry | undefined {
+  const pages = scope.services.registries.pages.list()
+  return pages.find((page) => page.id === entryId(scope.manifest.id, pageId)) ?? pages.find((page) => page.id === pageId)
 }
 
 export function commandContext(services: HostServices): CommandContext {

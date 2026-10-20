@@ -39,23 +39,15 @@ export function isBuiltinPluginInstanceId(pluginInstanceId: string): boolean {
 /**
  * The catalog row's own name, which every mutation route must refuse.
  *
- * The row is one card over eight activation subjects, so `claxedo` names no
- * row any store can write. Accepted, it would land in the sourced branch and
- * either fail looking for a source that does not exist or write a row nothing
- * reads — which is how a client's whole-plugin button reported a change that
- * never happened.
+ * The row is one card over every group's activation subject, so `claxedo`
+ * names no row any store can write. Accepted, it would land in the sourced
+ * branch and either fail looking for a source that does not exist or write a
+ * row nothing reads — which is how a client's whole-plugin button reported a
+ * change that never happened.
  */
 export function isBuiltinFamilyName(pluginInstanceId: string): boolean {
   return pluginInstanceId === BUILTIN_AGENT_PLUGIN_ID
 }
-
-/**
- * The group whose consent the Tasks capability is.
- *
- * Named here rather than beside a minter because the hosted composition and
- * the local daemon both grant on it, and the two sit in different deployments.
- */
-export const BUILTIN_TASKS_TOOL_GROUP = "tasks"
 
 /**
  * The group whose consent the owner grant is: a root that may start

@@ -161,4 +161,23 @@ describe("live plugin routes", () => {
     expect((await app.request("/Not-An-Id", { method: "DELETE" })).status).toBe(400)
     expect(JSON.parse(await fs.readFile(path.join(root, "data", "registry.json"), "utf8"))).toEqual({ version: 1, plugins: [] })
   })
+
+  test("refuses a live plugin that takes a built-in app plugin's id, and does not load one already registered", async () => {
+    const taken = path.join(root, "taken")
+    await fs.mkdir(path.join(taken, "src"), { recursive: true })
+    await fs.writeFile(path.join(taken, "package.json"), JSON.stringify({ name: "taken", claxedo: { id: "claxedo-tasks", name: "Tasks", version: "0.1.0", app: "./src/app.tsx" } }))
+    await fs.writeFile(path.join(taken, "src", "app.tsx"), APP("Taken"))
+    const response = await app.request("/", json({ directory: taken }))
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({ error: { code: "live_plugin_id_reserved" } })
+    expect(await listed()).toEqual([])
+
+    const registered = path.join(root, "registered")
+    await fs.mkdir(registered)
+    await fs.writeFile(path.join(registered, "registry.json"), JSON.stringify({ version: 1, plugins: [{ id: "claxedo-tasks", directory: taken, addedAt: "2026-10-19T00:00:00.000Z" }] }))
+    const restarted = createLivePluginService({ root: registered })
+    await restarted.settled()
+    expect(restarted.list()).toEqual([])
+    restarted.dispose()
+  })
 })

@@ -10,7 +10,8 @@ import type {
   ThemesApi,
   WorkbenchApi,
 } from "./contributions"
-import type { I18nApi, PluginContext, ProjectsApi, ServerApi, SessionsApi, UiApi } from "./host"
+import type { I18nApi, PluginContext, ProjectsApi, ServerApi, SessionsApi, UiApi, WorkspacesApi } from "./host"
+import type { TranscriptApi } from "./transcript"
 
 export interface PluginApi {
   sidebar: SidebarApi
@@ -23,7 +24,9 @@ export interface PluginApi {
   workbench: WorkbenchApi
   themes: ThemesApi
   icons: IconsApi
+  transcript: TranscriptApi
   sessions: SessionsApi
+  workspaces: WorkspacesApi
   projects: ProjectsApi
   server: ServerApi
   context: PluginContext

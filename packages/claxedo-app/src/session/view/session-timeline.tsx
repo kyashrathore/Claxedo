@@ -1,10 +1,12 @@
 import { createMemo, Show } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { usePhone } from "@/lib/viewport"
-import { sessionId, useServer } from "@/server"
+import { useErrorCopy } from "@/i18n"
+import { sessionId, toAppError, useServer } from "@/server"
 import type { SessionView } from "@/session"
-import { sessionLinkPath } from "@/shell"
-import { DataProvider, TranscriptKitProviders, type SubagentStopAnswer, type TranscriptUserMessage } from "@/transcript"
+import { sessionLinkPath, useShellRegistries } from "@/shell"
+import { DataProvider, TranscriptKitProviders, type PromptSendAnswer, type SubagentStopAnswer, type TranscriptUserMessage } from "@/transcript"
+import { McpAppSessionProvider } from "@/mcp-apps"
 import { MessageTimeline, type SessionErrorClass, type TimelineHost, type TimelineNavTurn } from "./timeline"
 import type { QueuedMessages } from "./timeline/model"
 import type { TimelineScroll } from "./timeline-scroll"
@@ -29,9 +31,11 @@ export function SessionTimeline(props: {
   readonly scroll: TimelineScroll
   readonly onRecover?: (kind: SessionErrorClass, userMessageId: string) => unknown
   readonly follow?: boolean
+  readonly canPrompt?: boolean
 }) {
   const phone = usePhone()
   const server = useServer()
+  const registries = useShellRegistries()
   const users = createMemo(() => userMessages(props.view))
   const current = () => props.navTurns.find((turn) => turn.id === props.scroll.selected())
   const t = useSessionScreenText()
@@ -46,6 +50,15 @@ export function SessionTimeline(props: {
     const answer = await server.sessions.stopBackgroundTask({ ...props.view.ref, sessionId: sessionId(parentSessionId) }, call)
     return answer.ok ? answer : { ok: false, message: answer.message }
   }
+  const errorCopy = useErrorCopy("session")
+  const sendPrompt = async (text: string): Promise<PromptSendAnswer> => {
+    try {
+      await props.view.send({ clientRequestId: crypto.randomUUID(), text, attachments: [] })
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, message: errorCopy(toAppError(error)).message }
+    }
+  }
   return (
     <TranscriptKitProviders>
       <DataProvider
@@ -56,28 +69,32 @@ export function SessionTimeline(props: {
           sessionLinkPath({ placementId: props.view.ref.placementId, sessionId: sessionId(id) }, server.placements.byId(props.view.ref.placementId))
         }
         resolveSubagents={resolveSubagents}
+        toolCards={registries.toolCards.list}
         loadToolBody={(part) => void props.view.loadPart(part.messageID, part.id)}
         stopBackgroundTask={props.follow ? undefined : stopBackgroundTask}
+        sendPrompt={props.canPrompt ? sendPrompt : undefined}
       >
-        <Show when={props.view.conversation()}>
-          <MessageTimeline
-            {...props.scroll.props}
-            host={props.host}
-            active={() => props.active}
-            onScreen={() => props.onScreen}
-            centered={!phone()}
-            historyShift={false}
-            userMessages={users()}
-            navMessages={props.navTurns}
-            currentMessage={current()}
-            anchor={(id) => `message-${id}`}
-            title={() => props.view.row()?.title}
-            parentId={props.view.row()?.parentSessionId}
-            onFirstTurnRecovery={props.onRecover}
-            queued={props.queued}
-            progressBlocked={() => !!props.view.requestsError()}
-          />
-        </Show>
+        <McpAppSessionProvider sessionRef={props.view.ref}>
+          <Show when={props.view.conversation()}>
+            <MessageTimeline
+              {...props.scroll.props}
+              host={props.host}
+              active={() => props.active}
+              onScreen={() => props.onScreen}
+              centered={!phone()}
+              historyShift={false}
+              userMessages={users()}
+              navMessages={props.navTurns}
+              currentMessage={current()}
+              anchor={(id) => `message-${id}`}
+              title={() => props.view.row()?.title}
+              parentId={props.view.row()?.parentSessionId}
+              onFirstTurnRecovery={props.onRecover}
+              queued={props.queued}
+              progressBlocked={() => !!props.view.requestsError()}
+            />
+          </Show>
+        </McpAppSessionProvider>
       </DataProvider>
     </TranscriptKitProviders>
   )

@@ -33,7 +33,7 @@ function startedWorld() {
   const workspaces = createWorkspaces(transport, queryClient)
   const listeners = new Set<(event: ServerEvent) => void>()
   const publish = (event: ServerEvent) => {
-    invalidateFor(queryClient, SERVER_URL, event, false)
+    void invalidateFor(queryClient, SERVER_URL, event, false)
     for (const listener of listeners) listener(event)
   }
   const events = (listener: (event: ServerEvent) => void) => {

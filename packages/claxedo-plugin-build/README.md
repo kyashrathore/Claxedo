@@ -6,6 +6,8 @@ Turns an app plugin package into one browser ES module, and checks one before it
 
 The five host modules (`solid-js`, `solid-js/web`, `solid-js/store`, `@claxedo/plugin-api`, `@claxedo/app/ui`) are not bundled. Each becomes a CommonJS shim that reads `globalThis.__claxedoPluginRuntime[specifier]`, which lets esbuild turn every named import into a property read with no export manifest to maintain. Every other dependency bundles from the plugin's own `node_modules`.
 
+`./app-bundle-cli` is the same build as a command: `bun app-bundle-cli.ts <plugin folder>` prints `{ manifest, hash, code }` as JSON. The app's Vite plugin (`packages/claxedo-app/vite.plugin-bundles.ts`) spawns it to bundle the first-party plugins, because Vite's config loader cannot import this package's TypeScript source. It is exported under the `development` condition only, so the desktop's staged toolchain, which ships the `default` exports, leaves it out.
+
 `buildPluginBackend({ rootDir })` bundles `claxedo.backend.entry` into the one ES module the hosted Worker loads, with only `cloudflare:*` left external, and returns `{ manifest, code }`. It refuses a bundle that does not export `default` and every class `claxedo.backend.objects` names.
 
 `checkPluginApp({ rootDir })` reads the manifest, typechecks the folder, then builds the app and, when the manifest declares one, the backend, and answers `{ ok, manifest?, hash?, diagnostics }`. The typecheck runs this package's TypeScript compiler over a config written to a temporary folder, so the plugin needs no `node_modules`, `tsconfig.json` or install step, and nothing is written into it:

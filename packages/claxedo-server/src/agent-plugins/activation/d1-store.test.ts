@@ -5,7 +5,9 @@ import { AgentPluginActivationStoreError } from "@claxedo/server-core/agent-plug
 import type { AgentPluginArtifactPin } from "@claxedo/server-core/agent-plugins/activation/store"
 import type { ArtifactDigest } from "@claxedo/server-core/agent-plugins/activation/types"
 import { SUPPORTED_AGENT_PLUGIN_HARNESSES, type AgentPluginHarnessId } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
-import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
+import { claxedoMcpToolGroupInventory, CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
+import { DOCUMENTS_MCP_TOOL_GROUP } from "@claxedo/documents/mcp"
+import { TASKS_MCP_TOOL_GROUP } from "@claxedo/tasks/mcp"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { AuthIdentity, ControlPlanePrincipal } from "@claxedo/server-core/platform/auth/authentication"
 import { D1WorkspaceAuthority } from "../../authority/adapters/d1/workspace-authority"
@@ -611,7 +613,7 @@ describe("D1 signed Agent Plugins activation store", () => {
     const root = { userId, orgId, projectId: cloud.project_id, workspaceId: cloud.workspace_id }
     const toolGroups = createCloudRootToolGroups({
       activations: store,
-      builtIn: { groups: claxedoMcpToolGroupInventory(), deployment: { inProcessServices: [] } },
+      builtIn: { groups: claxedoMcpToolGroupInventory([...CLAXEDO_MCP_TOOL_GROUPS, DOCUMENTS_MCP_TOOL_GROUP, TASKS_MCP_TOOL_GROUP]), deployment: { inProcessServices: [] } },
     })
     const toggle = async (groupId: string, choice: boolean) => await store.mutateUser(auth, {
       pluginInstanceId: `claxedo:${groupId}`,

@@ -1,7 +1,5 @@
 import type { SignedActivationSnapshot } from "@claxedo/server-core/agent-plugins/activation/store"
 import {
-  BUILTIN_SUBAGENTS_TOOL_GROUP,
-  BUILTIN_TASKS_TOOL_GROUP,
   builtinPluginInstanceId,
   resolveBuiltinGroupActivation,
   type BuiltinDeployment,
@@ -9,14 +7,7 @@ import {
 } from "@claxedo/server-core/agent-plugins/builtin/plugin"
 import type { AgentPluginHarnessId } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import { workspaceRuntimeMcpToolGroupsEnv } from "@claxedo/server-core/hosts/workspace-runtime/env"
-
-/** One cloud root as the workspace authority records it. */
-export type CloudRootIdentity = Readonly<{
-  userId: string
-  orgId: string
-  projectId: string
-  workspaceId: string
-}>
+import type { CloudRootGrantContribution, CloudRootIdentity } from "@claxedo/server-core/plugins/server-plugin"
 
 export type CloudRootEnvironmentInput = Readonly<{
   activations: {
@@ -30,10 +21,8 @@ export type CloudRootEnvironmentInput = Readonly<{
     }): Promise<SignedActivationSnapshot>
   }
   builtIn: Readonly<{ groups: readonly BuiltinToolGroup[]; deployment: BuiltinDeployment }>
-  /** The grant the Tasks group's tools present to the control plane, minted for one root. */
-  tasksGrant: (root: CloudRootIdentity) => Promise<Record<string, string>>
-  /** The grant the root's runtime acts on its own sessions with, as the workspace's owner, minted for one root. */
-  ownerGrant: (root: CloudRootIdentity) => Promise<Record<string, string>>
+  /** Each credential a root launches with while its project has that grant's group on. */
+  grants: readonly Pick<CloudRootGrantContribution, "group" | "mint">[]
 }>
 
 /**
@@ -47,21 +36,18 @@ export type CloudRootEnvironmentInput = Readonly<{
  * declaration that depended on which of them ran would let the same project
  * boot with different tools.
  *
- * The tool groups always travel, empty included. The Tasks grant rides with
- * them only when the Tasks group is among them, and the owner grant only when
- * the subagents group is, which is what makes each consent and its capability
- * a single act rather than a switch that hides tools a session still holds a
- * token for.
+ * The tool groups always travel, empty included. Each grant rides with them
+ * only when its group is among them — the Tasks capability with the Tasks
+ * group, the owner grant with the subagents group — which is what makes each
+ * consent and its capability a single act rather than a switch that hides
+ * tools a session still holds a token for.
  */
 export function createCloudRootEnvironment(input: CloudRootEnvironmentInput) {
   const toolGroups = createCloudRootToolGroups(input)
   return async (root: CloudRootIdentity): Promise<Record<string, string>> => {
     const groups = await toolGroups(root)
-    const [tasks, owner] = await Promise.all([
-      groups.includes(BUILTIN_TASKS_TOOL_GROUP) ? input.tasksGrant(root) : {},
-      groups.includes(BUILTIN_SUBAGENTS_TOOL_GROUP) ? input.ownerGrant(root) : {},
-    ])
-    return { ...workspaceRuntimeMcpToolGroupsEnv(groups), ...tasks, ...owner }
+    const minted = await Promise.all(input.grants.filter((grant) => groups.includes(grant.group)).map((grant) => grant.mint(root)))
+    return Object.assign(workspaceRuntimeMcpToolGroupsEnv(groups), ...minted)
   }
 }
 

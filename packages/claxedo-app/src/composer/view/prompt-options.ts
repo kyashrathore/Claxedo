@@ -12,8 +12,7 @@ export type PromptCommandOption = {
 
 export function promptAtOptionKey(x: AtOption | undefined) {
   if (!x) return ""
-  if (x.type === "agent") return `agent:${x.name}`
-  if (x.type === "document") return `document:${x.documentId}`
+  if (x.type === "mention") return `mention:${x.mentionId}`
   return `file:${x.path}`
 }
 
@@ -51,16 +50,6 @@ export function promptSlashCommands(input: {
     source: cmd.source,
   }))
 
-  return [
-    {
-      id: "documents.open",
-      trigger: "docs",
-      title: "Documents",
-      description: "Attach a document as an editable file",
-      type: "builtin" as const,
-    },
-    ...custom,
-    ...builtin,
-  ]
+  return [...custom, ...builtin]
 }
 

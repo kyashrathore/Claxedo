@@ -2,9 +2,10 @@
 import { expect, test } from "bun:test"
 import { QueryClient } from "@tanstack/solid-query"
 import { createRoot } from "solid-js"
-import { placementId, projectId } from "./ids"
+import { placementId, projectId, sessionId } from "./ids"
 import type { HostedAccount } from "./account"
 import type { Transport } from "./transport"
+import { cloudCatalog as listedCloudCatalog } from "./test-support/cloud-catalog"
 import { createWorkspaces } from "./workspaces"
 import { PUBLISHED_DEPLOYMENT_ELEMENT_ID } from "./published-deployment"
 import { queryKeys } from "./query-keys"
@@ -63,7 +64,7 @@ async function cloudCatalog(status: { current: string }) {
   await workspaces.load()
   const rereadsAfter = async (event: ServerEvent) => {
     const before = reads.length
-    invalidateFor(queryClient, server.serverUrl, event, false)
+    void invalidateFor(queryClient, server.serverUrl, event, false)
     for (let tick = 0; tick < 50 && reads.length === before; tick += 1) await Bun.sleep(1)
     await Bun.sleep(1)
     return reads.length - before
@@ -102,10 +103,32 @@ test("a machine stop the server tells of re-reads the catalog, so an open cloud 
   })
 })
 
+test("a session in a workspace the catalog has not read yet is located only once the catalog has read it, so its route can open", async () => {
+  await createRoot(async (dispose) => {
+    const created = ["ws_known"]
+    const reads: string[] = []
+    const catalog = listedCloudCatalog(() => created, reads)
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const workspaces = createWorkspaces(catalog, queryClient)
+    await workspaces.load()
+    created.push("ws_task_root")
+
+    const located = await workspaces.locateSession({ workspaceId: "ws_task_root", sessionId: "ses_tasks_1" })
+
+    expect(located).toEqual({ placementId: placementId("ws_task_root"), sessionId: sessionId("ses_tasks_1") })
+    expect(workspaces.byId(placementId("ws_task_root"))?.projectId).toBe(projectId("prj"))
+    const rereads = reads.length
+    await workspaces.locateSession({ workspaceId: "ws_known", sessionId: "ses_other" })
+    expect(reads.length).toBe(rereads)
+    workspaces.dispose()
+    dispose()
+  })
+})
+
 test("a hosted deployment's bootstrap published into the shell is the catalog's declaration, read and re-read without a request", async () => {
   await createRoot(async (dispose) => {
     const reads: string[] = []
-    const hosted = { deployment: { serverKind: "hosted", issuesSessions: true, documents: false, connections: true } }
+    const hosted = { deployment: { serverKind: "hosted", issuesSessions: true, capabilities: ["documents"], connections: true } }
     Object.defineProperty(globalThis, "document", {
       configurable: true,
       value: { getElementById: (id: string) => (id === PUBLISHED_DEPLOYMENT_ELEMENT_ID ? { textContent: JSON.stringify({ server: "http://127.0.0.1:1", bootstrap: hosted, authDescriptor: {} }) } : null) },

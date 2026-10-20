@@ -18,7 +18,7 @@ export type PiSessionInput = { start: StartInput; broker: SessionBroker; placeme
 export class PiSession {
   readonly stream: PiSessionStream
   private readonly opening = crypto.randomUUID()
-  private readonly mcp: PiMcpTools
+  readonly mcp: PiMcpTools
 
   private constructor(private readonly input: PiSessionInput, public start: StartInput, readonly credentials: PiCredentials,
     readonly runtime: PiSessionRuntime) {
@@ -27,6 +27,7 @@ export class PiSession {
       connect: (server) => input.placement.mcpTransport(server, start.sessionId),
       failed: (serverName, error) => void input.broker.publish({ type: "mcp-server-status", serverName, status: "failed", error: errorMessage(error) })
         .then(undefined, (failure: unknown) => input.services.log.error("Pi MCP status publication failed", { error: errorMessage(failure) })),
+      appUnavailable: (server, tool, reason) => input.services.log.warn("Pi MCP app was not captured", { sessionId: start.sessionId, server, tool, reason }),
       cached: (key) => cachedMcpTools(runtime, key),
       record: (key, lists) => recordMcpTools(runtime, key, lists),
     })

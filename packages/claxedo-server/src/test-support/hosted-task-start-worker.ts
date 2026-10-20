@@ -9,7 +9,8 @@ import { createD1CoreAuthority } from "../authority/adapters/d1/core-authority"
 import { recordRelayRuntimeToken } from "../authority/relay-token-record"
 import { UNUSED_DURABLE_SESSION_LOG, UNUSED_PROJECTION_STORE } from "../authority/unavailable-session-stores"
 import type { ControlPlaneCredentials, ControlPlaneServices } from "../authority/services"
-import { hostedTasksRouteContributions } from "../deployments/hosted-workerd/tasks-contributions"
+import { memorySandboxPassRegister } from "@claxedo/server-core/platform/auth/sandbox-pass-register"
+import { composeHostedTasksPlugin } from "../deployments/hosted-workerd/tasks-plugin/compose"
 import { orgSandboxDrivers } from "../sandbox/org-sandbox-drivers"
 import { createOrgSandboxManager } from "../sandbox/org-sandbox-manager"
 import { createD1SandboxLeaseStore } from "../sandbox/stores/d1"
@@ -182,16 +183,20 @@ function compose(env: Env) {
   }
   const starts = rootStarts(database, sandbox.manager)
   const app = new Hono()
-  for (const contribution of hostedTasksRouteContributions({
+  for (const contribution of composeHostedTasksPlugin({
     services,
     database,
     authentication,
     sandboxStart: starts.start,
-    signingEnv: {
-      CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM,
-      CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM,
+    grants: {
+      signingEnv: {
+        CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM,
+        CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM,
+      },
+      passes: memorySandboxPassRegister(),
+      groupEnabled: async () => true,
     },
-  })) {
+  }).routeContributions) {
     app.route(contribution.path, contribution.routes)
   }
 

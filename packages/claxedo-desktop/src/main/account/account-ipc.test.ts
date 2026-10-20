@@ -13,7 +13,7 @@ import {
   registerAccountIpc,
   type AccountIpcService,
 } from "./account-ipc"
-import { HOSTED_OPERATIONS, isStreamHostedOperation, type HostedOperationName } from "@claxedo/account-contract"
+import { DESKTOP_HOSTED_OPERATIONS, type DesktopHostedOperationName } from "./hosted-operations"
 
 /**
  * The IPC surface, checked in both directions.
@@ -119,7 +119,7 @@ describe("registered channels", () => {
       ACCOUNT_STREAM_OPEN_CHANNEL,
       ACCOUNT_STREAM_START_CHANNEL,
       ACCOUNT_STREAM_CLOSE_CHANNEL,
-      ...Object.keys(HOSTED_OPERATIONS).map((name) => hostedOperationChannel(name as never)),
+      ...DESKTOP_HOSTED_OPERATIONS.names().map((name) => hostedOperationChannel(name as never)),
     ]
 
     expect(h.channels().toSorted()).toEqual(expected.toSorted())
@@ -343,7 +343,7 @@ describe("operations whose result is a credential", () => {
     // `hosted-operations.ts` would otherwise leave a withheld entry matching
     // nothing, and an empty withhold list refuses nothing at all.
     for (const name of RENDERER_WITHHELD_OPERATIONS) {
-      expect(Object.keys(HOSTED_OPERATIONS)).toContain(name)
+      expect(DESKTOP_HOSTED_OPERATIONS.names()).toContain(name)
     }
     expect(RENDERER_WITHHELD_OPERATIONS).toContain("account.cliExchange")
   })
@@ -394,15 +394,15 @@ describe("operations whose result is a credential", () => {
     const withheld = new Set<string>(RENDERER_WITHHELD_OPERATIONS)
     const ran: string[] = []
 
-    for (const name of Object.keys(HOSTED_OPERATIONS)) {
-      if (withheld.has(name) || isStreamHostedOperation(name)) continue
+    for (const name of DESKTOP_HOSTED_OPERATIONS.names()) {
+      if (withheld.has(name) || DESKTOP_HOSTED_OPERATIONS.isStream(name)) continue
       expect(await h.invoke(hostedOperationChannel(name))).toEqual({ ran: name })
       ran.push(name)
     }
 
-    const streamCount = Object.keys(HOSTED_OPERATIONS).filter((name) => isStreamHostedOperation(name)).length
+    const streamCount = DESKTOP_HOSTED_OPERATIONS.names().filter((name) => DESKTOP_HOSTED_OPERATIONS.isStream(name)).length
     expect(ran.length).toBe(
-      Object.keys(HOSTED_OPERATIONS).length - RENDERER_WITHHELD_OPERATIONS.length - streamCount,
+      DESKTOP_HOSTED_OPERATIONS.names().length - RENDERER_WITHHELD_OPERATIONS.length - streamCount,
     )
     expect(ran.length).toBeGreaterThan(0)
   })
@@ -649,9 +649,9 @@ test("the renderer-visible operation set stays pinned", async () => {
     "workspace.lifecycle",
     "workspace.list.provisioner",
     "workspace.resolve",
-  ] as const satisfies readonly HostedOperationName[]
-  expect(Object.entries(HOSTED_OPERATIONS).filter(([, operation]) => operation.exposure?.renderer).map(([name]) => name).toSorted()).toEqual(expected)
-  expect(Object.keys(HOSTED_OPERATIONS).filter((name) => !RENDERER_WITHHELD_OPERATIONS.includes(name as never)).toSorted()).toEqual(expected)
+  ] as const satisfies readonly DesktopHostedOperationName[]
+  expect(Object.entries(DESKTOP_HOSTED_OPERATIONS.operations).filter(([, operation]) => operation.exposure?.renderer).map(([name]) => name).toSorted()).toEqual(expected)
+  expect(DESKTOP_HOSTED_OPERATIONS.names().filter((name) => !RENDERER_WITHHELD_OPERATIONS.includes(name as never)).toSorted()).toEqual(expected)
   const h = harness()
   for (const name of expected.filter((name) => name !== "controlPlane.events")) {
     expect(await h.invoke(hostedOperationChannel(name))).toEqual({ ran: name })
@@ -666,7 +666,7 @@ describe("hostedOperationChannel", () => {
     // One channel per operation, rather than one channel taking an operation
     // name: a single channel is a place for a future argument to become the
     // route.
-    const channels = Object.keys(HOSTED_OPERATIONS).map((name) => hostedOperationChannel(name as never))
+    const channels = DESKTOP_HOSTED_OPERATIONS.names().map((name) => hostedOperationChannel(name as never))
 
     expect(new Set(channels).size).toBe(channels.length)
     expect(hostedOperationChannel("account.mode")).toBe("claxedo.account.operation:account.mode")

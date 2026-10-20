@@ -34,6 +34,8 @@ export type WorkspaceRuntime =
   | { readonly kind: "wakeFailed"; readonly error: AppError; readonly retryAt?: number; readonly checkpointUnusable?: true }
   | { readonly kind: "outdated" }
 
+export type WorkspaceStartRun = { readonly kind: "running" } | { readonly kind: "notRunning"; readonly error?: AppError }
+
 export type MachineClass = "small" | "default" | "large"
 
 export type CloudProjectCreateInput = {

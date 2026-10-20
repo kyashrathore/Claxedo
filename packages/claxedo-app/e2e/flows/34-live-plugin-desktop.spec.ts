@@ -149,6 +149,6 @@ test("34 a live plugin on the desktop asks again when its code changes, keeps it
   await expect(removeFixture).toHaveAttribute("data-variant", "danger")
   await removeFixture.click()
   await expect(appPluginRow(window, "Fixture")).toHaveCount(0)
-  await expect(window.getByText("No app plugins yet.")).toBeVisible()
+  await expect(appPluginRow(window, "Tasks"), "the built-in plugin a removal leaves").toContainText("Built in")
   expect((await listLivePlugins(desktop.url, pageTransport(window))).plugins).toEqual([])
 })

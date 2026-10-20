@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto"
 import { errors } from "jose"
 import type { RuntimeIdentity, RuntimeTokenClaims } from "@claxedo/egress-broker"
-import { credentialFault } from "../../platform/auth/runtime-token-keys"
-import { mintSandboxPass, SandboxPassError, verifySandboxPass } from "../../platform/auth/sandbox-pass"
+import { credentialFault } from "@claxedo/server-core/platform/auth/runtime-token-keys"
+import { mintSandboxPass, SandboxPassError, verifySandboxPass } from "@claxedo/server-core/platform/auth/sandbox-pass"
 
 export const EGRESS_BROKER_PASS_AUDIENCE = "claxedo-egress-broker" as const
 

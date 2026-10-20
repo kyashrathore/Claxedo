@@ -6,6 +6,7 @@ import { DECISION_EXIT_CODE, HostConnectDecisionError, redeemInvitation } from "
 import { createHostKeyPair, hostKeyPairFromJwk, newHostId } from "@claxedo/host-connector/host-identity"
 import { ControlPlaneUrlError, HostEndpointUrlError, newHostState, type HostState, type HostStateStore } from "@claxedo/host-connector/host-state"
 import { REDEEM_REQUEST_TIMEOUT_MS } from "@claxedo/host-connector/machine-transport"
+import { CLAXEDO_MIGRATION_JOURNAL, configureClaxedoSchema } from "@claxedo/server-core/platform/db/index"
 import { config } from "../config"
 import { errorMessage } from "../json"
 import { connectUsage, parseConnectArgs, type ConnectArgs } from "../connect/args"
@@ -193,6 +194,9 @@ async function enroll(deps: ConnectDeps, args: ConnectArgs, existing: HostState 
  * integration tests run it in-process, and `index.ts` maps the number.
  */
 export async function connect(argv: string[], deps: ConnectDeps = defaultConnectDeps()): Promise<number> {
+  // The runtimes this host serves read the machine's `claxedo.db`; a connected
+  // host composes no plugin, so the host journal is its whole schema.
+  configureClaxedoSchema({ journals: [CLAXEDO_MIGRATION_JOURNAL] })
   const log = deps.host.log
   let args: ConnectArgs
   try {

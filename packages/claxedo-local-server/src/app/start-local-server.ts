@@ -45,7 +45,7 @@ import {
   verifyEmbeddedRuntimeCredential,
   type EmbeddedRetirementResult,
 } from "../deployments/local/embedded-workspace-runtime"
-import { CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
+import { mcpToolGroups } from "@claxedo/server-core/plugins/server-plugin"
 import { localBuiltinToolGroupsReader } from "../agent-plugins/builtin-groups"
 import { createClaxedoMcpClient } from "@claxedo/mcp/client"
 import { projectLocalSessionMetaFromEvent, sessionMetaProjectionTap } from "../session/session-meta-tap"
@@ -165,7 +165,8 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   // One reader for both halves: the runtime decides whether a session gets the
   // endpoint at all, and the mount decides which tools it serves, from the
   // same machine-wide activation rows.
-  const builtinToolGroups = localBuiltinToolGroupsReader()
+  const toolGroups = mcpToolGroups(options.plugins ?? [])
+  const builtinToolGroups = localBuiltinToolGroupsReader(toolGroups)
   configureEmbeddedWorkspaceRuntime({
     // One policy for both kinds of caller: the machine's own user reaches
     // these runtimes over loopback and owns every session on them, while a
@@ -333,7 +334,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     firstPartyMcp: {
       verifyRuntimeCredential: verifyEmbeddedRuntimeCredential,
       createClient: (input) => createClaxedoMcpClient(input),
-      registerTools: CLAXEDO_MCP_TOOL_GROUPS,
+      registerTools: toolGroups,
       enabledToolGroups: builtinToolGroups,
     },
   })

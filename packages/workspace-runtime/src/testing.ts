@@ -14,3 +14,4 @@ export function allowWorkspaceRuntimeManagementAuth(subject = "test"): Workspace
     },
   }
 }
+export { fetchBodyJson, fetchBodyText, fetchDouble, fetchUrl, type FetchHandler } from "./test-support/fetch-double"

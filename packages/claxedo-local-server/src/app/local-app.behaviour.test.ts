@@ -22,6 +22,9 @@ import { createLocalCredentialBroker } from "../credentials/broker"
 import { providerProjection } from "@claxedo/agent-runtime-contract"
 import { DAEMON_PROTOCOL_HEADER } from "@claxedo/helpers/claxedo-daemon"
 import { createLocalApp, type LocalAppOptions } from "./local-app"
+import { createLocalDocumentsPlugin } from "@claxedo/documents/local"
+import { createLocalTasksPlugin } from "@claxedo/tasks/local"
+import { closeTasksStore } from "@claxedo/tasks/storage/sqlite"
 import { createLocalDaemonLifecycle } from "./local-daemon-lifecycle"
 import { DAEMON_CAPABILITY_HEADER } from "./daemon-admission"
 import { testDaemon } from "./test-support/daemon"
@@ -71,6 +74,7 @@ beforeEach(() => {
 afterEach(() => {
   setBackendOverride(undefined)
   ClaxedoDB.close()
+  closeTasksStore()
   for (const [key, value] of Object.entries(saved)) {
     if (value === undefined) delete process.env[key]
     else process.env[key] = value
@@ -747,6 +751,30 @@ describe("local composition — optional route contributions", () => {
   })
 })
 
+describe("local composition — first-party server plugins", () => {
+  const capabilities = async (built: Hono) =>
+    ((await (await built.request("http://localhost/api/claxedo/bootstrap")).json()) as { deployment: { capabilities: unknown } }).deployment.capabilities
+
+  test("mounts no Tasks or Documents route and reports no capability unless the product composes the plugin", async () => {
+    const bare = app()
+    expect((await bare.request("http://localhost/api/claxedo/tasks/capabilities")).status).toBe(404)
+    expect((await bare.request("http://localhost/documents")).status).toBe(404)
+    expect(await capabilities(bare)).toEqual([])
+  })
+
+  test("mounts each composed plugin's routes and reports its capability in the bootstrap", async () => {
+    const built = app({ plugins: [createLocalTasksPlugin(), createLocalDocumentsPlugin()] })
+    expect((await built.request("http://localhost/api/claxedo/tasks/capabilities")).status).toBe(200)
+    expect((await built.request("http://localhost/documents")).status).not.toBe(404)
+    expect(await capabilities(built)).toEqual(["documents", "tasks"])
+  })
+
+  test("refuses a composition that names one plugin twice", () => {
+    expect(() => app({ plugins: [createLocalTasksPlugin(), createLocalTasksPlugin()] }))
+      .toThrow("Server plugin claxedo-tasks was supplied more than once")
+  })
+})
+
 describe("local composition — shell invariants", () => {
   test("refuses to compose without local execution", () => {
     expect(() => app({ services: services({ localExecution: { enabled: false } }) }))
@@ -851,6 +879,7 @@ describe("local composition — first-party MCP", () => {
   const stubClient: ClaxedoMcpClient = {
     deployment: "loopback",
     runtime: async () => async () => new Response(null, { status: 204 }),
+    services: {},
     resolveTarget: async () => ({ kind: "loopback", baseUrl: "", headers: {} }),
     server: () => Promise.reject(new Error("unused")),
     workspaces: async () => [],
@@ -876,6 +905,7 @@ describe("local composition — first-party MCP", () => {
     const echo = new Hono().get("/", (c) => c.json({ workspace: c.req.header("x-workspace-id") ?? null }))
     const built = app({
       routeContributions: [{ id: "echo", path: "/api/claxedo/echo", routes: echo }],
+      plugins: [createLocalDocumentsPlugin()],
       firstPartyMcp: {
         enabledToolGroups: () => CLAXEDO_MCP_TOOL_GROUP_IDS,
         verifyRuntimeCredential: (token) => (token === "rt" ? claims : undefined),
@@ -897,7 +927,10 @@ describe("local composition — first-party MCP", () => {
       local: { workspace: { workspaceId: claims.workspaceId, directory } },
     })
     expect(inputs[0]?.controlPlane).toBeUndefined()
-    expect(inputs[0]?.documents).toBeDefined()
+    const documents = inputs[0]?.services?.documents
+    if (!documents) throw new Error("the loopback mount composed no Documents service")
+    expect(await (await documents.fetch("/api/claxedo/echo")).json()).toEqual({ workspace: claims.workspaceId })
+    expect(inputs[0]?.services?.tasks).toBeUndefined()
     const local = inputs[0]?.local
     if (!local) throw new Error("the loopback mount composed no runtime client")
     expect(await (await local.fetch("/api/claxedo/echo")).json()).toEqual({ workspace: claims.workspaceId })
@@ -907,8 +940,9 @@ describe("local composition — first-party MCP", () => {
     const inputs: McpClientInputs[] = []
     const built = app({
       routeContributions: [{ id: "echo", path: "/api/claxedo/echo", routes: new Hono().get("/", (c) => c.text("ok")) }],
+      plugins: [createLocalTasksPlugin()],
       firstPartyMcp: {
-        enabledToolGroups: () => CLAXEDO_MCP_TOOL_GROUP_IDS,
+        enabledToolGroups: () => [...CLAXEDO_MCP_TOOL_GROUP_IDS, "tasks"],
         verifyRuntimeCredential: (token) => (token === "rt" ? claims : undefined),
         createClient: (input) => {
           inputs.push(input)
@@ -918,7 +952,7 @@ describe("local composition — first-party MCP", () => {
     })
 
     expect((await initialize(built, { authorization: "Bearer rt" })).status).toBe(200)
-    const tasks = inputs[0]?.tasks
+    const tasks = inputs[0]?.services?.tasks
     if (!tasks) throw new Error("the loopback mount composed no Tasks grant")
     expect(tasks.operations).toEqual(["read", "create", "start"])
     // No project: this machine's own workspace answers that question, and a

@@ -9,7 +9,7 @@ import { rejectPermissionOverride } from "./session-permission-ceiling"
 import {
   admitPromptTurn,
   admitQueuedDelivery,
-  flushDocumentsAfterTurn,
+  settleTurnLifecycle,
   messageIdConflict,
   settleChildTurn,
   steerAnswerStatus,
@@ -95,7 +95,7 @@ export async function sessionMessageRoute(opts: Opts, c: Ctx): Promise<Response>
           ...(lease ? { turnAdmission: lease } : {}),
         })
       } finally {
-        if (!lease?.lost()) await flushDocumentsAfterTurn(opts, id)
+        if (!lease?.lost()) await settleTurnLifecycle(opts, id)
         await settleChildTurn(opts, id, directory, lostTurn.get()?.turnId)
       }
     })()

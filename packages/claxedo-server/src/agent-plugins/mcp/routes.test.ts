@@ -2,7 +2,7 @@ import { describe, expect, test, vi } from "vitest"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { mintMcpGatewayToken, type McpGatewayTokenScope } from "./runtime-token"
 import { HostedMcpGatewayRoutes } from "./routes"
-import { memorySandboxPassRegister } from "../../platform/auth/sandbox-pass-register"
+import { memorySandboxPassRegister } from "@claxedo/server-core/platform/auth/sandbox-pass-register"
 
 const scope: McpGatewayTokenScope = {
   userId: "user-1",

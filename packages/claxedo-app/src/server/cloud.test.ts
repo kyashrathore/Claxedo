@@ -2,15 +2,18 @@
 import { expect, test } from "bun:test"
 import { QueryClient } from "@tanstack/solid-query"
 import { createRoot } from "solid-js"
+import type { WorkspaceStartProgress } from "./cloud-types"
+import type { ServerEvent } from "./events"
 import { createHostedAccount } from "./account"
 import { cloudQueries, createCloudApi } from "./cloud"
 import { placementId, projectId, type ProjectId } from "./ids"
 import { queryKeys } from "./query-keys"
 import type { Transport } from "./transport"
 import type { Project } from "./types"
-import type { WorkspaceWakes } from "./workspace-wakes"
+import { createWorkspaceWakes, type WorkspaceWakes } from "./workspace-wakes"
 import { createWorkspaces } from "./workspaces"
 import { accountCatalogFromWire } from "./wire/account-catalog"
+import { cloudCatalog, type StartFollow } from "./test-support/cloud-catalog"
 
 const bootstrap = { deployment: { serverKind: "daemon", issuesSessions: false }, project: [] }
 const created = { workspace_id: "ws_new", project_id: "prj_widgets", backing: "cloud-vm", repo_url: "https://github.com/acme/widgets", workspace_name: "Widgets", status: "provisioning" }
@@ -192,6 +195,68 @@ test("a Where-picker cloud workspace for a private connected repository carries 
     const { cloud, workspaces, posted } = world(false, () => {}, async () => listed)
     await cloud.create({ projectId: projectId("prj_widgets"), name: "Checkout" })
     expect(posted).toEqual([{ path: "/api/workspace/create", body: { projectId: "prj_widgets", workspaceName: "Checkout", connectionId: "conn_github", repo: { fullName: "acme/widgets" } } }])
+    workspaces.dispose()
+    dispose()
+  })
+})
+
+const noEvents = (_listener: (event: ServerEvent) => void) => () => undefined
+
+const NO_PROJECT = async (): Promise<Project> => {
+  throw new Error("this case reads no project")
+}
+
+test("a workspace a start left starting is followed through its own start's steps from a catalog read, and reads running once the server is done", async () => {
+  await createRoot(async (dispose) => {
+    const created: string[] = []
+    const reads: string[] = []
+    const follows: StartFollow[] = []
+    const status = { value: "provisioning" }
+    const catalog = cloudCatalog(() => created, reads, () => status.value, follows)
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const workspaces = createWorkspaces(catalog, queryClient)
+    await workspaces.load()
+    const wakes = createWorkspaceWakes(catalog, workspaces, noEvents)
+    const api = createCloudApi(catalog, workspaces, wakes, NO_PROJECT, undefined)
+    created.push("ws_task_root")
+    const root = placementId("ws_task_root")
+    const followed: string[] = []
+
+    const run = api.followStart(root, () => followed.push(root))
+    for (let tick = 0; tick < 20 && follows.length === 0; tick += 1) await Bun.sleep(0)
+    expect(followed).toEqual([root])
+    expect(follows).toHaveLength(1)
+    const machine: WorkspaceStartProgress = { kind: "provisioning", bootMode: "cold-start", steps: { done: ["machine"], startedAt: 1, stepStartedAt: 2 } }
+    follows[0]?.options?.onProgress?.(machine)
+    expect(JSON.parse(JSON.stringify(wakes.runtime(root)))).toEqual({ kind: "waking", bootMode: "cold-start", steps: { done: ["machine"], startedAt: 1, stepStartedAt: 2 }, followed: true })
+
+    status.value = "ready"
+    follows[0]?.resolve()
+    expect(await run).toEqual({ kind: "running" })
+    expect(wakes.runtime(root)).toEqual({ kind: "live" })
+    workspaces.dispose()
+    dispose()
+  })
+})
+
+test("a workspace whose start the server failed reads not running, with the server's reason", async () => {
+  await createRoot(async (dispose) => {
+    const created = ["ws_task_root"]
+    const follows: StartFollow[] = []
+    const status = { value: "provisioning" }
+    const catalog = cloudCatalog(() => created, [], () => status.value, follows)
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const workspaces = createWorkspaces(catalog, queryClient)
+    const wakes = createWorkspaceWakes(catalog, workspaces, noEvents)
+    const api = createCloudApi(catalog, workspaces, wakes, NO_PROJECT, undefined)
+
+    const run = api.followStart(placementId("ws_task_root"), () => undefined)
+    for (let tick = 0; tick < 20 && follows.length === 0; tick += 1) await Bun.sleep(0)
+    status.value = "failed"
+    follows[0]?.resolve()
+    const answered = await run
+    expect(answered.kind).toBe("notRunning")
+    expect(answered.kind === "notRunning" ? answered.error?.message : undefined).toBe("The cloud workspace could not start: the image has no runtime")
     workspaces.dispose()
     dispose()
   })

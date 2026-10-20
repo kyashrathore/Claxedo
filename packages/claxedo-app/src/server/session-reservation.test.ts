@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
-import { resolveHostedOperation } from "@claxedo/account-contract"
 import { createHostedAccount } from "./account"
+import { APP_HOSTED_OPERATIONS } from "./operations"
 import { ServerError } from "./errors"
 import { createReserved, reserveSession } from "./session-reservation"
 import type { ReservationHold, SessionReservation } from "./types"
@@ -9,7 +9,7 @@ function reservingAccount() {
   const reserved: string[] = []
   const harnesses: (string | undefined)[] = []
   const account = createHostedAccount(async (operation, input) => {
-    const body = resolveHostedOperation(operation, input).body as { sessionId: string; harness?: { id: string } }
+    const body = APP_HOSTED_OPERATIONS.resolve(operation, input).body as { sessionId: string; harness?: { id: string } }
     reserved.push(body.sessionId)
     harnesses.push(body.harness?.id)
     return { ...body, state: "reserved" }
@@ -28,7 +28,7 @@ test("a session is reserved through the account, and an answer for another sessi
   const runs: { operation: string; input: unknown }[] = []
   const account = createHostedAccount(async (operation, input) => {
     runs.push({ operation, input })
-    return { ...resolveHostedOperation(operation, input).body, state: "reserved" }
+    return { ...APP_HOSTED_OPERATIONS.resolve(operation, input).body, state: "reserved" }
   })
   const reservation = await reserveSession(account, { workspaceId: "ws_cloud", title: "Cloud" })
   expect(runs).toEqual([{ operation: "session.reserve", input: { workspaceId: "ws_cloud", title: "Cloud", operationId: reservation.operationId, sessionId: reservation.sessionId } }])

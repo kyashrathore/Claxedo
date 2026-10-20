@@ -9,7 +9,7 @@ import {
   localServerBundleEntry,
   localServerPackageDir,
   resolveLocalServerEntry,
-  resolveLocalServerMigrationJournal,
+  resolveServerMigrationJournals,
 } from "./local-server"
 
 /**
@@ -52,11 +52,16 @@ test("an unresolvable local-server names the package, and offers no other server
   }
 })
 
-test("the migration journal is the directory local-server's own db module reads", () => {
-  const journal = resolveLocalServerMigrationJournal(PACKAGE_DIR)
+test("the migration journals are the directories the host's and the Tasks plugin's modules read", () => {
+  const [host, tasks] = resolveServerMigrationJournals(PACKAGE_DIR)
+  if (!host || !tasks) throw new Error("the bundle resolves no journal")
+  const journal = host.directory
 
   expect(fs.existsSync(journal)).toBe(true)
   expect(fs.readdirSync(journal).length).toBeGreaterThan(0)
+  expect(tasks.name).toBe("claxedo-tasks-migration")
+  const tasksModule = createRequire(path.join(PACKAGE_DIR, "package.json")).resolve("@claxedo/tasks/storage/sqlite")
+  expect(tasks.directory).toBe(path.join(path.dirname(tasksModule), "claxedo-tasks-migration"))
 
   // The runtime authority: `journal.ts` computes
   // `import.meta.dirname/claxedo-migration`. Resolve that module the way the
@@ -86,7 +91,7 @@ test("the bundler asks local-server for the journal instead of reaching across p
     .filter((line) => !/^\s*(\/\/|\/?\*)/.test(line))
     .join("\n")
 
-  expect(code).toContain("const migrationsSource = resolveLocalServerMigrationJournal()")
+  expect(code).toContain("const journals = resolveServerMigrationJournals()")
   // And no surviving reach into a sibling package's source tree.
   expect(code).not.toMatch(/\.\.\/\.\.\/claxedo-/)
 })

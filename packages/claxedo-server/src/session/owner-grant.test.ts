@@ -1,10 +1,10 @@
 import { describe, expect, test } from "vitest"
 import { decodeJwt, exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { runtimeAccessTokenIssuer } from "@claxedo/workspace-relay"
-import type { TasksCapabilityOwner } from "@claxedo/server-core/tasks-host/capability"
+import type { TasksCapabilityOwner } from "@claxedo/tasks/host/capability"
 import { WORKSPACE_RUNTIME_OWNER_GRANT, workspaceRuntimeOwnerGrantToken } from "@claxedo/server-core/hosts/workspace-runtime/env"
-import { memorySandboxPassRegister } from "../platform/auth/sandbox-pass-register"
-import { mintTasksCapability, verifyTasksCapability } from "../tasks/capability"
+import { memorySandboxPassRegister } from "@claxedo/server-core/platform/auth/sandbox-pass-register"
+import { mintTasksCapability, verifyTasksCapability } from "@claxedo/tasks/hosted"
 import {
   OWNER_GRANT_AUDIENCE,
   createOwnerRootCapability,

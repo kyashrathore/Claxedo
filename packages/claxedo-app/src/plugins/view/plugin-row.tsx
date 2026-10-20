@@ -6,7 +6,7 @@ import { Switch, Button, requestConfirm, useDialog } from "@/ui"
 import { approvalLetsRun } from "../approval"
 import { failureReason } from "../failure"
 import { usePluginsText, type PluginsKey, type PluginsText } from "../i18n"
-import { failureOf, type PluginState, type PluginSummary } from "../model"
+import { failureOf, liveOriginOf, type PluginState, type PluginSummary } from "../model"
 import { usePluginHost } from "../provider"
 import { PluginManifestSummary } from "./plugin-manifest"
 
@@ -39,7 +39,8 @@ function failureDetail(t: PluginsText, plugin: PluginSummary): string | undefine
   const failure = failureOf(plugin.state)
   if (failure && plugin.state.kind === "failed") return t("plugins.failure", { reason: failure.reason })
   if (failure) return t("plugins.lastFailure", { reason: failure.reason })
-  if (plugin.origin.buildError) return t("plugins.lastFailure", { reason: plugin.origin.buildError })
+  const buildError = liveOriginOf(plugin)?.buildError
+  if (buildError) return t("plugins.lastFailure", { reason: buildError })
   if (plugin.switchedOn && plugin.missing.length > 0) return t("plugins.missing", { capabilities: plugin.missing.join(", ") })
   return undefined
 }
@@ -75,9 +76,11 @@ function RowActions(props: { readonly plugin: PluginSummary; readonly expanded: 
       <Button type="button" variant="ghost" size="small" aria-expanded={props.expanded} onClick={() => props.toggle()}>
         {t("plugins.details")}
       </Button>
-      <Button type="button" variant="ghost" size="small" onClick={() => void remove()}>
-        {t("plugins.remove")}
-      </Button>
+      <Show when={liveOriginOf(props.plugin)}>
+        <Button type="button" variant="ghost" size="small" onClick={() => void remove()}>
+          {t("plugins.remove")}
+        </Button>
+      </Show>
       <Show when={removeFailure()}>{(text) => <p role="alert">{text()}</p>}</Show>
     </div>
   )
@@ -101,6 +104,9 @@ export function PluginRow(props: { readonly plugin: PluginSummary }): JSX.Elemen
           <div class="plugin-row-heading">
             <span class="plugin-row-name">{props.plugin.name}</span>
             <span class="plugin-row-version">{props.plugin.version}</span>
+            <Show when={props.plugin.origin.kind === "bundled"}>
+              <span class="plugin-row-origin">{t("plugins.builtIn")}</span>
+            </Show>
             <span class="plugin-row-state" data-state={props.plugin.state.kind}>
               {t(stateKey(props.plugin.state))}
             </span>

@@ -1,10 +1,10 @@
 import {
   CLAXEDO_MCP_PATH,
-  CLAXEDO_MCP_TOOL_GROUPS,
   createClaxedoMcpRoutes,
   inProcessFetch,
   mcpAuditRecord,
-  type TasksGrant,
+  type McpServiceGrant,
+  type McpToolGroup,
   type VerifyRuntimeCredential,
 } from "@claxedo/mcp"
 import { createClaxedoMcpClient } from "@claxedo/mcp/client"
@@ -25,23 +25,26 @@ export const FIRST_PARTY_MCP_RUNTIME_CONTRIBUTION_ID = "claxedo-mcp"
  * reach exactly the routes this workspace serves and nothing outside it. Each
  * call carries the owner grant, read at the call because the grant is renewed
  * while the root runs: the runtime verifies it and acts as the workspace's
- * owner, and a call after a lapse carries none and acts as nobody. The Tasks
- * grant is the exception and the reason it is passed in rather than built
- * here: those tools leave the workspace for the control plane, carrying the
- * capability this root was launched with. It is read per MCP session because
- * it too is renewed: a session opened after a renewal lists what the renewed
- * scope carries, and one opened after a lapse lists no Tasks tools at all.
+ * owner, and a call after a lapse carries none and acts as nobody. Service
+ * grants are the exception and the reason they are passed in rather than
+ * built here: those tools leave the workspace for the control plane, carrying
+ * the capability this root was launched with. They are read per MCP session
+ * because they too are renewed: a session opened after a renewal lists what
+ * the renewed scope carries, and one opened after a lapse lists none of that
+ * service's tools.
  */
 export function firstPartyMcpRuntimeContribution(input: {
   verifyRuntimeCredential: VerifyRuntimeCredential
   /** This root's consented groups, read once at boot; the mount registers no others. */
   enabledToolGroups: readonly string[]
-  tasks?: () => TasksGrant | undefined
+  /** The groups this mount serves: the core groups and those of the plugins the root is composed with. */
+  registerTools: readonly McpToolGroup[]
+  services?: () => Readonly<Record<string, McpServiceGrant>>
   ownerGrant?: () => string | undefined
   /** The owner grant's actor; a session is owner-driven only while every turn in its lineage is this actor's. */
   ownerActorId?: () => string | undefined
 }): WorkspaceRuntimeRouteContribution {
-  const { verifyRuntimeCredential, tasks, ownerGrant } = input
+  const { verifyRuntimeCredential, services, ownerGrant } = input
   return {
     id: FIRST_PARTY_MCP_RUNTIME_CONTRIBUTION_ID,
     mount(context) {
@@ -51,7 +54,6 @@ export function firstPartyMcpRuntimeContribution(input: {
         mount: "loopback",
         verifyRuntimeCredential,
         createClient: (credential) => {
-          const grant = tasks?.()
           const sessionId = credential.kind === "runtime" ? credential.sessionId : undefined
           return createClaxedoMcpClient({
             deployment: "loopback",
@@ -63,14 +65,14 @@ export function firstPartyMcpRuntimeContribution(input: {
               }),
               workspace,
             },
-            ...(grant ? { tasks: grant } : {}),
+            services: services?.() ?? {},
             ownerDriven: () => {
               const ownerActorId = input.ownerActorId?.()
               return !!sessionId && !!ownerActorId && context.sessionDrivenOnlyBy(sessionId, ownerActorId)
             },
           })
         },
-        registerTools: CLAXEDO_MCP_TOOL_GROUPS,
+        registerTools: input.registerTools,
         enabledToolGroups: () => input.enabledToolGroups,
         audit: (event) => log.info("mcp.audit", mcpAuditRecord(event)),
       })

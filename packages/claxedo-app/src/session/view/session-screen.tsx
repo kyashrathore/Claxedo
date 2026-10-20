@@ -150,7 +150,7 @@ function SessionBody(props: {
           <Show when={props.view.state().kind === "loading" && !props.view.conversation()}>
             <SessionHistoryLoading />
           </Show>
-          <SessionTimeline view={props.view} queued={queueEdit.queued} navTurns={turns()} host={host} active={props.active} onScreen={!transcriptCollapsed()} scroll={scroll} onRecover={props.controls.owner ? recovery.recover : undefined} follow={!props.controls.send} />
+          <SessionTimeline view={props.view} queued={queueEdit.queued} navTurns={turns()} host={host} active={props.active} onScreen={!transcriptCollapsed()} scroll={scroll} onRecover={props.controls.owner ? recovery.recover : undefined} follow={!props.controls.send} canPrompt={composing() && props.controls.send} />
         </div>
       </div>
       <div

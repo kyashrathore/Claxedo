@@ -5,7 +5,7 @@ import { useI18n } from "@/i18n"
 import { ClaxedoIconButton, showToast } from "@/ui"
 import { failureReason } from "../failure"
 import { usePluginsText, type PluginsKey } from "../i18n"
-import type { PluginSummary } from "../model"
+import { liveOriginOf, type PluginSummary } from "../model"
 
 function Entry(props: { readonly label: PluginsKey; readonly values: readonly string[]; readonly code?: boolean }): JSX.Element {
   const t = usePluginsText()
@@ -43,8 +43,9 @@ function FolderEntry(props: { readonly directory: string }): JSX.Element {
 
 export function PluginManifestSummary(props: { readonly plugin: PluginSummary }): JSX.Element {
   const i18n = useI18n()
+  const live = () => liveOriginOf(props.plugin)
   const builtAt = () => {
-    const at = props.plugin.origin.builtAt
+    const at = live()?.builtAt
     return at ? [formatDateTimeMed(Date.parse(at), i18n.intlTag())] : []
   }
   return (
@@ -52,12 +53,14 @@ export function PluginManifestSummary(props: { readonly plugin: PluginSummary })
       <Entry label="plugins.manifest.name" values={[props.plugin.name]} />
       <Entry label="plugins.manifest.id" values={[props.plugin.id]} code />
       <Entry label="plugins.manifest.version" values={[props.plugin.version]} />
-      <FolderEntry directory={props.plugin.origin.directory} />
+      <Show when={live()}>{(origin) => <FolderEntry directory={origin().directory} />}</Show>
       <Entry label="plugins.manifest.routes" values={props.plugin.manifest.server.routes} code />
       <Entry label="plugins.manifest.operations" values={props.plugin.manifest.server.operations} code />
       <Entry label="plugins.manifest.requires" values={props.plugin.manifest.requires} />
       <Entry label="plugins.manifest.build" values={[props.plugin.origin.hash]} code />
-      <Entry label="plugins.manifest.builtAt" values={builtAt()} />
+      <Show when={live()}>
+        <Entry label="plugins.manifest.builtAt" values={builtAt()} />
+      </Show>
     </dl>
   )
 }

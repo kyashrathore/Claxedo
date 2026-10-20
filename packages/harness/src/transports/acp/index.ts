@@ -97,12 +97,12 @@ export class AcpTransport implements HarnessTransport {
   private readonly forkOperations = { fork: async (session: HarnessSession, _messageId: string, childSessionId: string) => {
     const entry = this.entry(session)
     const result = await entry.peer.agent.unstable_forkSession({ sessionId: session.binding.upstreamSessionId,
-      cwd: session.directory, mcpServers: this.mcp({ ...entry, start: { ...entry.start, sessionId: childSessionId } }).map(acpMcp) })
+      cwd: session.directory, mcpServers: this.mcpServerSpecs({ ...entry, start: { ...entry.start, sessionId: childSessionId } }).map(acpMcp) })
     return { upstreamSessionId: result.sessionId }
   } }
   readonly naming = { generateTitle: (session: HarnessSession, request: Parameters<typeof acpSessionTitle>[1]) => {
     const entry = this.entry(session)
-    return acpSessionTitle(entry, request, { mcpServers: this.mcp(entry).map(acpMcp), meta: claudeOptionsMeta(entry.peer.handshake, entry.start).meta })
+    return acpSessionTitle(entry, request, { mcpServers: this.mcpServerSpecs(entry).map(acpMcp), meta: claudeOptionsMeta(entry.peer.handshake, entry.start).meta })
   } }
   get config() { return this.configOperations }
   get goals() { return [...this.entries.values()].some((entry) => acpGroups(entry.peer.handshake).goals.available) ? this.goalOperations : undefined }
@@ -115,7 +115,7 @@ export class AcpTransport implements HarnessTransport {
     this.probes = new AcpDraftProbes(services, connection, filterMcp, this.peers)
     this.host = { services, health: this.health, connection, filterMcp, entries: this.entries,
       startingAborts: this.startingAborts, peers: this.peers, idle: (entry) => { if (entry.pendingRestart) this.lifecycle.defer(entry) },
-      disposed: () => this.disposed, mcp: (entry) => this.mcp(entry) }
+      disposed: () => this.disposed, mcp: (entry) => this.mcpServerSpecs(entry) }
     this.lifecycle = new AcpSessionLifecycle(this.host)
   }
 
@@ -136,7 +136,7 @@ export class AcpTransport implements HarnessTransport {
     return attachedSessionEntry(this.entries, session, () => new AcpTransportError("session", "ACP session is not attached"))
   }
 
-  private mcp(entry: Pick<AcpEntry, "start" | "peer">): McpServerSpec[] {
+  private mcpServerSpecs(entry: Pick<AcpEntry, "start" | "peer">): McpServerSpec[] {
     return acpMcpProjection(entry, this.services, this.connection, this.filterMcp).servers
   }
 

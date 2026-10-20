@@ -87,6 +87,9 @@ export type SessionAccessOperation =
   | "recovery_inspect"
   | "recovery_submit"
   | "background_task_stop"
+  | "mcp_tools_list"
+  | "mcp_tool_call"
+  | "mcp_resource_read"
   | "fork"
   | "delete"
   | "session_event_stream"
@@ -102,7 +105,7 @@ export type SessionAccessOperation =
   | "agent_setup_write"
   | "worktree_read"
   | "worktree_write"
-  | "document_write"
+  | "contribution_write"
   | "goal_capabilities"
   | "goal_read"
   | "goal_start"
@@ -389,6 +392,9 @@ export const SESSION_CORE_ROUTE_ACCESS = {
   "POST /session": { kind: "authorize", operation: "session_create" },
   "POST /session/:id": { kind: "authorize", operation: "session_create" },
   "POST /session/:id/background-task/stop": { kind: "authorize", operation: "background_task_stop" },
+  "GET /session/:id/mcp/:server/tools": { kind: "authorize", operation: "mcp_tools_list" },
+  "POST /session/:id/mcp/:server/tool-call": { kind: "authorize", operation: "mcp_tool_call" },
+  "POST /session/:id/mcp/:server/resource-read": { kind: "authorize", operation: "mcp_resource_read" },
   "GET /session/:id/recovery": { kind: "authorize", operation: "recovery_inspect" },
   "GET /session/:id/recovery/operations/:operationId": { kind: "authorize", operation: "recovery_inspect" },
   "POST /session/:id/recovery": { kind: "authorize", operation: "recovery_submit" },
@@ -416,6 +422,11 @@ const AGENT_TURN_OPERATIONS = new Set<SessionAccessOperation>([
   "background_task_stop",
 ])
 
+/**
+ * Every other session write is the owner's. The MCP operations are among them
+ * even when they only read: they run on the MCP connections the harness holds
+ * with the owner's identity, which a `send` share must not borrow.
+ */
 const SESSION_CONTROL_OPERATIONS = new Set<SessionAccessOperation>([
   "session_create",
   "session_meta_write",
@@ -434,7 +445,10 @@ const SESSION_CONTROL_OPERATIONS = new Set<SessionAccessOperation>([
   "goal_delete",
   "agent_setup_write",
   "worktree_write",
-  "document_write",
+  "contribution_write",
+  "mcp_tools_list",
+  "mcp_tool_call",
+  "mcp_resource_read",
 ])
 
 const SESSION_FILTER_CONCURRENCY = 16

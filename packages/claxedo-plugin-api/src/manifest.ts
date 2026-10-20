@@ -1,10 +1,25 @@
 export const PLUGIN_NAME_MAX_LENGTH = 80
 
-export const PLUGIN_CAPABILITIES = ["tasks", "documents"] as const
+/** A server capability an app plugin requires, as a server's bootstrap reports it (`tasks`, `documents`). */
+export const PLUGIN_CAPABILITY_PATTERN = /^[a-z][a-z0-9-]*$/
+export const PLUGIN_CAPABILITY_MAX_LENGTH = 64
 export const PLUGIN_SERVER_ROUTE_PREFIX = "/api/claxedo/"
 export const PLUGIN_BACKEND_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const
 
-export type PluginCapability = (typeof PLUGIN_CAPABILITIES)[number]
+/** Ids of the plugins the host ships as bundles; no live plugin may take one. */
+export const FIRST_PARTY_PLUGIN_IDS = ["claxedo-tasks", "claxedo-documents"] as const
+
+export type FirstPartyPluginId = (typeof FIRST_PARTY_PLUGIN_IDS)[number]
+
+export function isFirstPartyPluginId(id: string): id is FirstPartyPluginId {
+  return (FIRST_PARTY_PLUGIN_IDS as readonly string[]).includes(id)
+}
+
+export type PluginCapability = string
+
+export function isPluginCapability(value: string): value is PluginCapability {
+  return value.length <= PLUGIN_CAPABILITY_MAX_LENGTH && PLUGIN_CAPABILITY_PATTERN.test(value)
+}
 
 export type PluginServerAccess = {
   routes: string[]

@@ -7,6 +7,7 @@ import { errorMessage } from "@claxedo/helpers"
 import { createIdleRelease } from "./idle-release"
 import { SessionAttachments, type AttachedSession } from "./attachments"
 import { createBackgroundTaskStops } from "./background-tasks"
+import { createSessionMcp } from "./mcp"
 import { createChildTurns } from "./child-turns"
 import { providerParentTurn } from "./provider-child-turns"
 import { createHarnessReads } from "./config-ops"
@@ -351,6 +352,7 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
     },
     goals: resource(goals.resource),
     backgroundTasks: resource(createBackgroundTaskStops(attachments)),
+    mcp: resource(createSessionMcp(attachments)),
     recovery: wiring.surface() satisfies AgentRuntimeRecovery,
     events: {
       subscribe(subscribe: AgentRuntimeSubscribeInput = {}) {

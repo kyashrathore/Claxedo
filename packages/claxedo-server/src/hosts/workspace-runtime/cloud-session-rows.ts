@@ -7,9 +7,9 @@ import { SESSION_ROWS_PASS_PATH, type SessionRowsPassHeld } from "@claxedo/serve
 import { createRuntimeSessionRows } from "@claxedo/server-core/session/publish/runtime-session-rows"
 import { asRecord, stringField } from "@claxedo/server-core/platform/json/index"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
-import { controlPlaneOrigin } from "./tasks-grant"
+import { controlPlaneOrigin } from "@claxedo/server-core/hosts/workspace-runtime/control-plane-origin"
 import { controlPlaneOnly } from "./control-plane-only"
-import { expiryOf, halfLifeRenewal, nodeRenewalTimers, type RenewalOutcome, type RenewalTimers } from "./half-life-renewal"
+import { expiryOf, halfLifeRenewal, nodeRenewalTimers, type RenewalOutcome, type RenewalTimers } from "@claxedo/server-core/hosts/workspace-runtime/half-life-renewal"
 
 const log = Log.create({ service: "cloud-session-rows" })
 

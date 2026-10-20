@@ -6,9 +6,9 @@
  * different compositions. The resolution follows the DEPENDENCY GRAPH rather
  * than a hard-coded sibling path: `resolveLocalServerEntry` asks Node to
  * resolve the declared specifier from the desktop's own manifest, and
- * `resolveLocalServerMigrationJournal` asks again from the local-server entry,
- * so the migration asset is owned by whichever package local-server actually
- * depends on. Move that package and the bundle follows or fails loudly; a
+ * `resolveServerMigrationJournals` asks again from the local-server entry and
+ * from this package, so each migration asset is owned by whichever package
+ * actually carries it. Move that package and the bundle follows or fails loudly; a
  * stale relative `../../` would instead ship a database with zero tables.
  *
  * Every failure here names the artifact it could not find. A desktop that
@@ -71,37 +71,54 @@ export function resolveLocalServerEntry(desktopDir = DESKTOP_DIR): string {
   }
 }
 
+/** One migration journal the bundled server reads at runtime, and the directory name it is copied under. */
+export type ServerMigrationJournal = { name: string; directory: string }
+
 /**
- * The SQL migration journal the bundled server reads at runtime.
- *
- * Resolved from the local-server entry, not from this directory: whichever
- * package local-server depends on for `platform/db` owns the journal, and the
- * bundle copies whatever that resolution names. `journal.ts` computes the
- * directory as `import.meta.dirname/claxedo-migration`, which is why the
- * directory beside the resolved module — not a path spelled out here — is the
- * authoritative location.
+ * Each journal a module beside the bundled server resolves at runtime as
+ * `import.meta.dirname/<name>`: the host's `claxedo-migration`, resolved from
+ * the local-server entry because whichever package local-server depends on for
+ * `platform/db` owns it, and each composed plugin's, resolved from this
+ * package because `src/server/entry.ts` composes the plugin. The bundle copies
+ * each directory under its own name, so the names must differ, and a migration
+ * name two journals share would be refused at boot, so it is refused here.
  */
-export function resolveLocalServerMigrationJournal(desktopDir = DESKTOP_DIR): string {
-  const entry = resolveLocalServerEntry(desktopDir)
-  const require = createRequire(entry)
+export function resolveServerMigrationJournals(desktopDir = DESKTOP_DIR): ServerMigrationJournal[] {
+  const fromServer = createRequire(resolveLocalServerEntry(desktopDir))
+  const fromDesktop = createRequire(path.join(desktopDir, "package.json"))
+  const journals = [
+    journalBeside(fromServer, "@claxedo/server-core/platform/db/journal", "claxedo-migration"),
+    journalBeside(fromDesktop, "@claxedo/tasks/storage/sqlite", "claxedo-tasks-migration"),
+  ]
+  const owners = new Map<string, string>()
+  for (const journal of journals) {
+    for (const migration of fs.readdirSync(journal.directory)) {
+      const owner = owners.get(migration)
+      if (owner) throw new Error(`migration ${migration} is in two journals: ${owner} and ${journal.directory}`)
+      owners.set(migration, journal.directory)
+    }
+  }
+  return journals
+}
+
+function journalBeside(require: NodeJS.Require, specifier: string, name: string): ServerMigrationJournal {
   let journalModule: string
   try {
-    journalModule = require.resolve("@claxedo/server-core/platform/db/journal")
+    journalModule = require.resolve(specifier)
   } catch (cause) {
     throw new Error(
-      `cannot resolve the migration journal module from ${LOCAL_SERVER_ENTRY} (${entry}) — ` +
-        `the bundled server would open a database with no Claxedo tables.`,
+      `cannot resolve the migration journal module ${specifier} — the bundled server would open a database without its tables.`,
       { cause },
     )
   }
-  const directory = path.join(path.dirname(journalModule), "claxedo-migration")
-  if (!fs.existsSync(directory)) {
+  const directory = path.join(path.dirname(journalModule), name)
+  if (!fs.existsSync(directory) || fs.readdirSync(directory).length === 0) {
     throw new Error(
       `migration journal not found at ${directory} (resolved from ${journalModule}) — ` +
-        `the bundled server would open a database with no Claxedo tables.`,
+        `the bundled server would open a database without its tables.`,
     )
   }
-  return directory
+  return { name, directory }
 }
 
 export function localServerBootSource(desktopDir = DESKTOP_DIR): string {

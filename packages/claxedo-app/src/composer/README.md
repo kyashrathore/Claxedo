@@ -122,6 +122,10 @@ The prompt editor and everything that turns a draft into one `PromptInput` for `
 - A `hidden` composer (the session screen hides it behind a request dock rather than unmounting it) registers no palette or slash commands and listens for no dropped files, so it acts as if it were not there.
 - No second copy of server data: the composer reads session status and requests through `SessionView` only. The harness store keeps only what today's app keeps: per-scope picks in memory and the draft default in localStorage.
 
+## Agent configuration (`agent-configuration/`)
+
+`AgentConfigurationPicker` chooses a harness, model and effort for a session that starts later, as an `AgentConfiguration` (`{ harness: { id, access } | null, model: { providerID, modelID } | null, effort: string | null }`, the shape Tasks presets store and the surface catalog's `AgentConfigurationPicker` binds). `local` draws the composer's harness picker (`DraftHarnessPicker`) over the first placement the catalog lists, so it needs a project; it seeds its scope once, on mount, switching to the saved harness with the saved model in the same patch, so the options read that follows keeps that model instead of the harness's default (a separate model write is refused while the scope has no model list yet); `cloud` describes a workspace that does not exist yet and asks no machine (`CloudConfigurationPicker`): a harness whose models only a running runtime lists saves the model it runs when none is named (`cloudDefaultModel`: Claude Code's `default`, Cursor's `auto`, Codex's `default`), and OpenCode lists its pinned engine's models from the provider catalog read with no workspace (`CloudCatalogModelPicker`), keeping a saved model the list no longer names. Switching harness drops the model and effort the picker carried over from the previous one (`rebaseConfiguration`), so every change the picker reports is already rebased.
+
 ## Flows
 
 - 3 (send a turn), 4 (stop and queued messages), 5 (errors by class), 6 (attachments, marks, quoted comments, `@file`, slash commands, a new session's harness default), 7 (goal mode), 33 (phone).

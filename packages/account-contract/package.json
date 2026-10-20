@@ -10,6 +10,10 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./operation-definition": {
+      "types": "./src/operation-definition.ts",
+      "default": "./src/operation-definition.ts"
+    },
     "./vocabulary": {
       "types": "./src/vocabulary.ts",
       "default": "./src/vocabulary.ts"

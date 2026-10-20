@@ -6,6 +6,7 @@ import type { SessionTreeEntry } from "../host/session-tree-hold"
 import { sessionDeleted, withDir } from "../projection/presentation-events"
 import { envelopeDirectory } from "../session/service"
 import { errorBody } from "./error-body"
+import { prepareSessionDelete } from "./session-lifecycle"
 import { sessionOperationGuard } from "./session-operation-guard"
 import { requestSecretAuthority, type SessionRouteContext as Ctx, type SessionRouteOptions as Opts } from "./session-route-options"
 
@@ -64,7 +65,7 @@ async function removeLeafFirst(
     try {
       const start = opts.sessionStarts?.get(sessionId)?.binding
       await opts.beforeDeleteSession?.(c, directory, sessionId)
-      await opts.disposeSessionDocuments?.(sessionId)
+      await prepareSessionDelete(opts.sessionLifecycle, sessionId)
       await runtime.sessions.delete(sessionId, directory, requestSecretAuthority(c).secretAuthority)
       // A deletion that got this far removed the session the creation owns, so
       // the id goes back. A failure above keeps the owner, which is what lets a

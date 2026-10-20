@@ -18,6 +18,11 @@
       "development": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./cli": {
+      "types": "./src/cli.ts",
+      "development": "./src/cli.ts",
+      "default": "./src/cli.ts"
+    },
     "./id": {
       "types": "./src/id.ts",
       "development": "./src/id.ts",
@@ -37,6 +42,11 @@
       "types": "./src/runtime.ts",
       "development": "./src/runtime.ts",
       "default": "./src/runtime.ts"
+    },
+    "./surface": {
+      "types": "./src/surface/index.ts",
+      "development": "./src/surface/index.ts",
+      "default": "./src/surface/index.ts"
     }
   },
   "scripts": {

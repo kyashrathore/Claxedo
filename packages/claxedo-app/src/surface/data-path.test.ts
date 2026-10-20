@@ -1,0 +1,34 @@
+/// <reference types="bun" />
+import { describe, expect, test } from "bun:test"
+import { isBinding, itemScope, pathsOverlap, resolvePath } from "./data-path"
+
+describe("resolvePath", () => {
+  const scope = itemScope(["regions"], 1)
+
+  test("an absolute path ignores the template scope", () => {
+    expect(resolvePath("/name", scope)).toEqual(["name"])
+  })
+
+  test("a relative path resolves inside the item's scope", () => {
+    expect(resolvePath("label", scope)).toEqual(["regions", "1", "label"])
+    expect(resolvePath("owner/name", scope)).toEqual(["regions", "1", "owner", "name"])
+  })
+
+  test("a relative path outside any template resolves from the root", () => {
+    expect(resolvePath("name", [])).toEqual(["name"])
+  })
+})
+
+test("only an object with a string path is a binding", () => {
+  expect(isBinding({ path: "/a" })).toBe(true)
+  expect(isBinding("a")).toBe(false)
+  expect(isBinding(["/a"])).toBe(false)
+  expect(isBinding({ path: 1 })).toBe(false)
+})
+
+describe("pathsOverlap", () => {
+  test("holds when one path is the other or lies inside it", () => {
+    expect([pathsOverlap(["a", "b"], ["a"]), pathsOverlap(["a"], ["a", "b"]), pathsOverlap([], ["a"]), pathsOverlap(["a"], ["a"])]).toEqual([true, true, true, true])
+    expect([pathsOverlap(["a", "b"], ["a", "c"]), pathsOverlap(["ab"], ["a"])]).toEqual([false, false])
+  })
+})

@@ -5,11 +5,12 @@ import type {
   OverlayDefinition,
   PageDefinition,
   PluginApi,
-  SettingsSection,
+  SettingsSectionDefinition,
 } from "@claxedo/plugin-api"
 import type { Translations } from "@/i18n"
 import { translated } from "../../dictionary"
-import { frameResponseFromHost, sessionRefFromHost, type FrameContext, type FrameResponse, type HostCall, type Registration } from "../protocol"
+import { frameResponseFromHost, sessionRefFromHost, workspaceStartFromHost, type FrameContext, type HostCall, type Registration } from "../protocol"
+import { responseFromFrame } from "../response-body"
 import type { FrameLink } from "./link"
 
 export class FrameUnsupportedError extends Error {
@@ -21,7 +22,7 @@ export class FrameUnsupportedError extends Error {
 
 export type FrameEntries = {
   readonly pages: Map<string, PageDefinition>
-  readonly settings: Map<string, SettingsSection>
+  readonly settings: Map<string, SettingsSectionDefinition>
   readonly overlays: Map<string, OverlayDefinition>
   readonly commands: Map<string, CommandDefinition>
   readonly mentions: Map<string, MentionProvider>
@@ -35,8 +36,6 @@ export type FrameScope = {
   readonly forward: boolean
   readonly signal: AbortSignal
 }
-
-const NULL_BODY_STATUSES: ReadonlySet<number> = new Set([101, 204, 205, 304])
 
 function keep<Value>(scope: FrameScope, map: Map<string, Value>, id: string, value: Value, registration: Registration): () => void {
   map.set(id, value)
@@ -56,14 +55,20 @@ function requestInit(init: RequestInit | undefined) {
   return { method: init?.method, headers: [...new Headers(init?.headers).entries()], body: init?.body ?? undefined }
 }
 
-function response(answer: FrameResponse): Response {
-  const body = NULL_BODY_STATUSES.has(answer.status) ? null : answer.body
-  return new Response(body, { status: answer.status, statusText: answer.statusText, headers: answer.headers.map(([name, value]): [string, string] => [name, value]) })
-}
-
 function fill(template: string, params?: Readonly<Record<string, string | number>>): string {
   if (!params) return template
   return template.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (match, name: string) => (params[name] === undefined ? match : String(params[name])))
+}
+
+function pageRegistration(page: PageDefinition): Registration {
+  const base = { kind: "page", id: page.id, path: page.path, title: page.title } as const
+  if (!("surface" in page)) return base
+  return { ...base, surface: true, ...(page.tab ? { tab: true } : {}), ...(page.icon ? { icon: page.icon } : {}) }
+}
+
+function settingsRegistration(section: SettingsSectionDefinition): Registration {
+  const base = { kind: "settings", id: section.id, title: section.title, icon: section.icon, order: section.order } as const
+  return "surface" in section ? { ...base, surface: true, ...(section.group ? { group: section.group } : {}) } : base
 }
 
 function regionApi(scope: FrameScope): Pick<PluginApi, "sidebar" | "pages" | "panes" | "settings" | "overlays"> {
@@ -72,7 +77,7 @@ function regionApi(scope: FrameScope): Pick<PluginApi, "sidebar" | "pages" | "pa
   return {
     sidebar: { item: (item) => register({ kind: "sidebar", id: item.id, label: item.label, pageId: item.pageId, icon: item.icon, order: item.order }) },
     pages: {
-      register: (page) => keep(scope, entries.pages, page.id, page, { kind: "page", id: page.id, path: page.path, title: page.title }),
+      register: (page) => keep(scope, entries.pages, page.id, page, pageRegistration(page)),
       open: (pageId, params) => fireAndReport(scope, { method: "pages.open", pageId, params }),
     },
     panes: {
@@ -84,8 +89,8 @@ function regionApi(scope: FrameScope): Pick<PluginApi, "sidebar" | "pages" | "pa
       },
     },
     settings: {
-      section: (section) =>
-        keep(scope, entries.settings, section.id, section, { kind: "settings", id: section.id, title: section.title, icon: section.icon, order: section.order }),
+      section: (section) => keep(scope, entries.settings, section.id, section, settingsRegistration(section)),
+      open: (sectionId) => fireAndReport(scope, { method: "settings.open", sectionId }),
     },
     overlays: {
       register: (overlay) => keep(scope, entries.overlays, overlay.id, overlay, { kind: "overlay", id: overlay.id, keybinding: overlay.keybinding }),
@@ -95,7 +100,7 @@ function regionApi(scope: FrameScope): Pick<PluginApi, "sidebar" | "pages" | "pa
   }
 }
 
-function actionApi(scope: FrameScope): Pick<PluginApi, "commands" | "mentions" | "workbench" | "themes" | "icons"> {
+function actionApi(scope: FrameScope): Pick<PluginApi, "commands" | "mentions" | "workbench" | "themes" | "icons" | "transcript"> {
   const { entries, link } = scope
   return {
     commands: {
@@ -118,6 +123,7 @@ function actionApi(scope: FrameScope): Pick<PluginApi, "commands" | "mentions" |
         }),
     },
     themes: { register: (theme) => (scope.forward ? link.register({ kind: "theme", theme }) : () => undefined) },
+    transcript: { toolCards: (templates) => (scope.forward ? link.register({ kind: "toolCards", templates }) : () => undefined) },
     icons: {
       registerSkin: () => {
         throw new FrameUnsupportedError("icons.registerSkin")
@@ -126,17 +132,22 @@ function actionApi(scope: FrameScope): Pick<PluginApi, "commands" | "mentions" |
   }
 }
 
-function dataApi(scope: FrameScope): Pick<PluginApi, "sessions" | "projects" | "server" | "context" | "ui" | "i18n"> {
+function dataApi(scope: FrameScope): Pick<PluginApi, "sessions" | "workspaces" | "projects" | "server" | "context" | "ui" | "i18n"> {
   const { link, context } = scope
   return {
     sessions: {
       create: async (input) => sessionRefFromHost(await link.call({ method: "sessions.create", input })),
       status: (ref) => link.mirror.statuses[ref.sessionId] ?? "idle",
-      open: (ref) => fireAndReport(scope, { method: "sessions.open", ref }),
+      open: async (ref) => {
+        await link.call({ method: "sessions.open", ref })
+      },
+    },
+    workspaces: {
+      followStart: async (workspaceId, onProgress) => workspaceStartFromHost(await link.call({ method: "workspaces.followStart", workspaceId }, onProgress)),
     },
     projects: { list: () => link.mirror.projects, currentId: () => link.mirror.currentProjectId },
     server: {
-      fetch: async (path, init) => response(frameResponseFromHost(await link.call({ method: "server.fetch", path, init: requestInit(init) }))),
+      fetch: async (path, init) => responseFromFrame(frameResponseFromHost(await link.call({ method: "server.fetch", path, init: requestInit(init) }))),
       operation: (name, input) => link.call({ method: "server.operation", name, input }),
     },
     context: {

@@ -7,3 +7,7 @@ export function errorBody(code: string, message: string, details?: Record<string
     },
   }
 }
+
+export function sessionNotFound() {
+  return errorBody("session_not_found", "Session not found")
+}

@@ -176,6 +176,30 @@ describe("foldedGroupKeys", () => {
     expect(answerPartRefs(groupsOf(endsOnTool), lookup(endsOnTool))).toEqual([])
   })
 
+  test("a reply surface is answer content: it never folds and does not end the answer before it", () => {
+    const turn = [tool("r1", "read"), tool("b1", "bash"), tool("b2", "bash"), text("t1", "Here it is"), tool("s1", "mcp__claxedo__ui_show"), text("t2", "that's all")]
+    const turnGroups = groupsOf(turn)
+    expect(turnGroups.find((group) => group.key === "part:a1:s1")).toEqual({ key: "part:a1:s1", type: "part", ref: { messageId: "a1", partId: "s1" }, answer: true })
+    expect(countFoldableGroups(turnGroups, lookup(turn))).toBe(2)
+    const keys = foldedGroupKeys(turnFoldDecision({ foldableCount: 2, settled: true }), turnGroups, lookup(turn))
+    expect([...keys]).toEqual(["context:r1", "work:b1"])
+    expect(answerPartRefs(turnGroups, lookup(turn)).map((ref) => ref.partId)).toEqual(["t1", "t2"])
+  })
+
+  test("a reply surface before later work stays drawn while that work folds", () => {
+    const turn = [tool("s1", "claxedo_ui_show"), tool("r1", "read"), tool("b1", "bash"), tool("b2", "bash"), text("t1", "done")]
+    const turnGroups = groupsOf(turn)
+    const keys = foldedGroupKeys(turnFoldDecision({ foldableCount: countFoldableGroups(turnGroups, lookup(turn)), settled: true }), turnGroups, lookup(turn))
+    expect([...keys]).toEqual(["context:r1", "work:b1"])
+  })
+
+  test("another Claxedo tool still folds with the work", () => {
+    const turn = [tool("c1", "mcp__claxedo__task_list"), tool("b1", "bash"), text("t1", "done")]
+    const turnGroups = groupsOf(turn)
+    expect(turnGroups.some((group) => group.type === "part" && group.answer)).toBe(false)
+    expect([...foldedGroupKeys(turnFoldDecision({ foldableCount: 2, settled: true }), turnGroups, lookup(turn))]).toEqual(["part:a1:c1", "part:a1:b1"])
+  })
+
   test("keeps a group the reader opened, unless the fold was their explicit choice", () => {
     const opened = lookup(parts, new Set(["b2"]))
     expect([...foldedGroupKeys(turnFoldDecision({ foldableCount: 3, settled: true }), groups, opened)]).toEqual(["context:r1", "part:a1:p1"])
