@@ -6,14 +6,16 @@ The user's rulings:
 - **2026-10-20, true opt-in plugins.** A plugin is not shipped by default. It is installed from the Marketplace and loaded only when enabled. Its backend runs in a per-organization Cloudflare Dynamic Worker. Someone who does not use it gets no code, routes, tables, agent tools, rail rows or settings sections.
 - **2026-10-20, wipe the data.** "We have no users, we can wipe the db and start." So there is no data migration for Tasks or Documents, and no byte-compatibility constraint on their tables, migrations, D1 baseline, routes or MCP tool names.
 
+- **2026-10-20, plugins only when signed in.** "Only support plugin on signin." App plugins, installed or live, exist only for a signed-in account: on the web, or on a desktop with an account. An unsigned desktop or a self-hosted daemon without accounts has no app plugins. There is no local plugin backend runtime and no `workerd` in the desktop. A signed desktop's plugin backends run in the org's hosted Dynamic Worker, reached through `plugin.request` over the account bridge.
+
 ## Summary
 
 1. A plugin is a signed release in a Claxedo registry: a static, public, content-addressed bucket of an index, signed releases and blobs. It has a manifest, an app bundle and a backend bundle.
 2. Hosted: an org admin installs it, which copies it into the deployment's R2 and writes an `app_plugin_installs` row. Each user then enables it for themselves; until then they download nothing and reach nothing.
-3. Local (unsigned desktop or self-hosted daemon): the machine owner installs it into the daemon's store from the same registry, with the same signature check.
+3. Signed-in only (owner ruling). An unsigned desktop or a self-hosted daemon has no app plugins.
 4. The app lists only the plugins installed and enabled for the caller. It fetches each bundle lazily from `/api/claxedo/app-plugins/:id/bundles/:sha256/app.js`, checks the sha256, and runs it in the sandboxed frame on web and on desktop.
 5. Hosted backends finish `plugin-backends/`. Its code moves to a new `@claxedo/plugin-runtime` package with a host port. The supervisor becomes one Durable Object per (org, plugin). This adds an install route, a caller handle that replaces the plain user-id header, and the app binding `api.server.backend()`.
-6. Local backends run the same supervisor code in an embedded `workerd` child process of the daemon. That gives one backend bundle, one facet store and one platform contract on every host (recommended over Node, Bun or Electron sandboxes).
+6. There is no local backend runtime. A signed desktop reaches the org's hosted backend through `plugin.request`.
 7. A backend reaches the host only through `env.PLATFORM`. Every call is checked against the manifest's `permissions` and a caller handle the supervisor minted. The calls cover identity, project read and authorization, sessions, cloud workspaces, blobs, events, schedule, public links, session files, and the plugin's declared agent tools.
 8. Agent tools are declared in the manifest. The core MCP mounts (daemon, hosted `/api/claxedo/mcp`, sandbox runtime) register proxy groups per caller, and only for plugins the caller has installed and enabled.
 9. Core loses every Tasks and Documents name:
@@ -24,7 +26,7 @@ The user's rulings:
 11. Tasks and Documents are rebuilt as installable plugins. They get clean facet SQLite schemas, blobs for attachments and content, and A2UI pages built from the catalog's shared building blocks, including a Tiptap `RichTextEditor` (owner ruling: every user may have the building blocks).
 12. Reset: hosted, delete and recreate the staging control-plane D1 (the baseline changes) and empty the Documents R2 bucket. Local, one `DROP TABLE IF EXISTS` migration, or a fresh data dir.
 13. Slices P0–P10 each leave the system working. The old in-process Tasks and Documents are deleted only at their cutover slices (P7b, P8b).
-14. Gate P0 must prove Worker Loader and facets on the production Cloudflare account and the local `workerd` packaging. If production refuses, a deployment offers no backend plugins: there is no in-process fallback.
+14. Gate P0 must prove Worker Loader and facets on the production Cloudflare account. If production refuses, a deployment offers no backend plugins: there is no in-process fallback.
 15. Ratchets end with `@claxedo/tasks` and `@claxedo/documents` in `forbiddenPackages` of every product closure, plus a check that no built app chunk comes from either package.
 
 ## Today (observed in code)
@@ -115,7 +117,6 @@ export type SignedPluginRelease = { release: PluginRelease; signature: string /*
 | Context | Installed by | Where | Enabled by |
 |---|---|---|---|
 | Hosted, signed (web, or desktop with an account) | an org owner or admin; the owner, for a personal org (`orgs.kind = 'personal'`) | `app_plugin_installs` (D1) plus blobs in `CLAXEDO_AGENT_PLUGINS` R2 | each member for themselves (`app_plugin_enablements`); an admin may set a positive org default, and a user can still turn it off |
-| Local, unsigned desktop or self-hosted daemon | the machine owner (loopback gate, or `authorizeMachineOwner`, as live plugins) | `<dataDir>/app-plugins/installs.json` plus `<dataDir>/app-plugins/blobs/<sha256>` | the machine owner |
 
 - A signed desktop uses the org scope. Its backend calls go through `plugin.request` over the account bridge, and hosted Tasks reaches the machine's workspaces through the relay, as hosted Tasks does today. It does not also list machine installs (Q3).
 - Hosted deployments without the Agent Plugins profile have no `PLUGIN_LOADER`. Their catalog shows backend plugins as "not available on this deployment", and install is refused (`app_plugin_platform_unavailable`).
@@ -200,30 +201,13 @@ events(topic: string, listener: (data: unknown) => void): () => void
 
 - Web (hosted or daemon-served): `services.calls.backendFetch(id, path, init)` maps to `server.request("/api/plugins/<id><path>")`. Binary bodies are already safe over the frame (`frame/response-body.ts`).
 - Signed desktop: the `plugin.request` operation. Its exposure becomes `{ renderer: true, app: true }` and the app's operation table offers it.
-- Unsigned desktop: the daemon's `/api/plugins/:id/*` (§2.3).
+- Unsigned desktop: no app plugins (owner ruling).
 
-**2.3 Local and desktop runtime**
+**2.3 Local and desktop runtime: none (owner ruling, 2026-10-20)**
 
-Options compared:
-
-| Option | Isolation from the daemon and the machine | Same contract and bundle as hosted | Packaging | Verdict |
-|---|---|---|---|---|
-| **A. Embedded `workerd` child process** running `@claxedo/plugin-runtime/local-entry` (supervisor + Worker Loader + facets), with `HOST` as an `external` service to the daemon's loopback | V8 isolate per plugin; no fs, process or env; network only through `PluginOutbound`; the process is spawned with an empty env | **Identical**: one backend bundle, one facet store, one platform client | One `workerd` binary per OS (from `@cloudflare/workerd-*`, measure in P0); a few hundred ms startup, lazily on first install | **Recommended** |
-| B. Node child process with `--permission` | Node documents the permission model as a "seat belt", not protection against malicious code | Different store (`node:sqlite`) and a second implementation of every capability | Free (Electron's Node) | Rejected: not a boundary, two runtimes |
-| C. Bun Worker or `worker_threads` | Same process; no boundary | Second implementation | Free | Rejected |
-| D. Electron `utilityProcess` | Desktop only; the daemon also runs headless (`claxedo connect`, self-hosted) | Second implementation | Free | Rejected |
-| E. QuickJS or `isolated-vm` | Strong, but no Web APIs, no DO SQLite and slow | Rewrite of the platform | Native module per OS | Rejected |
-
-- **Recommendation A, in detail.**
-- `claxedo-local-server/src/app-plugins/runtime-process.ts` spawns `workerd serve` with a generated config. Persistence is `<dataDir>/plugin-runtime/do/`; it listens on a random loopback port and gets a per-boot bearer secret both ways. It restarts on crash with backoff and stops when the daemon stops (it joins the lifecycle owners in `createLocalDaemonLifecycle`).
-- The daemon mounts `/api/plugins/:id/*` (proxy plus caller handle), `/api/claxedo/app-plugins/*`, and `/api/plugin-host/*`. The last is loopback with the runtime secret, and implements `PluginHostPort` (state, bundles, platform calls).
-- P0 decides between generating the capnp config directly and Miniflare's programmatic API, already a dev dependency at `claxedo-server/package.json:92`: prefer the raw binary if Worker Loader and facets need no Miniflare-only shims.
-- Local facet alarms do not fire (README gate), so local wakes are driven by the daemon's timer through `PluginSchedulerPort` (§3.7).
-- **Unsigned local** (desktop with no account, or the self-hosted daemon):
-- Identity is the machine owner: `orgId = "local"`, `userId` the owner's local actor, `origin` person or agent. The platform's project and session calls use the local workspace store and the local session creation path the Tasks plugin uses today (`claxedo-tasks/src/local/session-bridge.ts`, which moves to core, §3.3).
-- Cloud placement is unavailable: `platform.workspaces.cloud` answers `unavailable`.
-- Installs still need a valid signature. There is no unsigned install path from the Marketplace.
-- **Live (developer) plugins.** An app-only live plugin works as today. A live plugin that declares `backend` runs in the local `workerd` runtime under `orgId = "local"`, is gated by the existing approval dialog plus the permission list, and never runs hosted. A live plugin may not take an id installed on this machine (`409 live_plugin_id_installed`, replacing the reserved-id check at `service.ts:166,191`).
+App plugins exist only for signed-in accounts, so there is no local backend runtime. The comparison of local runtimes (embedded `workerd`, Node `--permission`, Bun Worker, Electron `utilityProcess`, QuickJS) is no longer needed.
+- **Signed desktop:** installed plugins come from the org's installs. Frames run them, and their backends are the org's hosted Dynamic Workers, reached through `plugin.request` over the account bridge. Hosted Tasks reaches the machine's workspaces through the relay, as it does today.
+- **Unsigned desktop and self-hosted daemon:** no app plugins. The live-plugin registry, `/api/claxedo/live-plugins` and the daemon's plugin routes are removed, or gated behind a signed account if the authoring tools (`app_plugin_*`) stay. Live developer plugins exist only on a signed desktop, frontend only; a developer who wants a backend publishes a private release to their org.
 
 ### 3. The platform API a backend gets
 
@@ -463,7 +447,6 @@ Every ceiling change is the exact measured number, with its owner named in the a
 
 - [ ] **P0. Gates (no product change).**
 - Prove on the staging Cloudflare account, with a throwaway Worker: Worker Loader and facets; facet deletion through supervisor `deleteAll` and/or `ctx.facets.delete`; a supervisor (non-facet) alarm; Worker Loader limits; Ed25519 verify in workerd.
-- Prove locally: `workerd` binary spawn, persistence, Worker Loader and facets on macOS, Linux and Windows; binary size per OS; Ed25519 in Electron's Node; frame runtime inlined on the `file:` renderer.
 - Record the results in `plugin-backends/README.md` "Gate finding".
 - Checks: the existing `plugin-backends.workerd.test.ts`. No ratchet change.
 - [ ] **P1. `@claxedo/plugin-runtime`.**
@@ -483,11 +466,7 @@ Every ceiling change is the exact measured number, with its owner named in the a
 - Tests: app `src/plugins` (hash mismatch fails the load; a disabled plugin is never fetched; safe mode stops installed plugins) and `src/marketplace`.
 - New flow `64-app-plugin-install.spec.ts` (web and phone, hosted fixture): the counter plugin is absent, then the admin installs it, the member enables it, its page counts, and disable removes the row and the route. Red run: skip the enablement gate.
 - Checks: app test, typecheck, `typecheck:e2e`, check; ratchets; desktop `verify:closure` (renderer modules +N measured).
-- [ ] **P5. Local runtime.**
-- `claxedo-local-server/src/app-plugins/` (install store, registry client, runtime process, routes, platform host for identity, projects, blobs, events, schedule and links); `@claxedo/plugin-runtime/local-entry`; desktop packaging of `workerd` (`claxedo-desktop/scripts/bundle-claxedo-server.ts` copies the binary); live plugins with a backend run there.
-- Tests: local (install, enable, route; restart keeps data; crash restarts; a wrong secret is refused); `test:server-boot` (the runtime starts lazily, not at boot).
-- Flow 64 also on the daemon-served web. Flow 34 is not verifiable in this container (no Electron).
-- Checks: local test and `verify:closure` (73/28 move by the measured count); desktop `test:broad`, `test:server-boot`, `verify:closure`; ratchets.
+- [x] **P5. Local runtime.** Removed by owner ruling (plugins only when signed in). Instead, P4 removes or gates the daemon's live-plugin registry, and flows 34 and 35 move to a signed account.
 - [ ] **P6. Platform API v2 on both hosts:**
 - sessions (§3.3), with `plugin_session_origins` in D1 and `claxedo.db`;
 - cloud workspace allocation through `origin-cloud-workspace.ts`;
@@ -527,25 +506,22 @@ Every ceiling change is the exact measured number, with its owner named in the a
 - Update `docs/plans/README.md`, mark the 2026-10-18 plan superseded, and add a DECISIONS entry ("Owner, 2026-10-20: plugins are opt-in installs").
 - Checks: `docs:check-links`, and a full final run of the commands once (AGENTS.md "Validation cadence").
 
-Order and lanes: P0, then P1, then P2, then P3. P4 and P5 can run in parallel after P3. P6 follows P4 and P5. Then P7a–c and P8a–c (P8a can start beside P7b), then P9, then P10.
+Order and lanes: P0, then P1, then P2, then P3. P4 follows P3. P6 follows P4. Then P7a–c and P8a–c (P8a can start beside P7b), then P9, then P10.
 
 ### 8. Risks and open questions
 
 - **Q1. Production availability of the beta Worker Loader and facets.** Recommendation: block on P0. If refused, choose between "no backend plugins on that deployment" (default) and the static per-plugin Worker fallback (§6). Do not go back to in-process.
 - **Q2. Install authority.** Recommendation: org owners and admins install, members enable for themselves, and an admin may set a positive org default. In a personal org the owner does both.
-- **Q3. Signed desktop scope.** Recommendation: a signed desktop uses only the org's installs (hosted backend over the relay for machine workspaces), and an unsigned desktop uses machine installs. There are no two parallel installs per person.
+- **Q3. Signed desktop scope.** Settled by owner ruling: only signed accounts have plugins.
 - **Q4. Uninstall semantics.** Recommendation: uninstall deletes data immediately after a confirm naming the plugin; "Disable for organization" is the keep-data path. No tombstone period.
 - **Q5. Desktop frames.** Running installed plugins in frames on desktop (not in-app) needs the frame runtime inlined for `file:`. Recommendation: do it in P4; the in-app realm remains only for live developer plugins behind approval.
 - **Q6. Documents in the repository.** The local repository-backed origin (`host/repository/*`, git) has no place in plugin storage. Recommendation: drop it. Documents live in plugin storage on both hosts and reach a session as session files; a file in the repo is just a file agents already edit.
 - **Q7. Core routes from a plugin frontend.** Tasks needs `GET /api/claxedo/plugins` for preset pickers. Recommendation: keep `server.routes` with the prompt listing it, and add method-scoped entries (`GET /api/claxedo/plugins`) to the schema in P3.
 - **Q8. CLI.** Recommendation: no plugin CLI commands. A generic `claxedo plugin request <id> <METHOD> <path>` only if asked.
-- **R1. `workerd` packaging and platform support.** Size, codesigning and notarization on macOS, and Windows Defender. Recommendation: measure in P0, ship the binary only in the desktop, and spawn it on first install.
 - **R2. One supervisor per (org, plugin) is single-threaded.** A busy org's Tasks shares one object. Recommendation: facets per project spread the storage work; measure only if the owner asks for benchmarks (repo rule).
 - **R3. Deploy skew.** The hosted Worker and app deploy separately, and the app's installed-plugin list needs the P2 routes. Recommendation: deploy the control plane before the app (the existing job order); the app treats a 404 list as "no app plugins".
 - **R4. Tool name collisions across plugins.** Recommendation: refuse at install, naming both plugins; core names are reserved.
 - **R5. Facet SQLite row limits.** Attachments go to blobs, so a facet row stays small. Recommendation: P7a asserts row-size caps in the store.
-- **R6. Local alarms.** Facet and SQLite DO alarms do not fire locally (README). Recommendation: the daemon timer drives wakes through `PluginSchedulerPort`; a test pins it.
-- **R7. Live-plugin backends locally.** These are arbitrary code with only an approval dialog. Recommendation: keep them `orgId = "local"`, without `sessions.start` unless approved, and never synced to hosted.
 
 ### Critical Files for Implementation
 - /home/user/Claxedo/packages/claxedo-server/src/plugin-backends/supervisor.cf.ts
