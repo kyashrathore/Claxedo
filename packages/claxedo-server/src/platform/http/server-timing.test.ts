@@ -113,3 +113,34 @@ describe("Server-Timing", () => {
     await expect(vendor("https://api.github.com/user").then((response) => response.text()), "outside a request it only sends").resolves.toBe("ok")
   })
 })
+
+describe("Server-Timing names the D1 instances that answered", () => {
+  test("each region once, primary or replica as D1 reports it, from single and batched results", async () => {
+    const answer = (meta: Record<string, unknown>) => ({ success: true, results: [], meta })
+    const statement = {
+      bind: () => statement,
+      all: async () => answer({ served_by_region: "APAC", served_by_primary: false }),
+      run: async () => answer({ served_by_region: "ENAM", served_by_primary: true }),
+      first: async () => ({ ok: 1 }),
+    }
+    const database = timedD1({
+      prepare: () => statement,
+      batch: async () => [answer({ served_by_region: "APAC", served_by_primary: false }), answer({})],
+    } as unknown as D1Database)
+    const app = new Hono()
+    app.get("/mixed", async (c) => {
+      await database.prepare("select 1").all()
+      await database.batch([database.prepare("select 2"), database.prepare("select 3")])
+      await database.prepare("insert").run()
+      await database.prepare("select 4").first()
+      return c.json({ ok: true })
+    })
+    app.get("/local", async (c) => {
+      await database.prepare("select 4").first()
+      return c.json({ ok: true })
+    })
+    const header = (await served(app, "https://core.test/mixed")).headers.get("server-timing") ?? ""
+    expect(header.split(", ").filter((entry) => entry.startsWith("d1-served"))).toEqual(['d1-served;desc="APAC-replica"', 'd1-served;desc="ENAM-primary"'])
+    expect((await served(app, "https://core.test/local")).headers.get("server-timing")).not.toContain("d1-served")
+  })
+})

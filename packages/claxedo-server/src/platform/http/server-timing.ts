@@ -24,7 +24,7 @@ export type TimingMark = "cold" | "compose"
 
 /** Busy time per resource: concurrent calls share their overlap, so no resource can read more than the total. */
 type Busy = { ms: number; active: number; since: number }
-type Ledger = { busy: Record<TimedResource, Busy>; hosts: Map<string, Busy>; marks: Set<TimingMark> }
+type Ledger = { busy: Record<TimedResource, Busy>; hosts: Map<string, Busy>; marks: Set<TimingMark>; served: Set<string> }
 
 /** A request slower than this is written to the Worker's log with its breakdown, so `wrangler tail` shows where it went. */
 export const SLOW_REQUEST_MS = 1_000
@@ -75,9 +75,29 @@ export function mark(fact: TimingMark) {
   requests.getStore()?.marks.add(fact)
 }
 
-/** The database with every statement's wall time charged to the request that ran it. */
+/** The D1 instances that answered: `served_by_region` and `served_by_primary`, which D1 reports on every remote result's `meta` and leaves out locally (developers.cloudflare.com/d1/best-practices/read-replication/). */
+function noteServed(ledger: Ledger, result: unknown) {
+  for (const answer of Array.isArray(result) ? result : [result]) {
+    const meta: unknown = typeof answer === "object" && answer !== null ? Reflect.get(answer, "meta") : undefined
+    if (typeof meta !== "object" || meta === null) continue
+    const region: unknown = Reflect.get(meta, "served_by_region")
+    if (typeof region !== "string") continue
+    ledger.served.add(`${region}-${Reflect.get(meta, "served_by_primary") === true ? "primary" : "replica"}`)
+  }
+}
+
+/**
+ * The database with every statement's wall time charged to the request that
+ * ran it, and each instance that answered named as `d1-served`; `first()`
+ * returns no `meta`, so a request that only ever reads one row names none.
+ */
 export function timedD1(database: D1Database): D1Database {
-  return observedD1(database, (_statements, run) => timed("d1", run))
+  return observedD1(database, async (_statements, run) => {
+    const result = await timed("d1", run)
+    const ledger = requests.getStore()
+    if (ledger) noteServed(ledger, result)
+    return result
+  })
 }
 
 /** The adapter with every verification's wall time charged to the request that asked. */
@@ -90,6 +110,7 @@ function header(ledger: Ledger, total: number): string {
     ...ledger.marks,
     ...RESOURCES.map((resource) => `${resource};dur=${ledger.busy[resource].ms.toFixed(1)}`),
     ...[...ledger.hosts].map(([host, busy]) => `upstream-host;desc="${host}";dur=${busy.ms.toFixed(1)}`),
+    ...[...ledger.served].map((instance) => `d1-served;desc="${instance}"`),
     `total;dur=${total.toFixed(1)}`,
   ].join(", ")
 }
@@ -110,6 +131,7 @@ export async function timedResponse(request: Request, respond: () => Promise<Res
     busy: { auth: idle(), limit: idle(), d1: idle(), do: idle(), upstream: idle() },
     hosts: new Map(),
     marks: new Set(served++ === 0 ? ["cold"] : []),
+    served: new Set(),
   }
   const started = performance.now()
   const response = await requests.run(ledger, respond)

@@ -11,15 +11,16 @@ import {
   stringEnvironment,
   type BetterAuthD1AgentPluginsWorkerEnv,
 } from "./better-auth-d1-worker.agent-plugins.cf"
-import { createBetterAuthD1Worker } from "./better-auth-d1-worker.cf"
+import { createBetterAuthD1Worker, workerDatabases } from "./better-auth-d1-worker.cf"
 import { LiveSyncRoom } from "./core-worker.cf"
 import { settledCompositionCache } from "./settled-composition-cache"
-import { timedD1 } from "../../platform/http/server-timing"
 
 export { LiveSyncRoom, PluginOutbound, PluginPlatform, PluginSupervisor }
 
 export type BetterAuthD1FullHostedWorkerEnv = BetterAuthD1AgentPluginsWorkerEnv & {
   SANDBOX_PROVISIONER?: SandboxProvisionerNamespace
+  /** The control-plane database primary's region as a Durable Object location hint (`enam`); the deploy sets it from `wrangler d1 info`. */
+  CLAXEDO_D1_PRIMARY_LOCATION?: string
 }
 
 /**
@@ -45,9 +46,10 @@ const composition = settledCompositionCache(
     }
     return composeWithCloudSandbox(
       {
-        database: timedD1(env.CONTROL_PLANE_DB),
+        database: workerDatabases(env).controlPlane,
         signingEnv: stringEnvironment(env),
         provisioner: env.SANDBOX_PROVISIONER,
+        ...(env.CLAXEDO_D1_PRIMARY_LOCATION ? { primaryLocation: env.CLAXEDO_D1_PRIMARY_LOCATION } : {}),
         keyDrivers: hostedSandboxKeyDrivers(stringEnvironment(env)),
         room: env.LIVE_SYNC_ROOM,
       },

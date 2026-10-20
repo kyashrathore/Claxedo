@@ -1,5 +1,8 @@
 import type { D1Database } from "@cloudflare/workers-types"
 import { timedD1, timedFetch, timedResponse } from "../../platform/http/server-timing"
+import { echoesD1Bookmarks, inD1Sessions, requestSessionD1, type D1SessionStart } from "../../platform/db/d1-sessions"
+import { carriesSessionCookie } from "../../platform/auth/session-cookie"
+import { USER_DEPLOYED_OWNER_CLAIM_HEADER } from "../../authority/adapters/d1/owner-identity"
 import type { ExecutionContext } from "hono"
 import {
   requestIsHttps,
@@ -29,7 +32,12 @@ import { settledCompositionCache, type CompositionLifetime } from "./settled-com
 
 export { LiveSyncRoom }
 
+/** The writer as the edge Worker's service binding reaches it. */
+export type ControlPlaneWriter = { fetch(request: Request): Promise<Response> }
+
 export type BetterAuthD1WorkerEnv = HostedCoreWorkerEnv & {
+  /** Bound only on the edge Worker: the writer every `primary` request is handed to. */
+  CONTROL_PLANE_WRITER?: ControlPlaneWriter
   EMAIL?: CloudflareEmailBinding
   CLAXEDO_EMAIL_FROM?: string
   AUTH_DB: D1Database
@@ -58,13 +66,27 @@ function requiredSetting(value: string | undefined, name: string) {
   return value.trim()
 }
 
+/**
+ * The two databases as every composition of this Worker reads them: through
+ * the current request's D1 session (`inD1Sessions` below), and timed. A path
+ * that reached a bare binding instead would run outside the session, so its
+ * writes would be missing from the bookmark the client carries away.
+ */
+export function workerDatabases(env: Pick<BetterAuthD1WorkerEnv, "AUTH_DB" | "CONTROL_PLANE_DB">) {
+  return {
+    auth: timedD1(requestSessionD1(env.AUTH_DB, "auth")),
+    controlPlane: timedD1(requestSessionD1(env.CONTROL_PLANE_DB, "control")),
+  }
+}
+
 /** The base user-deployed composition input; feature entries extend the result, never this. */
 export function betterAuthD1CompositionInput(env: BetterAuthD1WorkerEnv): BetterAuthD1UserDeployedCompositionInput {
+  const databases = workerDatabases(env)
   return {
     env: stringEnvironment(env),
     emailSender: cloudflareAuthEmailSender(env),
-    authDatabase: timedD1(env.AUTH_DB),
-    controlPlaneDatabase: timedD1(env.CONTROL_PLANE_DB),
+    authDatabase: databases.auth,
+    controlPlaneDatabase: databases.controlPlane,
     fetch: timedFetch(),
     descriptorExpiresAt: Date.now() + AUTH_DESCRIPTOR_TTL_MS,
     product: {
@@ -101,6 +123,70 @@ function authRoute(pathname: string) {
  */
 function consumesVerification(pathname: string) {
   return pathname.startsWith("/api/auth/callback/") || pathname.startsWith("/api/auth/reset-password")
+}
+
+/**
+ * The reads that run on the writer although a bookmark-carrying browser may
+ * send them, each because it writes what its own next request reads, decides
+ * on a row another actor wrote moments before with no bookmark to hand on,
+ * or spends a single-use credential:
+ * - the OAuth callback and password reset consume a verification row, and
+ *   the sign-in after them must see the session;
+ * - email verification and account deletion confirm a link, and an OAuth
+ *   client's sign-out ends the session the next request must not find;
+ * - the device page finds the code a CLI just asked for;
+ * - an authorization finds the client an MCP client just registered, and
+ *   writes the code it exchanges;
+ * - a connection attempt's poll advances a device grant whose last answer
+ *   the previous poll wrote, and a connection's token and repositories may
+ *   renew its OAuth token, whose refresh token works once;
+ * - the plugin MCP gateway and the egress broker renew vendor credentials;
+ * - the relay's resolver checks revocation and serving generations the
+ *   moment after they are written.
+ * `d1-session-classifier.test.ts` holds every GET route either here or in
+ * its reviewed list of replica reads, so a new one is classified on purpose.
+ */
+export const PRIMARY_READS = [
+  "/api/auth/callback/",
+  "/api/auth/reset-password",
+  "/api/auth/verify-email",
+  "/api/auth/delete-user/callback",
+  "/api/auth/oauth2/end-session",
+  "/api/auth/device",
+  "/api/auth/oauth2/authorize",
+  "/api/claxedo/integrations/callback",
+  "/api/claxedo/integrations/attempts/",
+  "/api/claxedo/integrations/connections/",
+  "/api/claxedo/plugins/mcp/",
+  "/bindings/",
+  "/internal/",
+]
+
+/**
+ * Where a request runs and where its D1 sessions start: the one classifier
+ * the edge Worker forwards by and both Workers open their sessions by.
+ *
+ * `replica`: a read the edge answers itself, from the nearest replica no
+ * older than the bookmarks it carries. That is a read from the browser,
+ * whose signed requests carry its cookie jar; from a client that echoes the
+ * bookmark header; or from nobody at all (the health probe, the descriptor,
+ * public metadata), which has no writes of its own to miss.
+ *
+ * `primary`: everything the writer runs beside the primary, so the reads it
+ * decides on see every committed write and the bookmark it hands back covers
+ * what it wrote: every method that may write, the reads in `PRIMARY_READS`,
+ * a request redeeming an owner claim (a row the deploy wrote on the
+ * primary), and a read on a bearer token that echoes no bookmark (a machine,
+ * the relay, a sandbox, the desktop's first call), whose caller would carry
+ * nothing of its own writes into a replica.
+ */
+export function d1SessionStart(request: Request): D1SessionStart {
+  if (request.method !== "GET" && request.method !== "HEAD") return "primary"
+  const pathname = new URL(request.url).pathname
+  if (PRIMARY_READS.some((prefix) => pathname === prefix || pathname.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`))) return "primary"
+  if (request.headers.has(USER_DEPLOYED_OWNER_CLAIM_HEADER)) return "primary"
+  if (carriesSessionCookie(request.headers.get("cookie")) || echoesD1Bookmarks(request)) return "replica"
+  return request.headers.has("authorization") ? "primary" : "replica"
 }
 
 function requestSecurityHeaderEntries(request: Request) {
@@ -150,6 +236,32 @@ function createPublicAuthRateLimiter(env: BetterAuthD1WorkerEnv, local: Connecti
   })
 }
 
+/**
+ * Hands a request to the writer before anything on the edge composes,
+ * authenticates or rate-limits it, so the writer does each once. The
+ * writer's answer keeps its own `Server-Timing`; `forward` adds the wait on
+ * it, the hop to the writer's data center included.
+ */
+async function forwardToWriter(writer: ControlPlaneWriter, request: Request) {
+  const started = performance.now()
+  let response: Response
+  try {
+    response = await writer.fetch(request)
+  } catch (error) {
+    console.error("[better-auth-d1] the writer did not answer", error)
+    return unavailable(request)
+  }
+  const timing = `forward;dur=${(performance.now() - started).toFixed(1)}`
+  try {
+    response.headers.append("server-timing", timing)
+    return response
+  } catch {
+    const rebuilt = new Response(response.body, response)
+    rebuilt.headers.append("server-timing", timing)
+    return rebuilt
+  }
+}
+
 function rateLimitedResponse(request: Request, retryAfterMs: number) {
   return withSecurityHeaders(
     Response.json(
@@ -192,7 +304,9 @@ export function createBetterAuthD1Worker(input: {
 
   return {
     fetch(request: Request, env: BetterAuthD1WorkerEnv, context?: ExecutionContext) {
-      return timedResponse(request, () => respond(request, env, context))
+      const start = d1SessionStart(request)
+      if (start === "primary" && env.CONTROL_PLANE_WRITER) return forwardToWriter(env.CONTROL_PLANE_WRITER, request)
+      return timedResponse(request, () => inD1Sessions(request, start, () => respond(request, env, context)))
     },
   }
 
