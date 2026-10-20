@@ -156,3 +156,23 @@ diff --git a/dist/index-4cb1a0c7.d.ts b/dist/index-4cb1a0c7.d.ts
  }
  interface AccordionContentCommonProps<T extends HTMLElement = HTMLElement> extends CollapsibleContentCommonProps<T> {
      id: string;
+diff --git a/dist/chunk/LP6E37CW.jsx b/dist/chunk/LP6E37CW.jsx
+--- a/dist/chunk/LP6E37CW.jsx
++++ b/dist/chunk/LP6E37CW.jsx
+@@ -61,7 +61,15 @@
+   let locale = typeof navigator !== "undefined" && // @ts-ignore
+   (navigator.language || navigator.userLanguage) || "en-US";
+   try {
+-    Intl.DateTimeFormat.supportedLocalesOf([locale]);
++    // CLAXEDO PATCH (perf) -- patches/@kobalte%2Fcore@0.13.12.patch.
++    // This runs at module evaluation. Upstream validates the tag with
++    // Intl.DateTimeFormat.supportedLocalesOf, which makes a fresh renderer load
++    // ICU's date-format data before anything formats a date: 30 ms of a cold
++    // boot at 4x CPU in Chromium, 6 ms unthrottled. Both calls canonicalize the
++    // list and throw the same RangeError on an invalid tag, and
++    // supportedLocalesOf never throws otherwise, so getCanonicalLocales keeps
++    // the fallback exactly.
++    Intl.getCanonicalLocales(locale);
+   } catch (_err) {
+     locale = "en-US";
+   }

@@ -1,0 +1,89 @@
+diff --git a/dist/private/NumberFormatter.mjs b/dist/private/NumberFormatter.mjs
+--- a/dist/private/NumberFormatter.mjs
++++ b/dist/private/NumberFormatter.mjs
+@@ -9,21 +9,35 @@
+  * OF ANY KIND, either express or implied. See the License for the specific language
+  * governing permissions and limitations under the License.
+  */ let $1dfb119a85e764e5$var$formatterCache = new Map();
+-let $1dfb119a85e764e5$var$supportsSignDisplay = false;
+-try {
+-    $1dfb119a85e764e5$var$supportsSignDisplay = new Intl.NumberFormat('de-DE', {
+-        signDisplay: 'exceptZero'
+-    }).resolvedOptions().signDisplay === 'exceptZero';
+-// eslint-disable-next-line no-empty
+-} catch  {}
+-let $1dfb119a85e764e5$var$supportsUnit = false;
+-try {
+-    $1dfb119a85e764e5$var$supportsUnit = new Intl.NumberFormat('de-DE', {
+-        style: 'unit',
+-        unit: 'degree'
+-    }).resolvedOptions().style === 'unit';
+-// eslint-disable-next-line no-empty
+-} catch  {}
++// CLAXEDO PATCH (perf) -- patches/@internationalized%2Fnumber@3.6.7.patch.
++// Upstream runs both feature probes at module evaluation, and the first
++// Intl.NumberFormat a fresh renderer builds loads ICU's number data: about
++// 20 ms of a cold boot at 4x CPU in Chromium, before anything formats a number.
++// Each probe now runs on its first use and keeps its answer, so a formatter
++// behaves exactly as before.
++let $1dfb119a85e764e5$var$supportsSignDisplay;
++function $1dfb119a85e764e5$var$signDisplaySupported() {
++    if ($1dfb119a85e764e5$var$supportsSignDisplay === undefined) try {
++        $1dfb119a85e764e5$var$supportsSignDisplay = new Intl.NumberFormat('de-DE', {
++            signDisplay: 'exceptZero'
++        }).resolvedOptions().signDisplay === 'exceptZero';
++    } catch  {
++        $1dfb119a85e764e5$var$supportsSignDisplay = false;
++    }
++    return $1dfb119a85e764e5$var$supportsSignDisplay;
++}
++let $1dfb119a85e764e5$var$supportsUnit;
++function $1dfb119a85e764e5$var$unitSupported() {
++    if ($1dfb119a85e764e5$var$supportsUnit === undefined) try {
++        $1dfb119a85e764e5$var$supportsUnit = new Intl.NumberFormat('de-DE', {
++            style: 'unit',
++            unit: 'degree'
++        }).resolvedOptions().style === 'unit';
++    } catch  {
++        $1dfb119a85e764e5$var$supportsUnit = false;
++    }
++    return $1dfb119a85e764e5$var$supportsUnit;
++}
+ // Polyfill for units since Safari doesn't support them yet. See https://bugs.webkit.org/show_bug.cgi?id=215438.
+ // Currently only polyfilling the unit degree in narrow format for ColorSlider in our supported locales.
+ // Values were determined by switching to each locale manually in Chrome.
+@@ -47,9 +61,9 @@
+    * constructor.
+    */ format(value) {
+         let res = '';
+-        if (!$1dfb119a85e764e5$var$supportsSignDisplay && this.options.signDisplay != null) res = $1dfb119a85e764e5$export$711b50b3c525e0f2(this.numberFormatter, this.options.signDisplay, value);
++        if (!$1dfb119a85e764e5$var$signDisplaySupported() && this.options.signDisplay != null) res = $1dfb119a85e764e5$export$711b50b3c525e0f2(this.numberFormatter, this.options.signDisplay, value);
+         else res = this.numberFormatter.format(value);
+-        if (this.options.style === 'unit' && !$1dfb119a85e764e5$var$supportsUnit) {
++        if (this.options.style === 'unit' && !$1dfb119a85e764e5$var$unitSupported()) {
+             let { unit: unit, unitDisplay: unitDisplay = 'short', locale: locale } = this.resolvedOptions();
+             if (!unit) return res;
+             let values = $1dfb119a85e764e5$var$UNITS[unit]?.[unitDisplay];
+@@ -90,11 +104,11 @@
+     }
+     /** Returns the resolved formatting options based on the values passed to the constructor. */ resolvedOptions() {
+         let options = this.numberFormatter.resolvedOptions();
+-        if (!$1dfb119a85e764e5$var$supportsSignDisplay && this.options.signDisplay != null) options = {
++        if (!$1dfb119a85e764e5$var$signDisplaySupported() && this.options.signDisplay != null) options = {
+             ...options,
+             signDisplay: this.options.signDisplay
+         };
+-        if (!$1dfb119a85e764e5$var$supportsUnit && this.options.style === 'unit') options = {
++        if (!$1dfb119a85e764e5$var$unitSupported() && this.options.style === 'unit') options = {
+             ...options,
+             style: 'unit',
+             unit: this.options.unit,
+@@ -109,7 +123,7 @@
+         if (!locale.includes('-u-')) locale += '-u-';
+         locale += `-nu-${numberingSystem}`;
+     }
+-    if (options.style === 'unit' && !$1dfb119a85e764e5$var$supportsUnit) {
++    if (options.style === 'unit' && !$1dfb119a85e764e5$var$unitSupported()) {
+         let { unit: unit, unitDisplay: unitDisplay = 'short' } = options;
+         if (!unit) throw new Error('unit option must be provided with style: "unit"');
+         if (!$1dfb119a85e764e5$var$UNITS[unit]?.[unitDisplay]) throw new Error(`Unsupported unit ${unit} with unitDisplay = ${unitDisplay}`);
