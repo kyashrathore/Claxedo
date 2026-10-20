@@ -64,8 +64,7 @@ function createForSource(workspaces: Workspaces, account: HostedAccount | undefi
       ...accountSourceInput(options.source),
     })
     const id = typeof created.workspaceId === "string" ? placementId(created.workspaceId) : undefined
-    if (id) options.onCreated?.(id)
-    await workspaces.refresh()
+    await Promise.all([workspaces.refresh(), id ? options.onCreated?.(id) : undefined])
     return createdWorkspace(created, id ? workspaces.byId(id)?.projectId : undefined)
   }
 }

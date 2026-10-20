@@ -147,9 +147,37 @@ test("signed: a workspace the account created is reported before the catalog rea
     })
     const reported: string[] = []
     failing = true
-    await expect(cloud.create({ source: { kind: "repository", url: "https://github.com/acme/widgets" }, name: "Widgets", onCreated: (id) => reported.push(id) })).rejects.toThrow()
+    await expect(cloud.create({ source: { kind: "repository", url: "https://github.com/acme/widgets" }, name: "Widgets", onCreated: (id) => { reported.push(id) } })).rejects.toThrow()
     expect(reported).toEqual([placementId("ws_new")])
     expect(operations()).toHaveLength(1)
+    workspaces.dispose()
+    dispose()
+  })
+})
+
+test("signed: what the caller does with a new workspace begins when the create answers, beside the catalog read, and the create answers once both are done", async () => {
+  await createRoot(async (dispose) => {
+    const seen: string[] = []
+    const { cloud, workspaces } = world(true, () => seen.push("catalog read"))
+    let started: () => void = () => undefined
+    let answered = false
+    const creating = cloud.create({
+      source: { kind: "repository", url: "https://github.com/acme/widgets" },
+      name: "Widgets",
+      onCreated: (id) => new Promise<void>((resolve) => {
+        seen.push(`start ${id}`)
+        started = resolve
+      }),
+    }).then((workspace) => {
+      answered = true
+      return workspace
+    })
+    for (let tick = 0; tick < 50 && seen.length < 2; tick += 1) await Bun.sleep(1)
+    await Bun.sleep(5)
+    expect(seen.toSorted()).toEqual(["catalog read", `start ${placementId("ws_new")}`])
+    expect(answered).toBe(false)
+    started()
+    expect(await creating).toMatchObject({ id: placementId("ws_new"), projectId: projectId("prj_widgets") })
     workspaces.dispose()
     dispose()
   })
