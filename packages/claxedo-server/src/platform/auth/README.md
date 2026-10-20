@@ -4,7 +4,7 @@ How the hosted control plane learns who a signed request comes from. Who may the
 
 ## A cookie-signed request, verified live
 
-The browser sends Better Auth's `__Secure-claxedo.session_token` cookie. The hosted core asks `options.authentication.authenticate(request)`, composed in `better-auth-d1-compose.ts` as:
+The browser sends Better Auth's `__Secure-claxedo.session_token` cookie. The hosted core asks `options.authentication.authenticate(request)`, composed in `authority/adapters/worker/better-auth-d1-compose.ts` as:
 
 1. `withBrowserPrincipalCache` (`browser-principal-cache.ts`), described below, which hands a request it cannot answer to
 2. `createControlPlaneAuthenticationAdapter` (`@claxedo/server-core/platform/auth/authentication`): refuses a cookie sent beside an `Authorization` header and a cookie from an untrusted origin, then calls
@@ -13,7 +13,7 @@ The browser sends Better Auth's `__Secure-claxedo.session_token` cookie. The hos
    - round 2, beside each other: the sign-in evidence row bound to that session (`better-auth-d1-authentication-evidence.ts`, `AUTH_DB`), which says how the person signed in, and the identity mapping (`D1ApplicationIdentityAuthority.ensureApplicationIdentity`, `CONTROL_PLANE_DB`), which names the application user and human actor and says whether they are active.
 4. The principal: user, actor, Better Auth subject and session, sign-in methods and assurance, and the browser client bound to the request's origin.
 
-Then the route runs, and its own first round carries `requireHuman` (`access-context.ts`): the identity is still linked to that user and actor and both are active. Every authorization rule (organization membership and role, workspace and session read authority, shares) is a statement of the route.
+Then the route runs, and its own first round carries `requireHuman` (`authority/adapters/d1/access-context.ts`): the identity is still linked to that user and actor and both are active. Every authorization rule (organization membership and role, workspace and session read authority, shares) is a statement of the route.
 
 ## The principal cache
 
