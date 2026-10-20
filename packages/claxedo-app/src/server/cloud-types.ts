@@ -49,7 +49,7 @@ export type CloudSourceCreateInput = {
   readonly source: Exclude<ProjectSource, { readonly kind: "folder" }>
   readonly name: string
   readonly machineClass?: MachineClass
-  readonly onCreated?: (id: PlacementId) => void
+  readonly onCreated?: (id: PlacementId) => Promise<void> | void
 }
 
 export type CloudCreateInput = CloudProjectCreateInput | CloudSourceCreateInput

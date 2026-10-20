@@ -19,9 +19,9 @@ function fakeServer() {
       start: async (id: PlacementId) => {
         calls.push({ call: "cloud.start", input: id })
       },
-      create: async ({ onCreated, ...input }: CloudCreateInput & { onCreated?: (id: PlacementId) => void }) => {
+      create: async ({ onCreated, ...input }: CloudCreateInput & { onCreated?: (id: PlacementId) => Promise<void> | void }) => {
         calls.push({ call: "cloud.create", input })
-        onCreated?.(placementId("ws_created"))
+        await onCreated?.(placementId("ws_created"))
         return { id: placementId("ws_created") }
       },
     },
@@ -33,9 +33,9 @@ test("a signed desktop that picked the cloud creates a cloud workspace with the 
   const { server, calls } = fakeServer()
   const held: Created[] = []
   const target = await createOnboardingTarget(server, t, { draft: { source: repository, name: "Widgets" }, plan: { kind: "cloud", name: "Widgets", machineClass: "large" } }, (created) => held.push(created))
-  expect(target).toEqual({ kind: "workspace", placementId: placementId("ws_created") })
-  expect(held).toEqual([target])
-  expect(calls).toEqual([{ call: "cloud.create", input: { source: repository, name: "Widgets", machineClass: "large" } }])
+  expect(target).toEqual({ kind: "workspace", placementId: placementId("ws_created"), started: true })
+  expect(held).toEqual([{ kind: "workspace", placementId: placementId("ws_created") }])
+  expect(calls).toEqual([{ call: "cloud.create", input: { source: repository, name: "Widgets", machineClass: "large" } }, { call: "cloud.start", input: placementId("ws_created") }])
 })
 
 test("a desktop that keeps this machine creates the project; a cloud choice never takes a local folder", async () => {
@@ -51,8 +51,8 @@ test("a desktop that keeps this machine creates the project; a cloud choice neve
 test("a hosted plane creates the cloud workspace from the connected repository in one signed-account call", async () => {
   const { server, calls } = fakeServer()
   const source: ProjectSource = { kind: "connectedRepository", connectionId: "gh_1", fullName: "acme/widgets" }
-  expect(await createOnboardingTarget(server, t, { draft: { source }, plan: { kind: "cloud", name: "widgets" } }, () => {})).toEqual({ kind: "workspace", placementId: placementId("ws_created") })
-  expect(calls).toEqual([{ call: "cloud.create", input: { source, name: "widgets" } }])
+  expect(await createOnboardingTarget(server, t, { draft: { source }, plan: { kind: "cloud", name: "widgets" } }, () => {})).toEqual({ kind: "workspace", placementId: placementId("ws_created"), started: true })
+  expect(calls).toEqual([{ call: "cloud.create", input: { source, name: "widgets" } }, { call: "cloud.start", input: placementId("ws_created") }])
 })
 
 test("opening picks the created placement, and a project with no placement here is a failure after creation", () => {
@@ -73,9 +73,10 @@ test("opening picks the created placement, and a project with no placement here 
   expect(finishFailure(t, new Error("Workspace creation refused"), undefined)).toBe("Workspace creation refused")
 })
 
-test("a created cloud workspace is started before it opens, so its first screen is live; a project opens as it is", async () => {
+test("a cloud workspace whose start this run did not finish is started before it opens, so its first screen is live; a started one and a project open as they are", async () => {
   const { server, calls } = fakeServer()
   await startCreated(server, { kind: "project", project: created })
+  await startCreated(server, { kind: "workspace", placementId: placementId("ws_created"), started: true })
   expect(calls).toEqual([])
   await startCreated(server, { kind: "workspace", placementId: placementId("ws_created") })
   expect(calls).toEqual([{ call: "cloud.start", input: placementId("ws_created") }])
