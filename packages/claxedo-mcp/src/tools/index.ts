@@ -7,6 +7,7 @@ import { registerSessionTools } from "./sessions"
 import { registerSubagentTools } from "./subagents"
 import { registerTaskTools } from "./tasks"
 import { registerWorkspaceTools } from "./workspaces"
+import { registerYouSearchTools } from "./you-search"
 
 /**
  * A named group of tools, the unit a project turns on or off.
@@ -48,6 +49,7 @@ export const CLAXEDO_MCP_TOOL_GROUPS = [
   { id: "subagents", reach: "runtime", register: registerSubagentTools },
   { id: "tasks", reach: "account", register: registerTaskTools },
   { id: "workspaces", reach: "runtime", register: registerWorkspaceTools },
+  { id: "you-search", reach: "account", register: registerYouSearchTools },
 ] as const satisfies readonly McpToolGroup[]
 
 export type ClaxedoMcpToolGroupId = (typeof CLAXEDO_MCP_TOOL_GROUPS)[number]["id"]

@@ -253,4 +253,13 @@ describe("a consented OAuth access token", () => {
     })
     expect(refused.status).toBe(401)
   })
+
+  test("does not expose account-reach tool groups without an explicit opt-in", async () => {
+    const { app } = oauthComposed({ reader: ["claxedo:read"] })
+    const client = await connect(app, { authorization: "Bearer reader" })
+    const names = await toolNames(client)
+    // Account-reach groups (you-search, tasks) require explicit opt-in via
+    // enabledToolGroups; the default fallback must not include them.
+    expect(names).not.toContain("you_web_search")
+  })
 })

@@ -80,6 +80,7 @@ const CLAXEDO_TOOL_NAMES = [
   "app_plugin_check",
   "app_plugin_add",
   "app_plugin_guide",
+  "you_web_search",
 ] as const
 
 export type ClaxedoToolName = (typeof CLAXEDO_TOOL_NAMES)[number]
