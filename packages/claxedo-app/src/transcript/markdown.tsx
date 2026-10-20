@@ -17,7 +17,7 @@ import {
   splitProps,
 } from "solid-js"
 import { isServer, render } from "solid-js/web"
-import { canReusePendingBlock, project, type Block, type Projection } from "./markdown-stream"
+import { project, type Block, type Projection } from "./markdown-stream"
 import { disposeStreamingCode } from "./markdown-worker"
 import { markdownBlockKey } from "./markdown-worker-protocol"
 import { sameRenderedCode, sameToken, shouldResetCodeTokens, type RenderedCodeState } from "./markdown-code-state"
@@ -29,6 +29,8 @@ import {
   entryBase,
   fallback,
   initialResult,
+  pendingBlocks,
+  settledBlock,
   syncBlock,
   syncRenderResult,
   type RenderedBlock,
@@ -493,6 +495,7 @@ export function Markdown(
   const owner = createUniqueId()
   const activeCodeKeys = new Set<string>()
   let liveBlock: RenderedBlock | undefined
+  let settled: RenderResult | undefined
   const renderSync = (index: number, block: Block): RenderedBlock => {
     if (block.mode !== "live") return syncBlock(owner, local.cacheKey, index, block)
     const key = markdownBlockKey(owner, local.cacheKey, index, block.mode)
@@ -530,8 +533,10 @@ export function Markdown(
       const base = entryBase(src.text, src.key)
       return Promise.all(
         src.projection.blocks.map(async (block, index) => {
+          const blockKey = markdownBlockKey(owner, src.key, index, block.mode)
+          const reused = settledBlock(settled?.blocks[index], blockKey, block)
+          if (reused) return reused
           if (block.mode === "code") {
-            const blockKey = markdownBlockKey(owner, src.key, index, block.mode)
             const result = await highlightCode(block.src, block.language, blockKey, block.complete)
             return {
               key: blockKey,
@@ -558,7 +563,7 @@ export function Markdown(
           })
         }),
       )
-        .then((blocks) => ({ text: src.text, blocks }) satisfies RenderResult)
+        .then((blocks) => (settled = { text: src.text, blocks }) satisfies RenderResult)
         .catch((error: unknown) => {
           console.warn("Markdown blocks could not be rendered", { error })
           if (!src.streaming) return { text: src.text, blocks: [] } satisfies RenderResult
@@ -647,27 +652,6 @@ export function Markdown(
       {...others}
     />
   )
-}
-
-function pendingBlocks(
-  result: RenderResult | undefined,
-  projection: Projection | undefined,
-  streaming: boolean | undefined,
-  renderSync: (index: number, block: Block) => RenderedBlock,
-) {
-  if (!result) return []
-  if (!projection || result.text === projection.text) return result.blocks
-  if (!streaming) return []
-  const initial = result.blocks.length === 1 && result.blocks[0]?.key === "initial"
-  return projection.blocks.map((block, index) => {
-    const current = initial ? undefined : result.blocks[index]
-    if (block.mode === "code") {
-      if (current?.mode === "code" && canReusePendingBlock(current, block)) return current
-      return renderSync(index, block)
-    }
-    if (current && current.mode !== "code" && current.raw === block.raw && "html" in current) return current
-    return renderSync(index, block)
-  })
 }
 
 function disposeCode(key: string) {
