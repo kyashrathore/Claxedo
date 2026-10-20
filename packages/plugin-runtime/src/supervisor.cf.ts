@@ -5,6 +5,7 @@ import {
   PLUGIN_CALLER_HEADER,
   PLUGIN_EVENT_LIMITS,
   PLUGIN_OBJECT_NAME_HEADER,
+  PLUGIN_TOOL_PATH_PREFIX,
   PLUGIN_WAKE_PATH_PREFIX,
   type PluginCaller,
   type PluginPlatformAnswer,
@@ -14,7 +15,7 @@ import { pluginBackendRouteAllowed } from "@claxedo/plugin-api/manifest"
 import { PluginBlobUsage } from "./blob-usage"
 import { PluginCallerHandles } from "./caller-handles"
 import { activationGeneration, verifiedBundle } from "./digest"
-import type { PluginBackendActivation, PluginHostPort, PluginRequestCaller, PluginRunScope, PluginScope } from "./host-port"
+import type { PluginAgentCaller, PluginBackendActivation, PluginHostPort, PluginRequestCaller, PluginRunScope, PluginScope } from "./host-port"
 import { admitPlatformCall, refusedCall } from "./platform-admission"
 import { pluginRefusal } from "./refusal"
 import { PluginBackendRuns, type PluginDispatch } from "./runs"
@@ -121,6 +122,21 @@ export function pluginSupervisorClass<Env extends PluginRuntimeEnv>(hostPort: (e
           return undefined
         },
         send: (worker, activation) => this.#send(worker, activation, callerOf(caller), new Request(url, { method: request.method, headers: request.headers, body: request.body })),
+      })
+    }
+
+    async tool(caller: PluginAgentCaller, name: string, body: string): Promise<Response> {
+      const { pluginId, ...agent } = caller
+      const delivery = new Request(`${PLUGIN_REQUEST_ORIGIN}${PLUGIN_TOOL_PATH_PREFIX}${encodeURIComponent(name)}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body,
+      })
+      return this.#runsFor(caller).dispatch({
+        ...refusals(pluginId),
+        refuse: (activation) =>
+          activation.manifest.backend.tools ? undefined : pluginRefusal(404, "plugin_tools_not_declared", `Plugin ${pluginId} declares no tools`),
+        send: (worker, activation) => this.#send(worker, activation, agent, delivery),
       })
     }
 

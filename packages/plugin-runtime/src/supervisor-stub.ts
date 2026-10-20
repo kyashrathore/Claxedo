@@ -1,9 +1,11 @@
 import type { PluginPlatformAnswer } from "@claxedo/plugin-api/backend"
-import type { PluginRequestCaller, PluginRunScope, PluginScope } from "./host-port"
+import type { PluginAgentCaller, PluginRequestCaller, PluginRunScope, PluginScope } from "./host-port"
 
 export type PluginSupervisorStub = {
   /** Serves a request the host forwards for `caller`, under a caller handle minted for it. Paths under `/_` are refused. */
   request(caller: PluginRequestCaller, request: Request): Promise<Response>
+  /** Delivers one tool call to the backend's `POST /_tools/<name>` with `body`, under a caller handle minted for the agent. */
+  tool(caller: PluginAgentCaller, name: string, body: string): Promise<Response>
   object(scope: PluginRunScope, className: string, name: string, request: Request): Promise<Response>
   active(scope: PluginRunScope): Promise<boolean>
   /** A platform call the backend loaded under `scope` made, with the caller handle of the request or wake it serves. */

@@ -1,6 +1,7 @@
 export { PLUGIN_CALLER_HANDLE_TTL_MS } from "./caller-handles"
 export { PluginBundleDigestError, SHA256_HEX_PATTERN } from "./digest"
 export type {
+  PluginAgentCaller,
   PluginBackendActivation,
   PluginBackendState,
   PluginHostCall,
