@@ -68,6 +68,9 @@ export function eventVisibleTo(principal: EventScopePrincipal, event: ControlPla
     case "provision":
       // A workspace is one person's: only its owner hears its machine start.
       return event.ownerUserId === principal.subject
+    case "plugin.event":
+      // One copy per member who has the plugin enabled, each naming its reader.
+      return event.recipientUserId === principal.subject
     case "usage.quota.changed":
       // Carries no figures and names no account: the quota read it provokes
       // is what applies `operator_required`.

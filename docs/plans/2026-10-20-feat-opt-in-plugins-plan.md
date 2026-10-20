@@ -494,9 +494,45 @@ Every ceiling change is the exact measured number, with its owner named in the a
   - **Where it runs.** Only the Agent Plugins entries mount the routes; they always have `PLUGIN_SUPERVISOR`, so `app_plugin_platform_unavailable` is reachable only from a composition without one. The base artifact serves no app-plugin route, and the app reads that 404 as "no app plugins" (R3).
   - **Cost.** The gate adds one D1 read to each backend request, beside the supervisor's own state read.
   - **Closures.** Agent Plugins is 232 modules and 27 packages, full-hosted 244 and 28. The base Worker is unchanged at 177 and 23.
-- [ ] **P3. Platform API v1 (hosted):** identity, projects, blobs, events, schedule, links; `@claxedo/plugin-api/backend` and `definePluginBackend`; manifest `permissions` and `tools` schema (`manifest-schema.ts`).
+- [x] **P3. Platform API v1 (hosted):** identity, projects, blobs, events, schedule, links; `@claxedo/plugin-api/backend` and `definePluginBackend`; manifest `permissions` and `tools` schema (`manifest-schema.ts`).
 - Tests: per call, the undeclared-permission refusal, the dead-epoch refusal and the caller-scoped authorization; a wake fires once with a system handle; a link resolves anonymously and stops after revoke; the blob quota.
 - Checks: plugin-api, plugin-runtime and server tests; typecheck; ratchets.
+- **As built.** The contract is `@claxedo/plugin-api/backend`; its call schema is `@claxedo/plugin-api/backend-schema`, a separate module that keeps zod out of a backend's bundle. The README tables in `packages/claxedo-plugin-api`, `packages/plugin-runtime` and `claxedo-server/src/plugin-backends` list every call, its permission, its limits and its refusals. The choices where this plan was open, or where the build differs from it:
+  - **One generic call.** `env.PLATFORM` is `object`, `active` and one generic `call(call, handle)`, which the supervisor admits. `PluginHostPort.platform(call, scope, caller)` answers what the runtime does not.
+    - The runtime answers `identity.caller` and the schedule itself. It holds the blob size and quota, the event size and rate, and the wake limits.
+    - No `scheduler` port: with no local runtime, wakes live wholly in the supervisor (`plugin_wakes` and its own alarm), and `plugin_scope` names the plugin to an alarm.
+    - P1's `env.PLATFORM.caller(handle)` is gone; `identity.caller` replaces it.
+  - **Caller origins.** A handle's caller is `{ orgId, origin, userId? }`: `person` for a signed request, `link` for a public link, `system` for a wake. `agent` arrives with tools (P6).
+    - Calls that act as a person refuse a caller without one (403 `plugin_caller_not_a_person`): projects, `links.create`, and an event to the caller or to a project.
+    - `identity.caller` has no `displayName`: the control-plane D1 stores no person's name, and Better Auth's database is not the supervisor's. This is a follow-up if a plugin needs it.
+  - **Projects.** `projects.list` answers `{ id, repoKey }`; the D1 schema has no project name. Both project calls use `may` and `maySql` with the authority's project rule, so an org member is a project viewer and owners and admins rank higher.
+  - **Blobs.**
+    - Stored in R2 at `plugin-data/<org>/<plugin>/<key>`. The supervisor's `plugin_blob_usage` reserves a put's size before the host stores it.
+    - The 1 GiB default can be overridden with `CLAXEDO_APP_PLUGIN_BLOB_QUOTA_BYTES`; the suite runs at 64 bytes.
+    - `blobs.list` pages 1,000 at a time.
+  - **Events.**
+    - A new `plugin.event` `ControlPlaneEvent` (server-core) carries `recipientUserId`, and `eventVisibleTo` delivers it to that subscriber only.
+    - The host nudges the org's live-sync room with one copy per enabled member of the audience. A `project` event needs the publisher to read the project.
+    - Plugin events are not retained for replay.
+    - The app does not decode them yet: routing them to a frame's `backend().events(...)` is P4.
+  - **Links.**
+    - Served at `GET /api/claxedo/app-plugins/links/:token`, not `/p/<token>`, because Documents mounts `/p` in every hosted profile until P8b. The URL `links.create` answers names that path, so moving it later changes only the constant (`plugin-backends/paths.ts`).
+    - Tokens are 32 random bytes, stored as their SHA-256 in `app_plugin_links`, at most 1,000 live per plugin. A link only `GET`s its declared path.
+  - **Reserved paths.**
+    - A manifest route under `/_` is refused by the schema.
+    - The supervisor refuses any forwarded request under `/_` (404 `plugin_route_reserved`), so only the platform reaches `/_wake/<name>`.
+    - `definePluginBackend` sends `/_wake/*` to `wake`.
+  - **Wakes due while inactive.** A wake that comes due while the plugin is disabled or replaced is taken off the table and dropped.
+  - **Tools and permissions.**
+    - The manifest's `backend.tools` and the release's `tools` declarations are schema only.
+    - `buildPluginRelease` refuses a manifest that declares tools until P6 extracts them.
+    - `permissions` is optional in the type, an empty list when absent, so existing manifests need no change.
+  - **Uninstall** also deletes the plugin's links (in the D1 batch), its wakes and blob accounting (with the supervisor's storage), and its `plugin-data/` prefix.
+  - **Tests.**
+    - The workerd suite exercises every call through `definePluginBackend` in the counter fixture. Its live-sync room is a recording stand-in (`RecordingRoom`), and the wake test delivers through the supervisor's `wakeDue` at a chosen time rather than waiting on the alarm.
+    - `supervisor.test.ts` pins the alarm arming over a real SQLite database.
+    - Not verified: a real alarm firing a wake in workerd or on Cloudflare (P0 measured a supervisor alarm firing once).
+  - **Closures.** Agent Plugins is 235 modules and 27 packages, full-hosted 247 and 28; the base Worker is unchanged.
 - [ ] **P4. App: installed plugins and Marketplace.**
 - `src/plugins/installed/`; `server.backend()` binding (web, desktop-signed `plugin.request` with `app: true`, daemon); events into frames; desktop runs installed plugins in frames; the Marketplace "App plugins" section with install, enable, disable and uninstall, and permission dialogs. The bundled first-party path stays until P7b and P8b.
 - Tests: app `src/plugins` (hash mismatch fails the load; a disabled plugin is never fetched; safe mode stops installed plugins) and `src/marketplace`.

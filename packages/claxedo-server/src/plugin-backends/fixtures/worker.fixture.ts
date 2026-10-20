@@ -3,9 +3,10 @@ import { Hono } from "hono"
 import { z } from "zod"
 import { pluginSupervisor, type PluginSupervisorNamespace } from "@claxedo/plugin-runtime"
 import { AuthenticationError, type ControlPlanePrincipal } from "@claxedo/server-core/platform/auth/authentication"
-import type { AgentPluginR2Bucket } from "../../agent-plugins/artifacts/r2-artifact-adapter"
+import type { AppPluginsBucket } from "../bundles"
 import { D1WorkspaceAuthority } from "../../authority/adapters/d1/workspace-authority"
 import { hostedOrgAdministers } from "../../credentials/worker/org-administers"
+import type { LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
 import { hostedAppPluginRoutes } from "../compose"
 import { registryKeysWithTestKey } from "../registry-test-key"
@@ -15,8 +16,9 @@ export { PluginOutbound, PluginPlatform } from "@claxedo/plugin-runtime/entrypoi
 
 type Env = {
   CONTROL_PLANE_DB: D1Database
-  CLAXEDO_AGENT_PLUGINS: AgentPluginR2Bucket
+  CLAXEDO_AGENT_PLUGINS: AppPluginsBucket
   PLUGIN_SUPERVISOR: PluginSupervisorNamespace
+  LIVE_SYNC_ROOM: LiveSyncRoomNamespace
   DEPLOYMENT_ID: string
   CLAXEDO_APP_PLUGIN_REGISTRY_TEST_KEY: string
 }
@@ -53,17 +55,45 @@ function principalFromBearer(request: Request, env: Env): ControlPlanePrincipal 
   }
 }
 
-const activeInput = z.object({ orgId: z.string(), pluginId: z.string(), epoch: z.number() })
+/** Stands in for `LiveSyncRoom`: it records every nudge a publisher sends it, for the test to read. */
+export class RecordingRoom {
+  constructor(private readonly state: { storage: { get(key: string): Promise<unknown>; put(key: string, value: unknown): Promise<void> } }) {}
 
-/** The supervisor's own answer to whether an epoch is current, which no public route exposes. */
-async function epochActive(request: Request, env: Env) {
+  async fetch(request: Request): Promise<Response> {
+    const stored = await this.state.storage.get("events")
+    const recorded = Array.isArray(stored) ? stored : []
+    if (new URL(request.url).pathname !== "/nudge") return Response.json(recorded)
+    const nudged: unknown = await request.json()
+    await this.state.storage.put("events", [...recorded, ...(Array.isArray(nudged) ? nudged : [nudged])])
+    return Response.json({ delivered: 0, held: 0 })
+  }
+}
+
+const activeInput = z.object({ orgId: z.string(), pluginId: z.string(), epoch: z.number() })
+const wakeInput = z.object({ orgId: z.string(), pluginId: z.string(), now: z.number() })
+
+/**
+ * The supervisor's own answers no public route exposes: whether an epoch is
+ * current, the wakes due at a later time than the clock's, and what a room
+ * was nudged with.
+ */
+async function supervisorHook(request: Request, env: Env) {
+  const path = new URL(request.url).pathname
+  if (path === "/__room") {
+    const name = new URL(request.url).searchParams.get("name") ?? ""
+    return env.LIVE_SYNC_ROOM.get(env.LIVE_SYNC_ROOM.idFromName(name)).fetch(new Request("https://room.test/events"))
+  }
+  if (path === "/__supervisor/wake-due") {
+    const input = wakeInput.parse(await request.json())
+    return Response.json({ delivered: await pluginSupervisor(env.PLUGIN_SUPERVISOR, input).wakeDue(input, input.now) })
+  }
   const input = activeInput.parse(await request.json())
   return Response.json({ active: await pluginSupervisor(env.PLUGIN_SUPERVISOR, input).active(input) })
 }
 
 export default {
   fetch(request: Request, env: Env) {
-    if (new URL(request.url).pathname === "/__supervisor/active") return epochActive(request, env)
+    if (new URL(request.url).pathname.startsWith("/__")) return supervisorHook(request, env)
     const authority = new D1WorkspaceAuthority(env.CONTROL_PLANE_DB, {
       deploymentId: env.DEPLOYMENT_ID,
       product: { kind: "claxedo-hosted" },

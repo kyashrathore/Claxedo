@@ -17,9 +17,10 @@ import {
   type AppPluginInstall,
 } from "./installs"
 import { installAppPlugin, setAppPluginActive, uninstallAppPlugin, updateAppPlugin, type AppPluginLifecyclePorts } from "./lifecycle"
+import { readPluginLink } from "./links"
 import { orgCallerOrRefusal, type OrgCaller, type OrgCallerInput } from "./org-caller"
-
-export const APP_PLUGINS_ROUTE_PREFIX = "/api/claxedo/app-plugins"
+import { APP_PLUGINS_ROUTE_PREFIX } from "./paths"
+import { forwardToPlugin } from "./routes"
 
 export type AppPluginRoutesInput = OrgCallerInput &
   Readonly<{
@@ -66,6 +67,9 @@ function refusedChange(error: unknown): Response {
  * - `GET /:id/bundles/:sha256/app.js` answers an app bundle only while that list holds it with that hash;
  * - `POST /:id/enable` and `DELETE /:id/enable` set the caller's own choice.
  *
+ * Anyone: `GET /links/:token` reads the path a plugin's live public link was
+ * created for, as a `link` caller, while the plugin is installed and active.
+ *
  * Owners and admins:
  * - `POST /` installs `{ id, version }` from the registry;
  * - `POST /:id/update` replaces it with `{ version }`;
@@ -99,6 +103,13 @@ export function appPluginRouteContribution(input: AppPluginRoutesInput): Control
   }
 
   routes.get("/", member(async (caller) => Response.json((await listEnabledAppPlugins(database, caller.orgId, caller.userId)).map(installBody))))
+
+  routes.get("/links/:token", async (context) => {
+    const supervisors = input.lifecycle.supervisors
+    const target = supervisors ? await readPluginLink(database, context.req.param("token"), input.lifecycle.now()) : undefined
+    if (!supervisors || !target) return pluginRefusal(404, "plugin_link_not_found", "No live link has that token")
+    return forwardToPlugin(supervisors, { orgId: target.orgId, pluginId: target.pluginId, origin: "link" }, { method: "GET", path: target.path, search: "", body: null })
+  })
 
   routes.get("/installed", member(async (caller) =>
     Response.json((await listAppPluginInstalls(database, caller.orgId, caller.userId)).map((install) => ({

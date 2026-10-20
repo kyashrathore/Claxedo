@@ -140,6 +140,18 @@ CREATE TABLE app_plugin_installs (
   foreign key (org_id, plugin_id) references app_plugin_epochs (org_id, plugin_id) deferrable initially deferred
 );
 
+CREATE TABLE app_plugin_links (
+  token_hash text primary key check (length(token_hash) = 64 and token_hash not glob '*[^0-9a-f]*'),
+  org_id text not null references orgs (org_id) deferrable initially deferred,
+  plugin_id text not null,
+  path text not null,
+  created_by text not null references users (user_id) deferrable initially deferred,
+  created_at integer not null,
+  expires_at integer,
+  revoked_at integer,
+  foreign key (org_id, plugin_id) references app_plugin_installs (org_id, plugin_id) deferrable initially deferred
+);
+
 CREATE TABLE app_plugin_org_defaults (
   org_id text not null references orgs (org_id) deferrable initially deferred,
   plugin_id text not null,
@@ -802,6 +814,8 @@ CREATE INDEX agent_plugin_artifact_pins_by_owner
 
 CREATE INDEX agent_plugin_sources_by_reader
   on agent_plugin_sources (org_id, authority, owner_user_id);
+
+CREATE INDEX app_plugin_links_plugin ON app_plugin_links (org_id, plugin_id);
 
 CREATE INDEX auth_identities_by_user
   on auth_identities (user_id, unlinked_at);

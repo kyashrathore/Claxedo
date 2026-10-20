@@ -33,7 +33,8 @@ A plugin is a package whose `package.json` carries a `claxedo` block:
 | `requires` | Server capabilities the plugin needs before it activates, as open ids (`^[a-z][a-z0-9-]*$`). One is offered when the server's bootstrap lists it in `deployment.capabilities`, which names the capability of each first-party server plugin it mounted: `tasks`, `documents`. |
 | `server.routes` | Claxedo server route prefixes `api.server.fetch` may call. |
 | `server.operations` | Control-plane operations `api.server.operation` may run; `documents.*` allows a namespace. Results are `unknown`; the plugin validates the response before using it. |
-| `backend` | Optional. A backend the hosted Worker loads per organization: `entry` (the module, relative to the package root), `objects` (the Durable Object classes it exports), `outbound` (the hosts it may fetch over https) and `routes` (`METHOD /path` patterns, where `:name` matches one segment and a trailing `*` one or more). `packages/plugin-runtime/README.md` describes the runtime and `packages/claxedo-server/src/plugin-backends/README.md` the hosted Worker around it. |
+| `permissions` | Optional. The platform calls the backend may make, from `PLUGIN_PERMISSIONS`: `projects.read`, `sessions.read`, `sessions.start`, `workspaces.cloud`, `tools`, `blobs`, `events`, `schedule`, `links`, `session-files`. A call whose permission is not listed is refused. |
+| `backend` | Optional. A backend the hosted Worker loads per organization: `entry` (the module, relative to the package root), `objects` (the Durable Object classes it exports), `outbound` (the hosts it may fetch over https), `routes` (`METHOD /path` patterns, where `:name` matches one segment and a trailing `*` one or more, never under `/_`, which is the platform's) and optionally `tools` (a `group` with `id` and `label`, and the `definitions` module). `packages/plugin-runtime/README.md` describes the runtime and `packages/claxedo-server/src/plugin-backends/README.md` the hosted Worker around it. |
 
 `readPluginManifest(packageJson)` validates the block and throws `PluginManifestError` with one issue per problem. `pluginBackendRouteAllowed(backend, method, path)` answers whether a request matches a declared backend route.
 
@@ -65,9 +66,29 @@ A plugin is a package whose `package.json` carries a `claxedo` block:
 
 `@claxedo/plugin-api/surface` is the A2UI v0.9 contract an agent's `ui_show` reply and a plugin's surface page share: the catalog (`catalog.ts`), the messages (`messages.ts`), the spec check (`spec.ts`), and `SURFACE_DESIGN_GUIDE` (`design-guide.ts`), the design guidance the `ui_guide` MCP tool serves. Every recipe in the guide is a complete spec that `design-guide.test.ts` checks.
 
+## Backends
+
+`@claxedo/plugin-api/backend` is what a backend is written against. `definePluginBackend({ fetch(request, platform), wake?(name, payload, platform) })` is its default export:
+
+- a request to one of the manifest's routes reaches `fetch`, with the platform bound to that request's caller handle;
+- a due wake reaches `wake`, once, with a `system` caller.
+
+`pluginPlatform(env.PLATFORM, request)` is the same typed platform for a backend that routes for itself. A refused call throws `PluginPlatformError` with the platform's `status` and `code`.
+
+| Member | Permission | Does |
+| --- | --- | --- |
+| `object(className, name, request)` | none | One of the plugin's own Durable Objects. Every object shares one `ctx.id`, so an object reads its own name from `x-claxedo-object-name`, never from `ctx.id`. |
+| `active()` | none | Whether this backend is still the plugin's current activation. |
+| `identity.caller()` | none | `{ orgId, origin, userId? }`: a `person` (or later an `agent`) with their user id, a `link` or a `system` wake without one. |
+| `projects.list()`, `projects.authorize(projectId, "read" \| "write")` | `projects.read` | As the caller, who must be a person. |
+| `blobs.put(key, bytes, { contentType })`, `get`, `head`, `delete`, `list({ prefix, cursor })` | `blobs` | The plugin's own files in its organization. Keys match `PLUGIN_BLOB_LIMITS.keyPattern` with no empty, `.` or `..` segment. A blob is at most 16 MiB, and a plugin holds 1 GiB per organization by default. |
+| `events.publish({ audience, projectId?, topic, data? })` | `events` | Tells the frontend of every member in the audience who has the plugin enabled: `caller`, a `project`'s readers, or the `org`. Data is at most 8 KiB of JSON, 10 events a second. |
+| `schedule.at(name, at, payload?)`, `cancel(name)`, `list()` | `schedule` | Wakes at least 30 s ahead, at most 100, payload at most 4 KiB. Use these, not a Durable Object alarm. |
+| `links.create({ path, expiresAt? })`, `links.revoke(token)` | `links` | A public link that reads `GET path` without signing in, as a `link` caller, until it expires or is revoked. |
+
 ## Releases
 
-`@claxedo/plugin-api/release` is what the registry publishes and a hosted Worker installs: `PluginRelease` (`id`, `version`, the validated `manifest`, `app` and an optional `backend` as `{ sha256, size }` with the full 64-hex SHA-256, a forward-only `storage` generation, `builtAt`) and `SignedPluginRelease` (`release`, a base64 Ed25519 `signature` over `canonicalJsonText(release)`, `keyId`). `verifyPluginRelease(signed, keys)` verifies the signature under the named key, then parses the release and checks that its manifest names the same id and version and declares a backend exactly when a backend bundle is present. `PLUGIN_REGISTRY_KEYS` pins the registry's public keys; it is empty until the registry's production key is issued. `PLUGIN_BUNDLE_MAX_BYTES` (10 MiB) bounds each bundle.
+`@claxedo/plugin-api/release` is what the registry publishes and a hosted Worker installs: `PluginRelease` (`id`, `version`, the validated `manifest`, `app` and an optional `backend` as `{ sha256, size }` with the full 64-hex SHA-256, a forward-only `storage` generation, `tools` (each agent tool's `name`, `title`, `description`, `inputSchema` and `access`, present exactly when the manifest declares a tool group), `builtAt`) and `SignedPluginRelease` (`release`, a base64 Ed25519 `signature` over `canonicalJsonText(release)`, `keyId`). `verifyPluginRelease(signed, keys)` verifies the signature under the named key, then parses the release and checks that its manifest names the same id and version and declares a backend exactly when a backend bundle is present. `PLUGIN_REGISTRY_KEYS` pins the registry's public keys; it is empty until the registry's production key is issued. `PLUGIN_BUNDLE_MAX_BYTES` (10 MiB) bounds each bundle.
 
 ## CLI commands
 

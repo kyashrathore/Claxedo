@@ -1,19 +1,20 @@
 import { WorkerEntrypoint } from "cloudflare:workers"
 import type { Request as WorkerRequest, Response as WorkerResponse } from "@cloudflare/workers-types"
-import type { PluginCallerRecord, PluginRunScope } from "./host-port"
+import type { PluginPlatformAnswer } from "@claxedo/plugin-api/backend"
+import type { PluginRunScope } from "./host-port"
 import { pluginRefusal } from "./refusal"
 import { pluginSupervisor } from "./supervisor-stub"
 import type { PluginRuntimeEnv } from "./supervisor.cf"
 
 /**
- * `env.PLATFORM` inside a loaded backend, bound by the supervisor to the
- * activation epoch it loaded, so a plugin names objects but never an
- * organization, and a backend whose epoch has ended reaches nothing.
+ * `env.PLATFORM` inside a loaded backend (`PluginPlatformBinding` in
+ * `@claxedo/plugin-api/backend`), bound by the supervisor to the activation
+ * epoch it loaded, so a plugin names objects but never an organization, and a
+ * backend whose epoch has ended reaches nothing.
  * `object(className, name, request)` reaches an object of the plugin's;
  * `active()` answers whether this epoch is still the current activation;
- * `caller(handle)` names the person a request's `x-claxedo-caller` handle was
- * minted for, or null for a handle this run did not mint, one that expired,
- * or any handle once the epoch has ended.
+ * `call(call, handle)` is every other platform call, admitted by the
+ * supervisor against the manifest's permissions and the handle's caller.
  */
 export class PluginPlatform extends WorkerEntrypoint<PluginRuntimeEnv, PluginRunScope> {
   object(className: string, name: string, request: Request): Promise<Response> {
@@ -24,8 +25,8 @@ export class PluginPlatform extends WorkerEntrypoint<PluginRuntimeEnv, PluginRun
     return pluginSupervisor(this.env.PLUGIN_SUPERVISOR, this.ctx.props).active(this.ctx.props)
   }
 
-  caller(handle: string): Promise<PluginCallerRecord | null> {
-    return pluginSupervisor(this.env.PLUGIN_SUPERVISOR, this.ctx.props).caller(this.ctx.props, handle)
+  call(call: unknown, handle?: string): Promise<PluginPlatformAnswer> {
+    return pluginSupervisor(this.env.PLUGIN_SUPERVISOR, this.ctx.props).platform(this.ctx.props, call, handle)
   }
 }
 

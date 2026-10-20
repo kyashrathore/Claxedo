@@ -4,7 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { sha256Hex } from "@claxedo/helpers/crypto"
 import { verifyPluginRelease } from "@claxedo/plugin-api/release"
-import { buildPluginRelease, signPluginRelease } from "./index"
+import { buildPluginRelease, PluginBuildError, signPluginRelease } from "./index"
 
 let root: string
 
@@ -46,6 +46,14 @@ describe("buildPluginRelease", () => {
     const pair = (await crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"])) as CryptoKeyPair
     const publicKey = btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey))))
     expect(await verifyPluginRelease(await signPluginRelease(release, pair.privateKey, "test"), { test: publicKey })).toEqual(release)
+  })
+
+  test("refuses a plugin that declares agent tools, whose declarations a release cannot carry yet", async () => {
+    const dir = await writePlugin("with-tools", true)
+    const packageJson = JSON.parse(await fs.readFile(path.join(dir, "package.json"), "utf8")) as { claxedo: { backend: Record<string, unknown> } }
+    packageJson.claxedo.backend.tools = { group: { id: "with-tools", label: "With tools" }, definitions: "./src/backend.ts" }
+    await fs.writeFile(path.join(dir, "package.json"), JSON.stringify(packageJson))
+    expect(await buildPluginRelease({ rootDir: dir }).catch((error: unknown) => error)).toBeInstanceOf(PluginBuildError)
   })
 
   test("carries no backend for an app-only plugin", async () => {

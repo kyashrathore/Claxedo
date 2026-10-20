@@ -183,6 +183,22 @@ export type PluginsChangedEvent = {
 }
 
 /**
+ * An app plugin's backend published `topic` to its frontend. The publisher
+ * sends one copy per recipient, each a member who has the plugin enabled, so
+ * the notice reaches only `recipientUserId`.
+ *
+ * Publisher: the hosted plugin platform (`claxedo-server/src/plugin-backends/platform-host.ts`).
+ */
+export type PluginEventEvent = {
+  type: "plugin.event"
+  pluginId: string
+  topic: string
+  data?: unknown
+  recipientUserId: string
+  ts: number
+}
+
+/**
  * A cloud workspace's machine start began (`starting`) or settled: serving
  * (`ready`), its lease stopped or replaced under it (`stopped`), or failed
  * (`error`). A doorbell: the client re-reads the workspace catalog. The hosted
@@ -229,5 +245,6 @@ export type ControlPlaneEvent =
   | SessionReaderChangedEvent
   | UsageQuotaChangedEvent
   | PluginsChangedEvent
+  | PluginEventEvent
 
 export const controlBus = createBus<ControlPlaneEvent>()

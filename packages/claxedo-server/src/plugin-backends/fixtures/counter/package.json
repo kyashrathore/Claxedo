@@ -7,11 +7,39 @@
     "name": "Counter",
     "version": "0.1.0",
     "app": "./src/app.js",
+    "permissions": ["projects.read", "blobs", "events", "schedule", "links"],
     "backend": {
       "entry": "./src/backend.js",
       "objects": ["Counter"],
       "outbound": ["allowed.example.com"],
-      "routes": ["GET /", "GET /instance", "GET /count", "POST /count", "GET /whoami", "GET /name","POST /handles/resolve","GET /outbound", "GET /objects/:className", "GET /fail", "GET /active", "GET /held"]
+      "routes": [
+        "GET /",
+        "GET /instance",
+        "GET /count",
+        "POST /count",
+        "GET /whoami",
+        "GET /name",
+        "GET /public",
+        "POST /handles/resolve",
+        "GET /outbound",
+        "GET /objects/:className",
+        "GET /fail",
+        "GET /active",
+        "GET /held",
+        "GET /projects",
+        "GET /projects/:projectId/authorize/:access",
+        "GET /blobs",
+        "GET /blobs/*",
+        "PUT /blobs/*",
+        "DELETE /blobs/*",
+        "POST /events/:audience",
+        "GET /wakes",
+        "GET /wakes/log",
+        "POST /wakes/:name",
+        "DELETE /wakes/:name",
+        "POST /links",
+        "DELETE /links/:token"
+      ]
     }
   }
 }
