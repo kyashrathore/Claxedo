@@ -15,6 +15,7 @@ import { CategoryChips, SourceChips } from "./directory-chips"
 import { DirectoryHeader } from "./directory-header"
 import { CatalogSkeleton, DirectoryAlerts, PluginSectionList } from "./directory-sections"
 import { useInstallDrawer } from "./install-drawer"
+import { useAppPlugins } from "../app-plugins/use-app-plugins"
 
 function moveCardFocus(grid: HTMLElement | undefined, step: number) {
   if (!grid) return
@@ -56,7 +57,7 @@ function createCardAction(
 
 function directoryKeys(selection: ReturnType<typeof createSelection>, grid: () => HTMLElement | undefined) {
   return (event: KeyboardEvent) => {
-    if (event.key === "Escape" && selection.selectedId()) {
+    if (event.key === "Escape" && (selection.selectedId() || selection.selectedAppId())) {
       event.preventDefault()
       selection.closePlugin()
       return
@@ -88,6 +89,8 @@ export function MarketplacePage(): JSX.Element {
     if (catalog) await openInstall(plugin, catalog.revision, catalog.supportedHarnesses)
   }
   const cardAction = createCardAction(actions, add)
+  const apps = useAppPlugins({ query: directory.query, selection })
+  const unfiltered = () => directory.filter() === ALL && directory.category() === ALL
   let grid: HTMLDivElement | undefined
   const onKeyDown = directoryKeys(selection, () => grid)
   return (
@@ -104,6 +107,7 @@ export function MarketplacePage(): JSX.Element {
         onActivate={(plugin, choice) => void actions.activate(plugin, choice)}
         onUpdate={(plugin) => void actions.update(plugin)}
         onToolGroup={(plugin, group, enabled) => void actions.setToolGroup(plugin, group, enabled)}
+        appPlugin={apps.panel()}
       >
         <div class="min-h-0 min-w-0 flex-1 overflow-y-auto px-6 py-5">
           <div class="mx-auto flex max-w-5xl flex-col gap-4">
@@ -136,13 +140,14 @@ export function MarketplacePage(): JSX.Element {
               <CatalogSkeleton />
             </Show>
             <div ref={grid} class="flex flex-col gap-6">
+              <Show when={unfiltered()}>{apps.section()}</Show>
               <PluginSectionList
                 sections={directory.sections()}
                 selectedId={selection.selectedId()}
                 action={cardAction}
                 onOpen={(plugin) => selection.openPlugin(plugin.pluginInstanceId)}
               />
-              <Show when={directory.sections().length === 0 && !directory.catalog.isPending}>
+              <Show when={directory.sections().length === 0 && !directory.catalog.isPending && (!unfiltered() || apps.count() === 0)}>
                 <p class="text-13-regular text-text-weak">{t("marketplace.noMatches")}</p>
               </Show>
             </div>

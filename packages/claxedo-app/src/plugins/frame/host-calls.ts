@@ -1,13 +1,21 @@
 import type { PluginApi } from "@claxedo/plugin-api"
 import { unreachable } from "@/lib/machine"
-import type { HostCall } from "./protocol"
+import type { FrameRequestInit, HostCall } from "./protocol"
 import { frameResponseOf } from "./response-body"
 
 export type CallProgress = (text: string | undefined) => void
 
+function requestInitOf(init: FrameRequestInit): RequestInit {
+  const headers = (init.headers ?? []).map(([name, value]): [string, string] => [name, value])
+  return { method: init.method, headers, body: init.body }
+}
+
 async function fetched(api: PluginApi, call: Extract<HostCall, { method: "server.fetch" }>) {
-  const headers = (call.init.headers ?? []).map(([name, value]): [string, string] => [name, value])
-  return frameResponseOf(await api.server.fetch(call.path, { method: call.init.method, headers, body: call.init.body }))
+  return frameResponseOf(await api.server.fetch(call.path, requestInitOf(call.init)))
+}
+
+async function fetchedFromBackend(api: PluginApi, call: Extract<HostCall, { method: "server.backend.fetch" }>) {
+  return frameResponseOf(await api.server.backend().fetch(call.path, requestInitOf(call.init)))
 }
 
 export async function performCall(api: PluginApi, call: HostCall, progress: CallProgress): Promise<unknown> {
@@ -38,6 +46,8 @@ export async function performCall(api: PluginApi, call: HostCall, progress: Call
       return fetched(api, call)
     case "server.operation":
       return api.server.operation(call.name, call.input)
+    case "server.backend.fetch":
+      return fetchedFromBackend(api, call)
     case "ui.toast":
       return api.ui.toast(call.toast)
     case "ui.confirm":

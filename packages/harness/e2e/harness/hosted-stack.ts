@@ -9,7 +9,7 @@ import { reservePort, releasePort } from "./ports"
 import { startScriptedModelServer } from "./scripted-model-server"
 
 /** `origin` is the public origin the Worker is addressed at and the app is served from; absent, the Worker's own loopback origin. */
-export type HostedStackOptions = { origin?: string; emailPassword?: boolean; relayPort?: number; workerEnv?: Readonly<Record<string, string>>; requestLimit?: number }
+export type HostedStackOptions = { origin?: string; emailPassword?: boolean; relayPort?: number; workerEnv?: Readonly<Record<string, string>>; requestLimit?: number; appPluginRegistry?: { dir: string; testKey: string } }
 
 export const HOSTED_SANDBOX_TEST_TOKEN = "hosted-sandbox-test-token"
 
@@ -44,7 +44,7 @@ export async function startHostedStack(label: string, options: HostedStackOption
       relayUrl,
     })
     control = await startHostedControlPlane({ root, port: workerPort, sandboxOrigin, gitUrl: git.url, relayUrl, credentials,
-      origin: workerUrl, emailPassword: options.emailPassword, workerEnv: options.workerEnv, requestLimit: options.requestLimit })
+      origin: workerUrl, emailPassword: options.emailPassword, workerEnv: options.workerEnv, requestLimit: options.requestLimit, appPluginRegistry: options.appPluginRegistry })
     relay = await startHostedRelay({ root, port: relayPort, controlPlaneUrl: workerUrl, certificate: credentials.certificate, allowedOrigins: [workerUrl],
       modelUrl: model.url })
   } catch (error) {

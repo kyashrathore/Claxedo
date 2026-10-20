@@ -14,8 +14,12 @@ const APP = "packages/claxedo-app/src"
  * Nothing resolves them from a package manifest, so a walk without this list
  * answers "unresolved" for every app module and reports a clean product it
  * never opened. `#app/styles` comes before `#app`, whose target is a file.
+ * `virtual:claxedo-frame-runtime` is the app's plugin frame runtime, which
+ * `vite.frame-runtime.ts` builds from `plugins/frame/runtime/index.ts` into a
+ * string chunk; the walk follows that entry so the runtime's modules count.
  */
 const RENDERER_ALIASES: Alias[] = [
+  { prefix: "virtual:claxedo-frame-runtime", target: `${APP}/plugins/frame/runtime/index.ts` },
   { prefix: "#app/styles", target: `${APP}/styles.css` },
   { prefix: "#app", target: `${APP}/app.tsx` },
   { prefix: "#account-binding", target: `${APP}/auth/electron-binding.ts` },
@@ -551,8 +555,18 @@ export const desktopRenderer: Policy = {
   // @tiptap/extensions, @tiptap/extension-list, @tiptap/markdown and
   // @tiptap/suggestion, which a plugin page's rich text fields need and no
   // other part of the app draws.
-  // 1567/44, no headroom.
-  ceilings: { modules: 1567, packages: 44 },
+  // The organization's installed app plugins: the adapter's reads and writes
+  // and their wire (owner: the app's server adapter, `server/app-plugins.ts`,
+  // `server/wire/app-plugins.ts`, `server/wire/plugin-manifest.ts`), the host's
+  // verified load into the sandboxed frame (owner: the app's plugin host,
+  // `plugins/installed/*`), and the Marketplace's App plugins section (owner:
+  // the Marketplace, `marketplace/app-plugins/*`, with the card, header and
+  // pending write it shares with the agent-plugin directory,
+  // `marketplace/view/detail-header.tsx` and `marketplace/pending-write.ts`).
+  // A signed desktop runs them, so the renderer carries them. They add no
+  // package edge.
+  // 1587/44, no headroom.
+  ceilings: { modules: 1587, packages: 44 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

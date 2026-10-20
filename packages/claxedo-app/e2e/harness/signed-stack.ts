@@ -1,4 +1,5 @@
 import { expect, type Page } from "@playwright/test"
+import { createTestRegistry, type TestRegistry } from "./app-plugin-registry"
 import { ClaxedoApi } from "./api"
 import { safeLabel, startStack, type StackInput } from "./stack"
 import { startHostedStack } from "../../../harness/e2e/harness/hosted-stack"
@@ -35,10 +36,11 @@ export type SignedStack = {
   makeWorkspace(name: string, projectName?: string): Promise<Workspace>
   runtime(workspaceId: string): HttpTransport
   controlPlaneRequests(): readonly string[]
+  appPluginRegistry: TestRegistry | undefined
   close(): Promise<void>
 }
 
-export type SignedStackInput = StackInput & { frontPort: number; relayPort: number; distDir: string; shaping?: FrontShaping; workerEnv?: Readonly<Record<string, string>>; requestLimit?: number }
+export type SignedStackInput = StackInput & { frontPort: number; relayPort: number; distDir: string; shaping?: FrontShaping; workerEnv?: Readonly<Record<string, string>>; requestLimit?: number; appPluginRegistry?: boolean }
 
 export function sessionCookie(url: string, account: Account) {
   const separator = account.person.cookie.indexOf("=")
@@ -53,7 +55,11 @@ export function signedOrigin(frontPort: number) {
 
 export async function startSignedStack(input: SignedStackInput): Promise<SignedStack> {
   const origin = signedOrigin(input.frontPort)
-  const hosted = await startHostedStack(safeLabel(input.label), { origin, emailPassword: true, relayPort: input.relayPort, workerEnv: input.workerEnv, requestLimit: input.requestLimit })
+  const registry = input.appPluginRegistry ? await createTestRegistry() : undefined
+  const hosted = await startHostedStack(safeLabel(input.label), {
+    origin, emailPassword: true, relayPort: input.relayPort, workerEnv: input.workerEnv, requestLimit: input.requestLimit,
+    ...(registry ? { appPluginRegistry: { dir: registry.dir, testKey: registry.testKey } } : {}),
+  })
   let front: Awaited<ReturnType<typeof startHostedAppFront>> | undefined
   let local: Awaited<ReturnType<typeof startStack>> | undefined
   let machine: Awaited<ReturnType<typeof startHostedMachine>> | undefined
@@ -107,7 +113,7 @@ export async function startSignedStack(input: SignedStackInput): Promise<SignedS
     const host = machine
     const localStack = local
     return {
-      url: origin, trust: opened.trust, hosted, local: localStack, owner, signUp,
+      url: origin, trust: opened.trust, hosted, local: localStack, owner, signUp, appPluginRegistry: registry,
       signIn: async (page, account) => {
         await page.goto(`${origin}/login`)
         await page.getByRole("textbox", { name: "Email" }).fill(account.email)
@@ -127,6 +133,7 @@ export async function startSignedStack(input: SignedStackInput): Promise<SignedS
         await localStack.close()
         await hosted.close()
         await opened.close()
+        await registry?.close()
       },
     }
   } catch (error) {
@@ -134,6 +141,7 @@ export async function startSignedStack(input: SignedStackInput): Promise<SignedS
     await local?.close()
     await hosted.close()
     await front?.close()
+    await registry?.close()
     throw error
   }
 }

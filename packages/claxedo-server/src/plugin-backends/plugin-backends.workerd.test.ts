@@ -5,7 +5,7 @@ import type { D1Database } from "@cloudflare/workers-types"
 import { sha256Hex } from "@claxedo/helpers/crypto"
 import type { PluginManifest } from "@claxedo/plugin-api/manifest"
 import type { PluginRelease } from "@claxedo/plugin-api/release"
-import { buildPluginRelease, signPluginRelease } from "@claxedo/plugin-build"
+import { buildPluginRelease, signPluginIndex, signPluginRelease } from "@claxedo/plugin-build"
 import type { AuthIdentity } from "@claxedo/server-core/platform/auth/authentication"
 import { D1WorkspaceAuthority } from "../authority/adapters/d1/workspace-authority"
 import { D1ApplicationIdentityAuthority } from "../authority/adapters/d1/application-identity"
@@ -226,6 +226,26 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await miniflare?.dispose()
+})
+
+describe("the catalog of what the registry publishes", () => {
+  test("lists the registry's signed index to every member, and tells an owner they manage installs and a member they do not", async () => {
+    const index = { entries: [{ id: "counter", name: "Counter", description: "Counts", latest: "0.1.0", versions: ["0.1.0"], manifest: baseManifest }], builtAt: "2026-10-20T00:00:00.000Z" }
+    registry.set("/index.json", JSON.stringify(await signPluginIndex(index, signingKey, "test")))
+    const listed = { registry: "listed", plugins: [expect.objectContaining({ id: "counter", name: "Counter", description: "Counts", latest: "0.1.0", versions: ["0.1.0"], available: true })] }
+    expect(await appPlugins(alice, "GET", "/catalog")).toEqual({ status: 200, body: { canManage: true, ...listed } })
+    expect(await appPlugins(carol, "GET", "/catalog")).toEqual({ status: 200, body: { canManage: false, ...listed } })
+    expect(await appPlugins(dave, "GET", "/catalog")).toEqual(refusal(403, "workspace_authorization_denied"))
+  })
+
+  test("answers the registry unavailable, with nothing listed, when its index is missing or does not verify", async () => {
+    const signed = JSON.parse(registry.get("/index.json")!) as Record<string, unknown>
+    registry.set("/index.json", JSON.stringify({ ...signed, keyId: "unknown" }))
+    expect(await appPlugins(alice, "GET", "/catalog")).toEqual({ status: 200, body: { canManage: true, registry: "unavailable", plugins: [] } })
+    registry.delete("/index.json")
+    expect(await appPlugins(carol, "GET", "/catalog")).toEqual({ status: 200, body: { canManage: false, registry: "unavailable", plugins: [] } })
+    registry.set("/index.json", JSON.stringify(signed))
+  })
 })
 
 describe("installing an app plugin from the registry", () => {

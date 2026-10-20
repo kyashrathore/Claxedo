@@ -1,12 +1,12 @@
+import path from "node:path"
 import type { Locator, Page } from "@playwright/test"
+import { hostedFetch } from "../../../harness/e2e/harness/hosted-auth"
 import {
-  APP_PLUGIN_WARNING,
-  approveAppPlugin,
-  appPluginRow,
   expect,
   expectNothingAnimating,
-  listLivePlugins,
-  registerLivePlugin,
+  installAndEnable,
+  readAs,
+  SURFACE_FIXTURE_ID,
   SURFACE_FIXTURE_IMAGE,
   SURFACE_FIXTURE_NAME,
   SURFACE_FIXTURE_NO_PROJECT,
@@ -18,9 +18,10 @@ import {
   test,
   UI,
   writeSurfaceFixturePlugin,
+  type SignedStack,
 } from "../harness"
 
-type FixtureStack = { readonly url: string; readonly dataDir: string }
+test.use({ signedAppPluginRegistry: true })
 
 async function openFixtureFromRail(app: Page, isMobile: boolean) {
   const row = app.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: SURFACE_FIXTURE_NAME, exact: true })
@@ -35,18 +36,21 @@ async function openFixtureFromRail(app: Page, isMobile: boolean) {
   await row.click()
 }
 
-async function openSurfaceFixture(stack: FixtureStack, app: Page, isMobile: boolean) {
-  expect(await registerLivePlugin(stack.url, await writeSurfaceFixturePlugin(stack.dataDir))).toMatchObject({ id: "surface-fixture", status: "ready" })
-  await app.goto(`${stack.url}/settings/app-plugins`)
-  await approveAppPlugin(app, `Turn on the app plugin ${SURFACE_FIXTURE_NAME}?`, APP_PLUGIN_WARNING.web)
-  await expect(appPluginRow(app, SURFACE_FIXTURE_NAME)).toContainText("On")
-  await app.goto(stack.url)
+async function openSurfaceFixture(signed: SignedStack, app: Page, isMobile: boolean) {
+  await signed.appPluginRegistry?.publish(await writeSurfaceFixturePlugin(path.join(signed.local.dataDir, "registry-plugins")))
+  await installAndEnable(signed, { id: SURFACE_FIXTURE_ID, version: "0.1.0" })
+  await signed.signIn(app, signed.owner)
+  await app.goto(signed.url)
   await expect(app).toHaveURL(/\/w\/[^/]+\/session$/)
   await openFixtureFromRail(app, isMobile)
   await expect(app).toHaveURL(new RegExp(`${SURFACE_FIXTURE_PATH}$`))
   const surface = app.locator('[data-component="surface"][data-source="plugin"]')
   await expect(surface).toBeVisible()
   return surface
+}
+
+async function expectInstalledFixture(signed: SignedStack) {
+  expect(await readAs(signed, signed.owner, "/api/claxedo/app-plugins")).toMatchObject({ status: 200, body: [{ id: SURFACE_FIXTURE_ID, version: "0.1.0" }] })
 }
 
 async function moveCardsOnTheBoard(surface: Locator, isMobile: boolean) {
@@ -98,11 +102,11 @@ async function attachAndSearch(surface: Locator) {
   await expect(project).toHaveValue("Docs site")
 }
 
-test("61 an app plugin's surface page opens from the sidebar, draws natively in the app's document, and answers its button, its images, its input events, its board moves, its picked files and its searched choices", async ({ stack, app, isMobile }) => {
-  await stack.daemon.makeWorkspace("surface-page", "Surface project")
+test("61 an app plugin's surface page opens from the sidebar, draws natively in the app's document, and answers its button, its images, its input events, its board moves, its picked files and its searched choices", async ({ signed, page: app, isMobile }) => {
+  await signed.makeWorkspace("surface-page", "Surface project")
   const requested: string[] = []
   app.on("request", (request) => requested.push(request.url()))
-  const surface = await openSurfaceFixture(stack, app, isMobile)
+  const surface = await openSurfaceFixture(signed, app, isMobile)
   await expect(surface.locator('[data-slot="surface-source"]')).toHaveText(`${SURFACE_FIXTURE_NAME} · app plugin`)
   await expect(surface.getByRole("heading", { name: SURFACE_FIXTURE_NAME })).toBeVisible()
   await expect(surface.getByText("First item", { exact: true })).toBeVisible()
@@ -128,25 +132,24 @@ test("61 an app plugin's surface page opens from the sidebar, draws natively in 
 
   await moveCardsOnTheBoard(surface, isMobile)
   await attachAndSearch(surface)
-  expect((await listLivePlugins(stack.url)).plugins).toEqual([expect.objectContaining({ id: "surface-fixture", status: "ready" })])
+  await expectInstalledFixture(signed)
 })
 
-test("61 a surface page opened for another project reads that project when it opens", async ({ stack, app, isMobile }) => {
-  await stack.daemon.makeWorkspace("surface-page", "Surface project")
-  const second = await stack.daemon.makeWorkspace("surface-second", "Second project")
-  const surface = await openSurfaceFixture(stack, app, isMobile)
+test("61 a surface page opened for another project reads that project when it opens", async ({ signed, page: app, isMobile }) => {
+  await signed.makeWorkspace("surface-page", "Surface project")
+  const second = await signed.makeWorkspace("surface-second", "Second project")
+  const surface = await openSurfaceFixture(signed, app, isMobile)
   await surface.getByRole("button", { name: "Open Second project" }).click()
   await expect(app).toHaveURL(new RegExp(`${SURFACE_FIXTURE_PATH}/projects/${second.projectId}$`))
   await expect(surface.getByRole("heading", { name: "Fixture project" })).toBeVisible()
   await expect(surface.getByText("Second project", { exact: true })).toBeVisible()
   await expect(surface.getByText(SURFACE_FIXTURE_NO_PROJECT, { exact: true })).toHaveCount(0)
-  const projects = (await (await fetch(new URL("/api/claxedo/projects", stack.url))).json()) as { projects: { id: string; name: string }[] }
-  expect(projects.projects).toContainEqual(expect.objectContaining({ id: second.projectId, name: "Second project" }))
+  await expectInstalledFixture(signed)
 })
 
-test("61 a plugin tab page keeps its state when its route params change, and opens its own surface settings section", async ({ stack, app, isMobile }) => {
-  await stack.daemon.makeWorkspace("surface-page", "Surface project")
-  const surface = await openSurfaceFixture(stack, app, isMobile)
+test("61 a plugin tab page keeps its state when its route params change, and opens its own surface settings section", async ({ signed, page: app, isMobile }) => {
+  await signed.makeWorkspace("surface-page", "Surface project")
+  const surface = await openSurfaceFixture(signed, app, isMobile)
   await expect(app.getByTestId("shell-center")).toHaveAttribute("data-center", "panes")
   if (!isMobile) {
     await app.getByRole("button", { name: UI.hideSidebar }).click()
@@ -169,13 +172,13 @@ test("61 a plugin tab page keeps its state when its route params change, and ope
   await expect(settings.locator('[data-slot="surface-source"]')).toHaveText(`${SURFACE_FIXTURE_NAME} · app plugin`)
   await expect(settings.locator('[data-action="prompt-harness-model"]')).toBeVisible()
   await expect(settings.getByText(/^Harness: (?!none$)\S+$/)).toBeVisible()
-  expect((await listLivePlugins(stack.url)).plugins).toEqual([expect.objectContaining({ id: "surface-fixture", status: "ready" })])
+  await expectInstalledFixture(signed)
 })
 
-test("61 a web plugin reads a binary response through its frame byte for byte", async ({ stack, app, isMobile }) => {
-  const workspace = await stack.daemon.makeWorkspace("surface-page", "Surface project")
-  const image = await storeSurfaceFixtureImage(stack.url, workspace.projectId)
-  const surface = await openSurfaceFixture(stack, app, isMobile)
+test("61 a web plugin reads a binary response through its frame byte for byte", async ({ signed, page: app, isMobile }) => {
+  const workspace = await signed.makeWorkspace("surface-page", "Surface project")
+  const image = await storeSurfaceFixtureImage(signed.hosted.workerUrl, workspace.projectId, (url, init) => hostedFetch(signed.hosted, url, init, signed.owner.person))
+  const surface = await openSurfaceFixture(signed, app, isMobile)
   await surface.getByRole("textbox", { name: "Fetch path" }).fill(image.path)
   await surface.getByRole("button", { name: "Fetch bytes" }).click()
   const hex = Array.from(SURFACE_FIXTURE_IMAGE, (byte) => byte.toString(16).padStart(2, "0")).join(" ")

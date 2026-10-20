@@ -16,12 +16,13 @@ type MarketplaceDetailsProps = ParentProps<{
   readonly onActivate: (plugin: PluginCandidate, choice: boolean | null) => void
   readonly onUpdate: (plugin: PluginCandidate) => void
   readonly onToolGroup: (plugin: PluginCandidate, group: PluginToolGroup, enabled: boolean) => void
+  readonly appPlugin: { readonly name: string; readonly details: () => JSX.Element } | undefined
 }>
 
 export function MarketplaceDetailsPanel(props: MarketplaceDetailsProps): JSX.Element {
   const t = useTranslator(marketplaceDictionary)
   const size = createMarketplacePanelSize()
-  const open = () => !!props.selection.selected()
+  const open = () => !!props.selection.selected() || !!props.appPlugin
   createEffect(
     on(open, (shown) => {
       if (!shown) size.setFullWidth(false)
@@ -29,7 +30,7 @@ export function MarketplaceDetailsPanel(props: MarketplaceDetailsProps): JSX.Ele
   )
   const name = () => {
     const plugin = props.selection.selected()
-    return plugin ? pluginLabel(plugin) : ""
+    return plugin ? pluginLabel(plugin) : (props.appPlugin?.name ?? "")
   }
   const close = () => props.selection.closePlugin()
   return (
@@ -79,6 +80,7 @@ export function MarketplaceDetailsPanel(props: MarketplaceDetailsProps): JSX.Ele
           >
             {(exposed) => (
               <Show when={exposed()}>
+                <Show when={props.appPlugin}>{(app) => app().details()}</Show>
                 <Show when={props.selection.selected()}>
                   {(plugin) => (
                     <PluginDetails

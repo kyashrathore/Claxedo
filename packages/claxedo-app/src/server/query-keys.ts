@@ -31,6 +31,10 @@ export const queryKeys = {
   marketplaceSkill: (server: string, request: { readonly pluginInstanceId: string; readonly skill: string; readonly projectId?: string }) =>
     ["server", server, "plugin-skill", request.pluginInstanceId, request.skill, request.projectId ?? ""] as const,
   livePlugins: (server: string) => ["server", server, "live-plugins"] as const,
+  appPluginsAll: (server: string) => ["server", server, "app-plugins"] as const,
+  appPluginsEnabled: (server: string) => ["server", server, "app-plugins", "enabled"] as const,
+  appPluginsInstalled: (server: string) => ["server", server, "app-plugins", "installed"] as const,
+  appPluginsCatalog: (server: string) => ["server", server, "app-plugins", "catalog"] as const,
   cloud: (server: string) => ["server", server, "cloud"] as const,
   folderPaths: (server: string) => ["server", server, "folders", "paths"] as const,
   folderChildren: (server: string, directory: string) => ["server", server, "folders", "children", directory] as const,

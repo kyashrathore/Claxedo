@@ -90,8 +90,35 @@ describe("a bundled plugin on its own", () => {
   })
 })
 
+describe("an installed plugin", () => {
+  const installed = build("counter", { kind: "installed", hash: "c".repeat(64), version: "0.1.0" })
+
+  test("runs on the organization's install and the person's enablement, with no approval record and no switch of its own", async () => {
+    const { host, approvals } = hostWith()
+    host.put(installed)
+    host.switchOff("counter")
+    await settle()
+    expect(host.plugins()[0]).toMatchObject({ approval: { kind: "approved" }, switchedOn: true })
+    expect(stateOf(host, "counter")).toBe("on")
+    expect(host.approve("counter", installed.origin.hash)).toBe(false)
+    expect(approvals).toEqual({})
+  })
+
+  test("is stopped by safe mode, as live plugins are, and starts when the person leaves it", async () => {
+    const { host, activated } = hostWith(true)
+    host.put(installed)
+    await settle()
+    expect(stateOf(host, "counter")).toBe("off")
+    expect(activated).toEqual([])
+    host.leaveSafeMode()
+    await settle()
+    expect(stateOf(host, "counter")).toBe("on")
+    expect(activated).toEqual(["counter"])
+  })
+})
+
 describe("a bundled plugin beside live plugins", () => {
-  test("keeps running in safe mode, which stops only live plugins", async () => {
+  test("keeps running in safe mode, which stops only live and installed plugins", async () => {
     const { host } = hostWith(true)
     host.put(bundled)
     host.put(live)

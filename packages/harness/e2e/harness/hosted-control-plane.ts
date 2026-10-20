@@ -2,7 +2,7 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { SERVER_DIR } from "./node-loader"
-import { writeHostedE2eWranglerConfig } from "./hosted-wrangler-config"
+import { APP_PLUGIN_TEST_WORKER, writeHostedE2eWranglerConfig } from "./hosted-wrangler-config"
 import { HOSTED_SIGNING_PRIVATE_KEY, HOSTED_SIGNING_PUBLIC_KEY } from "./hosted-keys"
 
 type Input = {
@@ -16,6 +16,8 @@ type Input = {
   emailPassword?: boolean
   workerEnv?: Readonly<Record<string, string>>
   requestLimit?: number
+  /** A signed app-plugin registry tree, and the raw Ed25519 public key it is signed with; the Worker is then the test composition that trusts that key. */
+  appPluginRegistry?: { dir: string; testKey: string }
 }
 
 /**
@@ -80,7 +82,7 @@ function requestProvisioning(child: ChildProcess, input: Record<string, string>,
 
 export async function startHostedControlPlane(input: Input) {
   const credentials = input.credentials
-  const config = await writeHostedE2eWranglerConfig(HOSTED_E2E_PUBLIC_HOSTNAME)
+  const config = await writeHostedE2eWranglerConfig(HOSTED_E2E_PUBLIC_HOSTNAME, input.appPluginRegistry ? { main: APP_PLUGIN_TEST_WORKER } : {})
   const attemptsFile = path.join(input.root, "hosted-outbound-attempts.jsonl")
   const child = spawn(process.env.CLAXEDO_E2E_NODE ?? "node", [
     "--import", "tsx", "scripts/e2e/hosted-miniflare.ts",
@@ -98,6 +100,7 @@ export async function startHostedControlPlane(input: Input) {
         relayUrl: input.relayUrl, signingPrivateKey: HOSTED_SIGNING_PRIVATE_KEY,
         signingPublicKey: HOSTED_SIGNING_PUBLIC_KEY,
         origin: input.origin, emailPassword: input.emailPassword, workerEnv: input.workerEnv ?? {}, requestLimit: input.requestLimit,
+        appPluginRegistry: input.appPluginRegistry,
       }),
     },
   })

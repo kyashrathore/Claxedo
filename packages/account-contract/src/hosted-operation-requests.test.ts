@@ -453,6 +453,23 @@ describe("resolve", () => {
     })
   })
 
+  test("the app plugin operations address the caller's organization's installs, one plugin by an id the manifest schema accepts", () => {
+    expect(CORE.resolve("appPlugins.list", {})).toEqual({ method: "GET", path: "/api/claxedo/app-plugins" })
+    expect(CORE.resolve("appPlugins.catalog", {})).toEqual({ method: "GET", path: "/api/claxedo/app-plugins/catalog" })
+    expect(CORE.resolve("appPlugins.bundle", { pluginId: "counter", sha256: "a".repeat(64) })).toEqual({
+      method: "GET",
+      path: `/api/claxedo/app-plugins/counter/bundles/${"a".repeat(64)}/app.js`,
+      response: "bytes",
+    })
+    expect(CORE.resolve("appPlugins.install", { id: "counter", version: "0.1.0" })).toEqual({ method: "POST", path: "/api/claxedo/app-plugins", body: { id: "counter", version: "0.1.0" } })
+    expect(CORE.resolve("appPlugins.disable", { pluginId: "counter" })).toEqual({ method: "DELETE", path: "/api/claxedo/app-plugins/counter/enable" })
+    expect(CORE.resolve("appPlugins.organization.enable", { pluginId: "counter" })).toEqual({ method: "DELETE", path: "/api/claxedo/app-plugins/counter/disable" })
+    expect(CORE.resolve("appPlugins.uninstall", { pluginId: "counter" })).toEqual({ method: "DELETE", path: "/api/claxedo/app-plugins/counter" })
+    for (const pluginId of ["..", "Counter", "catalog/x"]) {
+      expect(() => CORE.resolve("appPlugins.uninstall", { pluginId }), pluginId).toThrow(MissingOperationParameter)
+    }
+  })
+
   test("a plugin request names only a plugin id the manifest schema accepts", () => {
     // `..` survives encodeURIComponent, and URL normalization would turn
     // `/api/plugins/../claxedo/plugins/runtime/self` into a withheld row whose

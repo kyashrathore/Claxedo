@@ -27,7 +27,7 @@ function bridge(activate: (api: PluginApi) => void): Registered & { readonly dis
   const hostPort = createHostPort({ port: channel.port1, api: hostApi, mirror: () => MIRROR, control: { slots: () => undefined, activated: () => undefined, failed: (reason) => console.error(reason) } })
   const link = createFrameLink(channel.port2, MIRROR)
   const entries: FrameEntries = { pages: new Map(), settings: new Map(), overlays: new Map(), commands: new Map(), mentions: new Map() }
-  const frameApi = createFrameApi({ link, context: { pluginId: "fixture", pluginVersion: "0.1.0", platform: "web" }, entries, dictionary: undefined, forward: true, signal: new AbortController().signal })
+  const frameApi = createFrameApi({ link, context: { pluginId: "fixture", pluginVersion: "0.1.0", platform: "web", backend: false }, entries, dictionary: undefined, forward: true, signal: new AbortController().signal })
   const surfaces = createFrameSurfaces(entries, link.send)
   link.onInvoke((invoke) => answerInvoke(entries, surfaces, invoke))
   activate(frameApi)

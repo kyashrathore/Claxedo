@@ -16,6 +16,8 @@ import type { FolderQueries, FoldersApi } from "./folders"
 import type { ProjectEnvironmentApi } from "./project-environment"
 import type { HarnessConfigApi } from "./harness-config"
 import type { McpAppsApi } from "./mcp-app-types"
+import type { AppPluginQueries } from "./app-plugins"
+import type { AppPluginsApi } from "./app-plugin-types"
 import type {
   DiffFile,
   DiffScope,
@@ -177,6 +179,7 @@ export type ServerQueries = {
   readonly livePlugins: {
     readonly list: () => FetchQuery<readonly LivePlugin[]>
   }
+  readonly appPlugins: AppPluginQueries
   readonly projects: {
     readonly list: () => FetchQuery<readonly Project[]>
     readonly byId: (id: ProjectId) => FetchQuery<Project>
@@ -263,6 +266,7 @@ export type Server = {
   readonly providerConnect: ProviderConnectApi
   readonly providerCatalogs: ProviderCatalogsApi
   readonly livePlugins: LivePluginsApi
+  readonly appPlugins: AppPluginsApi | undefined
   readonly harnessConfig: HarnessConfigApi
   readonly queries: ServerQueries
   readonly attachPlacement: (ref: SessionLocation) => () => void

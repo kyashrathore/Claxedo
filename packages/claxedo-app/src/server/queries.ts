@@ -11,6 +11,7 @@ import { cloudQueries } from "./cloud"
 import type { ServerEvent } from "./events"
 import { fileQueries } from "./files"
 import { livePluginQueries } from "./live-plugins"
+import { appPluginQueries } from "./app-plugins"
 import { gitQueries } from "./git"
 import { harnessQueries } from "./harness-options"
 import type { ServerQueries } from "./api"
@@ -44,6 +45,7 @@ export function createQueries(transport: Transport, workspaces: Workspaces, acco
   const cloud = cloudQueries(transport, workspaces)
   return {
     livePlugins: livePluginQueries(transport),
+    appPlugins: appPluginQueries(transport.serverUrl, account),
     projects: { ...projectQueries(transport, workspaces), environment: projectEnvironmentQuery(transport, workspaces, account) },
     placements: placementQueries(transport, workspaces),
     machines: machineQueries(transport, workspaces, account),

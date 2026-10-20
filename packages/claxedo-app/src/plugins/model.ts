@@ -7,7 +7,9 @@ export type LiveOrigin = { readonly kind: "live"; readonly hash: string; readonl
 
 export type BundledOrigin = { readonly kind: "bundled"; readonly hash: string }
 
-export type PluginOrigin = LiveOrigin | BundledOrigin
+export type InstalledOrigin = { readonly kind: "installed"; readonly hash: string; readonly version: string }
+
+export type PluginOrigin = LiveOrigin | BundledOrigin | InstalledOrigin
 
 export type PluginBuild = {
   readonly manifest: PluginManifest
@@ -47,6 +49,10 @@ export type PluginSummary = {
 
 export function liveOriginOf(plugin: { readonly origin: PluginOrigin }): LiveOrigin | undefined {
   return plugin.origin.kind === "live" ? plugin.origin : undefined
+}
+
+export function installedOriginOf(plugin: { readonly origin: PluginOrigin }): InstalledOrigin | undefined {
+  return plugin.origin.kind === "installed" ? plugin.origin : undefined
 }
 
 export function buildIdOf(build: PluginBuild): string {

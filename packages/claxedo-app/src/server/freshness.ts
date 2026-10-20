@@ -6,7 +6,7 @@ export type Freshness =
   | { readonly kind: "ttl"; readonly ms: number; readonly reason: string }
   | { readonly kind: "once"; readonly reason: string }
 
-type CachePrefix = "filesAll" | "filesOf" | "gitAll" | "gitOf" | "usageAll" | "machineTimeAll" | "marketplaceAll" | "codeHostAll" | "providerCatalogs"
+type CachePrefix = "filesAll" | "filesOf" | "gitAll" | "gitOf" | "usageAll" | "machineTimeAll" | "marketplaceAll" | "codeHostAll" | "providerCatalogs" | "appPluginsAll"
 
 export type CacheName = Exclude<keyof typeof queryKeys, CachePrefix>
 
@@ -32,6 +32,9 @@ export const freshness = {
   organizationMembers: { kind: "once", reason: "read when the Organization section opens; membership changes happen elsewhere" },
   cloud: placementOwned,
   livePlugins: { kind: "event-owned", events: ["pluginsChanged"] },
+  appPluginsEnabled: { kind: "once", reason: "installs and enablements change through this app's Marketplace writes, which invalidate every app-plugin read; another person's change is read at the next start" },
+  appPluginsInstalled: { kind: "once", reason: "under the app-plugins prefix, so every Marketplace write refreshes it" },
+  appPluginsCatalog: { kind: "once", reason: "the registry's index changes only when a release is published, which the next start reads; every Marketplace write rereads it under the app-plugins prefix" },
   usage: { kind: "event-owned", events: ["usageChanged"] },
   accountSpend: { kind: "event-owned", events: ["usageChanged"] },
   machineTime: placementOwned,

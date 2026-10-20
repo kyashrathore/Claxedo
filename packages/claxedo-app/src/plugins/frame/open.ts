@@ -7,9 +7,12 @@ import { appStylesheetText, appTheme } from "./styles"
 
 export type FrameSource = {
   readonly code: string
+  readonly backend: boolean
   readonly runtime: () => Promise<string>
   readonly services: HostServices
 }
+
+export type FrameHost = Omit<FrameSource, "code" | "backend">
 
 export class FrameClosedError extends Error {
   constructor(readonly pluginId: string) {
@@ -30,7 +33,7 @@ export async function openFrame(frame: HTMLIFrameElement, api: PluginApi, source
     code: source.code,
     css: appStylesheetText(),
     theme: appTheme(),
-    context: { pluginId: api.context.pluginId, pluginVersion: api.context.pluginVersion, platform: "web" },
+    context: { pluginId: api.context.pluginId, pluginVersion: api.context.pluginVersion, platform: api.context.platform, backend: source.backend },
     mirror: frameMirror(api, source.services),
     ...(target ? { target } : {}),
   }

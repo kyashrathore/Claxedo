@@ -1,5 +1,6 @@
 import { sha256Hex } from "@claxedo/helpers/crypto"
 import { PLUGIN_VERSION_PATTERN } from "@claxedo/plugin-api/manifest-schema"
+import { verifyPluginIndex, type PluginIndex } from "@claxedo/plugin-api/registry-index"
 import {
   PluginReleaseError,
   signedPluginReleaseSchema,
@@ -62,6 +63,23 @@ export async function fetchVerifiedRelease(registry: AppPluginRegistry, id: stri
   }
   const { signature, keyId } = signedPluginReleaseSchema.parse(signed)
   return { release, signature, keyId }
+}
+
+/** The registry's signed `index.json`: every plugin it publishes, once the signature verifies under one of the registry's keys. */
+export async function fetchVerifiedIndex(registry: AppPluginRegistry): Promise<PluginIndex> {
+  const response = await registryGet(registry, "/index.json")
+  let signed: unknown
+  try {
+    signed = await response.json()
+  } catch {
+    throw new AppPluginRegistryError("app_plugin_release_invalid", "the registry's index is not JSON")
+  }
+  try {
+    return await verifyPluginIndex(signed, registry.keys)
+  } catch (error) {
+    if (error instanceof PluginReleaseError) throw new AppPluginRegistryError("app_plugin_release_invalid", `${error.code}: ${error.message}`)
+    throw error
+  }
 }
 
 /** The blob a release names, read no further than its declared size and refused unless its bytes hash to its SHA-256. */

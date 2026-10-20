@@ -1,5 +1,6 @@
 import type { IncomingMessage } from "node:http"
 import { gitHubArchiveFetch } from "../../../claxedo-server-core/src/agent-plugins/sources/github-archive-fixture"
+import { CLAXEDO_PUBLIC_GITHUB_COLLECTION } from "../../../claxedo-server-core/src/agent-plugins/sources/github-public"
 import { HOSTED_MCP_RESOURCE } from "./hosted-scripted-mcp"
 
 export const HOSTED_PLUGIN_REPOSITORY = { owner: "hosted-e2e", repository: "plugins", ref: "main" } as const
@@ -26,6 +27,19 @@ const collection = gitHubArchiveFetch({
   },
 })
 
+/**
+ * The public Claxedo collection every hosted catalog reads, which the
+ * Marketplace page lists beside the organization's sources; the stack serves
+ * it empty, so opening the page reaches nothing outside the machine.
+ */
+const publicCollection = gitHubArchiveFetch({ repository: CLAXEDO_PUBLIC_GITHUB_COLLECTION.repository, files: {} })
+
+function isRepositoryRead(url: URL, owner: string, repository: string) {
+  const prefix = `/${owner}/${repository}/`
+  return (url.origin === "https://api.github.com" && url.pathname.startsWith(`/repos${prefix}commits/`))
+    || (url.origin === "https://codeload.github.com" && url.pathname.startsWith(`${prefix}zip/`))
+}
+
 export const HOSTED_CODE_HOST_REPOSITORY = "hosted-e2e/widgets"
 export const HOSTED_CODE_HOST_TOKEN = "hosted-token-hosted-person-a"
 
@@ -39,11 +53,8 @@ export async function scriptedGithub(request: IncomingMessage, url: URL, gitUrl:
     }
     return Response.json({ access_token: `hosted-token-${code}`, token_type: "bearer", scope: "read:user user:email" })
   }
-  const repository = `/${HOSTED_PLUGIN_REPOSITORY.owner}/${HOSTED_PLUGIN_REPOSITORY.repository}/`
-  if ((url.origin === "https://api.github.com" && url.pathname.startsWith(`/repos${repository}commits/`))
-    || (url.origin === "https://codeload.github.com" && url.pathname.startsWith(`${repository}zip/`))) {
-    return collection.fetch(url.toString())
-  }
+  if (isRepositoryRead(url, HOSTED_PLUGIN_REPOSITORY.owner, HOSTED_PLUGIN_REPOSITORY.repository)) return collection.fetch(url.toString())
+  if (isRepositoryRead(url, CLAXEDO_PUBLIC_GITHUB_COLLECTION.owner, CLAXEDO_PUBLIC_GITHUB_COLLECTION.repository)) return publicCollection.fetch(url.toString())
   if (url.origin !== "https://api.github.com" || !["/user", "/user/emails", "/user/repos", "/user/installations"].includes(url.pathname)) return undefined
   const person = request.headers.authorization?.replace(/^Bearer /i, "")
   if (person !== "hosted-token-hosted-person-a" && person !== "hosted-token-hosted-person-b") {

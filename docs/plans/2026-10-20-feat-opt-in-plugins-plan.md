@@ -514,7 +514,7 @@ Every ceiling change is the exact measured number, with its owner named in the a
     - A new `plugin.event` `ControlPlaneEvent` (server-core) carries `recipientUserId`, and `eventVisibleTo` delivers it to that subscriber only.
     - The host nudges the org's live-sync room with one copy per enabled member of the audience. A `project` event needs the publisher to read the project.
     - Plugin events are not retained for replay.
-    - The app does not decode them yet: routing them to a frame's `backend().events(...)` is P4.
+    - The app does not decode them yet: routing them to a frame's `backend().events(...)` is P6 (P4 left it).
   - **Links.**
     - Served at `GET /api/claxedo/app-plugins/links/:token`, not `/p/<token>`, because Documents mounts `/p` in every hosted profile until P8b. The URL `links.create` answers names that path, so moving it later changes only the constant (`plugin-backends/paths.ts`).
     - Tokens are 32 random bytes, stored as their SHA-256 in `app_plugin_links`, at most 1,000 live per plugin. A link only `GET`s its declared path.
@@ -533,17 +533,36 @@ Every ceiling change is the exact measured number, with its owner named in the a
     - `supervisor.test.ts` pins the alarm arming over a real SQLite database.
     - Not verified: a real alarm firing a wake in workerd or on Cloudflare (P0 measured a supervisor alarm firing once).
   - **Closures.** Agent Plugins is 235 modules and 27 packages, full-hosted 247 and 28; the base Worker is unchanged.
-- [ ] **P4. App: installed plugins and Marketplace.**
-- `src/plugins/installed/`; `server.backend()` binding (web, desktop-signed `plugin.request` with `app: true`, daemon); events into frames; desktop runs installed plugins in frames; the Marketplace "App plugins" section with install, enable, disable and uninstall, and permission dialogs. The bundled first-party path stays until P7b and P8b.
+- [x] **P4. App: installed plugins and Marketplace.**
+- `src/plugins/installed/`; `server.backend()` binding (web, desktop-signed `plugin.request` with `app: true`); events into frames (left for P6); desktop runs installed plugins in frames; the Marketplace "App plugins" section with install, enable, disable and uninstall, and permission dialogs. The bundled first-party path stays until P7b and P8b.
 - Tests: app `src/plugins` (hash mismatch fails the load; a disabled plugin is never fetched; safe mode stops installed plugins) and `src/marketplace`.
 - New flow `64-app-plugin-install.spec.ts` (web and phone, hosted fixture): the counter plugin is absent, then the admin installs it, the member enables it, its page counts, and disable removes the row and the route. Red run: skip the enablement gate.
 - Checks: app test, typecheck, `typecheck:e2e`, check; ratchets; desktop `verify:closure` (renderer modules +N measured).
+- **As built.** `packages/claxedo-app/src/plugins/README.md` (Installed plugins), `src/marketplace/README.md` (App plugins) and `e2e/README.md` (the registry option) describe the result. The choices where this plan was open, or where the build differs from it:
+  - **The catalog.** `GET /api/claxedo/app-plugins/catalog` answers `{ canManage, registry: "listed" | "unavailable", plugins }`, each entry `{ id, name, description?, latest, versions, manifest, available }`, from a signed `index.json` (`@claxedo/plugin-api/registry-index`) that the release CLI re-signs with each release it publishes. The installs stay `GET /installed`'s, so the catalog carries no `installed` block and the app joins them (`appPluginEntries`). `icon` is not in the index; the card draws the name's initial. `available` is false for a backend where no supervisor runs. An index that is missing or does not verify answers `registry: "unavailable"` and the installs still list.
+  - **No edge cache.** The catalog reads the index on each request; the app reads it once per start and after every Marketplace write. Caching is a measured follow-up.
+  - **Permissions shown.** The install and turn-on drawer lists the frame, the backend, each `permissions` entry in plain words, and each outside host, route and operation. An install of an older version shows the latest version's manifest, the only one the index carries.
+  - **`canManage`** is the server's `administer` answer; the app asks `can("appPlugins.manage")` with it.
+  - **The backend binding.** `api.server.backend().fetch(path, init)` exists only for a manifest with `backend` and reaches only the plugin's own id. Web: `/api/plugins/<id><path>`. Signed desktop: the account operation `plugin.request`, now exposed to the app (`{ renderer: true, app: true }`); it carries a JSON object body or none and no query string, a limit of the operation's contract. Frame: the host call `server.backend.fetch`. `server.operation("plugin.request")` is refused. There is no daemon binding: there is no local runtime.
+  - **Desktop frames (Q5).** Installed plugins run in the sandboxed frame on the desktop too. The frame runtime is a string chunk (`virtual:claxedo-frame-runtime`, `vite.frame-runtime.ts`), taken from Vite's own inline worker bundle. Not verified: an installed plugin running in an Electron frame on the `file:` renderer; the desktop production build carries it.
+  - **Events (left for P6).** P3's `plugin.event` reaches the app's live-sync stream, but the app neither decodes it nor routes it to a frame; `backend().events(...)` is not in the API. The hosted Worker sends no `plugins.changed` on an install or enablement, so another tab or device sees a change at its next start.
+  - **Live plugins (P5's gate).** The app reads the daemon's live list only on a signed desktop with `features.livePlugins`; a live plugin is frontend-only. The web and the unsigned app run none. The gate is the app's: the daemon still serves its registry to the machine's owner, so flow 35 checks that an unsigned web app runs a plugin the daemon serves nowhere. Removing the daemon's routes is left to the live-plugin owner.
+  - **Safe mode** stops installed plugins and skips the installed list. An installed plugin has no local switch; the Marketplace is where a member turns it on or off.
+  - **Flows.**
+    - 64 (web, phone) is new. Its red run removed the enablement gate: the member's backend read answered 200 `{ value: 0 }` instead of 404 `plugin_not_enabled`.
+    - 35's web test is an installed plugin on a signed account; its second test is the unsigned app running none. Red run: with the unsigned gate removed the approval dialog for the daemon's plugin appeared.
+    - 61 and 37's web test run installed plugins on the signed stack. Red run: with the member's enablement withdrawn, 61 found no rail item and 37 no server answer.
+    - 34 and 37's desktop test sign in first (`signedCloud`, `signedDesktop`). Not run here: the desktop project.
+    - 40 ends asserting the unsigned web app lists no app plugin. Not run here: it needs the real Claude CLI.
+  - **Test composition.** `fixtures/full-hosted.fixture.cf.ts` is the full-hosted Worker over `registryKeysWithTestKey`; `composeBetterAuthD1AgentPlugins` takes `registryKeys`. The e2e harness runs it only when a flow asks for `signedAppPluginRegistry`.
+  - **Closures.** Agent Plugins is 236 modules and 27 packages, full-hosted 248 and 28 (the catalog). The desktop renderer is 1,587 modules and 44 packages: the walk follows `virtual:claxedo-frame-runtime` to the runtime's entry. The app's line budget is 117,433.
 - [x] **P5. Local runtime.** Removed by owner ruling (plugins only when signed in). Instead, P4 removes or gates the daemon's live-plugin registry, and flows 34 and 35 move to a signed account.
 - [ ] **P6. Platform API v2 on both hosts:**
 - sessions (§3.3), with `plugin_session_origins` in D1 and `claxedo.db`;
 - cloud workspace allocation through `origin-cloud-workspace.ts`;
 - tools (§3.4) on the three MCP mounts, plus the plugin-tools root grant and env;
-- session files (§3.9) in `workspace-runtime`.
+- session files (§3.9) in `workspace-runtime`;
+- backend events into the app: decode `plugin.event` and route each to its plugin's `backend().events(...)`, in the frame and in-app, and nudge the installed list on install and enablement changes.
 - The generic modules move from `@claxedo/tasks/host/*` and `/hosted/*` while the old in-process Tasks still composes them by import from their new homes, so nothing breaks.
 - Tests: session start is idempotent per origin, handoff happens at most once, and abandon compensates (moved Tasks bridge tests, made generic); the member-driven agent refusal; proxy tools listed only when enabled; a sandbox call with a withdrawn grant is refused; session files round-trip through `turnSettled`.
 - Checks: server-core, server, local, mcp, session-core and workspace-runtime tests (runtime suites under the no-signal `sandbox-exec` profile); typecheck; ratchets; all `verify:closure`.

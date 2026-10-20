@@ -18,9 +18,9 @@ The top-level `permissions` list names the platform calls the backend may make (
 
 ## Releases and the registry
 
-A release (`@claxedo/plugin-api/release`) is `{ id, version, manifest, app: { sha256, size }, backend?: { sha256, size }, storage, builtAt }`, signed with Ed25519 over its canonical JSON. `@claxedo/plugin-build`'s `buildPluginRelease` builds both bundles and names each by its full SHA-256; `signPluginRelease` signs it, and `claxedo-plugin-build/src/release-cli.ts` writes a signed release and its blobs as a registry tree.
+A release (`@claxedo/plugin-api/release`) is `{ id, version, manifest, app: { sha256, size }, backend?: { sha256, size }, storage, builtAt }`, signed with Ed25519 over its canonical JSON. `@claxedo/plugin-build`'s `buildPluginRelease` builds both bundles and names each by its full SHA-256; `signPluginRelease` signs it, and `claxedo-plugin-build/src/release-cli.ts` writes a signed release and its blobs as a registry tree. The tree's `index.json` (`@claxedo/plugin-api/registry-index`) is a signed list of `{ id, name, description?, latest, versions, manifest }`, versions newest first and `manifest` the latest's; the CLI re-signs it with each release it publishes (`indexWithRelease`, `signPluginIndex`), taking the description from the package's own `description`.
 
-The registry serves `releases/<id>/<version>.json` and `blobs/<sha256>`, from `CLAXEDO_APP_PLUGIN_REGISTRY_URL` (default `https://plugins.claxedo.dev`). `registry.ts` verifies the signature under `PLUGIN_REGISTRY_KEYS`, that the release names the id and version asked for, and each blob's size and SHA-256 before anything is stored. `registry-test-key.ts` adds a key from `CLAXEDO_APP_PLUGIN_REGISTRY_TEST_KEY` for test compositions only; `deployment-closures.test.ts` refuses any deployed Worker that reaches it.
+The registry serves `index.json`, `releases/<id>/<version>.json` and `blobs/<sha256>`, from `CLAXEDO_APP_PLUGIN_REGISTRY_URL` (default `https://plugins.claxedo.dev`). `registry.ts` verifies the signature under `PLUGIN_REGISTRY_KEYS`, that the release names the id and version asked for, and each blob's size and SHA-256 before anything is stored. `registry-test-key.ts` adds a key from `CLAXEDO_APP_PLUGIN_REGISTRY_TEST_KEY` for test compositions only; `deployment-closures.test.ts` refuses any deployed Worker that reaches it.
 
 ## Storage
 
@@ -46,6 +46,7 @@ Every route reads the signed caller and asks the authority for their organizatio
 | --- | --- | --- |
 | `GET /` | member | The installs the caller's app loads. |
 | `GET /installed` | member | Every install, with `enabledForMe` and `orgDefault`. |
+| `GET /catalog` | member | `{ canManage, registry, plugins }`: whether the caller manages the organization's installs, and the registry's signed index, each entry `{ id, name, description?, latest, versions, manifest, available }`, where `available` is false for a backend this deployment cannot run. An index that is missing or does not verify answers `registry: "unavailable"` with no plugins; the installs are still `GET /installed`'s. |
 | `GET /:id/bundles/:sha256/app.js` | member | The app bundle, as immutable JavaScript; 404 `app_plugin_bundle_not_found` unless `GET /` holds it with that hash. |
 | `POST /:id/enable`, `DELETE /:id/enable` | member | 204; 404 `app_plugin_not_installed`. |
 | `POST /` `{ id, version }` | admin | 201 with the install; 409 `app_plugin_installed`, 422 `app_plugin_release_invalid`, 502 `app_plugin_release_unavailable`, 409 `app_plugin_platform_unavailable` for a backend where no supervisor runs. |
@@ -72,7 +73,7 @@ The runtime admits every platform call a backend makes (`packages/plugin-runtime
 
 `lifecycle.ts` verifies a release and copies both bundles into R2 before any row names them, writes D1, then refreshes the plugin's supervisor, so the previous configuration's objects stop at once rather than at the next request. Uninstall deletes the rows and the plugin's links. It then has the supervisor purge, which deletes each facet its registry names, and only then its own storage with its wakes and blob accounting (the Cloudflare gate found that a running facet outlives `deleteAll`). Finally it deletes the plugin's `plugin-data/<orgId>/<pluginId>/` prefix. The data is deleted even when no install was found, so an uninstall that failed after its rows were deleted completes on retry.
 
-`compose.ts` builds the routes for the Agent Plugins entries; the fixture Worker composes the same routes over the test key.
+`compose.ts` builds the routes for the Agent Plugins entries; `composeBetterAuthD1AgentPlugins` takes the registry's keys as `registryKeys`, by default `PLUGIN_REGISTRY_KEYS`. Two test compositions add the test key: `fixtures/worker.fixture.ts` for this suite, and `fixtures/full-hosted.fixture.cf.ts`, the full-hosted Worker (`createFullHostedWorker(registryKeysWithTestKey)`) the app's signed e2e stack runs when a flow asks for a registry (`packages/claxedo-app/e2e/README.md`).
 
 ## Deployment
 

@@ -19,6 +19,7 @@ export type HarnessFixtures = {
   signed: SignedStack
   signedDesktop: Desktop
   signedCloud: SignedStack
+  signedAppPluginRegistry: boolean
 }
 
 type SignedBuild = AppBuild & { frontPort: number; relayPort: number }
@@ -37,8 +38,8 @@ async function attachLogOnFailure(testInfo: TestInfo, attempts: EgressAttempt[],
   await testInfo.attach(name, { body: log(), contentType: "text/plain" })
 }
 
-async function useSignedFixture(build: SignedBuild, testInfo: TestInfo, use: (signed: SignedStack) => Promise<void>) {
-  const signed = await startSignedStack({ label: testInfo.titlePath.join(" "), frontPort: build.frontPort, relayPort: build.relayPort, distDir: build.distDir })
+async function useSignedFixture(build: SignedBuild, testInfo: TestInfo, use: (signed: SignedStack) => Promise<void>, appPluginRegistry = false) {
+  const signed = await startSignedStack({ label: testInfo.titlePath.join(" "), frontPort: build.frontPort, relayPort: build.relayPort, distDir: build.distDir, appPluginRegistry })
   try {
     await use(signed)
   } finally {
@@ -93,8 +94,9 @@ export const test = base.extend<HarnessFixtures, HarnessWorkerFixtures>({
     },
     { scope: "worker", timeout: 300_000 },
   ],
-  signed: [async ({ signedBuild }, use, testInfo) => {
-    await useSignedFixture(signedBuild, testInfo, use)
+  signedAppPluginRegistry: [false, { option: true }],
+  signed: [async ({ signedBuild, signedAppPluginRegistry }, use, testInfo) => {
+    await useSignedFixture(signedBuild, testInfo, use, signedAppPluginRegistry)
   }, { timeout: 120_000 }],
   signedCloud: [async ({ signedBuild }, use, testInfo) => {
     await useSignedFixture(signedBuild, testInfo, use)
