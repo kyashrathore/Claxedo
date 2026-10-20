@@ -69,6 +69,11 @@ function todosOf(view: SessionOpenView) {
   return "error" in view.todos && view.todos.error.code === TODOS_UNSUPPORTED ? [] : factValue(view.todos)
 }
 
+export function preloadSessionReads(context: Pick<SessionContext, "transport">, ref: Pick<SessionLocation, "placementId" | "sessionId">, shape: PageShape): boolean {
+  const first = context.transport.preloadRuntime(ref.placementId, withQuery(sessionEndpoint(ref, "/outline"), viewportQuery(shape)), ref.sessionId)
+  return context.transport.preloadRuntime(ref.placementId, withQuery(sessionEndpoint(ref), OPEN_VIEW), ref.sessionId) && first
+}
+
 export function startSessionReads(context: SessionContext, ref: SessionLocation, shape: PageShape, held?: HeldSessionReads): SessionReads {
   const sent = context.workspaces.home(ref).then((home) => ({ home, first: held ? readHeldFirst(context, home, ref, held) : readFirst(context, home, ref, shape) }))
   const first = sent.then((issued) => issued.first)

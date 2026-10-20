@@ -10,7 +10,7 @@ import { listFirstPages, listSessions } from "./session-list"
 import { sendReaderWrite } from "./session-reader"
 import { sessionEndpoint, type SessionContext } from "./session-context"
 import type { SnapshotCoverage } from "./snapshot-coverage"
-import { startSessionReads } from "./session-reads"
+import { preloadSessionReads, startSessionReads } from "./session-reads"
 import { readPart, readTurnPageBefore } from "./transcript-reads"
 import type { HostedAccount } from "./account"
 import { cancelRunningTurn, stopBackgroundTask } from "./session-stop"
@@ -127,6 +127,7 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
     markSeen: (ref, completedAt) => sendReaderWrite(context, ref, { kind: "seen", completedAt }),
     settle: (ref, write) => sendReaderWrite(context, ref, { kind: "settle", ...write }),
     read: (ref, shape, held) => startSessionReads(context, ref, shape, held),
+    preload: (ref, shape) => preloadSessionReads(context, ref, shape),
     page: (ref, shape, before) => readTurnPageBefore(context, ref, shape, before),
     part: (ref, messageId, partId) => readPart(context, ref, messageId, partId),
     turn: (ref, turnId) => readTurn(context, ref, turnId),

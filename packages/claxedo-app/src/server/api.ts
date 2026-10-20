@@ -96,6 +96,7 @@ export type SessionsApi = {
   readonly markSeen: (ref: SessionLocation, completedAt: number) => Promise<SessionReader>
   readonly settle: (ref: SessionLocation, write: { readonly settled: true; readonly through: number } | { readonly settled: false }) => Promise<SessionReader>
   readonly read: (ref: SessionLocation, shape: PageShape, held?: HeldSessionReads) => SessionReads
+  readonly preload: (ref: Pick<SessionLocation, "placementId" | "sessionId">, shape: PageShape) => boolean
   readonly page: (ref: SessionLocation, shape: PageShape, before: string) => Promise<TranscriptPage>
   readonly part: (ref: SessionLocation, messageId: string, partId: string) => Promise<TranscriptPart>
   readonly turn: (ref: SessionLocation, turnId: string) => Promise<TranscriptPage>

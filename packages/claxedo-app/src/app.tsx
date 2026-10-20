@@ -1,5 +1,5 @@
 import { accountBinding } from "#account-binding"
-import { createMemo, onCleanup, Show, type JSX, type ParentProps } from "solid-js"
+import { createMemo, onCleanup, Show, untrack, type JSX, type ParentProps } from "solid-js"
 import { AuthProvider, relayUrl, useAuth, type Auth } from "@/auth"
 import { I18nProvider, useI18n } from "@/i18n"
 import { ClockProvider } from "@/lib/clock"
@@ -7,11 +7,11 @@ import { PrefetchProvider } from "@/lib/prefetch"
 import { tabStorage } from "@/lib/persisted"
 import { ProjectListProvider } from "@/projects"
 import { CompactSwitcher, MainSidebar } from "@/rail"
-import { createServer, ServerProvider, type ServerConfig } from "@/server"
+import { createServer, ServerProvider, type ServerConfig, type SessionLocation } from "@/server"
 import { SessionStoresProvider } from "@/session"
 import { AttentionAlerts } from "@/notifications"
 import { PreferencesProvider, usePreferences } from "@/settings"
-import { AppShell, createShellRegistries, ShellRegistriesContext, ShellRouter, type ShellRouterComponent } from "@/shell"
+import { AppShell, createShellRegistries, ShellRegistriesContext, ShellRouter, useShellRoute, type ShellRouterComponent } from "@/shell"
 import { firstParty, firstPartyDictionaries } from "./registry"
 import { codexTheme, DialogProvider, syncIconLibraryWithTheme, ThemeProvider } from "@/ui"
 
@@ -39,11 +39,16 @@ function serverAccess(auth: Auth, principal: string | undefined): ServerAccess {
   return { cookies: true, relayUrl: relayUrl(), onSignInRefused: () => void auth.refresh(), ...relayLinks(principal) }
 }
 
+function routedSession(): Pick<SessionLocation, "placementId" | "sessionId"> | undefined {
+  const route = untrack(useShellRoute().route)
+  return route.kind === "session" ? { placementId: route.placementId, sessionId: route.sessionId } : undefined
+}
+
 function ServerScope(props: ParentProps<{ readonly access: ServerAccess; readonly serverUrl?: string }>): JSX.Element {
   const server = createServer({ serverUrl: props.serverUrl, ...props.access })
   return (
     <ServerProvider server={server}>
-      <SessionStoresProvider>
+      <SessionStoresProvider routed={routedSession()}>
         <ProjectListProvider>
           <DialogProvider>{props.children}</DialogProvider>
         </ProjectListProvider>
