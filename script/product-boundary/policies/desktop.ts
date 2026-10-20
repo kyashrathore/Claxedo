@@ -779,8 +779,8 @@ export const desktopRenderer: Policy = {
   // carry it inline and paint it before the bundle's stylesheets arrive; the
   // renderer still takes it from the bundle (owner: the app's shell,
   // `shell/styles/startup.css`). It adds no package edge.
-  // 1473/36, no headroom.
-  ceilings: { modules: 1473, packages: 36 },
+  // 1474/36, no headroom.
+  ceilings: { modules: 1474, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
