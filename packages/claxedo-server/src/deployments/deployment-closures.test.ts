@@ -167,7 +167,10 @@ const ENTRIES = [
   // one module the create route calls (`workspace/cloud-create-source.ts`).
   // Every entry's GitHub sign-in reads the person's profile and address list
   // together (`platform/auth/github-user-info.ts`).
-  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 177, packages: 23 },
+  // Every entry admits a cookie request on the principal a live verification
+  // of the same session cookie produced in the last 60 s, carried in a signed
+  // cookie (`platform/auth/browser-principal-cache.ts`).
+  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 178, packages: 23 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the
   // manifest, and `cloudflare:workers` for the supervisor and its entrypoints,
@@ -194,7 +197,7 @@ const ENTRIES = [
   // The hosted connections setup picks which code-host connection can read a
   // pasted repository by the rule the local connections host shares
   // (`connections/repository-access.ts`).
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 230, packages: 27 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 231, packages: 27 },
   // The full-hosted entry alone carries the session rows pass
   // (`session/session-rows-pass.ts`) and its wiring to the sandbox and the
   // relay (`hosted-workerd/full-hosted-sandbox.ts`): it delivers the pass to a
@@ -209,7 +212,7 @@ const ENTRIES = [
   // their readers (`workspace/runtime-lost.ts`,
   // `authority/adapters/d1/runtime-lost-sessions.ts`), since only this entry
   // has cloud runtimes to lose.
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 242, packages: 27 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 243, packages: 27 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {

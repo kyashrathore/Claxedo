@@ -66,6 +66,8 @@ export async function userDeployedBetterAuthApp(
   options: {
     /** Offers GitHub sign-in too, its provider calls going out through this fetch. */
     github?: typeof fetch
+    /** The composition's clock; the system clock when absent. */
+    now?: () => number
   } = {},
 ): Promise<UserDeployedBetterAuthApp> {
   const instance = new Miniflare({ modules: true, script: "export default { fetch() { return new Response('ok') } }", compatibilityDate: "2025-05-01", d1Databases: ["AUTH_DB"] })
@@ -99,6 +101,7 @@ export async function userDeployedBetterAuthApp(
     controlPlaneDatabase: databases.controlPlane?.(controlPlane.database) ?? controlPlane.database,
     descriptorExpiresAt: Date.now() + 3_600_000,
     ...(options.github ? { fetch: options.github } : {}),
+    ...(options.now ? { now: options.now } : {}),
     product: { kind: "user-deployed", organization: { id: "org_deployment", name: "Deployment" }, ownerBootstrap: "one-use-claim" },
   })
   await composed.authReady

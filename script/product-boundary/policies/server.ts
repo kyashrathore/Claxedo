@@ -264,8 +264,14 @@ export const serverWorkerd: Policy = {
   // (`platform/auth/github-user-info.ts`) instead of Better Auth's own provider
   // reading one after the other. It adds no package edge: Better Auth and the
   // helpers were already in the Worker.
-  // 177/23, no headroom.
-  ceilings: { modules: 177, packages: 23 },
+  // +1 module (owner: the Better Auth D1 request authentication): the browser
+  // principal cache (`platform/auth/browser-principal-cache.ts`) admits a
+  // cookie request on the principal a live verification of the same session
+  // cookie produced in the last 60 s, carried in a signed cookie, so it pays
+  // no verification round. It adds no package edge: the helpers and the
+  // server core were already in the Worker.
+  // 178/23, no headroom.
+  ceilings: { modules: 178, packages: 23 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

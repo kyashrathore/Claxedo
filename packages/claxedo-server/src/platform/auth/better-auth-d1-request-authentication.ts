@@ -3,6 +3,7 @@ import { type AuthAdapterDescriptor } from "@claxedo/account-contract/auth"
 import {
   AuthenticationError,
   createControlPlaneAuthenticationAdapter,
+  requestOrigin,
   type ApplicationIdentityResolver,
   type AuthAssurance,
   type AuthIdentity,
@@ -143,12 +144,6 @@ function audienceConfinedTo(value: unknown, required: string, alsoAllowed: reado
       : []
   return values.includes(required)
     && values.every((entry) => entry === required || alsoAllowed.includes(entry))
-}
-
-function requestOrigin(request: Request): string {
-  const supplied = request.headers.get("origin")
-  if (supplied !== null) return supplied
-  return new URL(request.url).origin
 }
 
 function browserVerifiedSession(

@@ -49,6 +49,7 @@ import {
 import { betterAuthNativeResource } from "../../../platform/auth/better-auth-native-clients"
 import { createBetterAuthD1AuthenticationEvidenceResolver, betterAuthAccount } from "../../../platform/auth/better-auth-d1-authentication-evidence"
 import { createBetterAuthD1RequestAuthenticationAdapter } from "../../../platform/auth/better-auth-d1-request-authentication"
+import { retireBrowserPrincipalCache, withBrowserPrincipalCache } from "../../../platform/auth/browser-principal-cache"
 import { orgInvitationEmailDelivery } from "../../../platform/auth/auth-email-delivery"
 import type { OrgInvitationDelivery } from "@claxedo/server-core/platform/auth/org-access-authority"
 import { STATIC_PRODUCT_DESCRIPTORS } from "../../../deployments/hosted-shared/deployment-profile"
@@ -194,13 +195,13 @@ export function composeBetterAuthD1UserDeployedControlPlane(
   })
   const authProtocol = new Hono()
   authProtocol.use(browserAuthHttpSecurity(descriptor.browser))
-  authProtocol.all("*", (context) => {
+  authProtocol.all("*", async (context) => {
     if (context.req.path === "/.well-known/oauth-authorization-server") {
       return oauthProviderAuthServerMetadata(foundation)(context.req.raw)
     }
-    return foundation.handler(context.req.raw)
+    return retireBrowserPrincipalCache(await foundation.handler(context.req.raw), BETTER_AUTH_SESSION_COOKIE)
   })
-  const authentication = createBetterAuthD1RequestAuthenticationAdapter({
+  const authentication = withBrowserPrincipalCache(createBetterAuthD1RequestAuthenticationAdapter({
     descriptor,
     auth: foundation,
     nativeIntrospectionClient: {
@@ -220,7 +221,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
       return admitted?.state === "active" ? admitted : existing
     },
     ...(input.now ? { now: input.now } : {}),
-  })
+  }), { secret: configured.private.secret, ...(input.now ? { now: input.now } : {}) })
   const legacyAuthBoundary: ControlPlaneAuthAdapter = {
     config: {
       enabled: true,

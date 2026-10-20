@@ -148,6 +148,11 @@ export type RequestAuthenticationAdapter = {
    * Absent on an adapter whose provider exposes no introspection endpoint.
    */
   introspectAccessToken?(token: string): Promise<unknown>
+  /**
+   * The `Set-Cookie` values the answer to `request` must carry, decided while
+   * `authenticate` verified it. Absent on an adapter that sets none.
+   */
+  responseCookies?(request: Request): readonly string[]
 }
 
 /**
@@ -457,6 +462,11 @@ function requestHasCookie(request: Request, name: string) {
   })
 }
 
+/** The origin a browser request names, or the one it was sent to when it names none (a same-origin GET). */
+export function requestOrigin(request: Request): string {
+  return request.headers.get("origin") ?? new URL(request.url).origin
+}
+
 /** True only when the statically selected adapter's browser/native credential is present. */
 export function requestHasAuthenticationCredential(request: Request, descriptor: AuthAdapterDescriptor) {
   if (request.headers.has("authorization")) return true
@@ -481,8 +491,7 @@ function assertUnambiguousCredential(request: Request, descriptor: AuthAdapterDe
  */
 function assertTrustedCookieOrigin(request: Request, descriptor: AuthAdapterDescriptor) {
   if (descriptor.browser.transport !== "cookie" || !requestHasCookie(request, descriptor.browser.cookie.name)) return
-  const origin = request.headers.get("origin") ?? new URL(request.url).origin
-  if (!descriptor.browser.trustedOrigins.includes(origin)) throw invalidCredentials()
+  if (!descriptor.browser.trustedOrigins.includes(requestOrigin(request))) throw invalidCredentials()
 }
 
 function resolveApplicationIdentity(

@@ -2,6 +2,8 @@ import type { Context, MiddlewareHandler } from "hono"
 
 import type { BrowserAuthDescriptor } from "@claxedo/account-contract/auth"
 
+import type { RequestAuthenticationAdapter } from "../auth/authentication"
+
 function trustedRequestOrigin(request: Request, browser: BrowserAuthDescriptor) {
   const origin = request.headers.get("origin")
   return origin && browser.trustedOrigins.includes(origin) ? origin : undefined
@@ -54,5 +56,27 @@ export function browserAuthHttpSecurity(browser: BrowserAuthDescriptor): Middlew
       return reject(context, 415, "browser_auth_content_type_unsupported", "Cookie-authenticated browser mutations require a JSON content type")
     }
     return next()
+  }
+}
+
+/**
+ * Appends the cookies `authentication` decided for this request while it
+ * verified the caller, once the route has answered.
+ */
+export function authenticationResponseCookies(authentication: RequestAuthenticationAdapter): MiddlewareHandler {
+  return async (context, next) => {
+    await next()
+    const cookies = authentication.responseCookies?.(context.req.raw) ?? []
+    if (cookies.length === 0) return
+    try {
+      for (const cookie of cookies) context.res.headers.append("set-cookie", cookie)
+    } catch {
+      // A `fetch` answer's headers are immutable. Hono's `res` setter copies
+      // what it is given but carries the previous response's cookies over in
+      // place of the copy's own, so the copy is assigned first and the
+      // cookies appended to it.
+      context.res = new Response(context.res.body, context.res)
+      for (const cookie of cookies) context.res.headers.append("set-cookie", cookie)
+    }
   }
 }

@@ -11,11 +11,13 @@ import {
 
 /**
  * What a cookie-signed request pays in serial database rounds on the Worker's
- * real composition, across both databases: Better Auth's session read joined
- * to its user, then the sign-in evidence beside the control plane's identity
- * row, then the route's own reads beside the principal's verification. Every
- * round is a Worker-to-D1 hop on staging, so these counts are the request's
- * time model; a chain that grows here grows there.
+ * real composition, across both databases. Verified live: Better Auth's
+ * session read joined to its user, then the sign-in evidence beside the
+ * control plane's identity row, then the route's own reads beside the
+ * principal's verification. Admitted on the principal cache the live answer
+ * set: the route's own reads alone. Every round is a Worker-to-D1 hop on
+ * staging, so these counts are the request's time model; a chain that grows
+ * here grows there.
  */
 
 let rig: UserDeployedBetterAuthApp
@@ -56,12 +58,16 @@ afterAll(async () => {
   await rig?.dispose()
 })
 
-async function paid(path: string) {
+async function paid(path: string, headers: Record<string, string> = owner) {
   counted.reset()
-  const response = await rig.request(path, { headers: owner })
+  const response = await rig.request(path, { headers })
   const body = (await response.json()) as Record<string, unknown>
   expect(response.status, `${path} ${JSON.stringify(body)}`).toBe(200)
-  return { rounds: counted.rounds(), statements: counted.statements(), body }
+  return { rounds: counted.rounds(), statements: counted.statements(), body, response, trace: counted.trace() }
+}
+
+function roundsOf(measured: Record<string, { rounds: number; statements: number }>) {
+  return Object.fromEntries(Object.entries(measured).map(([route, { rounds, statements }]) => [route, { rounds, statements }]))
 }
 
 test("the session read Better Auth answers is one joined statement", async () => {
@@ -84,11 +90,36 @@ test("a cookie-signed read pays the session, the evidence beside the identity ro
     devices: await paid("/api/claxedo/remote-access/devices"),
     sessionList: await paid("/api/control/session-list?scope=projects"),
   }
-  expect(Object.fromEntries(Object.entries(measured).map(([route, { rounds, statements }]) => [route, { rounds, statements }]))).toEqual({
+  expect(roundsOf(measured)).toEqual({
     sharedSessions: { rounds: 3, statements: 5 },
     devices: { rounds: 3, statements: 5 },
     sessionList: { rounds: 4, statements: 7 },
   })
   expect(measured.devices.body).toMatchObject({ devices: [{ host_id: "host_laptop", state: "online", workspace_ids: ["ws_laptop"] }] })
   expect(measured.sessionList.body).toMatchObject({ pages: [{ items: [] }, { items: [] }] })
+})
+
+test("a request the principal cache admits pays its route's own reads and no verification", async () => {
+  const live = await paid("/api/workspace/shared-sessions")
+  expect({ rounds: live.rounds, statements: live.statements }).toEqual({ rounds: 3, statements: 5 })
+  const cache = /__Host-claxedo\.principal=[^;]+/.exec(live.response.headers.get("set-cookie") ?? "")?.[0]
+  if (!cache) throw new Error("the live verification set no principal cache")
+  const cached = { ...owner, cookie: `${owner.cookie}; ${cache}` }
+  const measured = {
+    workspaces: await paid("/api/workspace?host=provisioner", cached),
+    sharedSessions: await paid("/api/workspace/shared-sessions", cached),
+    devices: await paid("/api/claxedo/remote-access/devices", cached),
+    sessionList: await paid("/api/control/session-list?scope=projects", cached),
+  }
+  expect(roundsOf(measured)).toEqual({
+    workspaces: { rounds: 1, statements: 2 },
+    sharedSessions: { rounds: 1, statements: 2 },
+    devices: { rounds: 1, statements: 2 },
+    sessionList: { rounds: 2, statements: 4 },
+  })
+  const verification = /^select "primary"\.\*, "join_user"|^select evidence\."sessionId"|^select ai\.user_id, u\.state/
+  expect(Object.values(measured).flatMap(({ trace }) => trace).filter(({ sql }) => verification.test(sql))).toEqual([])
+  expect(live.trace.filter(({ sql }) => verification.test(sql))).toHaveLength(3)
+  expect(measured.workspaces.response.headers.get("set-cookie")).toBeNull()
+  expect(measured.devices.body).toMatchObject({ devices: [{ host_id: "host_laptop", state: "online", workspace_ids: ["ws_laptop"] }] })
 })

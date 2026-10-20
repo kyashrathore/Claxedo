@@ -6,7 +6,7 @@ import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import { Hono } from "hono"
 import { allowedOriginPatterns } from "@claxedo/server-core/platform/http/cors-origins"
 import { securityHeaders } from "@claxedo/server-core/platform/http/security-headers"
-import { browserAuthHttpSecurity } from "@claxedo/server-core/platform/http/browser-auth-security"
+import { authenticationResponseCookies, browserAuthHttpSecurity } from "@claxedo/server-core/platform/http/browser-auth-security"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { TelemetryTrackRoutes } from "@claxedo/server-core/platform/telemetry/track-route"
 import { keepAlivePastResponse } from "@claxedo/server-core/platform/http/background-work"
@@ -251,6 +251,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
   }
   if (options.authentication.descriptor.browser.transport === "cookie") {
     app.use(browserAuthHttpSecurity(options.authentication.descriptor.browser))
+    app.use(authenticationResponseCookies(options.authentication))
   } else {
     app.use(
       corsMiddleware(

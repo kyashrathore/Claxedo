@@ -3,7 +3,8 @@ import { describe, expect, test } from "vitest"
 
 import type { BrowserAuthDescriptor } from "@claxedo/account-contract/auth"
 
-import { browserAuthHttpSecurity } from "./browser-auth-security"
+import type { RequestAuthenticationAdapter } from "../auth/authentication"
+import { authenticationResponseCookies, browserAuthHttpSecurity } from "./browser-auth-security"
 
 const COOKIE_BROWSER = {
   transport: "cookie",
@@ -187,5 +188,39 @@ describe("provider-neutral browser auth HTTP security", () => {
     expect(response.status).toBe(200)
     expect(response.headers.get("access-control-allow-origin")).toBeNull()
     expect(response.headers.get("access-control-allow-credentials")).toBeNull()
+  })
+})
+
+describe("authenticationResponseCookies", () => {
+  const issued = new WeakSet<Request>()
+  const authentication = {
+    responseCookies: (request: Request) => (issued.has(request) ? ["cache=1; Path=/"] : []),
+  } as unknown as RequestAuthenticationAdapter
+
+  function cookieApp() {
+    const instance = new Hono()
+    instance.use(authenticationResponseCookies(authentication))
+    instance.get("/own", (context) => {
+      issued.add(context.req.raw)
+      context.header("set-cookie", "route=1; Path=/")
+      return context.json({ ok: true })
+    })
+    instance.get("/fetched", (context) => {
+      issued.add(context.req.raw)
+      return Response.redirect("https://app.example.test/elsewhere", 302)
+    })
+    instance.get("/anonymous", (context) => context.json({ ok: true }))
+    return instance
+  }
+
+  test("adds the cookies the adapter issued for the request beside the route's own, on a fetched answer too", async () => {
+    const own = await cookieApp().request("https://api.example.test/own")
+    expect(own.headers.getSetCookie()).toEqual(["route=1; Path=/", "cache=1; Path=/"])
+    const fetched = await cookieApp().request("https://api.example.test/fetched")
+    expect(fetched.status).toBe(302)
+    expect(fetched.headers.get("location")).toBe("https://app.example.test/elsewhere")
+    expect(fetched.headers.getSetCookie()).toEqual(["cache=1; Path=/"])
+    const anonymous = await cookieApp().request("https://api.example.test/anonymous")
+    expect(anonymous.headers.getSetCookie()).toEqual([])
   })
 })
