@@ -52,6 +52,7 @@
       "dependencies": {
         "@claxedo/account-contract": "workspace:*",
         "@claxedo/agent-runtime-contract": "workspace:*",
+        "@claxedo/documents": "workspace:*",
         "@claxedo/helpers": "workspace:*",
         "@claxedo/plugin-api": "workspace:*",
         "@claxedo/usage-contract": "workspace:*",
@@ -198,7 +199,10 @@
       "name": "@claxedo/documents",
       "version": "0.1.0",
       "dependencies": {
+        "@claxedo/account-contract": "workspace:*",
         "@claxedo/helpers": "workspace:*",
+        "@claxedo/mcp": "workspace:*",
+        "@claxedo/plugin-api": "workspace:*",
         "@claxedo/server-core": "workspace:*",
         "@claxedo/session-core": "workspace:*",
         "@claxedo/workspace-runtime": "workspace:*",
@@ -208,6 +212,8 @@
         "zod": "4.4.3",
       },
       "devDependencies": {
+        "@hono/node-server": "1.19.11",
+        "@modelcontextprotocol/sdk": "1.29.0",
         "@tsconfig/node-lts": "22.0.4",
         "@types/bun": "1.3.13",
         "typescript": "catalog:",
@@ -510,9 +516,11 @@
       },
       "devDependencies": {
         "@claxedo/account-contract": "workspace:*",
+        "@claxedo/documents": "workspace:*",
         "@claxedo/helpers": "workspace:*",
         "@claxedo/host-connector": "workspace:*",
         "@claxedo/host-serving": "workspace:*",
+        "@claxedo/plugin-api": "workspace:*",
         "@claxedo/process-ownership": "workspace:*",
         "@claxedo/server-core": "workspace:*",
         "@tsconfig/bun": "catalog:",

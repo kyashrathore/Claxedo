@@ -1,13 +1,20 @@
 import path from "node:path"
 import { z } from "zod"
-import { claxedoDocumentReferenceId, InvalidDocumentReferenceError } from "@claxedo/helpers/claxedo-document"
-import { record, records, text } from "../json"
-import type { ClaxedoFetch } from "../client/contract"
-import type { McpToolContext } from "../context"
-import { mcpToolRefusal, type McpToolResult } from "../mcp-tool"
-import type { ToolRegistrar } from "./registry"
-import { declaredToolAccess } from "./inventory"
-import { toolJson, WORKSPACE_TARGET_SCHEMA } from "./target"
+import {
+  declaredToolAccess,
+  mcpToolRefusal,
+  record,
+  records,
+  text,
+  toolJson,
+  WORKSPACE_TARGET_SCHEMA,
+  type ClaxedoFetch,
+  type McpToolContext,
+  type McpToolGroup,
+  type McpToolResult,
+  type ToolRegistrar,
+} from "@claxedo/mcp/tool-group"
+import { claxedoDocumentReferenceId, InvalidDocumentReferenceError } from "../reference"
 
 /** The index fields a caller can act on; the rest of a row is service bookkeeping. */
 const METADATA_KEYS = [
@@ -37,7 +44,10 @@ const SCOPE_SCHEMA = {
   directory: WORKSPACE_TARGET_SCHEMA.directory.describe("Local project directory, when the project id is not to hand. Defaults to this workspace's own."),
 } as const
 
-export function registerDocumentTools(registry: ToolRegistrar) {
+/** Served wherever a composition grants the `documents` service; the tools answer a sentence where none is granted. */
+export const DOCUMENTS_MCP_TOOL_GROUP: McpToolGroup = { id: "documents", reach: { service: "documents" }, register: registerDocumentTools }
+
+function registerDocumentTools(registry: ToolRegistrar) {
   registry.tool(
     "documents_list",
     {

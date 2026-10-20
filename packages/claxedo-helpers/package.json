@@ -102,13 +102,6 @@
       "import": "./dist/claxedo-daemon.mjs",
       "default": "./dist/claxedo-daemon.mjs"
     },
-    "./claxedo-document": {
-      "development": "./src/claxedo-document.ts",
-      "bun": "./src/claxedo-document.ts",
-      "types": "./dist/claxedo-document.d.ts",
-      "import": "./dist/claxedo-document.mjs",
-      "default": "./dist/claxedo-document.mjs"
-    },
     "./sse": {
       "development": "./src/sse.ts",
       "bun": "./src/sse.ts",

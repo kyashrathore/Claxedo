@@ -1,5 +1,6 @@
 import { expect, test, vi } from "vitest"
-import { HOSTED_OPERATIONS } from "@claxedo/account-contract"
+import { hostedOperationTable } from "@claxedo/account-contract"
+import { DOCUMENTS_OPERATIONS } from "@claxedo/documents/operations"
 import { createIntegrationsRoutes } from "@claxedo/connections"
 import { AGENT_PLUGINS_ROUTE_PATH } from "@claxedo/server-core/agent-plugins/module"
 import { asOrgId } from "@claxedo/server-core/platform/auth/branded-id"
@@ -83,7 +84,7 @@ function normalized(path: string) {
 test("every registered operation matches a hosted server route and method", () => {
   const routes = hostedRoutes()
   const missing: string[] = []
-  for (const [name, operation] of Object.entries(HOSTED_OPERATIONS)) {
+  for (const [name, operation] of Object.entries(hostedOperationTable(DOCUMENTS_OPERATIONS).operations)) {
     const methods =
       typeof operation.method === "string" ? [operation.method] : ["GET", "POST", "PUT", "PATCH", "DELETE"]
     for (const method of methods) {

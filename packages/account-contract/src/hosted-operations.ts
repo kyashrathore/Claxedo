@@ -5,13 +5,13 @@ import { USAGE_OPERATIONS } from "./usage-operations"
 import {
   defineOperation, operationPath, requiredParameter, optionalParameter, bodyField,
   selectBody, operationHeaders, pluginMethod, pluginBody, connectedRepositoryBody,
-  type DecodeResult, type OperationDefinition, type ResolvedRequest,
+  type Decoder, type ResolvedRequest,
   MissingOperationParameter, UnknownHostedOperation,
 } from "./operation-definition"
 import { operationInput } from "./operation-input"
 import { object, withStrings, array, withArrays, sessionPeople, withRecord, nullable, optional, connection, statusResult } from "./hosted-output"
 
-export const HOSTED_OPERATIONS = {
+export const CORE_HOSTED_OPERATIONS = {
   ...CREDENTIAL_OPERATIONS,
   ...USAGE_OPERATIONS,
   "session.shared.list": defineOperation({
@@ -547,80 +547,6 @@ export const HOSTED_OPERATIONS = {
     output: object, retry: "never",
     exposure: { renderer: true, app: false },
   }),
-  "documents.list": defineOperation({
-    method: "GET", path: operationPath("/documents", { optionalQuery: ["project_id", "document_id", "directory", "archived"] }),
-    input: operationInput({ project_id: optionalParameter, document_id: optionalParameter, directory: optionalParameter, archived: optionalParameter }),
-    output: array, retry: "safe",
-    exposure: { renderer: true, app: true },
-  }),
-  "documents.get": defineOperation({
-    method: "GET", path: operationPath("/documents/:id"),
-    input: operationInput({ id: requiredParameter }),
-    output: object, retry: "safe",
-    exposure: { renderer: true, app: true },
-  }),
-  "documents.create": defineOperation({
-    method: "POST", path: operationPath("/documents"),
-    input: operationInput({ project_id: bodyField, directory: bodyField, display_name: bodyField, markdown: bodyField }),
-    output: object, retry: "never",
-    exposure: { renderer: true, app: true },
-    body: selectBody("project_id", "directory", "display_name", "markdown"),
-  }),
-  "documents.update": defineOperation({
-    method: "PATCH", path: operationPath("/documents/:id"),
-    input: operationInput({ id: requiredParameter, display_name: bodyField, session_id: bodyField, ifMatch: optionalParameter }),
-    output: object, retry: "safe",
-    exposure: { renderer: true, app: true },
-    body: selectBody("display_name", "session_id"),
-    headers: operationHeaders({ ifMatch: "If-Match" }),
-  }),
-  "documents.content.get": defineOperation({
-    method: "GET", path: operationPath("/documents/:id/content"),
-    input: operationInput({ id: requiredParameter }),
-    output: object, retry: "safe",
-    exposure: { renderer: true, app: true },
-  }),
-  "documents.content.put": defineOperation({
-    method: "PUT", path: operationPath("/documents/:id/content"),
-    input: operationInput({ id: requiredParameter, display_name: bodyField, markdown: bodyField, ifMatch: requiredParameter }),
-    output: object, retry: "never",
-    exposure: { renderer: true, app: true },
-    body: selectBody("display_name", "markdown"),
-    headers: operationHeaders({ ifMatch: "If-Match" }),
-  }),
-  "documents.snapshots": defineOperation({
-    method: "GET", path: operationPath("/documents/:id/snapshots"),
-    input: operationInput({ id: requiredParameter }),
-    output: array, retry: "safe",
-    exposure: { renderer: true, app: true },
-  }),
-  "documents.snapshots.restore": defineOperation({
-    method: "POST", path: operationPath("/documents/:id/snapshots/:snapshotId/restore"),
-    input: operationInput({ id: requiredParameter, snapshotId: requiredParameter, ifMatch: requiredParameter }),
-    output: object, retry: "never",
-    exposure: { renderer: true, app: true },
-    headers: operationHeaders({ ifMatch: "If-Match" }),
-  }),
-  "documents.workSource": defineOperation({
-    method: "POST", path: operationPath("/documents/:id/work-source"),
-    input: operationInput({ id: requiredParameter, target_stream_id: bodyField, directory: bodyField, repository_url: bodyField }),
-    output: object, retry: "safe",
-    exposure: { renderer: true, app: false },
-    body: selectBody("target_stream_id", "directory", "repository_url"),
-  }),
-  "documents.workSourcePin": defineOperation({
-    method: "POST", path: operationPath("/documents/:id/snapshots/:snapshotId/work-source-pin"),
-    input: operationInput({ id: requiredParameter, snapshotId: requiredParameter, work_source_id: bodyField, revision_id: bodyField }),
-    output: object, retry: "safe",
-    exposure: { renderer: true, app: false },
-    body: selectBody("work_source_id", "revision_id"),
-  }),
-  "documents.statuses": defineOperation({
-    method: "GET", path: operationPath("/documents/statuses", { optionalQuery: ["project_id", "document_id", "directory", "archived"] }),
-    input: operationInput({ project_id: optionalParameter, document_id: optionalParameter, directory: optionalParameter, archived: optionalParameter }),
-    output: array, retry: "safe",
-    exposure: { renderer: true, app: true },
-  }),
   "session.messages": defineOperation({
     method: "GET", path: operationPath("/api/control/sessions/:sessionId/messages", { optionalQuery: ["workspaceId", "view", "limit", "before", "after"] }),
     input: operationInput({ sessionId: requiredParameter, workspaceId: optionalParameter, view: optionalParameter, limit: optionalParameter, before: optionalParameter, after: optionalParameter }),
@@ -674,40 +600,6 @@ export const HOSTED_OPERATIONS = {
     exposure: { renderer: true, app: false },
     body: selectBody("event", "properties"),
   }),
-  "documents.export": defineOperation({
-    method: "GET", path: operationPath("/documents/:id/export"),
-    input: operationInput({ id: requiredParameter }),
-    output: withStrings("bytesBase64"), retry: "safe",
-    exposure: { renderer: true, app: false },
-  }),
-  "documents.agentOpen": defineOperation({
-    method: "POST", path: operationPath("/documents/:id/agent-open"),
-    input: operationInput({ id: requiredParameter, session_id: bodyField }),
-    output: object, retry: "never",
-    exposure: { renderer: true, app: true },
-    body: selectBody("session_id"),
-  }),
-  "documents.runtimeConflictResolve": defineOperation({
-    method: "POST", path: operationPath("/documents/:id/runtime-conflict/resolve"),
-    input: operationInput({ id: requiredParameter, session_id: bodyField, choice: bodyField }),
-    output: object, retry: "never",
-    exposure: { renderer: true, app: true },
-    body: selectBody("session_id", "choice"),
-  }),
-  "documents.moveToRepository": defineOperation({
-    method: "POST", path: operationPath("/documents/:id/move-to-repository"),
-    input: operationInput({ id: requiredParameter, workspace_id: bodyField, path: bodyField }),
-    output: object, retry: "never",
-    exposure: { renderer: true, app: true },
-    body: selectBody("workspace_id", "path"),
-  }),
-  "documents.fromRepo": defineOperation({
-    method: "POST", path: operationPath("/documents/from-repo"),
-    input: operationInput({ project_id: bodyField, directory: bodyField, workspace_id: bodyField, path: bodyField, display_name: bodyField, status: bodyField, session_id: bodyField }),
-    output: object, retry: "never",
-    exposure: { renderer: true, app: true },
-    body: selectBody("project_id", "directory", "workspace_id", "path", "display_name", "status", "session_id"),
-  }),
   "plugin.request": defineOperation({
     method: (input) => input.method, path: operationPath("/api/plugins/:pluginId/*", { accepts: { pluginId: isPluginId } }),
     input: operationInput({ pluginId: requiredParameter, method: pluginMethod, path: requiredParameter, body: bodyField }),
@@ -718,45 +610,87 @@ export const HOSTED_OPERATIONS = {
   }),
 }
 
-export type HostedOperationName = keyof typeof HOSTED_OPERATIONS
-export type RunHostedOperation = (operation: HostedOperationName, input?: Readonly<Record<string, unknown>>) => Promise<unknown>
-export type HostedOperationInput<N extends HostedOperationName> =
-  (typeof HOSTED_OPERATIONS)[N]["input"] extends (raw: unknown) => DecodeResult<infer I> ? I : never
-export type DecodedHostedResult<N extends HostedOperationName> =
-  (typeof HOSTED_OPERATIONS)[N]["output"] extends (raw: unknown) => DecodeResult<infer O> ? O : never
+/** What a composed table reads of each operation, whichever table declared it. */
+export type HostedOperation = Readonly<{
+  input: Decoder<unknown>
+  output: Decoder<unknown>
+  retry: "safe" | "never"
+  exposure: Readonly<{ renderer: boolean; app: boolean; stream?: boolean }>
+  path: Readonly<{ pattern?: string }>
+  request(raw: unknown): ResolvedRequest
+}>
 
-const OUTPUTS: { [N in HostedOperationName]: Pick<OperationDefinition<unknown, DecodedHostedResult<N>>, "output"> } = HOSTED_OPERATIONS
+export type HostedOperations = Readonly<Record<string, HostedOperation>>
 
-export function hostedOperationNames(): HostedOperationName[] {
-  return Object.keys(HOSTED_OPERATIONS).filter(isHostedOperationName)
-}
+type CoreHostedOperations = typeof CORE_HOSTED_OPERATIONS
+type Intersection<U> = (U extends unknown ? (value: U) => void : never) extends (value: infer I) => void ? I : never
 
-export function isHostedOperationName(value: string): value is HostedOperationName {
-  return Object.hasOwn(HOSTED_OPERATIONS, value)
-}
+/** The core operations and each plugin's, as one name space. */
+export type ComposedHostedOperations<Extra extends readonly HostedOperations[]> = CoreHostedOperations & Intersection<Extra[number]>
 
-export function decodeHostedResult<N extends HostedOperationName>(name: N, raw: unknown): DecodedHostedResult<N> {
-  const spec = OUTPUTS[name]
-  if (!spec) throw new UnknownHostedOperation(`no hosted operation named "${name}"`)
-  const decoded = spec.output(raw)
-  if (!decoded.ok) throw new Error(`hosted operation "${name}" returned an unexpected shape: ${decoded.reason}`)
-  return decoded.value
-}
+export type HostedOperationName<T extends HostedOperations = CoreHostedOperations> = keyof T & string
+export type RunHostedOperation<T extends HostedOperations = CoreHostedOperations> =
+  (operation: HostedOperationName<T>, input?: Readonly<Record<string, unknown>>) => Promise<unknown>
+export type HostedOperationInput<N extends HostedOperationName<T>, T extends HostedOperations = CoreHostedOperations> =
+  T[N]["input"] extends Decoder<infer I> ? I : never
+export type DecodedHostedResult<N extends HostedOperationName<T>, T extends HostedOperations = CoreHostedOperations> =
+  T[N]["output"] extends Decoder<infer O> ? O : never
 
-export function isSafeOperation(name: HostedOperationName) {
-  return HOSTED_OPERATIONS[name].retry === "safe"
-}
+export type HostedOperationTable<T extends HostedOperations> = Readonly<{
+  operations: T
+  names: () => HostedOperationName<T>[]
+  has: (name: string) => name is HostedOperationName<T>
+  decode: <N extends HostedOperationName<T>>(name: N, raw: unknown) => DecodedHostedResult<N, T>
+  isSafe: (name: HostedOperationName<T>) => boolean
+  isStream: (name: string) => boolean
+  resolve: (name: string, raw?: unknown) => ResolvedRequest
+}>
 
-export function isStreamHostedOperation(name: string): boolean {
-  return isHostedOperationName(name) && "stream" in HOSTED_OPERATIONS[name].exposure && HOSTED_OPERATIONS[name].exposure.stream === true
-}
-
-export function resolveHostedOperation(name: string, raw: unknown = {}): ResolvedRequest {
-  if (!isHostedOperationName(name)) throw new UnknownHostedOperation(`no hosted operation named "${name}"`)
-  try {
-    return HOSTED_OPERATIONS[name].request(raw)
-  } catch (error) {
-    if (error instanceof MissingOperationParameter) throw new MissingOperationParameter(`operation "${name}": ${error.message}`)
-    throw error
+/**
+ * The operations one composition serves: the core table, then each plugin's.
+ * A name two tables declare is refused, because the second would silently
+ * replace a reviewed request with another.
+ */
+export function hostedOperationTable<const Extra extends readonly HostedOperations[]>(
+  ...extra: Extra
+): HostedOperationTable<ComposedHostedOperations<Extra>> {
+  type T = ComposedHostedOperations<Extra>
+  const declared = new Map<string, HostedOperation>(Object.entries(CORE_HOSTED_OPERATIONS))
+  for (const table of extra) {
+    for (const [name, operation] of Object.entries(table)) {
+      if (declared.has(name)) throw new Error(`hosted operation "${name}" is declared twice`)
+      declared.set(name, operation)
+    }
+  }
+  const has = (name: string): name is HostedOperationName<T> => declared.has(name)
+  const operation = (name: string): HostedOperation => {
+    const found = declared.get(name)
+    if (!found) throw new UnknownHostedOperation(`no hosted operation named "${name}"`)
+    return found
+  }
+  // The loop above builds exactly `T`, and the decoder at `name` is
+  // `T[N]["output"]`, but the checker follows neither through the generic.
+  return {
+    // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion
+    operations: Object.fromEntries(declared) as T,
+    names: () => [...declared.keys()].filter(has),
+    has,
+    decode: <N extends HostedOperationName<T>>(name: N, raw: unknown) => {
+      const decoded = operation(name).output(raw)
+      if (!decoded.ok) throw new Error(`hosted operation "${name}" returned an unexpected shape: ${decoded.reason}`)
+      // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion
+      return decoded.value as DecodedHostedResult<N, T>
+    },
+    isSafe: (name) => operation(name).retry === "safe",
+    isStream: (name) => declared.get(name)?.exposure.stream === true,
+    resolve: (name, raw = {}) => {
+      const resolving = operation(name)
+      try {
+        return resolving.request(raw)
+      } catch (error) {
+        if (error instanceof MissingOperationParameter) throw new MissingOperationParameter(`operation "${name}": ${error.message}`)
+        throw error
+      }
+    },
   }
 }

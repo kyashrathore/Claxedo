@@ -4,6 +4,7 @@ import {
   type LocalDocumentsBackendDependencies,
 } from "../host/backends/local/backend"
 import { setDocumentChangedSink } from "../host/backend"
+import { DOCUMENTS_MCP_TOOL_GROUP } from "../mcp"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { sessionMeta } from "@claxedo/server-core/session/meta/index"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
@@ -57,7 +58,7 @@ export function createLocalDocumentsPlugin(): LocalServerPlugin {
       }]
     },
     mcp: {
-      groups: [],
+      groups: [DOCUMENTS_MCP_TOOL_GROUP],
       service: {
         id: "documents",
         grant: async ({ workspaceId, inProcessFetch }) => ({

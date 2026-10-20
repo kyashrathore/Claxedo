@@ -140,7 +140,7 @@ describe("isPluginId", () => {
 
 describe("first-party plugin ids", () => {
   test("name the host's bundled plugins, which are valid plugin ids no live plugin may take", () => {
-    expect(FIRST_PARTY_PLUGIN_IDS).toEqual(["claxedo-tasks"])
+    expect(FIRST_PARTY_PLUGIN_IDS).toEqual(["claxedo-tasks", "claxedo-documents"])
     expect(FIRST_PARTY_PLUGIN_IDS.every(isPluginId)).toBe(true)
     expect(isFirstPartyPluginId("claxedo-tasks")).toBe(true)
     expect(isFirstPartyPluginId("tasks")).toBe(false)

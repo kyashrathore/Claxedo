@@ -21,7 +21,7 @@ const BACKEND_ROUTE_PATTERN = new RegExp(
 )
 
 /** Ids of the plugins the host ships as bundles; no live plugin may take one. */
-export const FIRST_PARTY_PLUGIN_IDS = ["claxedo-tasks"] as const
+export const FIRST_PARTY_PLUGIN_IDS = ["claxedo-tasks", "claxedo-documents"] as const
 
 export type FirstPartyPluginId = (typeof FIRST_PARTY_PLUGIN_IDS)[number]
 

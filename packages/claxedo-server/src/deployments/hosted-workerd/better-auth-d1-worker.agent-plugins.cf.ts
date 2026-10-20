@@ -6,10 +6,9 @@ import {
   createBetterAuthD1Worker,
   type BetterAuthD1WorkerEnv,
 } from "./better-auth-d1-worker.cf"
-import { LiveSyncRoom } from "./core-worker.cf"
+import { hostedMcpToolGroups, LiveSyncRoom } from "./core-worker.cf"
 import { settledCompositionCache } from "./settled-composition-cache"
 import { composeHostedTasksPlugin } from "./tasks-plugin/compose"
-import { mcpToolGroups } from "@claxedo/server-core/plugins/server-plugin"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { BUILTIN_SUBAGENTS_TOOL_GROUP } from "@claxedo/server-core/agent-plugins/builtin/plugin"
 import { createOwnerGrantMinter, createOwnerRootCapability } from "../../session/owner-grant"
@@ -109,7 +108,7 @@ export function composeBetterAuthD1AgentPlugins(
   })
   const plugins = [tasks]
   const feature = createHostedAgentPluginsComposition({
-    toolGroups: mcpToolGroups(plugins),
+    toolGroups: hostedMcpToolGroups(plugins),
     env,
     plane: base.plane,
     database: env.CONTROL_PLANE_DB,

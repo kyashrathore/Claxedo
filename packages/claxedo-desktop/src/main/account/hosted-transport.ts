@@ -1,4 +1,4 @@
-import type { HostedOperationName } from "@claxedo/account-contract"
+import type { DesktopHostedOperationName } from "./hosted-operations"
 import { readFiniteNumber, readRecord, readString } from "@claxedo/helpers/readers"
 
 /**
@@ -108,7 +108,7 @@ export function hostedError(value: unknown): Record<string, unknown> | undefined
 }
 
 export function connectionRetryResult(
-  name: HostedOperationName,
+  name: DesktopHostedOperationName,
   response: Response,
   value: unknown,
 ): { status: "provisioning"; retryAfterMs: number; failure?: string } | undefined {
@@ -125,7 +125,7 @@ export function connectionRetryResult(
   return undefined
 }
 
-export function operationFailure(name: HostedOperationName, status: number, value: unknown) {
+export function operationFailure(name: DesktopHostedOperationName, status: number, value: unknown) {
   const error = hostedError(value)
   if (!error) return new Error(`operation "${name}" failed: ${status}`)
   const detail = [readString(error, "code")?.trim() ?? "", readString(error, "message")?.trim() ?? ""]

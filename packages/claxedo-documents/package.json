@@ -11,6 +11,13 @@
     "directory": "packages/claxedo-documents"
   },
   "exports": {
+    "./cli": {
+      "types": "./src/cli/index.ts",
+      "bun": "./src/cli/index.ts",
+      "development": "./src/cli/index.ts",
+      "import": "./src/cli/index.ts",
+      "default": "./src/cli/index.ts"
+    },
     "./host/*": {
       "types": "./src/host/*.ts",
       "bun": "./src/host/*.ts",
@@ -32,6 +39,20 @@
       "import": "./src/hosted/index.ts",
       "default": "./src/hosted/index.ts"
     },
+    "./mcp": {
+      "types": "./src/mcp/index.ts",
+      "bun": "./src/mcp/index.ts",
+      "development": "./src/mcp/index.ts",
+      "import": "./src/mcp/index.ts",
+      "default": "./src/mcp/index.ts"
+    },
+    "./operations": {
+      "types": "./src/operations.ts",
+      "bun": "./src/operations.ts",
+      "development": "./src/operations.ts",
+      "import": "./src/operations.ts",
+      "default": "./src/operations.ts"
+    },
     "./runtime": {
       "types": "./src/runtime/index.ts",
       "bun": "./src/runtime/index.ts",
@@ -47,12 +68,29 @@
       "default": "./src/testing.ts"
     }
   },
+  "claxedo": {
+    "id": "claxedo-documents",
+    "name": "Documents",
+    "version": "1.0.0",
+    "app": "./src/app/index.ts",
+    "requires": [
+      "documents"
+    ],
+    "server": {
+      "routes": [],
+      "operations": []
+    }
+  },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "mkdir -p .artifacts/unit && node ../../script/test-home/run.mjs node ../../script/test-deadline.mjs bun test src --path-ignore-patterns='**/local/plugin.test*' --timeout 30000 --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml && node ../../script/test-home/run.mjs node ../../script/test-deadline.mjs bun test src/local/plugin.test.ts --timeout 30000 --reporter=junit --reporter-outfile=.artifacts/unit/junit-local-git.xml"
+    "test": "mkdir -p .artifacts/unit && node ../../script/test-home/run.mjs node ../../script/test-deadline.mjs bun test src --path-ignore-patterns='**/local/plugin.test*' --timeout 30000 --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml && node ../../script/test-home/run.mjs node ../../script/test-deadline.mjs bun test src/local/plugin.test.ts --timeout 30000 --reporter=junit --reporter-outfile=.artifacts/unit/junit-local-git.xml",
+    "verify:closure": "bun ../../script/product-boundary/verify.ts"
   },
   "dependencies": {
+    "@claxedo/account-contract": "workspace:*",
     "@claxedo/helpers": "workspace:*",
+    "@claxedo/mcp": "workspace:*",
+    "@claxedo/plugin-api": "workspace:*",
     "@claxedo/server-core": "workspace:*",
     "@claxedo/session-core": "workspace:*",
     "@claxedo/workspace-runtime": "workspace:*",
@@ -62,6 +100,8 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@hono/node-server": "1.19.11",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "@tsconfig/node-lts": "22.0.4",
     "@types/bun": "1.3.13",
     "typescript": "catalog:"

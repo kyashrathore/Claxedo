@@ -1,15 +1,14 @@
 export {
-  HOSTED_OPERATIONS,
-  decodeHostedResult,
-  hostedOperationNames,
-  isHostedOperationName,
-  isSafeOperation,
-  isStreamHostedOperation,
-  resolveHostedOperation,
-  type HostedOperationName,
-  type RunHostedOperation,
-  type HostedOperationInput,
+  CORE_HOSTED_OPERATIONS,
+  hostedOperationTable,
+  type ComposedHostedOperations,
   type DecodedHostedResult,
+  type HostedOperation,
+  type HostedOperationInput,
+  type HostedOperationName,
+  type HostedOperations,
+  type HostedOperationTable,
+  type RunHostedOperation,
 } from "./hosted-operations"
 export type { SharedSession } from "./shared-sessions"
 export {

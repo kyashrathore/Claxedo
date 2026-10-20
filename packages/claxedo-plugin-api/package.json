@@ -17,6 +17,11 @@
       "development": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./cli": {
+      "types": "./src/cli.ts",
+      "development": "./src/cli.ts",
+      "default": "./src/cli.ts"
+    },
     "./id": {
       "types": "./src/id.ts",
       "development": "./src/id.ts",

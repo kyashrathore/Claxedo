@@ -8,7 +8,8 @@ vi.mock("../hosted-shared/hosted-core-app", () => ({
   createHostedCoreApp: mocks.createHostedCoreApp,
 }))
 
-import { createHostedCoreWorker } from "./core-worker.cf"
+import { CLAXEDO_MCP_TOOL_GROUP_IDS } from "@claxedo/mcp"
+import { createHostedCoreWorker, hostedMcpToolGroups } from "./core-worker.cf"
 
 const documentAccess = { database: { prepare: vi.fn() }, now: Date.now } as never
 
@@ -59,6 +60,19 @@ describe("hosted core Worker root", () => {
       sharedRateLimitStore: expect.objectContaining({ periodSeconds: 60 }),
     }))
     expect("scheduled" in worker).toBe(false)
+  })
+
+  test("the MCP mount serves the groups the Agent Plugins catalog lists, Documents' after the core groups", async () => {
+    mocks.createHostedCoreApp.mockReturnValue(app())
+    const extra = { id: "fixture-plugin", routeContributions: [], mcp: { groups: [{ id: "fixture", reach: "account" as const, register: () => {} }] } }
+    const selected = { plane: {} as never, options: { product: { productPosture: "user-deployed" }, plugins: [extra] } as never, documentAccess }
+    const worker = createHostedCoreWorker(() => selected)
+
+    await worker.fetch(new Request("https://core.example.test/api/claxedo/health"), env())
+
+    const registered = mocks.createHostedCoreApp.mock.calls.at(-1)?.[1].firstPartyMcp.registerTools
+    expect(registered).toEqual(hostedMcpToolGroups([extra]))
+    expect(registered.map((group: { id: string }) => group.id)).toEqual([...CLAXEDO_MCP_TOOL_GROUP_IDS, "documents", "fixture"])
   })
 
   test("follows the composition cache: a replaced plane gets a fresh app instead of the pinned first one", async () => {

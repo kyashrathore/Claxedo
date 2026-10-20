@@ -156,8 +156,6 @@ describe("the registered surface", () => {
   test("lists the inside-session set for a runtime credential", () => {
     expect(surface(runtimeCredential).listed).toEqual([
       "create_subagent",
-      "documents_list",
-      "documents_open",
       "question_reply",
       "session_cancel_turn",
       "session_create",
@@ -212,8 +210,6 @@ describe("the registered surface", () => {
 
   test("lists the outside-in set for a user credential", () => {
     expect(surface(userCredential()).listed).toEqual([
-      "documents_list",
-      "documents_open",
       "permission_reply",
       "question_reject",
       "question_reply",
@@ -243,7 +239,6 @@ describe("the registered surface", () => {
     expect(writes.length).toBeGreaterThan(0)
     expect(listed.filter((name) => writes.includes(name))).toEqual([])
     expect(listed).toEqual([
-      "documents_list",
       "session_changes",
       "session_get",
       "session_transcript",
@@ -296,7 +291,7 @@ describe("the tool names the catalog publishes", () => {
     // decided nothing. The list is short on purpose: adding to it is the
     // decision, and this is where it gets read.
     expect(published.filter((group) => group.reach === "account").map((group) => group.id)).toEqual([])
-    expect(published.filter((group) => typeof group.reach === "object").map((group) => group.id)).toEqual(["app-plugins", "documents"])
+    expect(published.filter((group) => typeof group.reach === "object").map((group) => group.id)).toEqual(["app-plugins"])
     expect(published.filter((group) => group.reach === "runtime").map((group) => group.id)).toEqual([
       "attention",
       "review",

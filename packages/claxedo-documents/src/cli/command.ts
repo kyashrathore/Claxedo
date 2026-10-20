@@ -1,42 +1,42 @@
-import { claxedoDocumentReferenceId } from "@claxedo/helpers/claxedo-document"
-import { config, url } from "../config"
-import { requestJson } from "../http"
-import { object } from "../json"
-import { requireAccessToken } from "../auth/token-store"
+import { asRecordOrEmpty as object } from "@claxedo/helpers/guards"
+import type { CliCommand, CliCommandContext } from "@claxedo/plugin-api/cli"
+import { claxedoDocumentReferenceId } from "../reference"
 
-export const documentsUsage = [
+const usage = [
   "claxedo documents list [--project <id> | --directory <path>]",
   "claxedo documents open <claxedo://document/id | id | name> [--session <id>] [--project <id> | --directory <path>]",
 ].join("\n")
 
 type Flags = { positionals: string[]; project?: string; directory?: string; session?: string }
 
-export async function documents(argv: string[]) {
+export const documentsCliCommand: CliCommand = { name: "documents", usage, run: documents }
+
+async function documents(argv: readonly string[], context: CliCommandContext) {
   const [command, ...args] = argv
   if (!command || command === "help" || command === "--help" || command === "-h") {
-    console.log(documentsUsage)
+    console.log(usage)
     return
   }
   const flags = parseFlags(args)
   const scope = documentIndexQuery(flags)
-  const token = await requireAccessToken()
+  const token = await context.requireAccessToken()
 
   if (command === "list") {
-    console.log(JSON.stringify(await readDocumentIndex(token, scope, "active"), null, 2))
+    console.log(JSON.stringify(await readDocumentIndex(context, token, scope, "active"), null, 2))
     return
   }
   if (command !== "open") throw new Error(`Unknown documents command '${command}'`)
 
   const reference = flags.positionals[0]
   if (!reference) throw new Error("documents open needs a document reference")
-  const sessionId = flags.session ?? process.env.CLAXEDO_SESSION_ID?.trim()
+  const sessionId = flags.session ?? context.env.CLAXEDO_SESSION_ID?.trim()
   if (!sessionId) throw new Error("documents open needs --session <id> or CLAXEDO_SESSION_ID")
 
   const wanted = claxedoDocumentReferenceId(reference)
-  const documentId = resolveDocumentId(await readDocumentIndex(token, scope, "all"), wanted)
+  const documentId = resolveDocumentId(await readDocumentIndex(context, token, scope, "all"), wanted)
   const opened = object(
-    await requestJson({
-      url: url(config().controlPlaneUrl, `/documents/${encodeURIComponent(documentId)}/agent-open`),
+    await context.requestJson({
+      url: context.url(context.controlPlaneUrl(), `/documents/${encodeURIComponent(documentId)}/agent-open`),
       method: "POST",
       token,
       body: { session_id: sessionId },
@@ -52,9 +52,9 @@ function documentIndexQuery(flags: Flags): Record<string, string> {
   return flags.project ? { project_id: flags.project } : { directory: flags.directory ?? process.cwd() }
 }
 
-async function readDocumentIndex(token: string, scope: Record<string, string>, archived: "active" | "all") {
+async function readDocumentIndex(context: CliCommandContext, token: string, scope: Record<string, string>, archived: "active" | "all") {
   const query = new URLSearchParams({ ...scope, archived })
-  const listed = await requestJson({ url: url(config().controlPlaneUrl, `/documents?${query}`), token })
+  const listed = await context.requestJson({ url: context.url(context.controlPlaneUrl(), `/documents?${query}`), method: "GET", token })
   if (!Array.isArray(listed)) throw new Error("The documents index did not answer with a list of documents")
   return listed.map((row: unknown) => object(row))
 }
@@ -72,7 +72,7 @@ function resolveDocumentId(rows: readonly Record<string, unknown>[], reference: 
   return id
 }
 
-function parseFlags(args: string[]): Flags {
+function parseFlags(args: readonly string[]): Flags {
   const values = new Map<string, string>()
   const positionals: string[] = []
   for (let index = 0; index < args.length; index += 1) {

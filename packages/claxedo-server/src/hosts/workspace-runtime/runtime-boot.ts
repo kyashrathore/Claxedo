@@ -29,6 +29,7 @@ import { runtimeStartPhases } from "./runtime-start-phases"
 import { repositoryHistory } from "./repository-history"
 import { workspaceRuntimeOwnerGrant } from "./owner-grant"
 import { CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
+import { DOCUMENTS_MCP_TOOL_GROUP } from "@claxedo/documents/mcp"
 import { createDocumentHydration, documentHydrationContribution } from "@claxedo/documents/runtime"
 import type { RuntimeHostPlugin } from "@claxedo/server-core/plugins/runtime-host"
 import { cloudTurnUsage } from "@claxedo/server-core/usage/cloud-turn-usage"
@@ -285,7 +286,7 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
       firstPartyMcpRuntimeContribution({
         verifyRuntimeCredential: firstPartyMcp.verify,
         enabledToolGroups,
-        registerTools: [...CLAXEDO_MCP_TOOL_GROUPS, ...plugins.flatMap((plugin) => plugin.mcp?.groups ?? [])],
+        registerTools: [...CLAXEDO_MCP_TOOL_GROUPS, DOCUMENTS_MCP_TOOL_GROUP, ...plugins.flatMap((plugin) => plugin.mcp?.groups ?? [])],
         services: () => Object.assign({}, ...started.map((plugin) => plugin.mcpServices())),
         ...(ownerGrant ? { ownerGrant: () => ownerGrant.current(), ownerActorId: () => ownerGrant.actorId } : {}),
       }),

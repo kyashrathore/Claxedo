@@ -2,11 +2,12 @@ import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/auth
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { asRecord } from "@claxedo/server-core/platform/json/index"
-import type { HostedServerPlugin } from "@claxedo/server-core/plugins/server-plugin"
+import type { HostedServerPlugin, ServerPluginBase } from "@claxedo/server-core/plugins/server-plugin"
 import type { DocumentAccess } from "../host/access"
 import type { DocumentsBackend } from "../host/backend"
 import { DocumentsRoutes } from "../host/routes"
 import { PublicDocumentRoutes } from "../host/routes/public"
+import { DOCUMENTS_MCP_TOOL_GROUP } from "../mcp"
 import { createHostedDocumentsBackend, type HostedDocumentsRuntime } from "./backend"
 import type { R2BucketBinding } from "./r2-object-store.cf"
 
@@ -25,6 +26,19 @@ export type HostedDocumentsPorts = Readonly<{
   rateLimit: (key: string) => Promise<boolean>
 }>
 
+/** The half of the hosted plugin no port shapes, which a catalog can list before a deployment builds the plugin. */
+export const HOSTED_DOCUMENTS_PLUGIN_BASE: ServerPluginBase = {
+  id: "claxedo-documents",
+  capability: "documents",
+  mcp: {
+    groups: [DOCUMENTS_MCP_TOOL_GROUP],
+    service: {
+      id: "documents",
+      grant: async ({ inProcessFetch }) => ({ fetch: inProcessFetch({}), operations: [] }),
+    },
+  },
+}
+
 /** Hosted Pages over the `CLAXEDO_DOCUMENTS` bucket: the signed `/documents` routes and the public `/p` reads. */
 export function createHostedDocumentsPlugin(ports: HostedDocumentsPorts): HostedServerPlugin {
   const backend = createHostedDocumentsBackend(ports.bucket, {
@@ -40,8 +54,7 @@ export function createHostedDocumentsPlugin(ports: HostedDocumentsPorts): Hosted
     },
   })
   return {
-    id: "claxedo-documents",
-    capability: "documents",
+    ...HOSTED_DOCUMENTS_PLUGIN_BASE,
     routeContributions: [
       {
         id: "claxedo-documents",
@@ -55,12 +68,5 @@ export function createHostedDocumentsPlugin(ports: HostedDocumentsPorts): Hosted
       },
       { id: "claxedo-public-documents", path: "/p", routes: PublicDocumentRoutes({ backend, rateLimit: ports.rateLimit }) },
     ],
-    mcp: {
-      groups: [],
-      service: {
-        id: "documents",
-        grant: async ({ inProcessFetch }) => ({ fetch: inProcessFetch({}), operations: [] }),
-      },
-    },
   }
 }

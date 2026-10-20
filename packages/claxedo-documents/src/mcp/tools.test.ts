@@ -1,12 +1,11 @@
-import { afterEach, describe, expect, test } from "vitest"
+import { afterEach, describe, expect, test } from "bun:test"
 import { serve } from "@hono/node-server"
 import { Hono } from "hono"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
-import { createClaxedoMcpClient } from "../client/index"
-import type { ClaxedoFetch } from "../client/contract"
-import { CLAXEDO_MCP_PATH, createClaxedoMcpRoutes, fullUserCredential } from "../server"
-import { registerDocumentTools } from "./documents"
+import { createClaxedoMcpClient, type ClaxedoFetch } from "@claxedo/mcp/client"
+import { CLAXEDO_MCP_PATH, createClaxedoMcpRoutes, fullUserCredential } from "@claxedo/mcp"
+import { DOCUMENTS_MCP_TOOL_GROUP } from "./tools"
 
 type DocumentRow = Record<string, unknown>
 
@@ -29,7 +28,7 @@ type Service = {
   calls: Array<{ method: string; path: string; body?: unknown }>
 }
 
-/** The documents service as `documents/routes/index.ts` answers: a bare array to list, ids and a path to agent-open. */
+/** The documents service as `host/routes/index.ts` answers: a bare array to list, ids and a path to agent-open. */
 function documentsService(input: Partial<Service> = {}): Service & { fetch: ClaxedoFetch } {
   const state: Service = { rows: [PLAN], mounted: true, viewOnly: [], calls: [], ...input }
   const fetchLike: ClaxedoFetch = async (requestPath, init) => {
@@ -89,7 +88,7 @@ async function listen(service?: ReturnType<typeof documentsService>) {
         },
         ...(service ? { services: { documents: { fetch: service.fetch, operations: [] } } } : {}),
       }),
-    registerTools: [{ id: "documents", reach: { service: "documents" }, register: registerDocumentTools }],
+    registerTools: [DOCUMENTS_MCP_TOOL_GROUP],
     audit: () => undefined,
   })
   mounts.push(routes)
@@ -124,6 +123,17 @@ const json = async (client: Client, name: string, args: Record<string, unknown> 
   if (result.isError) throw new Error(result.text)
   return JSON.parse(result.text) as Record<string, unknown>
 }
+
+describe("the documents group", () => {
+  test("reaches the documents service, and a read-only credential is listed only its read", async () => {
+    expect(DOCUMENTS_MCP_TOOL_GROUP.reach).toEqual({ service: "documents" })
+    const { url } = await listen(documentsService())
+    const listed = async (token: string) => (await (await connect(url, token)).listTools()).tools.map((tool) => tool.name).sort()
+    expect(await listed("rt-token")).toEqual(["documents_list", "documents_open"])
+    expect(await listed("cli-jwt")).toEqual(["documents_list", "documents_open"])
+    expect(await listed("read-token")).toEqual(["documents_list"])
+  })
+})
 
 describe("documents_list", () => {
   test("returns index metadata and never a document's body", async () => {

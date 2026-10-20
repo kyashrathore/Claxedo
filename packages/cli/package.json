@@ -45,9 +45,11 @@
   },
   "devDependencies": {
     "@claxedo/account-contract": "workspace:*",
+    "@claxedo/documents": "workspace:*",
     "@claxedo/helpers": "workspace:*",
     "@claxedo/host-connector": "workspace:*",
     "@claxedo/host-serving": "workspace:*",
+    "@claxedo/plugin-api": "workspace:*",
     "@claxedo/process-ownership": "workspace:*",
     "@claxedo/server-core": "workspace:*",
     "@tsconfig/bun": "catalog:",

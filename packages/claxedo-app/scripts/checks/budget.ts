@@ -21,7 +21,7 @@ const parts: readonly Part[] = [
   { name: "Review and files", budget: 4397, folders: ["src/review", "src/files"] },
   { name: "Projects and cloud", budget: 3472, folders: ["src/projects", "src/cloud"] },
   { name: "Onboarding and usage", budget: 3124, folders: ["src/onboarding", "src/usage"] },
-  { name: "Plugin host", budget: 3088, folders: ["src/plugins"] },
+  { name: "Plugin host", budget: 3091, folders: ["src/plugins"] },
   { name: "Web plugin frame", budget: 1626, folders: ["src/plugins/frame"] },
   { name: "MCP App host", budget: 1791, folders: ["src/mcp-apps"] },
   { name: "Surface renderer", budget: 4037, folders: ["src/surface"] },

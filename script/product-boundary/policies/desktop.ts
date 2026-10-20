@@ -232,7 +232,12 @@ export const desktopMainComposition: Policy = {
   // downloaded update fails to install after the daemon was stopped. Reviewed
   // owner: Electron main's updater; it is split from `auto-update.ts` only so
   // it runs without the `electron` runtime. 91/25, no headroom.
-  ceilings: { modules: 91, packages: 25 },
+  // +1 module, +1 package: `main/account/hosted-operations.ts` composes the
+  // account bridge's operation table from the core table and
+  // `@claxedo/documents/operations` (owner: the Documents plugin, whose
+  // `documents.*` declarations left `@claxedo/account-contract`); the IPC
+  // channels it registers are unchanged. 92/26, no headroom.
+  ceilings: { modules: 92, packages: 26 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
@@ -295,9 +300,11 @@ export const desktopAccountComposition: Policy = {
   // and path. The `@claxedo/helpers` subpaths (`fs`, `guards`, `readers`,
   // `string`) are leaves over node builtins already in this closure.
   // `@claxedo/plugin-api/id` is the plugin id rule `@claxedo/account-contract`
-  // applies to `plugin.request`, one zod-free module. The operation table is
-  // that package's own: 16 modules, 8 packages.
-  ceilings: { modules: 16, packages: 8 },
+  // applies to `plugin.request`, one zod-free module. The core operation table
+  // is that package's own; `account/hosted-operations.ts` composes it with
+  // `@claxedo/documents/operations` (owner: the Documents plugin's
+  // `documents.*` declarations): 17 modules, 9 packages, no headroom.
+  ceilings: { modules: 17, packages: 9 },
   // The emitted list names the credential-bearing half only. `account-ipc.ts`
   // and the operation table are reached from the base entry through
   // `lazy-account.ts`, so Rollup places them in `index.js`, and
@@ -770,7 +777,12 @@ export const desktopRenderer: Policy = {
   // -33 modules (owner: the Tasks plugin, `@claxedo/tasks` `app/page/`): the
   // Tasks page left the app (`tasks/**`, `server/tasks.ts`) and is the
   // plugin's surface page. 1473/36, no headroom.
-  ceilings: { modules: 1473, packages: 36 },
+  // +1 package (owner: the Documents plugin): the app composes its operation
+  // table with `@claxedo/documents/operations`, and the Documents app entry
+  // ships as a second `@claxedo/<plugin>/app?claxedo-plugin-bundle` chunk; the
+  // transcript's two document cases left for that entry's card templates.
+  // 1473/37, no headroom.
+  ceilings: { modules: 1473, packages: 37 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

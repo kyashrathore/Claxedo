@@ -16,8 +16,6 @@ export const CLAXEDO_TOOL_TITLE_KEYS: Partial<Record<ClaxedoToolName, Transcript
   session_rename: "transcript.claxedoTool.session_rename",
   session_delete: "transcript.claxedoTool.session_delete",
   session_changes: "transcript.claxedoTool.session_changes",
-  documents_list: "transcript.claxedoTool.documents_list",
-  documents_open: "transcript.claxedoTool.documents_open",
   subagent_capabilities: "transcript.claxedoTool.subagent_capabilities",
   create_subagent: "transcript.claxedoTool.create_subagent",
   subagent_status: "transcript.claxedoTool.subagent_status",
@@ -134,21 +132,6 @@ export function claxedoToolView(view: ClaxedoToolViewInput): ClaxedoToolView {
       const sessions = asArray(result?.workspaces).flatMap((row) => asArray(asRecord(row)?.sessions))
       return { ...base, ...(result ? { subject: count(sessions.length, "transcript.common.session.one", "transcript.common.session.other") } : {}) }
     }
-    case "documents_list": {
-      const documents = asArray(result?.documents)
-      return { ...base, ...(result ? { subject: count(documents.length, "transcript.common.document.one", "transcript.common.document.other") } : {}) }
-    }
-    case "documents_open": {
-      const path = nonEmptyString(result?.path)
-      return {
-        ...base,
-        subject: nonEmptyString(result?.name) ?? nonEmptyString(args.document),
-        facts: [
-          ...(path ? [cardFact(i18n.t("transcript.claxedoTool.fact.path"), path, { mono: true })] : []),
-          ...linkFact(i18n.t("transcript.claxedoTool.fact.session"), session(nonEmptyString(result?.session))),
-        ],
-      }
-    }
     case "create_subagent":
     case "subagent_status":
     case "subagent_cancel": {
@@ -204,10 +187,6 @@ function cancellationNote(answer: unknown) {
 function cardFact(label: string, value: string | ClaxedoLink, options?: { mono?: boolean }): ClaxedoFact {
   if (typeof value === "string") return { label, value, ...(options?.mono ? { mono: true } : {}) }
   return { label, value: value.label, link: value }
-}
-
-function linkFact(label: string, link: ClaxedoLink | undefined): ClaxedoFact[] {
-  return link ? [cardFact(label, link)] : []
 }
 
 function prose(output: string | undefined): { text?: string } {

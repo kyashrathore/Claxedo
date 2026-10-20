@@ -6,12 +6,19 @@ type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
 type Scalar = string | number | boolean | bigint
 type Input = Readonly<Record<string, unknown>>
 
+/**
+ * `http` answers a status and JSON body even for a non-2xx outcome the caller
+ * expects; `bytes` answers a binary body, which the desktop main process
+ * returns base64-enveloped so IPC stays JSON-shaped.
+ */
+export type OperationResponse = "http" | "bytes"
+
 export type ResolvedRequest = {
   method: Method
   path: string
   body?: Record<string, unknown>
   headers?: Record<string, string>
-  response?: "http"
+  response?: OperationResponse
 }
 
 export type OperationDefinition<I, O> = {
@@ -23,7 +30,7 @@ export type OperationDefinition<I, O> = {
   exposure: { renderer: boolean; app: boolean; stream?: boolean }
   body?: (input: NoInfer<I>) => Record<string, unknown> | undefined
   headers?: (input: NoInfer<I>) => Record<string, string>
-  response?: "http"
+  response?: OperationResponse
 }
 
 export class UnknownHostedOperation extends Error {}
@@ -144,3 +151,6 @@ export function connectedRepositoryBody(input: Input): Record<string, unknown> {
   const { repoFullName, ...body } = Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined))
   return { ...body, ...(typeof repoFullName === "string" && repoFullName ? { repo: { fullName: repoFullName } } : {}) }
 }
+
+export { operationInput } from "./operation-input"
+export { array, object, withStrings } from "./hosted-output"

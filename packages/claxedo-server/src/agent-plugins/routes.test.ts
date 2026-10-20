@@ -1,4 +1,5 @@
 import { claxedoMcpToolGroupInventory, CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
+import { DOCUMENTS_MCP_TOOL_GROUP } from "@claxedo/documents/mcp"
 import { TASKS_MCP_TOOL_GROUP } from "@claxedo/tasks/mcp"
 import { isBuiltinPluginInstanceId } from "@claxedo/server-core/agent-plugins/builtin/plugin"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
@@ -304,7 +305,7 @@ async function fixture(options: {
     administersOrganization: (auth) => activations.administersOrganization(auth),
     artifacts,
     reconcile,
-    builtIn: { groups: claxedoMcpToolGroupInventory([...CLAXEDO_MCP_TOOL_GROUPS, TASKS_MCP_TOOL_GROUP]), deployment: { inProcessServices: [] } },
+    builtIn: { groups: claxedoMcpToolGroupInventory([...CLAXEDO_MCP_TOOL_GROUPS, DOCUMENTS_MCP_TOOL_GROUP, TASKS_MCP_TOOL_GROUP]), deployment: { inProcessServices: [] } },
     ...(options.mcpAuthentication ? { mcpAuthentication: options.mcpAuthentication } : {}),
     ...(options.mcpClientMetadata ? { mcpClientMetadata: options.mcpClientMetadata } : {}),
     ...(options.builtInConsentChanged ? { builtInConsentChanged: options.builtInConsentChanged } : {}),

@@ -1,23 +1,15 @@
 import { login } from "./auth/device-code"
 import { whoami } from "./auth/identity"
 import { connect, connectHelp } from "./commands/connect"
-import { documents, documentsUsage } from "./commands/documents"
-import { hostCommand, hostUsage } from "./commands/host"
+import { hostCommand } from "./commands/host"
 import { logout } from "./commands/logout"
 import { status } from "./commands/status"
-import { connectUsage } from "./connect/args"
+import { helpText } from "./help"
 import { errorMessage } from "./json"
+import { cliCommandContext, pluginCommand } from "./plugin-commands"
 
 function help() {
-  console.log(`claxedo login
-claxedo logout
-${connectUsage}
-${hostUsage}
-claxedo status
-claxedo whoami
-${documentsUsage}
-
-\`claxedo connect --help\` and \`claxedo host --help\` describe the machine and owner sides of remote access.`)
+  console.log(helpText())
 }
 
 async function main(argv: string[]) {
@@ -37,9 +29,10 @@ async function main(argv: string[]) {
     return
   }
   if (command === "host") return hostCommand(args)
-  if (command === "documents") return documents(args)
   if (command === "status") return status()
   if (command === "whoami") return whoami()
+  const contributed = pluginCommand(command)
+  if (contributed) return contributed.run(args, cliCommandContext())
   throw new Error(`Unknown command: ${command}`)
 }
 

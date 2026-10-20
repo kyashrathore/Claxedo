@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { QueryClient } from "@tanstack/solid-query"
-import { resolveHostedOperation, type HostedOperationName } from "@claxedo/account-contract"
 import { createHostedAccount } from "./account"
+import { APP_HOSTED_OPERATIONS } from "./operations"
 import { harnessQueries, readHarnessOptions } from "./harness-options"
 import { fakeServer } from "./test-session-server"
 import { placementId } from "./ids"
@@ -97,8 +97,8 @@ test("a native harness draft the control plane leaves to the runtime reads its o
 function signedDesktop(controlPlane: (path: string) => Response) {
   const server = fakeServer({ reachable: () => true, runtime: () => Response.json(answer) })
   const accountPaths: string[] = []
-  const account = createHostedAccount(async (operation: HostedOperationName, input) => {
-    const { path } = resolveHostedOperation(operation, input)
+  const account = createHostedAccount(async (operation, input) => {
+    const { path } = APP_HOSTED_OPERATIONS.resolve(operation, input)
     accountPaths.push(path)
     const response = controlPlane(path)
     if (!response.ok) throw new Error(`HOSTED_HTTP ${response.status} ${JSON.stringify({ body: await response.json() })}`)

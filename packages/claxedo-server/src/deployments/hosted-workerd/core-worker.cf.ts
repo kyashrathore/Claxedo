@@ -33,14 +33,24 @@ import {
   createHostedCoreApp,
   type HostedCoreAppOptions,
 } from "../hosted-shared/hosted-core-app"
-import { mcpToolGroups } from "@claxedo/server-core/plugins/server-plugin"
+import { mcpToolGroups, type ServerPluginBase } from "@claxedo/server-core/plugins/server-plugin"
 import { createClaxedoMcpClient } from "@claxedo/mcp/client"
 import { LiveSyncRoom } from "./live-sync-room.cf"
 import type { LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
-import type { R2BucketBinding } from "@claxedo/documents/hosted"
+import { HOSTED_DOCUMENTS_PLUGIN_BASE, type R2BucketBinding } from "@claxedo/documents/hosted"
 import { composeHostedDocumentsPlugin } from "../../documents/compose"
 
 export { LiveSyncRoom }
+
+/**
+ * Every group the hosted MCP mount serves: the core groups, Documents (which
+ * this Worker composes in every profile), then the entry's own plugins'. The
+ * Agent Plugins catalog lists the same set, and builds it before the Worker
+ * composes Documents.
+ */
+export function hostedMcpToolGroups(entryPlugins: readonly ServerPluginBase[]) {
+  return mcpToolGroups([HOSTED_DOCUMENTS_PLUGIN_BASE, ...entryPlugins])
+}
 
 export type HostedCoreWorkerEnv = Record<string, unknown> & {
   CLAXEDO_DOCUMENTS?: R2BucketBinding
@@ -147,7 +157,7 @@ export function createHostedCoreWorker<Env extends HostedCoreWorkerEnv>(
       // through the relay with the caller's own credential.
       firstPartyMcp: {
         createClient: (input) => createClaxedoMcpClient(input),
-        registerTools: mcpToolGroups(plugins),
+        registerTools: hostedMcpToolGroups(selected.options.plugins ?? []),
       },
     })
     const errors = workerErrorCapture(selected.plane.env)

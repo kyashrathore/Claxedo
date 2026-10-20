@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { claxedoDocumentReferenceId, InvalidDocumentReferenceError } from "./claxedo-document"
+import { claxedoDocumentReferenceId, InvalidDocumentReferenceError } from "./reference"
 
 test("reads the id out of a document reference, percent-decoded", () => {
   expect(claxedoDocumentReferenceId("claxedo://document/doc_plan")).toBe("doc_plan")
