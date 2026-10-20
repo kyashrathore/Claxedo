@@ -78,7 +78,27 @@ Measured on 2026-09-30 with Miniflare 4.20260722.0 (workerd 1.20260722.1), Wrang
 - **`ctx.exports` needs `enable_ctx_exports`** at this compatibility date; without it `ctx.exports` is undefined.
 - **Facet alarms do not fire locally.** `setAlarm` inside a facet fails with "alarms are not yet implemented for SQLite-backed Durable Objects", so the residual risk above is reasoned from the capability fencing the suite tests, not observed with a fired alarm.
 
-Not verified: a fired facet alarm, Worker Loader and facets on Cloudflare's production runtime (both are beta there and may need account enablement), and the memory gate of 50 concurrent facets under one supervisor.
+Not verified locally or on Cloudflare: a fired facet alarm, and the memory gate of 50 concurrent facets under one supervisor.
+
+## Gate finding (Cloudflare)
+
+Measured on 2026-10-20 on the Cloudflare account "Kanusdlp@gmail.com's Account", the one the staging deploy uses, with Wrangler 4.114.0. A throwaway Worker, `claxedo-plugin-gate-test`, ran at the hosted compatibility date and flags (2025-05-01; `nodejs_compat`, `global_fetch_strictly_public`, `enable_ctx_exports`). It used the supervisor's shape: a SQLite-backed Durable Object loading one module through `PLUGIN_LOADER.get(id, () => ({ compatibilityDate, mainModule, modules, env, globalOutbound }))`, with a `ctx.exports` entrypoint as the outbound. The Worker was deleted afterwards, and the API answers 404 for it.
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Deploy with `[[worker_loaders]]` | Pass | Accepted with no account enablement. The script's settings list `{ name: "PLUGIN_LOADER", type: "worker_loader" }`. |
+| Load a module at runtime and call its `fetch` | Pass | `getEntrypoint().fetch` answered 200 with the loaded module's JSON. |
+| Facet runs the loaded class, and its SQLite rows persist | Pass | `ctx.facets.get(name, () => ({ class: worker.getDurableObjectClass("Store") }))`. A row written in one request was read back in later requests and after a redeploy restarted the Worker. Another facet name saw no rows. |
+| `ctx.facets.delete(name)` | Pass | The facet's rows were gone on the next read. |
+| Supervisor `ctx.storage.deleteAll()` deletes facet storage | Pass, with a condition | A stopped facet read no rows afterwards. A facet that was still running kept serving its rows until the Worker restarted, and then they were gone. |
+| Supervisor (non-facet) alarm | Pass | A `setAlarm(now + 3 s)` fired once, with `retryCount` 0. `getAlarm()` was then null, and the handler had still run only once 40 s later. |
+| `globalOutbound` limits the loaded code's `fetch` | Pass | Through the outbound entrypoint, `https://example.com/` answered 200, while `https://www.cloudflare.com/` and `http://example.com/` answered 403 `plugin_outbound_refused`. With `globalOutbound: null`, `fetch` throws "This worker is not permitted to access the internet via global functions like fetch()". |
+| Ed25519 `crypto.subtle.verify` | Pass | The RFC 8032 §7.1 TEST 1 vector verifies, and a one-bit-tampered signature does not. A generated key pair signs (64 bytes) and verifies, and the signature fails against a different message. |
+| Worker Loader limits | None hit | The 28.77 KiB upload (7.55 KiB gzip) started in 8 ms. Each facet reported a `databaseSize` of 16384 bytes. No response named a limit. The limits page on developers.cloudflare.com could not be reached from the measuring session, so the documented module-count and memory limits were not read. |
+
+Because a running facet outlives `deleteAll`, a purge deletes every facet the registry names with `ctx.facets.delete` first, and only then the supervisor's own storage.
+
+Inside a facet, `ctx.id` is the supervisor's id: every facet reported the same id. A plugin therefore cannot use `ctx.id` to tell its objects apart.
 
 ## Tests
 
