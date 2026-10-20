@@ -49,13 +49,16 @@ export function stringEnvironment(
  * session rows pass its cloud runtimes publish with — so every feature entry
  * shares this one wiring instead of re-declaring it.
  */
+export type AppPluginRegistryKeys = (env: BetterAuthD1AgentPluginsWorkerEnv) => Readonly<Record<string, string>>
+
 export function composeBetterAuthD1AgentPlugins(
   env: BetterAuthD1AgentPluginsWorkerEnv,
   extra: Pick<Parameters<typeof composeBetterAuthD1UserDeployedControlPlane>[0], "sandbox"> & {
     sessionRowsPasses?: SessionRowsPasses
+    registryKeys?: AppPluginRegistryKeys
   } = {},
 ) {
-  const { sessionRowsPasses, ...input } = extra
+  const { sessionRowsPasses, registryKeys, ...input } = extra
   const base = composeBetterAuthD1UserDeployedControlPlane({
     ...betterAuthD1CompositionInput(env),
     ...input,
@@ -84,7 +87,7 @@ export function composeBetterAuthD1AgentPlugins(
     administers: hostedOrgAdministers(database),
     registry: {
       url: signingEnv.CLAXEDO_APP_PLUGIN_REGISTRY_URL?.trim() || DEFAULT_APP_PLUGIN_REGISTRY_URL,
-      keys: PLUGIN_REGISTRY_KEYS,
+      keys: registryKeys ? registryKeys(env) : PLUGIN_REGISTRY_KEYS,
       fetch: timedFetch(),
     },
   })

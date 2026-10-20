@@ -26,6 +26,21 @@ type Input = {
   workerEnv: Record<string, string>
   /** Replaces the per-minute limit of every rate-limit binding the certified config declares; absent, the config's own 600 holds. */
   requestLimit: number | undefined
+  /** A signed app-plugin registry tree the Worker reads at `HOSTED_E2E_REGISTRY_URL`, and the raw Ed25519 public key it was signed with. */
+  appPluginRegistry: { dir: string; testKey: string } | undefined
+}
+
+const HOSTED_E2E_REGISTRY_URL = "https://registry.hosted-e2e.test"
+
+async function registryAnswer(dir: string, request: Request): Promise<Response> {
+  const file = path.resolve(dir, `.${new URL(request.url).pathname}`)
+  if (request.method !== "GET" || !file.startsWith(`${path.resolve(dir)}${path.sep}`)) return new Response("not found", { status: 404 })
+  try {
+    return new Response(readFileSync(file))
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return new Response("not found", { status: 404 })
+    throw error
+  }
 }
 
 type RateLimitBinding = { namespace_id: string; simple: { limit: number; period: number } }
@@ -84,6 +99,9 @@ async function main(input: Input) {
     CLAXEDO_TELEMETRY_MODE: "on",
     CLAXEDO_POSTHOG_KEY: "phc_hosted_e2e",
     CLAXEDO_POSTHOG_HOST: `https://${HOSTED_E2E_ANALYTICS_HOST}`,
+    ...(input.appPluginRegistry
+      ? { CLAXEDO_APP_PLUGIN_REGISTRY_URL: HOSTED_E2E_REGISTRY_URL, CLAXEDO_APP_PLUGIN_REGISTRY_TEST_KEY: input.appPluginRegistry.testKey }
+      : {}),
   }
   env.CLAXEDO_AUTH_CONFIGURATION_ID = await betterAuthDeploymentConfigurationId({
     methods: input.emailPassword ? ["github", "email-password"] : ["github"], origin, githubClientId: env.GITHUB_CLIENT_ID,
@@ -113,6 +131,7 @@ async function main(input: Input) {
     httpsKey: readFileSync(input.key, "utf8"),
     httpsCert: readFileSync(input.certificate, "utf8"),
     outboundService: async (request: Request) => {
+      if (input.appPluginRegistry && new URL(request.url).origin === HOSTED_E2E_REGISTRY_URL) return registryAnswer(input.appPluginRegistry.dir, request)
       if (new URL(request.url).hostname === HOSTED_E2E_ANALYTICS_HOST) {
         const batch = ((await request.json()) as { batch: unknown[] }).batch
         appendFileSync(path.join(input.root, HOSTED_E2E_TELEMETRY_FILE), batch.map((event) => `${JSON.stringify(event)}\n`).join(""))
@@ -183,6 +202,14 @@ function workerEnvOf(value: unknown): Record<string, string> {
   return env
 }
 
+function appPluginRegistryOf(value: unknown): Input["appPluginRegistry"] {
+  if (value === undefined) return undefined
+  const dir = value && typeof value === "object" ? Reflect.get(value, "dir") : undefined
+  const testKey = value && typeof value === "object" ? Reflect.get(value, "testKey") : undefined
+  if (typeof dir !== "string" || typeof testKey !== "string") throw new Error("hosted Miniflare appPluginRegistry must be { dir, testKey }")
+  return { dir, testKey }
+}
+
 function requestLimitOf(value: unknown): number | undefined {
   if (value === undefined) return undefined
   if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) throw new Error("hosted Miniflare requestLimit must be a positive integer")
@@ -217,5 +244,6 @@ if (import.meta.main) {
     emailPassword: field("emailPassword") === true,
     workerEnv: workerEnvOf(field("workerEnv")),
     requestLimit: requestLimitOf(field("requestLimit")),
+    appPluginRegistry: appPluginRegistryOf(field("appPluginRegistry")),
   })
 }

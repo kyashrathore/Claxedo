@@ -25,7 +25,7 @@ export { type ConnectionSink } from "./connection-sink"
 export { type HttpTransport } from "../../../harness/e2e/harness/transport"
 export { pageTransport } from "./page-transport"
 export { listLivePlugins, registerLivePlugin, writeLivePlugin, type LivePluginFolder, type LivePluginRow } from "./live-plugins"
-export { APP_PLUGIN_WARNING, appPluginDialog, appPluginRow, approveAppPlugin } from "./app-plugins"
+export { APP_PLUGIN_WARNING, appPluginDialog, appPluginRow, approveAppPlugin, installAndEnable } from "./app-plugins"
 export { breakFixturePlugin, FIXTURE_ROUTES, fixtureFolder, writeFixturePlugin, type FixtureVersion } from "./fixture-plugin"
 export {
   SURFACE_FIXTURE_IMAGE,
@@ -40,6 +40,7 @@ export {
 } from "./fixture-plugin-surface"
 export { MCP_APP_FIXTURE_FORECAST, mcpAppFrameTitle, startMcpAppFixture } from "./mcp-app-fixture"
 export { sessionCookie, type Account, type SignedStack } from "./signed-stack"
+export { COUNTER_PLUGIN } from "./app-plugin-registry"
 export { ownerDevices, revokeOwnerMachines, servingMachineName } from "./machine-devices"
 export {
   chooseOrgSandboxProvider, cloudMessages, draftModelChoices, cloudPrompt, cloudTurn, cloudWorkspaceNames, cloudWorkspaces, createCloudSession, deleteCloudWorkspace, listedSessions, makeCloudWorkspace, orgSandboxListing, relayedTerminalOutput, removeOrgSandboxKeys,

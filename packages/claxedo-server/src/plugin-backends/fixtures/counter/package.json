@@ -2,6 +2,7 @@
   "name": "claxedo-plugin-counter",
   "version": "0.1.0",
   "private": true,
+  "description": "Counts per organization, for tests of installed app plugins",
   "claxedo": {
     "id": "counter",
     "name": "Counter",

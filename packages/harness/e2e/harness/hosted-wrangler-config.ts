@@ -35,7 +35,14 @@ export function renderHostedE2eWranglerConfig(controlPlaneMigrationsDir: string,
   return { production, e2e: production }
 }
 
-export async function writeHostedE2eWranglerConfig(publicOriginHost: string) {
+/** The certified full-hosted Worker with the registry test key, which the app-plugin flows' test registry is signed with. */
+export const APP_PLUGIN_TEST_WORKER = path.join(SERVER_DIR, "src/plugin-backends/fixtures/full-hosted.fixture.cf.ts")
+
+function withMain(config: string, main: string): string {
+  return config.replace(/^main = .*$/m, `main = ${JSON.stringify(path.relative(CONFIG_DIRECTORY, main))}`)
+}
+
+export async function writeHostedE2eWranglerConfig(publicOriginHost: string, options: { readonly main?: string } = {}) {
   const file = path.join(CONFIG_DIRECTORY, `.wrangler-hosted-e2e-${randomUUID()}.toml`)
   // The deployed baseline is rendered from every owner's, so the run applies a
   // staged copy rather than the host's own source directory.
@@ -44,6 +51,6 @@ export async function writeHostedE2eWranglerConfig(publicOriginHost: string) {
     stageInto: await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-hosted-e2e-migrations-")),
   })
   const { e2e } = renderHostedE2eWranglerConfig(staged.migrationsDir, publicOriginHost)
-  await fs.writeFile(file, e2e, { flag: "wx", mode: 0o600 })
+  await fs.writeFile(file, options.main ? withMain(e2e, options.main) : e2e, { flag: "wx", mode: 0o600 })
   return file
 }
