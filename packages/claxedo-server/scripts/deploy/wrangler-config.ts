@@ -102,10 +102,10 @@ main = ${quote(fromConfig(input.configDirectory, input.artifact.entrypointFromPa
 # The control plane answers its paths on the app's own host through Worker
 # routes, which "take precedence if configured on the same hostname" as the
 # app Worker's custom domain (developers.cloudflare.com/workers/configuration/
-# routing/routes/). A request on a route reaches this placed Worker through the
-# edge's own forwarding, which kept a client's requests on one warm machine; a
-# service-binding call from the app Worker reached a machine chosen per call,
-# and staging answered cold on 66 of 126 probes against 25 of 126 on routes
+# routing/routes/), so a request on them runs one Worker, not the app Worker
+# and a service binding. Measured against a custom domain of this Worker in a
+# simultaneous A/B on staging, a route is the same path: the same cold rate
+# (24 against 22 of 80) and the same answer times
 # (docs/perf/worker-cold-starts-2026-10-19).
 routes = [${routes}]
 ${HOSTED_WORKER_BUNDLE_CONTRACT}

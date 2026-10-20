@@ -52,11 +52,12 @@ on that same host, rendered into its Wrangler config by
 `renderWorkerWranglerConfig` and attached by its own `wrangler deploy`: routes
 "take precedence if configured on the same hostname" as a custom domain, so a
 request on them reaches the placed control plane through the edge's own
-forwarding and never runs the app Worker. A service-binding call from the app
-Worker reached a machine in the placed region chosen anew per call and left
-the control plane cold on half of staging's requests
-([worker-cold-starts-2026-10-19](../perf/worker-cold-starts-2026-10-19/README.md));
-a request on a route keeps a client's requests on one warm machine. A browser
+forwarding and never runs the app Worker: one Worker invocation per request
+instead of two and a service binding. A simultaneous A/B against a custom
+domain of the control plane measured the route as the same path, with the
+same cold rate and answer times; the cold rate itself follows staging's
+traffic, not the path
+([worker-cold-starts-2026-10-19](../perf/worker-cold-starts-2026-10-19/README.md)). A browser
 still opens one TLS connection and sends no CORS preflight: every request,
 WebSocket upgrade and event stream is same-origin. The control-plane Worker
 has no custom domain of its own; `BETTER_AUTH_URL` is the public origin, the
