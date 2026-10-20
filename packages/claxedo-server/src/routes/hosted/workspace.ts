@@ -15,7 +15,7 @@ import { withAuthorityRowReachability } from "@claxedo/server-core/workspace/pla
 import { Hono, type Context } from "hono"
 import { routeParam } from "@claxedo/helpers/route-param"
 import { z } from "zod"
-import { admittedRepoUrl, sandboxMachineClasses, type RepoAddressResolver, type SandboxMachineClass } from "@claxedo/sandbox-contract"
+import { sandboxMachineClasses, type RepoAddressResolver, type SandboxMachineClass } from "@claxedo/sandbox-contract"
 import type { SandboxDriver } from "@claxedo/sandbox-manager"
 import { dohAddressResolver } from "@claxedo/server-core/agent-plugins/mcp/dns-resolver"
 import {
@@ -37,7 +37,8 @@ import { connectionRateLimitError, controlPlaneRateLimitError } from "../../work
 import type { ActiveSandboxLeaseCounter } from "../../workspace/runtime-token-guards"
 import { createCloudCreateAdmission, type CloudCreateUsage } from "../../workspace/cloud-create-admission"
 import { isGitBranchName } from "../../workspace/git-branch-name"
-import { anonymousGitHubVisibility, repositoryConnection, type GitHubRepositoryVisibility } from "../../workspace/repository-connection"
+import { anonymousGitHubVisibility, type GitHubRepositoryVisibility } from "../../workspace/repository-connection"
+import { cloudCreateSource } from "../../workspace/cloud-create-source"
 import { normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 
 // `requireCloudWorkspaceEntitlement` (cloud-workspace admission for both
@@ -350,50 +351,18 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         if (gitBranch && !isGitBranchName(gitBranch)) {
           return c.json({ error: apiError("git_branch_invalid", "That is not a branch name git accepts") }, 400)
         }
-        let repoUrl = body.repoUrl?.trim()
-        if (repoUrl && !(await admittedRepoUrl(repoUrl, repoAdmission))) {
-          return c.json(
-            { error: apiError("repo_url_invalid", "That is not a repository URL this server can clone") },
-            400,
-          )
-        }
-        let repoConnectionId: string | undefined
-        const connected = await repositoryConnection(auth, { ...body, ...(repoUrl ? { repoUrl } : {}) }, {
-          ...(options.connections ? { connections: options.connections } : {}),
-          visibility: repositoryVisibility,
-        })
-        if (connected && !connected.ok) return c.json({ error: apiError(connected.code, connected.message) }, connected.status)
-        if (connected) {
-          // A private repository is bound to the connection that reads it:
-          // every boot's runtime preparation reads a fresh clone token through
-          // that connection, which rides to the sandbox as a brokered secret,
-          // never in the row or the clone URL.
-          repoUrl = connected.repository.cloneUrl
-          if (!(await admittedRepoUrl(repoUrl, repoAdmission))) {
-            return c.json(
-              { error: apiError("repo_url_invalid", "That is not a repository URL this server can clone") },
-              400,
-            )
-          }
-          if (connected.repository.private) repoConnectionId = connected.connectionId
-        }
-        if (!repoUrl) {
-          return c.json(
-            { error: apiError("cloud_workspace_source_required", "repoUrl is required for hosted cloud workspaces") },
-            400,
-          )
-        }
         // The driver that places this workspace is the one its organization's
         // key builds, known from the admission: an organization without a key,
         // or a machine the driver has no grade for, is refused before any row
         // exists, so no project is left standing for a workspace that never was.
-        let placed: SandboxDriver | undefined
-        try {
-          placed = await services.sandbox.orgDriver?.(admitted.orgId)
-        } catch (err) {
-          if (!isClaxedoError(err)) throw err
-          return c.json({ error: apiError(err.code, err.message) }, contentfulStatus(err.status))
-        }
+        const source = await cloudCreateSource(auth, body, {
+          admission: repoAdmission,
+          ...(options.connections ? { connections: options.connections } : {}),
+          visibility: repositoryVisibility,
+          orgDriver: () => services.sandbox.orgDriver?.(admitted.orgId),
+        })
+        if (!source.ok) return c.json({ error: source.error }, source.status)
+        const { repoUrl, repoConnectionId, placed } = source
         if (body.machineClass) {
           const unsupported = machineClassUnsupported(placed, body.machineClass)
           if (unsupported) return c.json(unsupported, 400)

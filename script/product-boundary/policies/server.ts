@@ -235,8 +235,13 @@ export const serverWorkerd: Policy = {
   // without Better Auth, to tell a signed-in browser's shell request from a
   // signed-out one; the foundation and the auth descriptor read it from there.
   // It adds no package edge.
-  // 181/22, no headroom.
-  ceilings: { modules: 181, packages: 22 },
+  // +1 module (owner: the hosted cloud workspace create): what a new cloud
+  // workspace's row is written with (`workspace/cloud-create-source.ts`), the
+  // repository's destination, its connection and the organization's driver
+  // read together and judged in order, split from the create route. It adds
+  // no package edge.
+  // 182/22, no headroom.
+  ceilings: { modules: 182, packages: 22 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",
