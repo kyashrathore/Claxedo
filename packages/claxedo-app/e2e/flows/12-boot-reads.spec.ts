@@ -85,3 +85,18 @@ test("12 boot reads: a signed-out boot of a deep link reads only the session; a 
   }
   expect(signed.controlPlaneRequests().slice(reloadMark).filter((request) => request === `GET /api/workspace/${workspace.id}/connection`), "a reload within the link's life mints nothing").toEqual([])
 })
+
+test("12 boot reads: a signed-in boot paints the shell's startup frame while its stylesheets download, and the app starts once they have loaded", async ({ signed, page }) => {
+  const workspace = await signed.makeWorkspace("boot-frame", "Boot frame")
+  await signed.local.acp.write("hello", { steps: [{ kind: "text", text: "Framed hello" }] })
+  const session = await signed.owner.api.createSession(workspace.directory, { title: "Boot frame", harness: SCRIPTED_ACP_HARNESS })
+  await signed.owner.api.prompt(workspace.directory, session.id, `Say hello. ${acpScriptToken("hello")}`)
+  await page.context().addCookies([sessionCookie(signed.url, signed.owner)])
+  const stylesheet = await holdResponse(page, /\/assets\/main-[^/]+\.css$/)
+  await page.goto(`${signed.url}${sessionRoute(workspace.id, session.id)}`, { waitUntil: "commit" })
+  await stylesheet.computed
+  await expect.poll(() => page.evaluate(() => performance.getEntriesByName("first-paint").length), "the document paints before its main stylesheet arrives").toBe(1)
+  expect(await page.evaluate(() => ({ children: document.getElementById("root")?.childElementCount, frame: getComputedStyle(document.getElementById("root") as Element, "::before").content })), "what it paints is the startup frame, and the app has not started").toEqual({ children: 0, frame: '""' })
+  await stylesheet.release()
+  await expect(page.getByText("Framed hello")).toBeVisible()
+})

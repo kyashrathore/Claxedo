@@ -775,6 +775,10 @@ export const desktopRenderer: Policy = {
   // started as the route matches, which the route entry in the shell's chunk
   // reaches before the wizard's own chunk (owner: the app's onboarding
   // domain, `onboarding/prefetch.ts`). It adds no package edge.
+  // The shell's startup frame, its own sheet so the web shell document can
+  // carry it inline and paint it before the bundle's stylesheets arrive; the
+  // renderer still takes it from the bundle (owner: the app's shell,
+  // `shell/styles/startup.css`). It adds no package edge.
   // 1473/36, no headroom.
   ceilings: { modules: 1473, packages: 36 },
   emitted: {
