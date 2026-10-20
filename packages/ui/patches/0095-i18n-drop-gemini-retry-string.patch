@@ -1,0 +1,749 @@
+Subject: i18n: drop the retired Gemini retry string
+
+What: ui.sessionTurn.retry.geminiHot goes from every locale.
+Why: the retired Gemini harness's quota retry was its only reader; the transcript's own copy and isGeminiQuotaRetry went with it in the app, and a retry now shows its own message.
+
+diff --git a/src/i18n/am.ts b/src/i18n/am.ts
+index 01d5cd425a..814b2f9926 100644
+--- a/src/i18n/am.ts
++++ b/src/i18n/am.ts
+@@ -64,7 +64,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "በ{{seconds}}ሰ",
+   "ui.sessionTurn.retry.attempt": "ሙከራ #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - ሙከራ #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "gemini አሁን በጣም ሞቃት ነው",
+   "ui.sessionTurn.error.freeUsageExceeded": "ነፃ አጠቃቀም ታልፏል",
+   "ui.sessionTurn.error.addCredits": "ክሬዲት አክል",
+   "dialog.usageExceeded.freeTier.title": "ነፃ ገደብ ላይ ደርሷል",
+diff --git a/src/i18n/ar.ts b/src/i18n/ar.ts
+index b23c24b5bf..f777d8e8d1 100644
+--- a/src/i18n/ar.ts
++++ b/src/i18n/ar.ts
+@@ -71,7 +71,6 @@ export const dict = {
+   "ui.sessionTurn.retry.inSeconds": "بعد {{seconds}} ث",
+   "ui.sessionTurn.retry.attempt": "المحاولة رقم {{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - المحاولة رقم {{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini مزدحم جدًا حاليًا",
+   "ui.sessionTurn.error.freeUsageExceeded": "تم تجاوز حد الاستخدام المجاني",
+   "ui.sessionTurn.error.addCredits": "إضافة رصيد",
+ 
+diff --git a/src/i18n/az.ts b/src/i18n/az.ts
+index d5fa9cb250..378f4b7b35 100644
+--- a/src/i18n/az.ts
++++ b/src/i18n/az.ts
+@@ -64,7 +64,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "{{seconds}}s sonra",
+   "ui.sessionTurn.retry.attempt": "cəhd #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - cəhd #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini hazırda həddindən artıq yüklənib",
+   "ui.sessionTurn.error.freeUsageExceeded": "Pulsuz istifadə limiti aşıldı",
+   "ui.sessionTurn.error.addCredits": "Kredit əlavə et",
+   "dialog.usageExceeded.freeTier.title": "Pulsuz limitə çatdınız",
+diff --git a/src/i18n/bg.ts b/src/i18n/bg.ts
+index ea10ab5987..9a0f16617f 100644
+--- a/src/i18n/bg.ts
++++ b/src/i18n/bg.ts
+@@ -64,7 +64,6 @@ export const dict = {
+   "ui.sessionTurn.retry.inSeconds": "след {{seconds}}s",
+   "ui.sessionTurn.retry.attempt": "опит #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - опит #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini е претоварен в момента",
+   "ui.sessionTurn.error.freeUsageExceeded": "Безплатното използване е превишено",
+   "ui.sessionTurn.error.addCredits": "Добавете кредити",
+   "dialog.usageExceeded.freeTier.title": "Безплатният лимит е достигнат",
+diff --git a/src/i18n/bn.ts b/src/i18n/bn.ts
+index 74a6940586..b8d3884ac1 100644
+--- a/src/i18n/bn.ts
++++ b/src/i18n/bn.ts
+@@ -66,7 +66,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "{{seconds}}সেকেন্ডে",
+   "ui.sessionTurn.retry.attempt": "#{{attempt}} চেষ্টা করুন",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - প্রচেষ্টা #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "মিথুন এখন খুব গরম",
+   "ui.sessionTurn.error.freeUsageExceeded": "বিনামূল্যে ব্যবহার অতিক্রম করেছে",
+   "ui.sessionTurn.error.addCredits": "ক্রেডিট যোগ করুন",
+   "dialog.usageExceeded.freeTier.title": "বিনামূল্যের সীমা পৌঁছেছে",
+diff --git a/src/i18n/br.ts b/src/i18n/br.ts
+index 19fc683655..8cf1e3b47a 100644
+--- a/src/i18n/br.ts
++++ b/src/i18n/br.ts
+@@ -68,7 +68,6 @@ export const dict = {
+   "ui.sessionTurn.retry.inSeconds": "em {{seconds}}s",
+   "ui.sessionTurn.retry.attempt": "tentativa #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - tentativa #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "gemini está muito sobrecarregado agora",
+   "ui.sessionTurn.error.freeUsageExceeded": "Limite de uso gratuito excedido",
+   "ui.sessionTurn.error.addCredits": "Adicionar créditos",
+ 
+diff --git a/src/i18n/bs.ts b/src/i18n/bs.ts
+index 5b33f068b4..5e78a90cea 100644
+--- a/src/i18n/bs.ts
++++ b/src/i18n/bs.ts
+@@ -72,7 +72,6 @@ export const dict = {
+   "ui.sessionTurn.retry.inSeconds": "za {{seconds}}s",
+   "ui.sessionTurn.retry.attempt": "pokušaj #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - pokušaj #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "gemini je trenutno preopterećen",
+   "ui.sessionTurn.error.freeUsageExceeded": "Prekoračeno besplatno korištenje",
+   "ui.sessionTurn.error.addCredits": "Dodaj kredite",
+ 
+diff --git a/src/i18n/ca.ts b/src/i18n/ca.ts
+index 1141fa404e..71885dc5a6 100644
+--- a/src/i18n/ca.ts
++++ b/src/i18n/ca.ts
+@@ -65,7 +65,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "en {{seconds}}s",
+   "ui.sessionTurn.retry.attempt": "intent #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - intent #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini està massa saturat ara mateix",
+   "ui.sessionTurn.error.freeUsageExceeded": "S'ha superat l'ús gratuït",
+   "ui.sessionTurn.error.addCredits": "Afegeix crèdits",
+   "dialog.usageExceeded.freeTier.title": "S'ha arribat al límit gratuït",
+diff --git a/src/i18n/cs.ts b/src/i18n/cs.ts
+index 58f508cd79..9a1f1d9812 100644
+--- a/src/i18n/cs.ts
++++ b/src/i18n/cs.ts
+@@ -66,7 +66,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "za {{seconds}} s",
+   "ui.sessionTurn.retry.attempt": "pokus #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} – pokus č. {{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "gemini je teď příliš vytížené",
+   "ui.sessionTurn.error.freeUsageExceeded": "Bezplatné využití překročeno",
+   "ui.sessionTurn.error.addCredits": "Přidejte kredity",
+   "dialog.usageExceeded.freeTier.title": "Dosažen limit zdarma",
+diff --git a/src/i18n/da.ts b/src/i18n/da.ts
+index a3f256c7b4..f2c4d3e61d 100644
+--- a/src/i18n/da.ts
++++ b/src/i18n/da.ts
+@@ -65,7 +65,6 @@ export const dict = {
+   "ui.sessionTurn.retry.inSeconds": "om {{seconds}}s",
+   "ui.sessionTurn.retry.attempt": "forsøg #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - forsøg #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini er meget overbelastet lige nu",
+   "ui.sessionTurn.error.freeUsageExceeded": "Grænsen for gratis forbrug er overskredet",
+   "ui.sessionTurn.error.addCredits": "Tilføj kreditter",
+ 
+diff --git a/src/i18n/de.ts b/src/i18n/de.ts
+index ca86cba28c..696803134c 100644
+--- a/src/i18n/de.ts
++++ b/src/i18n/de.ts
+@@ -72,7 +72,6 @@ export const dict = {
+   "ui.sessionTurn.retry.inSeconds": "in {{seconds}}s",
+   "ui.sessionTurn.retry.attempt": "Versuch #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} – Versuch #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini ist gerade stark überlastet",
+   "ui.sessionTurn.error.freeUsageExceeded": "Kostenloses Nutzungslimit überschritten",
+   "ui.sessionTurn.error.addCredits": "Guthaben aufladen",
+ 
+diff --git a/src/i18n/dv.ts b/src/i18n/dv.ts
+index 9b7f26e8f4..5ec93a475a 100644
+--- a/src/i18n/dv.ts
++++ b/src/i18n/dv.ts
+@@ -65,7 +65,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "{{seconds}}s ގައި",
+   "ui.sessionTurn.retry.attempt": "#{{attempt}} އަށް މަސައްކަތް ކުރާށެވެ",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - #{{attempt}} އަށް މަސައްކަތް ކުރާށެވެ",
+-  "ui.sessionTurn.retry.geminiHot": "ޖެމިނީ މިވަގުތު މާ ހޫނުވެއްޖެއެވެ",
+   "ui.sessionTurn.error.freeUsageExceeded": "ހިލޭ ބޭނުންކުރުން ފަހަނައަޅައި ދިޔައެވެ",
+   "ui.sessionTurn.error.addCredits": "ކްރެޑިޓްތައް އިތުރުކުރުން",
+   "dialog.usageExceeded.freeTier.title": "ހިލޭ ލިމިޓަށް އާދެވިއްޖެއެވެ",
+diff --git a/src/i18n/dz.ts b/src/i18n/dz.ts
+index 545be671e7..b44fbe35c4 100644
+--- a/src/i18n/dz.ts
++++ b/src/i18n/dz.ts
+@@ -66,7 +66,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "ནང་ {{seconds}}s ནང་།",
+   "ui.sessionTurn.retry.attempt": "ཚོད་ལྟ་ #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - དཔའ་བཅམ་པ་ #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "ད་ལྟོ་ gemini འདི་ གནམ་མེད་ས་མེད་ཚ་དྲོད་ཆེ།",
+   "ui.sessionTurn.error.freeUsageExceeded": "རིན་མེད་ལག་ལེན་ལས་བརྒལ་ཡོདཔ།",
+   "ui.sessionTurn.error.addCredits": "སྐྱིན་འགྲུལ་ཁ་སྐོང་བརྐྱབ།",
+   "dialog.usageExceeded.freeTier.title": "རིན་མེད་ཚད་ལུ་ལྷོད་ཡོདཔ།",
+diff --git a/src/i18n/el.ts b/src/i18n/el.ts
+index 0c9971489b..9b7bec41ba 100644
+--- a/src/i18n/el.ts
++++ b/src/i18n/el.ts
+@@ -64,7 +64,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "σε {{seconds}}s",
+   "ui.sessionTurn.retry.attempt": "προσπάθεια #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - προσπάθεια #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Το Gemini είναι υπερφορτωμένο αυτήν τη στιγμή",
+   "ui.sessionTurn.error.freeUsageExceeded": "Υπέρβαση της δωρεάν χρήσης",
+   "ui.sessionTurn.error.addCredits": "Προσθήκη πιστώσεων",
+   "dialog.usageExceeded.freeTier.title": "Συμπληρώθηκε το δωρεάν όριο",
+diff --git a/src/i18n/en.ts b/src/i18n/en.ts
+index 77f8276a8c..40f0b14e63 100644
+--- a/src/i18n/en.ts
++++ b/src/i18n/en.ts
+@@ -69,7 +69,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "in {{seconds}}s",
+   "ui.sessionTurn.retry.attempt": "attempt #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - attempt #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "gemini is way too hot right now",
+   "ui.sessionTurn.error.freeUsageExceeded": "Free usage exceeded",
+   "ui.sessionTurn.error.addCredits": "Add credits",
+ 
+diff --git a/src/i18n/es.ts b/src/i18n/es.ts
+index 07d3f42435..9b56175e9b 100644
+--- a/src/i18n/es.ts
++++ b/src/i18n/es.ts
+@@ -68,7 +68,6 @@ export const dict = {
+   "ui.sessionTurn.retry.inSeconds": "en {{seconds}}s",
+   "ui.sessionTurn.retry.attempt": "intento n.º {{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - intento n.º {{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini está demasiado saturado ahora mismo",
+   "ui.sessionTurn.error.freeUsageExceeded": "Se superó el límite de uso gratuito",
+   "ui.sessionTurn.error.addCredits": "Añadir créditos",
+ 
+diff --git a/src/i18n/et.ts b/src/i18n/et.ts
+index 5c548c84ec..4f91106272 100644
+--- a/src/i18n/et.ts
++++ b/src/i18n/et.ts
+@@ -64,7 +64,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "{{seconds}} s pärast",
+   "ui.sessionTurn.retry.attempt": "katse #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} – katse #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini on praegu ülekoormatud",
+   "ui.sessionTurn.error.freeUsageExceeded": "Tasuta kasutus on ületatud",
+   "ui.sessionTurn.error.addCredits": "Lisa krediite",
+   "dialog.usageExceeded.freeTier.title": "Tasuta limiit on täis",
+diff --git a/src/i18n/fa.ts b/src/i18n/fa.ts
+index 54b356d10e..ecd8e1b2c8 100644
+--- a/src/i18n/fa.ts
++++ b/src/i18n/fa.ts
+@@ -64,7 +64,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "در {{seconds}}s",
+   "ui.sessionTurn.retry.attempt": "تلاش #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - تلاش #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "جمینی در حال حاضر خیلی داغ است",
+   "ui.sessionTurn.error.freeUsageExceeded": "استفاده رایگان بیش از حد است",
+   "ui.sessionTurn.error.addCredits": "اعتبار اضافه کنید",
+   "dialog.usageExceeded.freeTier.title": "به حد مجاز رایگان رسیده است",
+diff --git a/src/i18n/fi.ts b/src/i18n/fi.ts
+index d3a26cb439..6b526be39c 100644
+--- a/src/i18n/fi.ts
++++ b/src/i18n/fi.ts
+@@ -63,7 +63,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "{{seconds}} s kuluttua",
+   "ui.sessionTurn.retry.attempt": "yritys #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - yritys #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini on juuri nyt pahasti ylikuormitettu",
+   "ui.sessionTurn.error.freeUsageExceeded": "Ilmainen käyttöraja ylitetty",
+   "ui.sessionTurn.error.addCredits": "Lisää krediittejä",
+   "dialog.usageExceeded.freeTier.title": "Ilmainen raja saavutettu",
+diff --git a/src/i18n/fo.ts b/src/i18n/fo.ts
+index 098ea8f5b8..c7428a7467 100644
+--- a/src/i18n/fo.ts
++++ b/src/i18n/fo.ts
+@@ -64,7 +64,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "í {{seconds}}s",
+   "ui.sessionTurn.retry.attempt": "roynd #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - roynd #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini er ov nógv tyngt beint nú",
+   "ui.sessionTurn.error.freeUsageExceeded": "Ókeypis nýtsla er farin uppum",
+   "ui.sessionTurn.error.addCredits": "Legg stig til",
+   "dialog.usageExceeded.freeTier.title": "Frítt mark er nátt",
+diff --git a/src/i18n/fr.ts b/src/i18n/fr.ts
+index c008c2a34f..1c475193e6 100644
+--- a/src/i18n/fr.ts
++++ b/src/i18n/fr.ts
+@@ -69,7 +69,6 @@ export const dict = {
+   "ui.sessionTurn.retry.inSeconds": "dans {{seconds}} s",
+   "ui.sessionTurn.retry.attempt": "tentative n°{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - tentative n°{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini est en surchauffe",
+   "ui.sessionTurn.error.freeUsageExceeded": "Limite d'utilisation gratuite dépassée",
+   "ui.sessionTurn.error.addCredits": "Ajouter des crédits",
+ 
+diff --git a/src/i18n/hi.ts b/src/i18n/hi.ts
+index 6da92d275a..6fdd87e4c5 100644
+--- a/src/i18n/hi.ts
++++ b/src/i18n/hi.ts
+@@ -65,7 +65,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "{{seconds}}s में",
+   "ui.sessionTurn.retry.attempt": "प्रयास #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - प्रयास #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini पर अभी बहुत अधिक लोड है",
+   "ui.sessionTurn.error.freeUsageExceeded": "मुफ़्त उपयोग की सीमा पार हो गई",
+   "ui.sessionTurn.error.addCredits": "क्रेडिट जोड़ें",
+   "dialog.usageExceeded.freeTier.title": "मुफ़्त सीमा पूरी हो गई",
+diff --git a/src/i18n/hr.ts b/src/i18n/hr.ts
+index 4eb129c9ef..ea9e52d790 100644
+--- a/src/i18n/hr.ts
++++ b/src/i18n/hr.ts
+@@ -66,7 +66,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "u {{seconds}}s",
+   "ui.sessionTurn.retry.attempt": "pokušaj #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - pokušaj #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini je trenutačno preopterećen",
+   "ui.sessionTurn.error.freeUsageExceeded": "Besplatna upotreba premašena",
+   "ui.sessionTurn.error.addCredits": "Dodaj kredite",
+   "dialog.usageExceeded.freeTier.title": "Dosegnuto je besplatno ograničenje",
+diff --git a/src/i18n/hu.ts b/src/i18n/hu.ts
+index b4d61b4f5e..bd72ea76bc 100644
+--- a/src/i18n/hu.ts
++++ b/src/i18n/hu.ts
+@@ -66,7 +66,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "{{seconds}}-ben",
+   "ui.sessionTurn.retry.attempt": "kísérlet #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} – #{{attempt}} kísérlet",
+-  "ui.sessionTurn.retry.geminiHot": "a Gemini jelenleg túlterhelt",
+   "ui.sessionTurn.error.freeUsageExceeded": "Az ingyenes használat túllépve",
+   "ui.sessionTurn.error.addCredits": "Adjon hozzá krediteket",
+   "dialog.usageExceeded.freeTier.title": "Elérte a szabad korlátot",
+diff --git a/src/i18n/hy.ts b/src/i18n/hy.ts
+index 39f073c6e5..8a0240779f 100644
+--- a/src/i18n/hy.ts
++++ b/src/i18n/hy.ts
+@@ -64,7 +64,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "{{seconds}} վրկ",
+   "ui.sessionTurn.retry.attempt": "փորձ #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - փորձ #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini-ն այժմ չափազանց ծանրաբեռնված է",
+   "ui.sessionTurn.error.freeUsageExceeded": "Անվճար օգտագործումը գերազանցել է",
+   "ui.sessionTurn.error.addCredits": "Ավելացնել միավորներ",
+   "dialog.usageExceeded.freeTier.title": "Ազատ սահմանաչափը հասել է",
+diff --git a/src/i18n/id.ts b/src/i18n/id.ts
+index 22e4d46223..f028cd40cd 100644
+--- a/src/i18n/id.ts
++++ b/src/i18n/id.ts
+@@ -68,7 +68,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "dalam {{seconds}}dtk",
+   "ui.sessionTurn.retry.attempt": "percobaan #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - percobaan #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "gemini sedang terlalu sibuk",
+   "ui.sessionTurn.error.freeUsageExceeded": "Penggunaan gratis telah habis",
+   "ui.sessionTurn.error.addCredits": "Tambah kredit",
+ 
+diff --git a/src/i18n/is.ts b/src/i18n/is.ts
+index 7b3bf0fb2e..91b767140a 100644
+--- a/src/i18n/is.ts
++++ b/src/i18n/is.ts
+@@ -64,7 +64,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "í {{seconds}}s",
+   "ui.sessionTurn.retry.attempt": "tilraun #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - tilraun #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini er allt of heitt núna",
+   "ui.sessionTurn.error.freeUsageExceeded": "Farið yfir ókeypis notkun",
+   "ui.sessionTurn.error.addCredits": "Bæta við inneign",
+   "dialog.usageExceeded.freeTier.title": "Ókeypis hámarki náð",
+diff --git a/src/i18n/it.ts b/src/i18n/it.ts
+index 9d104a6775..f49f7aa66c 100644
+--- a/src/i18n/it.ts
++++ b/src/i18n/it.ts
+@@ -66,7 +66,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "tra {{seconds}}s",
+   "ui.sessionTurn.retry.attempt": "tentativo #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - tentativo #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini è sovraccarico in questo momento",
+   "ui.sessionTurn.error.freeUsageExceeded": "Utilizzo gratuito superato",
+   "ui.sessionTurn.error.addCredits": "Aggiungi crediti",
+   "dialog.usageExceeded.freeTier.title": "Limite gratuito raggiunto",
+diff --git a/src/i18n/ja.ts b/src/i18n/ja.ts
+index 1b32e05deb..befee99152 100644
+--- a/src/i18n/ja.ts
++++ b/src/i18n/ja.ts
+@@ -66,7 +66,6 @@ export const dict = {
+   "ui.sessionTurn.retry.inSeconds": "{{seconds}}秒後",
+   "ui.sessionTurn.retry.attempt": "{{attempt}}回目",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - {{attempt}}回目",
+-  "ui.sessionTurn.retry.geminiHot": "gemini が混雑しています",
+   "ui.sessionTurn.error.freeUsageExceeded": "無料使用制限に達しました",
+   "ui.sessionTurn.error.addCredits": "クレジットを追加",
+ 
+diff --git a/src/i18n/ka.ts b/src/i18n/ka.ts
+index 68f19bc00d..ac88dfd474 100644
+--- a/src/i18n/ka.ts
++++ b/src/i18n/ka.ts
+@@ -64,7 +64,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "{{seconds}}s",
+   "ui.sessionTurn.retry.attempt": "ცდა #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - მცდელობა #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini ახლა ზედმეტად დატვირთულია",
+   "ui.sessionTurn.error.freeUsageExceeded": "უფასო გამოყენება გადაჭარბებულია",
+   "ui.sessionTurn.error.addCredits": "დაამატე კრედიტები",
+   "dialog.usageExceeded.freeTier.title": "უფასო ლიმიტი მიღწეულია",
+diff --git a/src/i18n/km.ts b/src/i18n/km.ts
+index b50e9c53e7..697eb33a48 100644
+--- a/src/i18n/km.ts
++++ b/src/i18n/km.ts
+@@ -65,7 +65,6 @@ export const dict = {
+   "ui.sessionTurn.retry.inSeconds": "នៅក្នុង {{seconds}}s",
+   "ui.sessionTurn.retry.attempt": "ព្យាយាម #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - ព្យាយាម #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini គឺក្តៅពេកហើយនៅពេលនេះ",
+   "ui.sessionTurn.error.freeUsageExceeded": "លើសពីការប្រើប្រាស់ឥតគិតថ្លៃ",
+   "ui.sessionTurn.error.addCredits": "បន្ថែមក្រេឌីត",
+   "dialog.usageExceeded.freeTier.title": "បានដល់ដែនកំណត់ឥតគិតថ្លៃ",
+diff --git a/src/i18n/ko.ts b/src/i18n/ko.ts
+index 942fa873dd..4616b22d08 100644
+--- a/src/i18n/ko.ts
++++ b/src/i18n/ko.ts
+@@ -43,7 +43,6 @@ export const dict = {
+   "ui.sessionTurn.retry.inSeconds": "{{seconds}}초 후",
+   "ui.sessionTurn.retry.attempt": "{{attempt}}번째 시도",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - {{attempt}}번째 시도",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini가 현재 과부하 상태입니다",
+   "ui.sessionTurn.error.freeUsageExceeded": "무료 사용량 초과",
+   "ui.sessionTurn.error.addCredits": "크레딧 추가",
+ 
+diff --git a/src/i18n/lo.ts b/src/i18n/lo.ts
+index 5053377f33..4314ceb7fc 100644
+--- a/src/i18n/lo.ts
++++ b/src/i18n/lo.ts
+@@ -64,7 +64,6 @@ export const dict = {
+   "ui.sessionTurn.retry.inSeconds": "ໃນ {{seconds}}s",
+   "ui.sessionTurn.retry.attempt": "ພະຍາຍາມ #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - ຄວາມພະຍາຍາມທີ່ຈະ #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "gemini ຮ້ອນເກີນໄປໃນຕອນນີ້",
+   "ui.sessionTurn.error.freeUsageExceeded": "ເກີນການໃຊ້ຟຣີ",
+   "ui.sessionTurn.error.addCredits": "ເພີ່ມເຄຣດິດ",
+   "dialog.usageExceeded.freeTier.title": "ຮອດຂີດຈຳກັດຟຣີແລ້ວ",
+diff --git a/src/i18n/lt.ts b/src/i18n/lt.ts
+index da2e30d962..88fbb29307 100644
+--- a/src/i18n/lt.ts
++++ b/src/i18n/lt.ts
+@@ -66,7 +66,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "{{seconds}}s",
+   "ui.sessionTurn.retry.attempt": "bandymas #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} – bandymas #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini šiuo metu per daug apkrautas",
+   "ui.sessionTurn.error.freeUsageExceeded": "Viršytas nemokamas naudojimas",
+   "ui.sessionTurn.error.addCredits": "Pridėkite kreditų",
+   "dialog.usageExceeded.freeTier.title": "Pasiektas nemokamas limitas",
+diff --git a/src/i18n/lv.ts b/src/i18n/lv.ts
+index 774b1af1bc..eba3fb5884 100644
+--- a/src/i18n/lv.ts
++++ b/src/i18n/lv.ts
+@@ -65,7 +65,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "pēc {{seconds}} s",
+   "ui.sessionTurn.retry.attempt": "mēģinājums #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} – mēģinājums #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "gemini šobrīd ir pārāk noslogots",
+   "ui.sessionTurn.error.freeUsageExceeded": "Bezmaksas limits pārsniegts",
+   "ui.sessionTurn.error.addCredits": "Pievienot kredītus",
+   "dialog.usageExceeded.freeTier.title": "Sasniegts bezmaksas limits",
+diff --git a/src/i18n/mk.ts b/src/i18n/mk.ts
+index d154cac1a9..9a94b4a1c1 100644
+--- a/src/i18n/mk.ts
++++ b/src/i18n/mk.ts
+@@ -64,7 +64,6 @@ export const dict = {
+   "ui.sessionTurn.retry.inSeconds": "во {{seconds}}с",
+   "ui.sessionTurn.retry.attempt": "обид #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - обид #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Близнаците се премногу жешки во моментов",
+   "ui.sessionTurn.error.freeUsageExceeded": "Бесплатната употреба е надмината",
+   "ui.sessionTurn.error.addCredits": "Додадете кредити",
+   "dialog.usageExceeded.freeTier.title": "Достигнато е бесплатното ограничување",
+diff --git a/src/i18n/mn.ts b/src/i18n/mn.ts
+index dafe0067da..cd68d7403c 100644
+--- a/src/i18n/mn.ts
++++ b/src/i18n/mn.ts
+@@ -64,7 +64,6 @@ export const dict = {
+   "ui.sessionTurn.retry.inSeconds": "{{seconds}} секундын дотор",
+   "ui.sessionTurn.retry.attempt": "оролдлого #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - оролдлого #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini яг одоо хэтэрхий халуун байна",
+   "ui.sessionTurn.error.freeUsageExceeded": "Үнэгүй хэрэглээ хэтэрсэн",
+   "ui.sessionTurn.error.addCredits": "Кредит нэмэх",
+   "dialog.usageExceeded.freeTier.title": "Үнэгүй хязгаарт хүрсэн",
+diff --git a/src/i18n/ms.ts b/src/i18n/ms.ts
+index f71223f176..0b4f166535 100644
+--- a/src/i18n/ms.ts
++++ b/src/i18n/ms.ts
+@@ -64,7 +64,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "dalam {{seconds}}s",
+   "ui.sessionTurn.retry.attempt": "cubaan #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - cubaan #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "gemini terlalu sibuk sekarang",
+   "ui.sessionTurn.error.freeUsageExceeded": "Penggunaan percuma telah melebihi had",
+   "ui.sessionTurn.error.addCredits": "Tambah kredit",
+   "dialog.usageExceeded.freeTier.title": "Had percuma dicapai",
+diff --git a/src/i18n/my.ts b/src/i18n/my.ts
+index eab3b950e6..90d8bec90c 100644
+--- a/src/i18n/my.ts
++++ b/src/i18n/my.ts
+@@ -65,7 +65,6 @@ export const dict = {
+   "ui.sessionTurn.retry.inSeconds": "{{seconds}} စက္ကန့်အတွင်း",
+   "ui.sessionTurn.retry.attempt": "#{{attempt}} ကြိုးစားပါ။",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - ကြိုးစားပါ #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini သည် ယခုအချိန်တွင် အလွန်ပူပြင်းသည်။",
+   "ui.sessionTurn.error.freeUsageExceeded": "အခမဲ့အသုံးပြုမှု ကျော်လွန်သွားပါပြီ။",
+   "ui.sessionTurn.error.addCredits": "ခရက်ဒစ်များထည့်ပါ။",
+   "dialog.usageExceeded.freeTier.title": "အခမဲ့ကန့်သတ်ချက် ပြည့်သွားပါပြီ။",
+diff --git a/src/i18n/ne.ts b/src/i18n/ne.ts
+index bc3f8408e5..c162d67e7d 100644
+--- a/src/i18n/ne.ts
++++ b/src/i18n/ne.ts
+@@ -66,7 +66,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "{{seconds}}s मा",
+   "ui.sessionTurn.retry.attempt": "प्रयास #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - प्रयास #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "मिथुन अहिले धेरै तातो छ",
+   "ui.sessionTurn.error.freeUsageExceeded": "नि:शुल्क प्रयोग नाघ्यो",
+   "ui.sessionTurn.error.addCredits": "क्रेडिटहरू थप्नुहोस्",
+   "dialog.usageExceeded.freeTier.title": "नि: शुल्क सीमा पुग्यो",
+diff --git a/src/i18n/nl.ts b/src/i18n/nl.ts
+index 0a5fe58e78..baef044809 100644
+--- a/src/i18n/nl.ts
++++ b/src/i18n/nl.ts
+@@ -64,7 +64,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "over {{seconds}} s",
+   "ui.sessionTurn.retry.attempt": "poging #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - poging #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini is momenteel overbelast",
+   "ui.sessionTurn.error.freeUsageExceeded": "Gratis gebruik overschreden",
+   "ui.sessionTurn.error.addCredits": "Tegoed toevoegen",
+   "dialog.usageExceeded.freeTier.title": "Gratis limiet bereikt",
+diff --git a/src/i18n/no.ts b/src/i18n/no.ts
+index 0cdd653908..f204c73b83 100644
+--- a/src/i18n/no.ts
++++ b/src/i18n/no.ts
+@@ -46,7 +46,6 @@ export const dict: Record<Keys, string> = {
+   "ui.sessionTurn.retry.inSeconds": "om {{seconds}} s",
+   "ui.sessionTurn.retry.attempt": "forsøk nr. {{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - forsøk nr. {{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini er veldig overbelastet nå",
+   "ui.sessionTurn.error.freeUsageExceeded": "Gratisforbruket er overskredet",
+   "ui.sessionTurn.error.addCredits": "Legg til kreditter",
+ 
+diff --git a/src/i18n/pa.ts b/src/i18n/pa.ts
+index 5ecb6b67b7..1aef959a93 100644
+--- a/src/i18n/pa.ts
++++ b/src/i18n/pa.ts
+@@ -65,7 +65,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "{{seconds}}s پچھوں",
+   "ui.sessionTurn.retry.attempt": "کوشش #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - کوشش #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini ایس ویلے حدوں ودھ مصروف اے",
+   "ui.sessionTurn.error.freeUsageExceeded": "مفت استعمال توں ودھ گیا",
+   "ui.sessionTurn.error.addCredits": "کریڈٹ شامل کرو",
+   "dialog.usageExceeded.freeTier.title": "مفت حد پوری ہو گئی",
+diff --git a/src/i18n/pl.ts b/src/i18n/pl.ts
+index 7181b00806..745d36047f 100644
+--- a/src/i18n/pl.ts
++++ b/src/i18n/pl.ts
+@@ -68,7 +68,6 @@ export const dict = {
+   "ui.sessionTurn.retry.inSeconds": "za {{seconds}} s",
+   "ui.sessionTurn.retry.attempt": "próba nr {{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - próba nr {{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini jest teraz mocno przeciążony",
+   "ui.sessionTurn.error.freeUsageExceeded": "Przekroczono limit darmowego użytkowania",
+   "ui.sessionTurn.error.addCredits": "Dodaj środki",
+ 
+diff --git a/src/i18n/ro.ts b/src/i18n/ro.ts
+index 6d187caf5f..c93fab0d99 100644
+--- a/src/i18n/ro.ts
++++ b/src/i18n/ro.ts
+@@ -65,7 +65,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "în {{seconds}}s",
+   "ui.sessionTurn.retry.attempt": "încercarea #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - încercarea #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "gemini este prea solicitat acum",
+   "ui.sessionTurn.error.freeUsageExceeded": "Ai depășit utilizarea gratuită",
+   "ui.sessionTurn.error.addCredits": "Adaugă credit",
+   "dialog.usageExceeded.freeTier.title": "Limită gratuită atinsă",
+diff --git a/src/i18n/ru.ts b/src/i18n/ru.ts
+index 2b733166f7..6969b6999e 100644
+--- a/src/i18n/ru.ts
++++ b/src/i18n/ru.ts
+@@ -68,7 +68,6 @@ export const dict = {
+   "ui.sessionTurn.retry.inSeconds": "через {{seconds}} с",
+   "ui.sessionTurn.retry.attempt": "попытка №{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - попытка №{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "gemini сейчас перегружен",
+   "ui.sessionTurn.error.freeUsageExceeded": "Лимит бесплатного использования превышен",
+   "ui.sessionTurn.error.addCredits": "Добавить кредиты",
+ 
+diff --git a/src/i18n/si.ts b/src/i18n/si.ts
+index 3550df3aaa..26f7b9aca3 100644
+--- a/src/i18n/si.ts
++++ b/src/i18n/si.ts
+@@ -64,7 +64,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "{{seconds}}ත",
+   "ui.sessionTurn.retry.attempt": "උත්සාහ කරන්න #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - උත්සාහ කරන්න #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "මිථුන ලග්නය දැන් උණුසුම් වැඩියි",
+   "ui.sessionTurn.error.freeUsageExceeded": "නිදහස් භාවිතය ඉක්මවා ඇත",
+   "ui.sessionTurn.error.addCredits": "ණය එකතු කරන්න",
+   "dialog.usageExceeded.freeTier.title": "නිදහස් සීමාව ළඟා විය",
+diff --git a/src/i18n/sk.ts b/src/i18n/sk.ts
+index a8ec929b61..abfb26f3f1 100644
+--- a/src/i18n/sk.ts
++++ b/src/i18n/sk.ts
+@@ -66,7 +66,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "za {{seconds}} s",
+   "ui.sessionTurn.retry.attempt": "pokus č. {{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} – pokus č. {{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "gemini je momentálne príliš vyťažený",
+   "ui.sessionTurn.error.freeUsageExceeded": "Prekročený bezplatný limit",
+   "ui.sessionTurn.error.addCredits": "Pridať kredity",
+   "dialog.usageExceeded.freeTier.title": "Dosiahnutý bezplatný limit",
+diff --git a/src/i18n/sl.ts b/src/i18n/sl.ts
+index 8d5718fc01..62b8e0caf8 100644
+--- a/src/i18n/sl.ts
++++ b/src/i18n/sl.ts
+@@ -67,7 +67,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "v {{seconds}}s",
+   "ui.sessionTurn.retry.attempt": "poskus #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - poskus #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini je trenutno preobremenjen",
+   "ui.sessionTurn.error.freeUsageExceeded": "Brezplačna uporaba je presežena",
+   "ui.sessionTurn.error.addCredits": "Dodajte kredite",
+   "dialog.usageExceeded.freeTier.title": "Brezplačna omejitev je dosežena",
+diff --git a/src/i18n/sq.ts b/src/i18n/sq.ts
+index 3c1cd24e9f..bb6458d533 100644
+--- a/src/i18n/sq.ts
++++ b/src/i18n/sq.ts
+@@ -64,7 +64,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "në {{seconds}}s",
+   "ui.sessionTurn.retry.attempt": "përpjekje #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - provoni #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini është i mbingarkuar për momentin",
+   "ui.sessionTurn.error.freeUsageExceeded": "Përdorimi falas u tejkalua",
+   "ui.sessionTurn.error.addCredits": "Shto kredite",
+   "dialog.usageExceeded.freeTier.title": "U arrit kufiri falas",
+diff --git a/src/i18n/sr.ts b/src/i18n/sr.ts
+index 9f090cd2e2..cc3e748d62 100644
+--- a/src/i18n/sr.ts
++++ b/src/i18n/sr.ts
+@@ -66,7 +66,6 @@ export const dict = {
+   "ui.sessionTurn.retry.inSeconds": "у {{seconds}}с",
+   "ui.sessionTurn.retry.attempt": "покушај #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - покушај #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini је тренутно преоптерећен",
+   "ui.sessionTurn.error.freeUsageExceeded": "Прекорачена је бесплатна употреба",
+   "ui.sessionTurn.error.addCredits": "Додајте кредите",
+   "dialog.usageExceeded.freeTier.title": "Достигнуто је ограничење бесплатног",
+diff --git a/src/i18n/sv.ts b/src/i18n/sv.ts
+index 3fcc6ff765..059df695a3 100644
+--- a/src/i18n/sv.ts
++++ b/src/i18n/sv.ts
+@@ -64,7 +64,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "om {{seconds}} s",
+   "ui.sessionTurn.retry.attempt": "försök #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - försök #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini är alldeles för belastad just nu",
+   "ui.sessionTurn.error.freeUsageExceeded": "Gränsen för kostnadsfri användning har överskridits",
+   "ui.sessionTurn.error.addCredits": "Lägg till krediter",
+   "dialog.usageExceeded.freeTier.title": "Gratisgränsen nådd",
+diff --git a/src/i18n/tg.ts b/src/i18n/tg.ts
+index 4c3e824c6c..71a77056da 100644
+--- a/src/i18n/tg.ts
++++ b/src/i18n/tg.ts
+@@ -64,7 +64,6 @@ export const dict = {
+   "ui.sessionTurn.retry.inSeconds": "дар {{seconds}}с",
+   "ui.sessionTurn.retry.attempt": "кӯшиш #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - кӯшиш #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini ҳоло хеле гарм аст",
+   "ui.sessionTurn.error.freeUsageExceeded": "Истифодаи ройгон аз ҳад зиёд",
+   "ui.sessionTurn.error.addCredits": "Илова кардани кредитҳо",
+   "dialog.usageExceeded.freeTier.title": "Ба ҳадди ройгон расид",
+diff --git a/src/i18n/th.ts b/src/i18n/th.ts
+index ae0d820d4e..03a16875e9 100644
+--- a/src/i18n/th.ts
++++ b/src/i18n/th.ts
+@@ -67,7 +67,6 @@ export const dict = {
+   "ui.sessionTurn.retry.inSeconds": "ใน {{seconds}} วินาที",
+   "ui.sessionTurn.retry.attempt": "ครั้งที่ {{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - ครั้งที่ {{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "ขณะนี้ Gemini มีการใช้งานหนาแน่นมาก",
+   "ui.sessionTurn.error.freeUsageExceeded": "เกินขีดจำกัดการใช้งานฟรี",
+   "ui.sessionTurn.error.addCredits": "เพิ่มเครดิต",
+ 
+diff --git a/src/i18n/tk.ts b/src/i18n/tk.ts
+index e1bf43208f..2f28fad293 100644
+--- a/src/i18n/tk.ts
++++ b/src/i18n/tk.ts
+@@ -64,7 +64,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "{{seconds}}-lerde",
+   "ui.sessionTurn.retry.attempt": "synanyş # {{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - # {{attempt}} synanyşyň",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini häzir aşa ýüklenen",
+   "ui.sessionTurn.error.freeUsageExceeded": "Mugt ulanyşdan geçdi",
+   "ui.sessionTurn.error.addCredits": "Karz goşuň",
+   "dialog.usageExceeded.freeTier.title": "Mugt çäk ýetdi",
+diff --git a/src/i18n/tr.ts b/src/i18n/tr.ts
+index e0b6fd0ccd..c2cfcd42af 100644
+--- a/src/i18n/tr.ts
++++ b/src/i18n/tr.ts
+@@ -73,7 +73,6 @@ export const dict = {
+   "ui.sessionTurn.retry.inSeconds": "{{seconds}} sn içinde",
+   "ui.sessionTurn.retry.attempt": "deneme #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - deneme #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini şu anda aşırı yoğun",
+   "ui.sessionTurn.error.freeUsageExceeded": "Ücretsiz kullanım aşıldı",
+   "ui.sessionTurn.error.addCredits": "Kredi ekle",
+ 
+diff --git a/src/i18n/uk.ts b/src/i18n/uk.ts
+index 9643b52a94..ac270d3fef 100644
+--- a/src/i18n/uk.ts
++++ b/src/i18n/uk.ts
+@@ -71,7 +71,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "за {{seconds}} с",
+   "ui.sessionTurn.retry.attempt": "спроба № {{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} — спроба № {{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini зараз перевантажений",
+   "ui.sessionTurn.error.freeUsageExceeded": "Перевищено ліміт безкоштовного використання",
+   "ui.sessionTurn.error.addCredits": "Додати кредити",
+ 
+diff --git a/src/i18n/ur.ts b/src/i18n/ur.ts
+index b9aaa429e6..4822359c5d 100644
+--- a/src/i18n/ur.ts
++++ b/src/i18n/ur.ts
+@@ -65,7 +65,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "{{seconds}}s میں",
+   "ui.sessionTurn.retry.attempt": "کوشش #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - کوشش #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "gemini اس وقت بہت زیادہ مصروف ہے",
+   "ui.sessionTurn.error.freeUsageExceeded": "مفت استعمال کی حد ختم ہو گئی",
+   "ui.sessionTurn.error.addCredits": "کریڈٹ شامل کریں۔",
+   "dialog.usageExceeded.freeTier.title": "مفت استعمال کی حد پوری ہو گئی",
+diff --git a/src/i18n/uz.ts b/src/i18n/uz.ts
+index c1a1e671e3..54b81f4603 100644
+--- a/src/i18n/uz.ts
++++ b/src/i18n/uz.ts
+@@ -66,7 +66,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "{{seconds}}larda",
+   "ui.sessionTurn.retry.attempt": "#{{attempt}} harakat qiling",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - urinish #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini hozir haddan tashqari yuklangan",
+   "ui.sessionTurn.error.freeUsageExceeded": "Bepul foydalanish chegarasidan oshib ketdi",
+   "ui.sessionTurn.error.addCredits": "Kredit qo'shing",
+   "dialog.usageExceeded.freeTier.title": "Bepul chegaraga yetdi",
+diff --git a/src/i18n/vi.ts b/src/i18n/vi.ts
+index c37ff1a66f..e1ab0c5fde 100644
+--- a/src/i18n/vi.ts
++++ b/src/i18n/vi.ts
+@@ -64,7 +64,6 @@ export const dict: Record<string, string> = {
+   "ui.sessionTurn.retry.inSeconds": "sau {{seconds}} giây",
+   "ui.sessionTurn.retry.attempt": "lần thử #{{attempt}}",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - lần thử #{{attempt}}",
+-  "ui.sessionTurn.retry.geminiHot": "gemini dạo này đang hot quá",
+   "ui.sessionTurn.error.freeUsageExceeded": "Đã vượt quá mức sử dụng miễn phí",
+   "ui.sessionTurn.error.addCredits": "Thêm số dư",
+   "dialog.usageExceeded.freeTier.title": "Đã đạt đến giới hạn miễn phí",
+diff --git a/src/i18n/zh.ts b/src/i18n/zh.ts
+index c5a33efef0..b0a9454c25 100644
+--- a/src/i18n/zh.ts
++++ b/src/i18n/zh.ts
+@@ -71,7 +71,6 @@ export const dict = {
+   "ui.sessionTurn.retry.inSeconds": "{{seconds}} 秒后",
+   "ui.sessionTurn.retry.attempt": "第 {{attempt}} 次尝试",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - 第 {{attempt}} 次尝试",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini 当前负载过高",
+   "ui.sessionTurn.error.freeUsageExceeded": "免费使用额度已用完",
+   "ui.sessionTurn.error.addCredits": "充值",
+ 
+diff --git a/src/i18n/zht.ts b/src/i18n/zht.ts
+index 736a7961b0..f69835ac97 100644
+--- a/src/i18n/zht.ts
++++ b/src/i18n/zht.ts
+@@ -71,7 +71,6 @@ export const dict = {
+   "ui.sessionTurn.retry.inSeconds": "{{seconds}} 秒後",
+   "ui.sessionTurn.retry.attempt": "第 {{attempt}} 次",
+   "ui.sessionTurn.retry.attemptLine": "{{line}} - 第 {{attempt}} 次",
+-  "ui.sessionTurn.retry.geminiHot": "Gemini 目前負載過高",
+   "ui.sessionTurn.error.freeUsageExceeded": "免費使用額度已用完",
+   "ui.sessionTurn.error.addCredits": "新增點數",
+ 
