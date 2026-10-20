@@ -17,6 +17,12 @@ describe("control-plane event visibility", () => {
     expect(eventVisibleTo({ mode: "unsigned-local" }, event)).toBe(true)
   })
 
+  test("an app plugin's event reaches only the member it names, never another member of the org", () => {
+    const event = { type: "plugin.event", pluginId: "counter", topic: "changed", data: { n: 1 }, recipientUserId: "user_enabled", ts: 1 } as const
+    expect(eventVisibleTo({ mode: "signed", subject: "user_enabled", orgId: "org_a" }, event)).toBe(true)
+    expect(eventVisibleTo({ mode: "signed", subject: "user_member", orgId: "org_a" }, event)).toBe(false)
+  })
+
   test("a workspace's machine start reaches its owner alone, never another member of its org", () => {
     const event = { type: "provision", workspaceId: "ws_owner", ownerUserId: "user_owner", orgId: "org_a", step: "starting", ts: 1 } as const
     expect(eventVisibleTo({ mode: "signed", subject: "user_owner", orgId: "org_a" }, event)).toBe(true)

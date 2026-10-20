@@ -5,6 +5,7 @@ import {
   PLUGIN_CAPABILITY_MAX_LENGTH,
   PLUGIN_CAPABILITY_PATTERN,
   PLUGIN_NAME_MAX_LENGTH,
+  PLUGIN_PERMISSIONS,
   PLUGIN_SERVER_ROUTE_PREFIX,
   PluginManifestError,
   PluginStatusHooksRefusedError,
@@ -34,12 +35,28 @@ function distinct(values: readonly string[]) {
   return new Set(values).size === values.length
 }
 
+/** Paths under `/_` are the platform's own calls into a backend (its wakes, and later its tools and files); no route may declare one. */
+function publicRoute(route: string) {
+  return !route.slice(route.indexOf(" ") + 1).startsWith("/_")
+}
+
+export const pluginBackendToolsSchema = z
+  .object({
+    group: z.object({ id: z.string().min(1).max(PLUGIN_ID_MAX_LENGTH).regex(PLUGIN_ID_PATTERN), label: z.string().trim().min(1).max(PLUGIN_NAME_MAX_LENGTH) }).strict(),
+    definitions: z.string().regex(ENTRY_PATTERN),
+  })
+  .strict()
+
 export const pluginBackendSchema = z
   .object({
     entry: z.string().regex(ENTRY_PATTERN),
     objects: z.array(z.string().regex(BACKEND_OBJECT_PATTERN)).refine(distinct, "object classes must be distinct").default([]),
     outbound: z.array(z.string().regex(BACKEND_HOST_PATTERN)).refine(distinct, "outbound hosts must be distinct").default([]),
-    routes: z.array(z.string().regex(BACKEND_ROUTE_PATTERN)).min(1).refine(distinct, "routes must be distinct"),
+    routes: z
+      .array(z.string().regex(BACKEND_ROUTE_PATTERN).refine(publicRoute, "routes under /_ belong to the platform"))
+      .min(1)
+      .refine(distinct, "routes must be distinct"),
+    tools: pluginBackendToolsSchema.optional(),
   })
   .strict()
 
@@ -51,6 +68,7 @@ export const pluginManifestSchema = z
     app: z.string().regex(ENTRY_PATTERN),
     requires: z.array(z.string().max(PLUGIN_CAPABILITY_MAX_LENGTH).regex(PLUGIN_CAPABILITY_PATTERN)).default([]),
     server: pluginServerAccessSchema.default({ routes: [], operations: [] }),
+    permissions: z.array(z.enum(PLUGIN_PERMISSIONS)).refine(distinct, "permissions must be distinct").optional(),
     backend: pluginBackendSchema.optional(),
     // A template defines shell wrappers and rewrites files in the person's home,
     // so only the status-hooks package bundled with Claxedo may declare one;

@@ -1,15 +1,15 @@
-import type { PluginCallerRecord } from "./host-port"
+import type { PluginCaller } from "@claxedo/plugin-api/backend"
 
 /** How long a handle outlives the request it was minted for, so work the request started can still act as its caller. */
 export const PLUGIN_CALLER_HANDLE_TTL_MS = 10 * 60_000
 
 const HANDLE_BYTES = 16
 
-type Entry = { caller: PluginCallerRecord; epoch: number; expiresAt: number | undefined }
+type Entry = { caller: PluginCaller; epoch: number; expiresAt: number | undefined }
 
 export type MintedCallerHandle = Readonly<{
   handle: string
-  /** The request this handle was minted for has answered; the handle now expires after `PLUGIN_CALLER_HANDLE_TTL_MS`. */
+  /** The request or wake this handle was minted for has answered; the handle now expires after `PLUGIN_CALLER_HANDLE_TTL_MS`. */
   settle(): void
 }>
 
@@ -28,7 +28,7 @@ export class PluginCallerHandles {
     private readonly random: (bytes: Uint8Array<ArrayBuffer>) => Uint8Array<ArrayBuffer> = (bytes) => crypto.getRandomValues(bytes),
   ) {}
 
-  mint(epoch: number, caller: PluginCallerRecord): MintedCallerHandle {
+  mint(epoch: number, caller: PluginCaller): MintedCallerHandle {
     this.#prune(epoch)
     const handle = Array.from(this.random(new Uint8Array(HANDLE_BYTES)), (byte) => byte.toString(16).padStart(2, "0")).join("")
     const entry: Entry = { caller, epoch, expiresAt: undefined }
@@ -37,7 +37,7 @@ export class PluginCallerHandles {
   }
 
   /** The caller `handle` was minted for, while it is live under `epoch`. */
-  resolve(epoch: number, handle: string): PluginCallerRecord | undefined {
+  resolve(epoch: number, handle: string): PluginCaller | undefined {
     const entry = this.#entries.get(handle)
     if (!entry || entry.epoch !== epoch) return undefined
     if (entry.expiresAt !== undefined && entry.expiresAt <= this.now()) {

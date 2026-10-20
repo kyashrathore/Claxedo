@@ -1,7 +1,7 @@
 import type { D1Database } from "@cloudflare/workers-types"
 import type { PluginSupervisorNamespace } from "@claxedo/plugin-runtime"
 import type { ControlPlaneRouteContribution } from "@claxedo/server-core/platform/http/route-contribution"
-import type { AgentPluginR2Bucket } from "../agent-plugins/artifacts/r2-artifact-adapter"
+import type { AppPluginsBucket } from "./bundles"
 import type { OrgAdministers } from "../credentials/worker/org-administers"
 import { appPluginRouteContribution } from "./app-plugin-routes"
 import type { OrgCallerInput } from "./org-caller"
@@ -11,7 +11,7 @@ import { pluginBackendRouteContribution } from "./routes"
 export type HostedAppPluginsInput = OrgCallerInput &
   Readonly<{
     database: D1Database
-    bucket: AgentPluginR2Bucket
+    bucket: AppPluginsBucket
     supervisors: PluginSupervisorNamespace
     registry: AppPluginRegistry
     administers: OrgAdministers

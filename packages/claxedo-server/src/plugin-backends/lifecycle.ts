@@ -2,7 +2,7 @@ import type { D1Database } from "@cloudflare/workers-types"
 import type { SignedPluginRelease } from "@claxedo/plugin-api/release"
 import { pluginSupervisor, type PluginScope, type PluginSupervisorNamespace } from "@claxedo/plugin-runtime"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
-import type { AgentPluginR2Bucket } from "../agent-plugins/artifacts/r2-artifact-adapter"
+import type { AppPluginsBucket } from "./bundles"
 import { putPluginBundle } from "./bundles"
 import {
   readAppPluginInstall,
@@ -12,11 +12,12 @@ import {
   writeAppPluginUpdate,
   type AppPluginInstall,
 } from "./installs"
+import { deletePluginData } from "./platform-host"
 import { fetchVerifiedBlob, fetchVerifiedRelease, type AppPluginRegistry } from "./registry"
 
 export type AppPluginLifecyclePorts = Readonly<{
   database: D1Database
-  bucket: AgentPluginR2Bucket
+  bucket: AppPluginsBucket
   registry: AppPluginRegistry
   /** Absent on a deployment without the plugin-backend platform, which then refuses a release that carries a backend. */
   supervisors: PluginSupervisorNamespace | undefined
@@ -91,12 +92,14 @@ export async function setAppPluginActive(ports: AppPluginLifecyclePorts, request
 }
 
 /**
- * Deletes the install and every member's choice, then every object the
- * plugin stored. The supervisor is purged even when no install was found, so
- * an uninstall that failed after its row was deleted completes on retry.
+ * Deletes the install, every member's choice and the plugin's links, then
+ * every object, wake and blob the plugin stored. The data is deleted even
+ * when no install was found, so an uninstall that failed after its rows were
+ * deleted completes on retry.
  */
 export async function uninstallAppPlugin(ports: AppPluginLifecyclePorts, scope: PluginScope): Promise<boolean> {
   const removed = await writeAppPluginUninstall(ports.database, scope)
   if (ports.supervisors) await pluginSupervisor(ports.supervisors, scope).purge(scope)
+  await deletePluginData(ports.bucket, scope)
   return removed
 }

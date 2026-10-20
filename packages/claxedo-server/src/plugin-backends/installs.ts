@@ -228,12 +228,13 @@ export async function writeAppPluginActive(database: D1Database, input: PluginSc
   return (changed?.meta.changes ?? 0) > 0
 }
 
-/** Deletes the install, every member's choice and the organization's default, under a new epoch; false when nothing was installed. */
+/** Deletes the install, every member's choice, the organization's default and the plugin's links, under a new epoch; false when nothing was installed. */
 export async function writeAppPluginUninstall(database: D1Database, scope: PluginScope): Promise<boolean> {
-  const [, , , removed] = await database.batch([
+  const [, , , , removed] = await database.batch([
     raiseEpoch(database, scope, WHERE_INSTALLED),
     database.prepare("delete from app_plugin_enablements where org_id = ? and plugin_id = ?").bind(scope.orgId, scope.pluginId),
     database.prepare("delete from app_plugin_org_defaults where org_id = ? and plugin_id = ?").bind(scope.orgId, scope.pluginId),
+    database.prepare("delete from app_plugin_links where org_id = ? and plugin_id = ?").bind(scope.orgId, scope.pluginId),
     database.prepare("delete from app_plugin_installs where org_id = ? and plugin_id = ?").bind(scope.orgId, scope.pluginId),
   ])
   return (removed?.meta.changes ?? 0) > 0

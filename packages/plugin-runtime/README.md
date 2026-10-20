@@ -1,8 +1,8 @@
 # @claxedo/plugin-runtime
 
-The sandboxed runtime an app plugin's backend runs in: one supervisor Durable Object per organization and plugin, the backend loaded through the Worker Loader as a Dynamic Worker once per activation epoch, the plugin's own Durable Object classes run as the supervisor's facets, and the capabilities a loaded backend reaches the host through. It runs only in the hosted Worker; app plugins exist only for signed-in accounts, and there is no local backend runtime.
+The sandboxed runtime an app plugin's backend runs in: one supervisor Durable Object per organization and plugin, the backend loaded through the Worker Loader as a Dynamic Worker once per activation epoch, the plugin's own Durable Object classes run as the supervisor's facets, and the platform a loaded backend reaches the host through. It runs only in the hosted Worker; app plugins exist only for signed-in accounts, and there is no local backend runtime.
 
-The host owns everything else: who the caller is, which organization they act in, where the install row and the bundles are stored. `packages/claxedo-server/src/plugin-backends/README.md` describes the hosted adapter.
+The host owns everything else: who the caller is, which organization they act in, what that person may do, and where the install, the bundles and the plugin's data are stored. `packages/claxedo-server/src/plugin-backends/README.md` describes the hosted adapter. The contract a backend is written against is `@claxedo/plugin-api/backend` (`packages/claxedo-plugin-api/README.md`).
 
 ## The host port
 
@@ -12,8 +12,10 @@ The host owns everything else: who the caller is, which organization they act in
 | --- | --- |
 | `readState(orgId, pluginId)` | `PluginBackendState`: the install's current `epoch`, and its `activation` (`epoch`, the backend bundle's `bundleHash`, the validated `manifest` with its `backend`) while the backend is active. |
 | `readBundle(sha256)` | The backend bundle stored under that SHA-256, or undefined when none is. The runtime verifies the digest before it loads the code, so a store that answers other bytes is refused. |
+| `platform(call, scope, caller)` | A platform call the runtime has already admitted (below): projects, blobs, events and links. The host decides what the caller may do and where the data lives. |
+| `limits` | Optional. `blobTotalBytes` overrides the 1 GiB a plugin's blobs may hold in one organization. |
 
-The supervisor asks both on every request it serves. A state whose epoch is lower than one the supervisor has already applied is ignored as stale, so a replica that lags cannot bring back an ended run; a host must never answer an epoch it did not write.
+The supervisor asks `readState` and `readBundle` on every request it serves. A state whose epoch is lower than one the supervisor has already applied is ignored as stale, so a replica that lags cannot bring back an ended run; a host must never answer an epoch it did not write.
 
 A host composes the runtime in its Worker entry:
 
@@ -28,10 +30,12 @@ The entry must export all three under those names, because the supervisor binds 
 
 ## A request
 
-`pluginSupervisor(namespace, { orgId, pluginId })` names the supervisor `org:<orgId>:plugin:<pluginId>`, so one plugin's CPU, memory and storage never share an object with another plugin's. `request(caller, request)` serves a request the host authenticated:
+`pluginSupervisor(namespace, { orgId, pluginId })` names the supervisor `org:<orgId>:plugin:<pluginId>`, so one plugin's CPU, memory and storage never share an object with another plugin's. `request(caller, request)` serves a request the host forwards, for a `person` it authenticated or for anyone holding a public `link`:
 
+- a path under `/_`: 404 `plugin_route_reserved` (those are the platform's own calls into the backend);
 - no activation: 404 `plugin_not_activated`;
 - a route the manifest does not declare: 404 `plugin_route_not_declared`;
+- a link request other than `GET`: 405 `plugin_link_read_only`;
 - a bundle the host does not hold: 503 `plugin_bundle_unavailable`, read again on the next request;
 - otherwise the backend gets the request's method, path, query, body and `content-type`, and `x-claxedo-caller`, a caller handle; nothing else the caller sent reaches it.
 
@@ -39,25 +43,43 @@ The loaded Worker's environment is only `PLATFORM`, and its `globalOutbound` is 
 
 ## Caller handles
 
-A backend never receives a user id it could replay. The supervisor mints a 128-bit handle per request (`caller-handles.ts`), kept in memory under the epoch it was minted in:
+A backend never receives a user id it could replay. The supervisor mints a 128-bit handle for each request and each wake it delivers (`caller-handles.ts`), kept in memory under the epoch it was minted in, for a caller `{ orgId, origin, userId? }`: a `person` with their user id, a `link` or a `system` wake with none.
 
-- `env.PLATFORM.caller(handle)` answers `{ userId, orgId }` while the handle is live, and null otherwise;
+- `identity.caller` answers it while the handle is live, and refuses otherwise;
 - a handle stays live while its request is open, and for `PLUGIN_CALLER_HANDLE_TTL_MS` (10 minutes) after it answered;
 - it names nobody once its epoch has ended, under any other epoch, or in another plugin's supervisor;
 - a supervisor that restarts has forgotten every handle.
 
-## Capabilities
+## The platform
 
-Everything a loaded backend reaches beyond its own facet's storage is bound to one organization, plugin and activation epoch, and refused once that epoch is not the current one (`entrypoints.cf.ts`):
+`env.PLATFORM` (`entrypoints.cf.ts`) is bound to one organization, plugin and activation epoch:
 
-- `env.PLATFORM.object(className, name, request)` refuses an ended epoch (409 `plugin_backend_replaced`), a class the manifest does not declare (404 `plugin_object_not_declared`) and a name outside 1 to 256 characters, and runs the class as the facet `[className, name]`. A facet has its own SQLite database inside the supervisor, so no plugin can address another plugin's or organization's objects. Every facet's `ctx.id` is the supervisor's, so an object cannot tell itself from its siblings by it: every request it receives carries its own name in `x-claxedo-object-name` instead.
-- `env.PLATFORM.active()` answers whether the epoch is still current.
-- `env.PLATFORM.caller(handle)`, above.
+- `object(className, name, request)` refuses an ended epoch (409 `plugin_backend_replaced`), a class the manifest does not declare (404 `plugin_object_not_declared`) and a name outside 1 to 256 characters, and runs the class as the facet `[className, name]`. A facet has its own SQLite database inside the supervisor, so no plugin can address another plugin's or organization's objects. Every facet's `ctx.id` is the supervisor's, so an object cannot tell itself from its siblings by it: every request it receives carries its own name in `x-claxedo-object-name` instead.
+- `active()` answers whether the epoch is still current.
+- `call(call, handle)` is every other call (`PluginPlatformCall`). `admitPlatformCall` (`platform-admission.ts`) admits it, in this order:
+  1. the epoch is the current activation, else 409 `plugin_backend_replaced`;
+  2. its fields parse, else 400 `plugin_call_invalid`;
+  3. the manifest's `permissions` hold the call's permission, else 403 `plugin_permission_not_declared`;
+  4. a call that needs a caller has a live handle, else 401 `plugin_caller_invalid`;
+  5. a call that acts as a person (projects, `links.create`, an event to the caller or a project) has a person, else 403 `plugin_caller_not_a_person`.
 - `fetch` goes through `PluginOutbound`, which allows https on the default port to the manifest's `outbound` hosts, and only while the epoch is current (otherwise 403 `plugin_backend_replaced`).
 
-The supervisor records every facet it starts in its own SQLite table `plugin_facets(name, class_name, created_at)`, so a deletion reaches facets no run of the current isolate started.
+The runtime answers some calls itself and holds the limits; the host answers the rest through `platform`:
 
-`purge(scope)` deletes everything the plugin stored, once the host has removed its install: it refuses while the host still answers an active backend, ends the run, deletes each recorded facet with `ctx.facets.delete`, and only then the supervisor's own storage with `deleteAll`, because a running facet outlives `deleteAll` (below). `supervisor-purge.test.ts` pins that order.
+| Call | Permission | Answered by |
+| --- | --- | --- |
+| `identity.caller` | none | the runtime, from the handle |
+| `projects.list`, `projects.authorize` | `projects.read` | the host, as the caller |
+| `blobs.put`, `get`, `head`, `delete`, `list` | `blobs` | the host's store; the runtime refuses a blob over 16 MiB (413 `plugin_blob_too_large`) and a put past the quota (413 `plugin_blob_quota_exceeded`), counting each blob's size in its own `plugin_blob_usage` table |
+| `events.publish` | `events` | the host's delivery; the runtime refuses data over 8 KiB (413 `plugin_event_too_large`) and more than 10 a second (429 `plugin_event_rate_limited`) |
+| `schedule.at`, `cancel`, `list` | `schedule` | the runtime (`wakes.ts`) |
+| `links.create`, `links.revoke` | `links` | the host |
+
+**Wakes.** `schedule.at(name, at, payload)` stores a wake in the supervisor's `plugin_wakes` table and arms the supervisor's own alarm at the earliest one. A wake is set at least 30 s ahead (400 `plugin_wake_too_soon`), carries at most 4 KiB of JSON (413), and a plugin holds at most 100 (429 `plugin_wake_limit`). When the alarm fires, `wakeDue(scope, now)` takes every due wake off the table before delivering it, so each runs at most once, as `POST /_wake/<name>` with a `system` caller. A wake due while no backend is active is dropped. The alarm reaches platform code, never a facet. Facet alarms stay unsupported (below); plugins schedule through `schedule.at`.
+
+The supervisor records every facet it starts in its own SQLite table `plugin_facets(name, class_name, created_at)`, and the plugin it serves in `plugin_scope`, which an alarm reads because it arrives with no caller.
+
+`purge(scope)` deletes everything the plugin stored, once the host has removed its install: it refuses while the host still answers an active backend, ends the run, deletes each recorded facet with `ctx.facets.delete`, then the alarm, and only then the supervisor's own storage with `deleteAll`, because a running facet outlives `deleteAll` (below). Its wakes and blob accounting go with that storage. `supervisor.test.ts` pins the order.
 
 ## Epochs and runs
 
@@ -67,9 +89,9 @@ The supervisor records every facet it starts in its own SQLite table `plugin_fac
 - a newer epoch ends the run: its facets are aborted, and the next call starts them from the new activation over the same storage;
 - work that was waiting for a bundle when its run ended starts nothing on that run; it goes again on the current one, or answers `plugin_not_activated` if there is none.
 
-`refresh(scope)` reads the state again, which a host calls after it changes an install so the previous configuration's objects stop at once rather than at the next request. A request the plugin was already handling when its epoch ended keeps running until it answers, but it reaches nothing: no object, no network, no caller, and `active()` is false.
+`refresh(scope)` reads the state again, which a host calls after it changes an install so the previous configuration's objects stop at once rather than at the next request. A request the plugin was already handling when its epoch ended keeps running until it answers, but it reaches nothing: no object, no network, no platform call, and `active()` is false.
 
-**Residual risk: facet alarms.** A facet's alarm reaches the facet directly, not through the supervisor, so the platform cannot stop one from running. Deactivation and replacement abort the running facets at once, but an alarm the plugin scheduled before then can still start the facet again and run the plugin's code. That code holds no live capability, so it can read and write only that facet's own storage, and can schedule itself again. The runtime does not wrap the plugin's classes to stop it, because any gate inside the plugin's realm can be bypassed by the plugin's own code. Scheduled work goes through a platform-owned scheduler instead (`docs/plans/2026-10-20-feat-opt-in-plugins-plan.md` §3.7).
+**Residual risk: facet alarms.** A facet's alarm reaches the facet directly, not through the supervisor, so the platform cannot stop one from running. Deactivation and replacement abort the running facets at once, but an alarm the plugin scheduled before then can still start the facet again and run the plugin's code. That code holds no live capability, so it can read and write only that facet's own storage, and can schedule itself again. The runtime does not wrap the plugin's classes to stop it, because any gate inside the plugin's realm can be bypassed by the plugin's own code. Scheduled work goes through `schedule.at` and the supervisor's alarm instead.
 
 ## Gate finding (local workerd)
 
@@ -102,6 +124,14 @@ Because a running facet outlives `deleteAll`, a purge deletes every facet the re
 
 Inside a facet, `ctx.id` is the supervisor's id: every facet reported the same id. A plugin therefore cannot use `ctx.id` to tell its objects apart.
 
+
 ## Tests
 
-`bun test src` runs `runs.test.ts` (the run transitions with controlled reads and loads), `caller-handles.test.ts` (handle lifetime, epochs and expiry over a controlled clock) and `supervisor-purge.test.ts` (the purge's order and refusals, against the supervisor class over a recording `ctx`). The runtime on workerd is tested through the hosted adapter's suite, `packages/claxedo-server/src/plugin-backends/plugin-backends.workerd.test.ts`.
+`bun test src` runs:
+
+- `runs.test.ts`: the run transitions, with controlled reads and loads;
+- `caller-handles.test.ts`: handle lifetime, epochs and expiry over a controlled clock;
+- `platform-admission.test.ts`: every call refused for a dead epoch and an undeclared permission, a person's calls refused without a person, and malformed calls;
+- `supervisor.test.ts`: the purge's order and refusals, and the schedule's alarm arming, against the supervisor class over a recording `ctx` with a real SQLite database.
+
+The runtime on workerd is tested through the hosted adapter's suite, `packages/claxedo-server/src/plugin-backends/plugin-backends.workerd.test.ts`.
