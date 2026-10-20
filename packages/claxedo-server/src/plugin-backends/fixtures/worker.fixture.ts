@@ -8,8 +8,19 @@ import { D1WorkspaceAuthority } from "../../authority/adapters/d1/workspace-auth
 import { hostedOrgAdministers } from "../../credentials/worker/org-administers"
 import type { LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
-import { hostedAppPluginRoutes } from "../compose"
+import { CLAXEDO_MCP_TOOL_GROUPS, claxedoMcpToolGroupInventory } from "@claxedo/mcp"
+import { createClaxedoMcpClient } from "@claxedo/mcp/client"
+import { appPluginToolGroups } from "@claxedo/mcp/plugin-proxy"
+import { D1SignedAgentPluginActivationStore } from "../../agent-plugins/activation/d1-store"
+import { appPluginToolConsent } from "../../agent-plugins/app-plugin-tool-consent"
+import { createGrantWithdrawal } from "../../agent-plugins/runtime/grant-withdrawal"
+import { firstPartyMcpContribution } from "../../mcp/first-party-mcp"
+import { createD1SandboxPassRegister } from "../../platform/auth/d1-sandbox-pass-register"
+import { signedOrError } from "../../workspace/route-support"
+import { hostedAppPluginsServerPlugin } from "../compose"
 import { registryKeysWithTestKey } from "../registry-test-key"
+import { rootToolInstalls } from "../tool-access"
+import { mintPluginToolsGrant, PLUGIN_TOOLS_GRANT_AUDIENCE, PLUGIN_TOOLS_GRANT_WITHDRAWAL } from "../tool-grant"
 
 export { PluginSupervisor } from "../supervisor.cf"
 export { PluginOutbound, PluginPlatform } from "@claxedo/plugin-runtime/entrypoints"
@@ -21,6 +32,8 @@ type Env = {
   LIVE_SYNC_ROOM: LiveSyncRoomNamespace
   DEPLOYMENT_ID: string
   CLAXEDO_APP_PLUGIN_REGISTRY_TEST_KEY: string
+  CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM?: string
+  CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM?: string
 }
 
 const FIXTURE_REGISTRY_URL = "https://registry.test"
@@ -91,24 +104,89 @@ async function supervisorHook(request: Request, env: Env) {
   return Response.json({ active: await pluginSupervisor(env.PLUGIN_SUPERVISOR, input).active(input) })
 }
 
+const grantRoot = z.object({ userId: z.string(), orgId: z.string(), projectId: z.string(), workspaceId: z.string(), plugins: z.array(z.string()) })
+
+/**
+ * The app plugins feature as the Agent Plugins entry composes it, its tools
+ * included: the consent read from the real activation store, sandbox grants
+ * minted into the real pass register and withdrawn by the real withdrawal,
+ * and the hosted first-party MCP endpoint serving an account's proxy groups
+ * through the feature's own MCP service.
+ */
+function composition(env: Env) {
+  const database = env.CONTROL_PLANE_DB
+  const authority = new D1WorkspaceAuthority(database, { deploymentId: env.DEPLOYMENT_ID, product: { kind: "claxedo-hosted" } })
+  const authentication = { ...testRequestAuthenticationAdapter(), authenticate: async (incoming: Request) => principalFromBearer(incoming, env) }
+  const consent = appPluginToolConsent(new D1SignedAgentPluginActivationStore({ database, authority }))
+  const passes = createD1SandboxPassRegister({ database })
+  const grants = {
+    signingEnv: {
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM,
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM,
+    },
+    passes,
+  }
+  const withdrawal = createGrantWithdrawal({
+    passes,
+    audience: PLUGIN_TOOLS_GRANT_AUDIENCE,
+    reason: PLUGIN_TOOLS_GRANT_WITHDRAWAL,
+    groupEnabled: async (root) => (await rootToolInstalls({ database, consent }, root)).length > 0,
+  })
+  const appPlugins = hostedAppPluginsServerPlugin({
+    authentication,
+    authority,
+    database,
+    bucket: env.CLAXEDO_AGENT_PLUGINS,
+    supervisors: env.PLUGIN_SUPERVISOR,
+    administers: hostedOrgAdministers(database),
+    registry: { url: FIXTURE_REGISTRY_URL, keys: registryKeysWithTestKey(env), fetch: (url) => fetch(url) },
+    reservedToolNames: new Set(claxedoMcpToolGroupInventory(CLAXEDO_MCP_TOOL_GROUPS).flatMap((group) => group.tools)),
+    tools: { consent, grants, withdraw: async (orgId) => void (await withdrawal.reconcile(orgId)) },
+  })
+  const app = new Hono()
+  for (const contribution of appPlugins.routeContributions) app.route(contribution.path, contribution.routes)
+  const mcp = firstPartyMcpContribution({
+    app,
+    authority: undefined,
+    options: { createClient: createClaxedoMcpClient, registerTools: CLAXEDO_MCP_TOOL_GROUPS, pluginToolGroups: appPluginToolGroups },
+    services: appPlugins.mcp?.service ? [appPlugins.mcp.service] : [],
+    signedAuth: async (incoming) => {
+      const signed = await signedOrError(incoming, { authentication, requireSigned: true })
+      return "error" in signed ? undefined : signed.auth
+    },
+    auditFallback: () => undefined,
+  })
+  app.route(mcp.path, mcp.routes)
+  return { app, grants }
+}
+
+/** Mints a cloud root's plugin tools grant as a launch would, and revokes a workspace's passes as a withdrawal does. */
+async function grantHook(request: Request, env: Env) {
+  const { grants } = composed(env)
+  if (new URL(request.url).pathname === "/__tools/revoke") {
+    const { workspaceId } = z.object({ workspaceId: z.string() }).parse(await request.json())
+    return Response.json({ revoked: await grants.passes.revoke({ workspaceId, reason: PLUGIN_TOOLS_GRANT_WITHDRAWAL }) })
+  }
+  return Response.json(await mintPluginToolsGrant(grants, grantRoot.parse(await request.json())))
+}
+
+// One composition per isolate, as the entry's settled composition is: the MCP
+// endpoint keeps an account's streamable-HTTP session in its own memory.
+const compositions = new WeakMap<Env, ReturnType<typeof composition>>()
+
+function composed(env: Env) {
+  const existing = compositions.get(env)
+  if (existing) return existing
+  const created = composition(env)
+  compositions.set(env, created)
+  return created
+}
+
 export default {
   fetch(request: Request, env: Env) {
-    if (new URL(request.url).pathname.startsWith("/__")) return supervisorHook(request, env)
-    const authority = new D1WorkspaceAuthority(env.CONTROL_PLANE_DB, {
-      deploymentId: env.DEPLOYMENT_ID,
-      product: { kind: "claxedo-hosted" },
-    })
-    const app = new Hono()
-    const contributions = hostedAppPluginRoutes({
-      authentication: { ...testRequestAuthenticationAdapter(), authenticate: async (incoming) => principalFromBearer(incoming, env) },
-      authority,
-      database: env.CONTROL_PLANE_DB,
-      bucket: env.CLAXEDO_AGENT_PLUGINS,
-      supervisors: env.PLUGIN_SUPERVISOR,
-      administers: hostedOrgAdministers(env.CONTROL_PLANE_DB),
-      registry: { url: FIXTURE_REGISTRY_URL, keys: registryKeysWithTestKey(env), fetch: (url) => fetch(url) },
-    })
-    for (const contribution of contributions) app.route(contribution.path, contribution.routes)
-    return app.fetch(request, env)
+    const path = new URL(request.url).pathname
+    if (path.startsWith("/__tools/")) return grantHook(request, env)
+    if (path.startsWith("/__")) return supervisorHook(request, env)
+    return composed(env).app.fetch(request, env)
   },
 }

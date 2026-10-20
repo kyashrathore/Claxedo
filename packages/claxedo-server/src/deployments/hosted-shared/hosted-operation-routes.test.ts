@@ -70,6 +70,8 @@ function hostedRoutes() {
         supervisors: {} as never,
         registry: {} as never,
         administers: async () => true,
+        reservedToolNames: new Set(),
+        tools: { consent: {} as never, withdraw: async () => undefined },
       }),
     ],
   })

@@ -42,9 +42,11 @@ export function firstPartyMcpContribution(input: FirstPartyMcpContributionInput)
   const { sessionMcp } = input
   const enabledToolGroups = input.options.enabledToolGroups
   const registered = (input.options.registerTools ?? []).map((group) => group.id)
-  const groupsFor = async (credential: McpCredential): Promise<readonly string[]> => {
+  // An account credential with no consent resolver is gated by nothing, so an
+  // app plugin group its proxy serves is not filtered out by the registered list.
+  const groupsFor = async (credential: McpCredential): Promise<readonly string[] | undefined> => {
     if (credential.kind === "runtime") return sessionMcp ? await sessionMcp.toolGroups(credential) : []
-    return enabledToolGroups ? await enabledToolGroups(credential) : registered
+    return enabledToolGroups ? await enabledToolGroups(credential) : undefined
   }
   const mount = createClaxedoMcpRoutes({
     mount: "hosted",
@@ -71,7 +73,7 @@ export function firstPartyMcpContribution(input: FirstPartyMcpContributionInput)
       const authorization = request.headers.get("authorization")
       const asCaller = (headers: Readonly<Record<string, string>>) =>
         inProcessFetch((call) => input.app.request(call), { ...headers, ...(authorization ? { authorization } : {}) })
-      const enabledGroups = await groupsFor(credential)
+      const enabledGroups = (await groupsFor(credential)) ?? registered
       const granted = await Promise.all(input.services.map(async (service) =>
         [service.id, await service.grant({ enabledGroups, inProcessFetch: asCaller })] as const))
       return input.options.createClient({
@@ -84,6 +86,7 @@ export function firstPartyMcpContribution(input: FirstPartyMcpContributionInput)
     },
     registerTools: input.options.registerTools ?? [],
     enabledToolGroups: groupsFor,
+    ...(input.options.pluginToolGroups ? { pluginToolGroups: input.options.pluginToolGroups } : {}),
     audit: async (event: McpAuditEvent) => {
       const record = mcpAuditRecord(event)
       const auth = auths.get(event.credential)

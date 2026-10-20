@@ -47,7 +47,7 @@ function agentOf(ctx: McpToolContext): PluginToolAgent {
   const { credential } = ctx
   const ownerDriven = ctx.client.ownerDriven?.()
   return credential.kind === "runtime"
-    ? { workspaceId: credential.workspaceId, ...(credential.sessionId ? { sessionId: credential.sessionId } : {}), ...(ownerDriven === undefined ? {} : { ownerDriven }) }
+    ? { ...(credential.sessionId ? { sessionId: credential.sessionId } : {}), ...(ownerDriven === undefined ? {} : { ownerDriven }) }
     : {}
 }
 

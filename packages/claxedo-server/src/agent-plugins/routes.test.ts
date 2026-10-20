@@ -2,6 +2,7 @@ import { claxedoMcpToolGroupInventory, CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/
 import { DOCUMENTS_MCP_TOOL_GROUP } from "@claxedo/documents/mcp"
 import { TASKS_MCP_TOOL_GROUP } from "@claxedo/tasks/mcp"
 import { isBuiltinPluginInstanceId } from "@claxedo/server-core/agent-plugins/builtin/plugin"
+import { appPluginIdOfToolGroup } from "@claxedo/plugin-api/tools"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import fs from "node:fs/promises"
 import os from "node:os"
@@ -120,7 +121,7 @@ class MemorySignedActivations implements SignedAgentPluginActivationStore {
     for (const key of this.userDefaults.keys()) ids.add(JSON.parse(key)[1])
     for (const key of this.projectOverrides.keys()) ids.add(JSON.parse(key)[2])
     for (const key of this.organizationDefaults) ids.add(JSON.parse(key)[1])
-    return [...ids].filter((id) => !isBuiltinPluginInstanceId(id)).sort().map((pluginInstanceId) => ({
+    return [...ids].filter((id) => !isBuiltinPluginInstanceId(id) && !appPluginIdOfToolGroup(id)).sort().map((pluginInstanceId) => ({
       pluginInstanceId,
       pins: { ...this.pins.get(pluginInstanceId) },
     }))
@@ -729,6 +730,32 @@ describe("hosted Agent Plugins routes", () => {
     expect(failed.status).toBe(202)
     expect(await failed.json()).toMatchObject({ revision: before.revision + 4, reconciliation: { state: "failed", message: "register unreachable" } })
     expect(await subject.activations.revision()).toBe(before.revision + 4)
+  })
+
+  test("an app plugin's tool switch writes through the activation route, acquires nothing, and changes the app plugin tools grant's consent", async () => {
+    const consent = vi.fn(async (_auth: SignedControlPlaneAuth, _groupId: string) => undefined)
+    const subject = await fixture({ builtInConsentChanged: consent })
+    const before = await (await request(subject.app, "/projects/project-a")).json()
+    const response = await request(subject.app, "/activation", "member", {
+      method: "POST",
+      body: JSON.stringify({
+        pluginInstanceId: "app-plugin:notes",
+        harnessIds: [...SUPPORTED_AGENT_PLUGIN_HARNESSES],
+        choice: false,
+        expectedRevision: before.revision,
+        target: { scope: "all-projects" },
+      }),
+    })
+    expect(response.status).toBe(200)
+    expect(subject.artifacts.values.size).toBe(0)
+    expect(consent.mock.calls.map(([, groupId]) => groupId)).toEqual(["app-plugin-tools"])
+    const after = await (await request(subject.app, "/projects/project-a")).json()
+    expect(after.candidates.map((candidate: { pluginInstanceId: string }) => candidate.pluginInstanceId)).not.toContain("app-plugin:notes")
+    const update = await request(subject.app, "/update", "member", {
+      method: "POST",
+      body: JSON.stringify({ pluginInstanceId: "app-plugin:notes", authority: "user", expectedRevision: before.revision + 1 }),
+    })
+    expect(update.status).toBe(400)
   })
 
   test("a group the first-party server does not register cannot be activated", async () => {

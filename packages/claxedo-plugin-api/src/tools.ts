@@ -33,7 +33,7 @@ export function pluginToolCallPath(pluginId: string, name: string): string {
  */
 export const PLUGIN_TOOL_AGENT_HEADER = "x-claxedo-agent"
 
-export type PluginToolAgent = Readonly<{ sessionId?: string; workspaceId?: string; ownerDriven?: boolean }>
+export type PluginToolAgent = Readonly<{ sessionId?: string; ownerDriven?: boolean }>
 
 /** The most a backend's answer to one tool call may hold; a larger one is refused rather than handed to the agent. */
 export const PLUGIN_TOOL_RESULT_MAX_BYTES = 256 * 1024

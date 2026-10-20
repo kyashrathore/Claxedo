@@ -1,4 +1,5 @@
 import { isBuiltinPluginInstanceId } from "@claxedo/server-core/agent-plugins/builtin/plugin"
+import { appPluginIdOfToolGroup } from "@claxedo/plugin-api/tools"
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import {
   AgentPluginActivationStoreError,
@@ -121,14 +122,15 @@ function conflict(expected: number, current: number) {
 }
 
 /**
- * The built-in comes from no source, so there is no tree to retain and no pin
- * to point at. The rule the pin enforces — never enable bytes this deployment
- * does not hold — is already true of it: the bytes are the product. Its
- * groups' rows are tool-group state read by ID; listed as known plugins they
- * would enter artifact selection as plugins enabled without an artifact.
+ * A tool group, the built-in's or an app plugin's, comes from no source, so
+ * there is no tree to retain and no pin to point at. The rule the pin enforces
+ * — never enable bytes this deployment does not hold — is already true of
+ * them: the built-in's bytes are the product, and an app plugin's are its
+ * install. Their rows are tool-group state read by ID; listed as known plugins
+ * they would enter artifact selection as plugins enabled without an artifact.
  */
 function requiresRetainedArtifact(pluginInstanceId: string) {
-  return !isBuiltinPluginInstanceId(pluginInstanceId)
+  return !isBuiltinPluginInstanceId(pluginInstanceId) && appPluginIdOfToolGroup(pluginInstanceId) === undefined
 }
 
 function artifactUnavailable() {

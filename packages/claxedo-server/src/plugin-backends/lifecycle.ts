@@ -14,6 +14,7 @@ import {
 } from "./installs"
 import { deletePluginData } from "./platform-host"
 import { fetchVerifiedBlob, fetchVerifiedRelease, type AppPluginRegistry } from "./registry"
+import { assertToolNamesFree } from "./tool-names"
 
 export type AppPluginLifecyclePorts = Readonly<{
   database: D1Database
@@ -21,6 +22,8 @@ export type AppPluginLifecyclePorts = Readonly<{
   registry: AppPluginRegistry
   /** Absent on a deployment without the plugin-backend platform, which then refuses a release that carries a backend. */
   supervisors: PluginSupervisorNamespace | undefined
+  /** Every tool name this deployment's MCP mounts register themselves, which no plugin may declare. */
+  reservedToolNames: ReadonlySet<string>
   now: () => number
 }>
 
@@ -45,6 +48,7 @@ async function storedRelease(ports: AppPluginLifecyclePorts, request: AppPluginR
   if (release.backend && !ports.supervisors) {
     throw new AppPluginLifecycleError("app_plugin_platform_unavailable", `plugin ${release.id} has a backend, and this deployment runs no plugin backends`)
   }
+  await assertToolNamesFree(ports.database, ports.reservedToolNames, request.orgId, release)
   await putPluginBundle(ports.bucket, "app", release.app.sha256, await fetchVerifiedBlob(ports.registry, release.app))
   if (release.backend) await putPluginBundle(ports.bucket, "backend", release.backend.sha256, await fetchVerifiedBlob(ports.registry, release.backend))
   return signed

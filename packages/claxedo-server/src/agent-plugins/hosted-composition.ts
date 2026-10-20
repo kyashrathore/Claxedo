@@ -67,6 +67,10 @@ import type { SandboxPassRegister } from "@claxedo/server-core/platform/auth/san
 import type { AgentPluginRuntimeContribution } from "@claxedo/server-core/agent-config/runtime-snapshot"
 import { OWNER_GRANT_AUDIENCE } from "../session/owner-grant"
 import { createGrantWithdrawal } from "./runtime/grant-withdrawal"
+import { appPluginToolGroupId } from "@claxedo/plugin-api/tools"
+import { rootToolInstalls } from "../plugin-backends/tool-access"
+import { pluginToolsRootGrant } from "../plugin-backends/tool-grant"
+import { APP_PLUGIN_TOOLS_GRANT_GROUP, appPluginToolConsent, type AppPluginToolConsent } from "./app-plugin-tool-consent"
 import type { HostedEgressBroker } from "../credentials/hosted-egress-broker"
 import { hostedRepositoryBindings } from "../credentials/hosted-egress-broker/repository-binding"
 import { hostedRepositoryCloneDelivery } from "../workspace/repository-clone"
@@ -109,6 +113,10 @@ export type HostedAgentPluginsComposition = {
    * environment reads it: what a grant's renewal asks before it renews.
    */
   groupEnabled: (group: string, root: CloudRootIdentity) => Promise<boolean>
+  /** Each app plugin's tool switch, the activation subject `app-plugin:<pluginId>`. */
+  appPluginTools: AppPluginToolConsent
+  /** Ends the app plugin tools grants of the organization's roots that no longer have any app plugin's tools on. */
+  withdrawAppPluginTools: (orgId: string) => Promise<void>
 }
 
 function required(value: string | undefined, name: string) {
@@ -357,6 +365,13 @@ export function createHostedAgentPluginsComposition(input: {
   // that machine itself (`GET /runtime/self`), so the
   // connection mint for it must not fail closed on a rail that does not apply.
   const cloudWorkspace = (workspaceId: string) => isCloudRoot(input.database, workspaceId)
+  const appPluginTools = appPluginToolConsent(activations)
+  const appPluginToolPlugins = async (root: CloudRootIdentity) =>
+    (await rootToolInstalls({ database: input.database, consent: appPluginTools }, root)).map((install) => install.pluginId)
+  const appPluginToolGroups = async (root: CloudRootIdentity): Promise<readonly string[]> => {
+    const plugins = await appPluginToolPlugins(root)
+    return plugins.length === 0 ? [] : [APP_PLUGIN_TOOLS_GRANT_GROUP, ...plugins.map(appPluginToolGroupId)]
+  }
   const rootGrants: readonly CloudRootGrantContribution[] = [
     {
       group: BUILTIN_SUBAGENTS_TOOL_GROUP,
@@ -364,10 +379,13 @@ export function createHostedAgentPluginsComposition(input: {
       withdrawalReason: "subagents_group_disabled",
       mint: input.ownerGrant,
     },
+    pluginToolsRootGrant({ signingEnv: env, passes: input.passes }, appPluginToolPlugins),
     ...input.rootGrants,
   ]
-  const rootEnvironment = createCloudRootEnvironment({ activations, builtIn, grants: rootGrants })
-  const groupEnabled = (group: string, root: CloudRootIdentity) => createBuiltinGroupReader({ activations, builtIn }, group)(root)
+  const rootToolGroups = { activations, builtIn, extraGroups: appPluginToolGroups }
+  const rootEnvironment = createCloudRootEnvironment({ ...rootToolGroups, grants: rootGrants })
+  const groupEnabled = async (group: string, root: CloudRootIdentity) =>
+    group === APP_PLUGIN_TOOLS_GRANT_GROUP ? (await appPluginToolGroups(root)).length > 0 : await createBuiltinGroupReader({ activations, builtIn }, group)(root)
   const withdrawals = new Map(rootGrants.map((grant) => [grant.group, createGrantWithdrawal({
     passes: input.passes,
     audience: grant.audience,
@@ -492,10 +510,12 @@ export function createHostedAgentPluginsComposition(input: {
       preparer,
       provisioner,
     }),
-    sessionHostToolGroups: createCloudRootToolGroups({ activations, builtIn }),
+    sessionHostToolGroups: createCloudRootToolGroups(rootToolGroups),
     // A workspace that is gone takes every pass minted for it, whatever the audience.
     releaseRuntime: async ({ workspaceId }) => { await input.passes.revoke({ workspaceId, reason: "workspace_deleted" }) },
     groupEnabled,
+    appPluginTools,
+    withdrawAppPluginTools: async (orgId) => { await withdrawals.get(APP_PLUGIN_TOOLS_GRANT_GROUP)?.reconcile(orgId) },
   }
 }
 

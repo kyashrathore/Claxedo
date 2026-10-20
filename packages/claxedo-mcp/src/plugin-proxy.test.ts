@@ -127,7 +127,7 @@ describe("an app plugin's proxy tools", () => {
       Response.json({ content: [{ type: "text", text: JSON.stringify(call.body) }] }))
     const client = await sandbox(grant, ["core", "app-plugin:notes"])
     expect(await client.callTool({ name: "note_list", arguments: { limit: 3 } })).toEqual({ content: [{ type: "text", text: JSON.stringify({ arguments: { limit: 3 } }) }] })
-    expect(calls).toEqual([{ path: "/api/plugins/notes/_tools/note_list", agent: { workspaceId: "ws_1", sessionId: "ses_1", ownerDriven: true }, body: { arguments: { limit: 3 } } }])
+    expect(calls).toEqual([{ path: "/api/plugins/notes/_tools/note_list", agent: { sessionId: "ses_1", ownerDriven: true }, body: { arguments: { limit: 3 } } }])
   })
 })
 

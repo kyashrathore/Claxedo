@@ -22,11 +22,18 @@ import { readPluginLink } from "./links"
 import { orgCallerOrRefusal, type OrgCaller, type OrgCallerInput } from "./org-caller"
 import { APP_PLUGINS_ROUTE_PREFIX } from "./paths"
 import { forwardToPlugin } from "./routes"
+import type { AppPluginToolsAccess } from "./tool-access"
+import { appPluginToolRoutes } from "./tool-routes"
 
 export type AppPluginRoutesInput = OrgCallerInput &
   Readonly<{
     lifecycle: AppPluginLifecyclePorts
     administers: OrgAdministers
+    /** Absent where no MCP mount serves plugin tools: no `/tools` routes, and no install reports its tools. */
+    tools?: AppPluginToolsAccess & Readonly<{
+      /** Ends the sandbox grants of the organization's roots that no longer have any app plugin's tools on. */
+      withdraw(orgId: string): Promise<void>
+    }>
   }>
 
 /** The bundle a member's app loads; its URL names its content, so a browser may keep it for good. */
@@ -41,6 +48,7 @@ const REFUSAL_STATUS: Readonly<Record<string, number>> = {
   app_plugin_installed: 409,
   app_plugin_storage_downgrade: 409,
   app_plugin_platform_unavailable: 409,
+  app_plugin_tool_name_taken: 409,
   app_plugin_release_invalid: 422,
   app_plugin_release_unavailable: 502,
 }
@@ -99,6 +107,11 @@ export function appPluginRouteContribution(input: AppPluginRoutesInput): Control
     return isPluginId(pluginId) ? { orgId: caller.orgId, pluginId } : undefined
   }
   const unknownPlugin = () => pluginRefusal(404, "app_plugin_not_installed", "No plugin has that id")
+  // The change is already written and every tool call reads it again, so a
+  // withdrawal that fails leaves only the grant in hand, which those reads refuse.
+  const toolsWithdrawn = async (orgId: string) => {
+    await input.tools?.withdraw(orgId).catch((error: unknown) => console.error("[plugin-backends] plugin tools grants were not withdrawn", error))
+  }
   const versionOf = async (context: Context) => {
     const version = (await readJsonRecord(context.req.raw))?.version
     return typeof version === "string" ? version : undefined
@@ -113,13 +126,22 @@ export function appPluginRouteContribution(input: AppPluginRoutesInput): Control
     return forwardToPlugin(supervisors, { orgId: target.orgId, pluginId: target.pluginId, origin: "link" }, { method: "GET", path: target.path, search: "", body: null })
   })
 
-  routes.get("/installed", member(async (caller) =>
-    Response.json((await listAppPluginInstalls(database, caller.orgId, caller.userId)).map((install) => ({
+  if (input.tools) routes.route("/tools", appPluginToolRoutes(input.tools))
+
+  routes.get("/installed", member(async (caller) => {
+    const installs = await listAppPluginInstalls(database, caller.orgId, caller.userId)
+    const toolsOn = input.tools
+      ? await input.tools.consent.forCaller(caller.auth, installs.flatMap((install) => (install.release.tools ? [install.pluginId] : [])))
+      : undefined
+    return Response.json(installs.map((install) => ({
       ...installBody(install),
       enabledForMe: install.enabledForMe,
       orgDefault: install.orgDefault,
-    }))),
-  ))
+      ...(toolsOn && install.release.tools
+        ? { tools: { label: install.manifest.backend?.tools?.group.label ?? install.manifest.name, names: install.release.tools.map((tool) => tool.name), on: toolsOn.has(install.pluginId) } }
+        : {}),
+    })))
+  }))
 
   routes.get("/catalog", member(async (caller) => {
     const [catalog, canManage] = await Promise.all([
@@ -145,6 +167,7 @@ export function appPluginRouteContribution(input: AppPluginRoutesInput): Control
       const scope = pluginScope(caller, context)
       if (!scope) return unknownPlugin()
       const written = await writeAppPluginEnablement(database, { ...scope, userId: caller.userId, enabled, now: input.lifecycle.now() })
+      if (written && !enabled) await toolsWithdrawn(scope.orgId)
       return written ? new Response(null, { status: 204 }) : unknownPlugin()
     })
   routes.post("/:pluginId/enable", enablement(true))
@@ -181,6 +204,7 @@ export function appPluginRouteContribution(input: AppPluginRoutesInput): Control
       if (!scope) return unknownPlugin()
       try {
         await setAppPluginActive(input.lifecycle, { ...scope, active, userId: caller.userId })
+        if (!active) await toolsWithdrawn(scope.orgId)
         return new Response(null, { status: 204 })
       } catch (error) {
         return refusedChange(error)
@@ -193,7 +217,9 @@ export function appPluginRouteContribution(input: AppPluginRoutesInput): Control
     admin(async (caller, context) => {
       const scope = pluginScope(caller, context)
       if (!scope) return unknownPlugin()
-      return (await writeAppPluginOrgDefault(database, { ...scope, enabled })) ? new Response(null, { status: 204 }) : unknownPlugin()
+      const written = await writeAppPluginOrgDefault(database, { ...scope, enabled })
+      if (written && !enabled) await toolsWithdrawn(scope.orgId)
+      return written ? new Response(null, { status: 204 }) : unknownPlugin()
     })
   routes.post("/:pluginId/default", orgDefault(true))
   routes.delete("/:pluginId/default", orgDefault(false))
@@ -201,7 +227,9 @@ export function appPluginRouteContribution(input: AppPluginRoutesInput): Control
   routes.delete("/:pluginId", admin(async (caller, context) => {
     const scope = pluginScope(caller, context)
     if (!scope) return unknownPlugin()
-    return (await uninstallAppPlugin(input.lifecycle, scope)) ? new Response(null, { status: 204 }) : unknownPlugin()
+    const removed = await uninstallAppPlugin(input.lifecycle, scope)
+    await toolsWithdrawn(scope.orgId)
+    return removed ? new Response(null, { status: 204 }) : unknownPlugin()
   }))
 
   return { id: "app-plugins", path: APP_PLUGINS_ROUTE_PREFIX, routes }
