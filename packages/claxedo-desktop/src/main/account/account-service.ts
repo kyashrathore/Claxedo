@@ -26,6 +26,7 @@ import type { DesktopNativeAuth, RefreshOutcome } from "./desktop-native-auth"
 import { shouldRefresh } from "./secure-storage"
 import { DESKTOP_HOSTED_OPERATIONS, type DesktopHostedOperationName } from "./hosted-operations"
 import { decodeHostedResponse, fetchHosted, hostedError } from "./hosted-transport"
+import { d1BookmarkJar } from "./d1-bookmark-jar"
 import { identityFromAccessToken } from "./identity"
 import type { CliCredentialFilePort } from "./cli-credential-file"
 import { readString } from "@claxedo/helpers/readers"
@@ -117,6 +118,7 @@ export function createAccountService(options: AccountServiceOptions) {
   let signInInFlight: Promise<unknown> | undefined
   let era = 0
   const activeRequests = new Set<AbortController>()
+  const bookmarks = d1BookmarkJar(options.now)
 
   const setState = (next: AccountState) => {
     const previous = state
@@ -667,6 +669,7 @@ export function createAccountService(options: AccountServiceOptions) {
             headers: {
               authorization: `Bearer ${token}`,
               ...(request.body ? { "content-type": "application/json" } : {}),
+              ...bookmarks.header(held.binding.controlPlaneOrigin),
               ...request.headers,
             },
             ...(request.body ? { body: JSON.stringify(request.body) } : {}),
@@ -677,6 +680,7 @@ export function createAccountService(options: AccountServiceOptions) {
           },
         )
       const response = await recoverAccountResponse(await issue(access.token), held, startedIn, issue)
+      bookmarks.fromResponse(held.binding.controlPlaneOrigin, response)
       return decodeHostedResponse(name, request.response, response, () => {
         if (startedIn !== era) throw new Error("not signed in")
       })
@@ -717,6 +721,7 @@ export function createAccountService(options: AccountServiceOptions) {
             headers: {
               authorization: `Bearer ${token}`,
               Accept: "text/event-stream",
+              ...bookmarks.header(held.binding.controlPlaneOrigin),
               ...request.headers,
             },
           },
@@ -736,16 +741,21 @@ export function createAccountService(options: AccountServiceOptions) {
             })}`,
           )
         }
+        const announced = bookmarks.eventStream(held.binding.controlPlaneOrigin)
+        const deliver = (text: string) => {
+          announced(text)
+          input.onChunk(text)
+        }
         const reader = response.body.getReader()
         const decoder = new TextDecoder()
         while (true) {
           if (startedIn !== era) throw new Error("not signed in")
           const next = await reader.read()
           if (next.done) break
-          input.onChunk(decoder.decode(next.value, { stream: true }))
+          deliver(decoder.decode(next.value, { stream: true }))
         }
         const tail = decoder.decode()
-        if (tail.length > 0) input.onChunk(tail)
+        if (tail.length > 0) deliver(tail)
       } finally {
         input.signal?.removeEventListener("abort", onAbort)
         activeRequests.delete(controller)

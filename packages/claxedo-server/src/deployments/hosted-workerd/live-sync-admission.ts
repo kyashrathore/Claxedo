@@ -1,8 +1,16 @@
-import { parseBackgroundWork, type SessionLastTurn } from "@claxedo/agent-runtime-contract"
+import { isD1Bookmark, parseBackgroundWork, type SessionLastTurn } from "@claxedo/agent-runtime-contract"
 import { storedSessionShareLevel } from "@claxedo/server-core/platform/auth/session-share-level"
 import { asRecord, numberField } from "@claxedo/server-core/platform/json/index"
 import { sessionReaderState } from "@claxedo/server-core/session/reader"
-import type { ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
+import type {
+  ControlPlaneEvent,
+  ProvisionEvent,
+  SessionReaderChangedEvent,
+  SessionShareChangedEvent,
+  SessionStatusChangedEvent,
+} from "@claxedo/server-core/platform/runtime/lib/bus"
+
+type AdmittedEvent = SessionStatusChangedEvent | SessionShareChangedEvent | SessionReaderChangedEvent | ProvisionEvent
 
 function lastTurnOf(turn: Record<string, unknown> | undefined): SessionLastTurn | undefined {
   const status = turn?.status
@@ -11,7 +19,7 @@ function lastTurnOf(turn: Record<string, unknown> | undefined): SessionLastTurn 
   return typeof completedAt === "number" && Number.isFinite(completedAt) ? { status, completedAt } : undefined
 }
 
-function sessionStatusEvent(row: Record<string, unknown>, ts: number): ControlPlaneEvent | undefined {
+function sessionStatusEvent(row: Record<string, unknown>, ts: number): SessionStatusChangedEvent | undefined {
   const { ownerUserId, orgId, sessionId, workspaceId, status, awaitingInput } = row
   if (
     typeof ownerUserId !== "string" || !ownerUserId || typeof orgId !== "string" || !orgId
@@ -32,12 +40,18 @@ function sessionStatusEvent(row: Record<string, unknown>, ts: number): ControlPl
  * doorbell, a session's status notice, a reader's own marks and a workspace's
  * machine start, rebuilt field
  * by field so the room forwards exactly the fields it verified and nothing
- * else the sender put in the object.
+ * else the sender put in the object; the publisher's D1 bookmark rides along
+ * when it is one.
  */
 function liveSyncEvent(input: unknown): ControlPlaneEvent | undefined {
   const row = asRecord(input)
   const ts = row?.ts
   if (!row || typeof ts !== "number" || !Number.isFinite(ts)) return undefined
+  const event = admittedEvent(row, ts)
+  return event && isD1Bookmark(row.d1Bookmark) ? { ...event, d1Bookmark: row.d1Bookmark } : event
+}
+
+function admittedEvent(row: Record<string, unknown>, ts: number): AdmittedEvent | undefined {
   if (row.type === "session.status.changed") return sessionStatusEvent(row, ts)
   const { ownerUserId, sessionId, workspaceId, phase } = row
   if (

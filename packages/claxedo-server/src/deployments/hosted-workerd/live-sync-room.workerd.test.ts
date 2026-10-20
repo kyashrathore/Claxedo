@@ -71,11 +71,13 @@ beforeAll(async () => {
     format: "esm",
     platform: "browser",
     target: "es2022",
+    external: ["node:*"],
     write: false,
   })
   workerModule = bundled.outputFiles[0].text
   miniflare = new Miniflare({
     compatibilityDate: "2026-07-18",
+    compatibilityFlags: ["nodejs_compat"],
     modules: [{ type: "ESModule", path: "index.mjs", contents: workerModule }],
     durableObjects: { LIVE_SYNC_ROOM: "LiveSyncRoom" },
   })
@@ -294,6 +296,7 @@ describe("LiveSyncRoom workerd integration", () => {
   test("the room answers 503 once its connection cap is reached", async () => {
     const capped = new Miniflare({
       compatibilityDate: "2026-07-18",
+      compatibilityFlags: ["nodejs_compat"],
       modules: [{ type: "ESModule", path: "index.mjs", contents: workerModule }],
       durableObjects: { LIVE_SYNC_ROOM: "LiveSyncRoom" },
       bindings: { LIVE_SYNC_MAX_CONNECTIONS: "2" },
