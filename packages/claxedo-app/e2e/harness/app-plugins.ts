@@ -27,6 +27,6 @@ export async function installAndEnable(signed: SignedStack, plugin: { readonly i
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: plugin.id, version: plugin.version }),
   }, signed.owner.person)
   expect(installed.status, await installed.clone().text()).toBe(201)
-  const enabled = await hostedFetch(signed.hosted, `/api/claxedo/app-plugins/${plugin.id}/enable`, { method: "POST" }, account.person)
+  const enabled = await hostedFetch(signed.hosted, `/api/claxedo/app-plugins/${plugin.id}/enable`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }, account.person)
   expect(enabled.status).toBe(204)
 }

@@ -14,11 +14,14 @@ import {
   UI,
   writeFixturePlugin,
   writeLivePlugin,
+  signInDesktop,
   type Desktop,
+  type SignedStack,
 } from "../harness"
 import { chooseSettings } from "./15-settings.navigation"
 
-async function startWithFixture(desktop: Desktop) {
+async function startWithFixture(signed: SignedStack, desktop: Desktop, page: Page) {
+  await signInDesktop(signed, desktop, page)
   const workspace = await desktop.makeWorkspace("fixture", "Fixture project")
   const folder = await writeFixturePlugin(desktop.dataDir, { label: "Fixture v1" })
   const window = desktop.window
@@ -57,8 +60,8 @@ async function openFixture(window: Page) {
   return fixtureHome(window)
 }
 
-test("34 a live plugin on the desktop: every primitive works in the app, panes and icon skins included", { tag: "@desktop" }, async ({ desktop }) => {
-  const { workspace, window } = await startWithFixture(desktop)
+test("34 a live plugin on a signed desktop: every primitive works in the app, panes and icon skins included", { tag: "@desktop" }, async ({ signedCloud: signed, signedDesktop: desktop, page }) => {
+  const { workspace, window } = await startWithFixture(signed, desktop, page)
   await openSettingsSection(window, "App plugins")
   await expect(appPluginRow(window, "Fixture")).toContainText("On")
   await leaveSettings(window)
@@ -115,8 +118,8 @@ test("34 a live plugin on the desktop: every primitive works in the app, panes a
   await expect.poll(async () => (await desktop.api.sessions(workspace.directory)).map((session) => session.title)).toContain("Fixture session")
 })
 
-test("34 a live plugin on the desktop asks again when its code changes, keeps its last build on a broken save, asks again when its access changes, turns off and is removed", { tag: "@desktop" }, async ({ desktop }) => {
-  const { folder, window } = await startWithFixture(desktop)
+test("34 a live plugin on a signed desktop asks again when its code changes, keeps its last build on a broken save, asks again when its access changes, turns off and is removed", { tag: "@desktop" }, async ({ signedCloud: signed, signedDesktop: desktop, page }) => {
+  const { folder, window } = await startWithFixture(signed, desktop, page)
   const home = await openFixture(window)
   await expect(home.getByRole("heading", { name: "Fixture v1" })).toBeVisible()
   await writeLivePlugin(folder, fixtureFolder({ label: "Fixture v2" }))

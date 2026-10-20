@@ -6,7 +6,7 @@ export const FIXTURE_ROUTES = ["/api/claxedo/projects"]
 
 export type FixtureVersion = { readonly label: string; readonly routes?: readonly string[] }
 
-export function fixturePluginSource(label: string) {
+export function fixturePluginSource(label: string, fetched: string = FIXTURE_ROUTES[0] ?? "") {
   return `import { createSignal, For } from "solid-js"
 import { definePlugin, type PluginApi } from "@claxedo/plugin-api"
 import { useTheme } from "@claxedo/app/ui"
@@ -52,7 +52,7 @@ function Home(props: { readonly api: PluginApi; readonly hostTheme?: () => strin
       {props.hostTheme && <p>Host theme: {props.hostTheme()}</p>}
       <p>Projects: {api.projects.list().map((project) => project.name).join(", ")}</p>
       <p>Open tabs: {api.workbench.tabs().length > 0 ? "some" : "none"}</p>
-      <button type="button" onClick={async () => add("fetch " + (await api.server.fetch("/api/claxedo/projects")).status)}>Fetch projects</button>
+      <button type="button" onClick={async () => add("fetch " + (await api.server.fetch(${JSON.stringify(fetched)})).status)}>Fetch projects</button>
       <button type="button" onClick={() => void createDocument()}>Create a document</button>
       <button type="button" onClick={() => api.ui.toast({ kind: "success", title: "Fixture toast" })}>Show a toast</button>
       <button type="button" onClick={async () => add("confirmed " + (await api.ui.confirm({ title: "Fixture confirm?", confirmLabel: "Yes, confirm" })))}>Ask to confirm</button>
@@ -109,7 +109,7 @@ export default definePlugin({
 }
 
 export function fixtureFolder(version: FixtureVersion): LivePluginFolder {
-  return { id: "fixture", name: "Fixture", routes: version.routes ?? FIXTURE_ROUTES, operations: ["documents.*"], requires: ["documents"], app: fixturePluginSource(version.label) }
+  return { id: "fixture", name: "Fixture", routes: version.routes ?? FIXTURE_ROUTES, operations: ["documents.*"], requires: ["documents"], app: fixturePluginSource(version.label, version.routes?.[0]) }
 }
 
 export async function writeFixturePlugin(root: string, version: FixtureVersion) {

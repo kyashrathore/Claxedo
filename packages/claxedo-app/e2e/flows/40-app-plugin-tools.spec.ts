@@ -2,8 +2,8 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import type { Page } from "@playwright/test"
 import {
-  APP_PLUGIN_WARNING,
-  approveAppPlugin,
+  appPluginDialog,
+  appPluginRow,
   assistantText,
   expect,
   installedCli,
@@ -50,7 +50,7 @@ async function callTool(turn: Turn, tool: string, input: Record<string, unknown>
   return toolResults(stack.scripted.requests, tool).at(-1) ?? ""
 }
 
-test("40 a session makes an app plugin with the Claxedo MCP tools: create, a red then green check, add, and the person turns it on", async ({ stack, api, app, isMobile }) => {
+test("40 a session makes an app plugin with the Claxedo MCP tools: create, a red then green check and add, and an unsigned web app runs none of it", async ({ stack, api, app, isMobile }) => {
   test.skip(isMobile, "the plugin's sidebar row is asserted at desktop width")
   const availability = await installedCli("claude")
   test.skip(!availability.available, availability.available ? "" : availability.reason)
@@ -90,10 +90,10 @@ test("40 a session makes an app plugin with the Claxedo MCP tools: create, a red
 
   const navigation = app.getByTestId("global-navigation")
   await expect(navigation.getByRole("button", { name: "Standup notes", exact: true })).toHaveCount(0)
-  await approveAppPlugin(app, "Turn on the app plugin Standup notes?", APP_PLUGIN_WARNING.web)
-  await navigation.getByRole("button", { name: "Standup notes", exact: true }).click()
-  const page = app.getByTitle("Standup notes", { exact: true }).contentFrame()
-  await expect(page.getByRole("heading", { name: "Standup notes" })).toBeVisible()
+  await app.goto(`${stack.url}/settings/app-plugins`)
+  await expect(app.getByText("App plugins from the Marketplace need a signed-in account.", { exact: true })).toBeVisible()
+  await expect(appPluginRow(app, "Standup notes")).toHaveCount(0)
+  await expect(appPluginDialog(app, "Turn on the app plugin Standup notes?")).toHaveCount(0)
 })
 
 test("40 the app plugin tools refuse a folder outside the session's workspace and register nothing", async ({ stack, api, app, isMobile }) => {
