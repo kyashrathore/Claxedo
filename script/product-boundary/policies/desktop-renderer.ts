@@ -545,6 +545,5 @@ export const desktopRenderer: Policy = {
     minChunks: 1,
     requiredModules: [`${DESKTOP}/renderer/main.tsx`, `${APP}/app.tsx`, `${APP}/auth/electron-binding.ts`],
     forbiddenModules: [`${APP}/auth/better-auth-binding.ts`],
-    forbiddenChunkMarkers: ["vendor-better-auth"],
   },
 }

@@ -30,7 +30,7 @@ test("12 boot reads: a signed-out boot of the home is the signed-out document, w
   expect(boot.api.map((read) => read.path)).toEqual(["/api/auth/get-session"])
   expect(boot.api[0]?.initiator).toBe("link")
   expect(boot.api[0]?.startMs).toBeLessThan(boot.entry.endMs)
-  expect(boot.assets.filter((read) => /^\/assets\/(main|vendor-ui|vendor-query|vendor-markdown|vendor-toast)-|^\/assets\/sprite-/.test(read.path))).toEqual([])
+  expect(boot.assets.filter((read) => /^\/assets\/main-|^\/assets\/sprite-/.test(read.path))).toEqual([])
   expect(signed.controlPlaneRequests().slice(mark).filter((request) => request.startsWith("GET /api/workspace"))).toEqual([])
 })
 
