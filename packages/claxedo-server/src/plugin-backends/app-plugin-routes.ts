@@ -6,6 +6,7 @@ import { isClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import type { ControlPlaneRouteContribution } from "@claxedo/server-core/platform/http/route-contribution"
 import type { OrgAdministers } from "../credentials/worker/org-administers"
 import { readPluginBundle } from "./bundles"
+import { readAppPluginCatalog } from "./catalog"
 import {
   AppPluginInstalledError,
   listAppPluginInstalls,
@@ -63,6 +64,7 @@ function refusedChange(error: unknown): Response {
  * Members:
  * - `GET /` lists the plugins the caller's app loads: installed, active and enabled for them;
  * - `GET /installed` lists every install with whether it is enabled for the caller;
+ * - `GET /catalog` lists what the registry publishes, and whether the caller manages the organization's installs;
  * - `GET /:id/bundles/:sha256/app.js` answers an app bundle only while that list holds it with that hash;
  * - `POST /:id/enable` and `DELETE /:id/enable` set the caller's own choice.
  *
@@ -107,6 +109,14 @@ export function appPluginRouteContribution(input: AppPluginRoutesInput): Control
       orgDefault: install.orgDefault,
     }))),
   ))
+
+  routes.get("/catalog", member(async (caller) => {
+    const [catalog, canManage] = await Promise.all([
+      readAppPluginCatalog(input.lifecycle.registry, input.lifecycle.supervisors !== undefined),
+      input.administers(caller.auth, caller.orgId),
+    ])
+    return Response.json({ canManage, ...catalog })
+  }))
 
   routes.get("/:pluginId/bundles/:sha256/app.js", member(async (caller, context) => {
     const scope = pluginScope(caller, context)

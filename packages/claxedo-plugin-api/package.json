@@ -38,6 +38,11 @@
       "development": "./src/manifest-schema.ts",
       "default": "./src/manifest-schema.ts"
     },
+    "./registry-index": {
+      "types": "./src/registry-index.ts",
+      "development": "./src/registry-index.ts",
+      "default": "./src/registry-index.ts"
+    },
     "./release": {
       "types": "./src/release.ts",
       "development": "./src/release.ts",

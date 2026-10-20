@@ -3,8 +3,9 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { sha256Hex } from "@claxedo/helpers/crypto"
+import { verifyPluginIndex } from "@claxedo/plugin-api/registry-index"
 import { verifyPluginRelease } from "@claxedo/plugin-api/release"
-import { buildPluginRelease, signPluginRelease } from "./index"
+import { buildPluginRelease, indexWithRelease, signPluginIndex, signPluginRelease } from "./index"
 
 let root: string
 
@@ -46,6 +47,22 @@ describe("buildPluginRelease", () => {
     const pair = (await crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"])) as CryptoKeyPair
     const publicKey = btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey))))
     expect(await verifyPluginRelease(await signPluginRelease(release, pair.privateKey, "test"), { test: publicKey })).toEqual(release)
+  })
+
+  test("publishes into an index whose entry lists every version newest first, with the newest version's manifest, signed so a host verifies it", async () => {
+    const first = (await buildPluginRelease({ rootDir: await writePlugin("indexed", false) })).release
+    const newer = { ...first, version: "1.10.0", manifest: { ...first.manifest, version: "1.10.0", name: "Indexed again" } }
+    const older = { ...first, version: "1.2.3-beta.1", manifest: { ...first.manifest, version: "1.2.3-beta.1" } }
+    const now = new Date("2026-10-20T00:00:00Z")
+    let index = indexWithRelease(undefined, first, "Lists things", now)
+    index = indexWithRelease(index, newer, "Lists things", now)
+    index = indexWithRelease(index, older, undefined, now)
+    expect(index.entries).toEqual([
+      { id: "indexed", name: "Indexed again", description: "Lists things", latest: "1.10.0", versions: ["1.10.0", "1.2.3", "1.2.3-beta.1"], manifest: newer.manifest },
+    ])
+    const pair = (await crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"])) as CryptoKeyPair
+    const publicKey = btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey))))
+    expect((await verifyPluginIndex(await signPluginIndex(index, pair.privateKey, "test"), { test: publicKey })).entries.map((entry) => entry.latest)).toEqual(["1.10.0"])
   })
 
   test("carries no backend for an app-only plugin", async () => {

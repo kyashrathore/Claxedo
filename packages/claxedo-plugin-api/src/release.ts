@@ -7,8 +7,8 @@ import { pluginManifestSchema } from "./manifest-schema"
 export const PLUGIN_BUNDLE_MAX_BYTES = 10 * 1024 * 1024
 
 const SHA256_PATTERN = /^[0-9a-f]{64}$/
-const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/
-const KEY_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/
+export const SIGNATURE_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/
+export const KEY_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/
 
 /**
  * The registry's Ed25519 public keys, raw 32 bytes in base64, by key id. A
@@ -56,7 +56,7 @@ export const pluginReleaseSchema = z
   })
 
 export const signedPluginReleaseSchema = z
-  .object({ release: z.unknown(), signature: z.string().regex(BASE64_PATTERN), keyId: z.string().regex(KEY_ID_PATTERN) })
+  .object({ release: z.unknown(), signature: z.string().regex(SIGNATURE_PATTERN), keyId: z.string().regex(KEY_ID_PATTERN) })
   .strict()
 
 export type PluginReleaseErrorCode = "release_malformed" | "release_key_unknown" | "release_signature_invalid"
@@ -89,6 +89,20 @@ function base64Bytes(value: string): Uint8Array<ArrayBuffer> {
   return Uint8Array.from(atob(value), (character) => character.charCodeAt(0))
 }
 
+export type SignedPayload = { payload: unknown; signature: string; keyId: string }
+
+/** `schema`'s reading of a payload once its signature verifies under one of `keys`; `what` names the payload in a refusal. */
+export async function verifySignedPayload<T>(signed: SignedPayload, keys: Readonly<Record<string, string>>, schema: z.ZodType<T>, what: string): Promise<T> {
+  const publicKey = Object.hasOwn(keys, signed.keyId) ? keys[signed.keyId] : undefined
+  if (!publicKey) throw new PluginReleaseError("release_key_unknown", `no registry key is named ${signed.keyId}`)
+  const key = await crypto.subtle.importKey("raw", base64Bytes(publicKey), { name: "Ed25519" }, false, ["verify"])
+  const valid = await crypto.subtle.verify("Ed25519", key, base64Bytes(signed.signature), pluginReleaseSigningBytes(signed.payload))
+  if (!valid) throw new PluginReleaseError("release_signature_invalid", `the ${what}'s signature does not verify under ${signed.keyId}`)
+  const parsed = schema.safeParse(signed.payload)
+  if (parsed.success) return parsed.data
+  throw new PluginReleaseError("release_malformed", parsed.error.issues.map((issue) => `${issue.path.join(".") || what}: ${issue.message}`).join("; "))
+}
+
 /**
  * The release `signed` carries, once its signature verifies under one of
  * `keys` and it parses as a release. The signature covers the release exactly
@@ -97,14 +111,6 @@ function base64Bytes(value: string): Uint8Array<ArrayBuffer> {
 export async function verifyPluginRelease(signed: unknown, keys: Readonly<Record<string, string>>): Promise<PluginRelease> {
   const envelope = signedPluginReleaseSchema.safeParse(signed)
   if (!envelope.success) throw new PluginReleaseError("release_malformed", "the release is not a signed release")
-  const publicKey = Object.hasOwn(keys, envelope.data.keyId) ? keys[envelope.data.keyId] : undefined
-  if (!publicKey) throw new PluginReleaseError("release_key_unknown", `no registry key is named ${envelope.data.keyId}`)
-  const key = await crypto.subtle.importKey("raw", base64Bytes(publicKey), { name: "Ed25519" }, false, ["verify"])
-  const valid = await crypto.subtle.verify("Ed25519", key, base64Bytes(envelope.data.signature), pluginReleaseSigningBytes(envelope.data.release))
-  if (!valid) throw new PluginReleaseError("release_signature_invalid", `the release's signature does not verify under ${envelope.data.keyId}`)
-  const release = pluginReleaseSchema.safeParse(envelope.data.release)
-  if (!release.success) {
-    throw new PluginReleaseError("release_malformed", release.error.issues.map((issue) => `${issue.path.join(".") || "release"}: ${issue.message}`).join("; "))
-  }
-  return release.data
+  const { release, signature, keyId } = envelope.data
+  return verifySignedPayload({ payload: release, signature, keyId }, keys, pluginReleaseSchema, "release")
 }
