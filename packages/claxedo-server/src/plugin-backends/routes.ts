@@ -1,14 +1,13 @@
 import { Hono } from "hono"
 import { isPluginId } from "@claxedo/plugin-api/id"
 import { PLUGIN_BACKEND_METHODS } from "@claxedo/plugin-api/manifest"
+import { pluginRefusal, pluginSupervisor, type PluginSupervisorNamespace } from "@claxedo/plugin-runtime"
 import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneRouteContribution } from "@claxedo/server-core/platform/http/route-contribution"
 import type { ControlPlaneServices } from "../authority/services"
 import { signedOrError } from "../workspace/route-support"
-import { pluginRefusal } from "./refusal"
-import { pluginSupervisor, type PluginSupervisorNamespace } from "./supervisor.cf"
 
 export const PLUGIN_BACKEND_ROUTE_PREFIX = "/api/plugins"
 
@@ -70,7 +69,7 @@ export function pluginBackendRouteContribution(input: PluginBackendRouteInput): 
     })
     let answer: Response
     try {
-      answer = await pluginSupervisor(input.supervisors, orgId).request({ orgId, pluginId, userId: principal.userId }, forwarded)
+      answer = await pluginSupervisor(input.supervisors, { orgId, pluginId }).request({ orgId, pluginId, userId: principal.userId }, forwarded)
     } catch (error) {
       console.error(`[plugin-backends] ${pluginId} failed`, error)
       return pluginRefusal(502, "plugin_backend_failed", `Plugin ${pluginId} failed to answer`)

@@ -448,10 +448,16 @@ Every ceiling change is the exact measured number, with its owner named in the a
 - Prove on the staging Cloudflare account, with a throwaway Worker: Worker Loader and facets; facet deletion through supervisor `deleteAll` and/or `ctx.facets.delete`; a supervisor (non-facet) alarm; Worker Loader limits; Ed25519 verify in workerd.
 - Record the results in `plugin-backends/README.md` "Gate finding".
 - Checks: the existing `plugin-backends.workerd.test.ts`. No ratchet change.
-- [ ] **P1. `@claxedo/plugin-runtime`.**
+- [x] **P1. `@claxedo/plugin-runtime`.**
 - Move the supervisor, runs and entrypoints; add `PluginHostPort`, per-(org, plugin) naming, the persistent facet registry and caller handles (removing `x-claxedo-user-id`). `claxedo-server/src/plugin-backends/` keeps the hosted port adapter.
 - Tests: `runs.test.ts` moves; the workerd suite (all current cases, plus a forged user-id header has no effect, an expired handle is refused, and two plugins in one org are isolated).
 - Checks: plugin-runtime and server tests; typecheck; ratchets; server `verify:closure`. The Agent Plugins deployment closures (230/242) move by the measured count.
+- **As built.**
+  - `packages/plugin-runtime` exports `.` (the port and state types, `pluginSupervisor`, `pluginRefusal`, the caller header), `./supervisor` (`pluginSupervisorClass(hostPort)`) and `./entrypoints` (`PluginPlatform`, `PluginOutbound`). The hosted entry exports `class PluginSupervisor extends pluginSupervisorClass(hostedPluginHostPort)`.
+  - `PluginHostPort` is `readState(orgId, pluginId)` and `readBundle(sha256)` only; `platform` and `scheduler` arrive with the calls that need them (P3). The runtime, not the host, verifies a bundle's digest and computes the Worker Loader generation. No local entry (owner ruling).
+  - The supervisor is `org:<orgId>:plugin:<pluginId>`, so `PluginBackendRuns` holds one plugin's run. Facets are named `[className, name]` and recorded in the supervisor's `plugin_facets(name, class_name, created_at)`.
+  - Caller handles: the backend gets `x-claxedo-caller` and resolves it with `env.PLATFORM.caller(handle)`, which answers `{ userId, orgId }` or null. A handle lives while its request is open and 10 minutes after, only under its epoch, only in its plugin's supervisor. §3.1's `identity.caller` builds on it in P3. Expiry is tested over a controlled clock in `caller-handles.test.ts`; the workerd suite covers the forged headers, a handle outliving its request, another plugin, and a reactivation.
+  - Closures: Agent Plugins 227 modules and 27 packages, full-hosted 239 and 28 (`cloudflare:workers` moved into the runtime with the supervisor; the full-hosted provisioner still imports it). `@claxedo/plugin-runtime` joins `SERVER_DEPENDENCY_PREFIXES` in `script/ci-changes.mjs`.
 - [ ] **P2. Hosted installs and registry.**
 - D1 tables (§4, replacing `plugin_backend_activations`); `host/registry.ts`, signature verify and copy; `/api/claxedo/app-plugins/*`; the enablement gate on `/api/plugins/:id/*`; uninstall deletion; `PLUGIN_REGISTRY_KEYS` plus the test key; the fixture `counter` plugin (`plugin-backends/fixtures/counter`) published to a test registry by a harness script.
 - Tests (workerd): install, then enable per user, then route; non-enabled member gets 404; non-admin install gets 403; tampered blob or signature refused; uninstall deletes facets and blobs; update raises the epoch.

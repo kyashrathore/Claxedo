@@ -1,0 +1,46 @@
+{
+  "name": "@claxedo/plugin-runtime",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "sideEffects": false,
+  "description": "The sandboxed plugin backend runtime: one supervisor Durable Object per organization and plugin, its Worker Loader runs and capabilities, over a host port each host implements",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kyashrathore/Claxedo.git",
+    "directory": "packages/plugin-runtime"
+  },
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "development": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./supervisor": {
+      "types": "./src/supervisor.cf.ts",
+      "development": "./src/supervisor.cf.ts",
+      "default": "./src/supervisor.cf.ts"
+    },
+    "./entrypoints": {
+      "types": "./src/entrypoints.cf.ts",
+      "development": "./src/entrypoints.cf.ts",
+      "default": "./src/entrypoints.cf.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "bun test src"
+  },
+  "dependencies": {
+    "@claxedo/helpers": "workspace:*",
+    "@claxedo/plugin-api": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "catalog:",
+    "@tsconfig/node-lts": "22.0.4",
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

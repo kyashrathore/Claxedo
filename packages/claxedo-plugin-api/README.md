@@ -33,7 +33,7 @@ A plugin is a package whose `package.json` carries a `claxedo` block:
 | `requires` | Server capabilities the plugin needs before it activates, as open ids (`^[a-z][a-z0-9-]*$`). One is offered when the server's bootstrap lists it in `deployment.capabilities`, which names the capability of each first-party server plugin it mounted: `tasks`, `documents`. |
 | `server.routes` | Claxedo server route prefixes `api.server.fetch` may call. |
 | `server.operations` | Control-plane operations `api.server.operation` may run; `documents.*` allows a namespace. Results are `unknown`; the plugin validates the response before using it. |
-| `backend` | Optional. A backend the hosted Worker loads per organization: `entry` (the module, relative to the package root), `objects` (the Durable Object classes it exports), `outbound` (the hosts it may fetch over https) and `routes` (`METHOD /path` patterns, where `:name` matches one segment and a trailing `*` one or more). `packages/claxedo-server/src/plugin-backends/README.md` describes the platform. |
+| `backend` | Optional. A backend the hosted Worker loads per organization: `entry` (the module, relative to the package root), `objects` (the Durable Object classes it exports), `outbound` (the hosts it may fetch over https) and `routes` (`METHOD /path` patterns, where `:name` matches one segment and a trailing `*` one or more). `packages/plugin-runtime/README.md` describes the runtime and `packages/claxedo-server/src/plugin-backends/README.md` the hosted Worker around it. |
 
 `readPluginManifest(packageJson)` validates the block and throws `PluginManifestError` with one issue per problem. `pluginBackendRouteAllowed(backend, method, path)` answers whether a request matches a declared backend route.
 

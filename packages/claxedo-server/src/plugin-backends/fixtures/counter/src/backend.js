@@ -23,7 +23,11 @@ export default {
     if (url.pathname === "/") return Response.json({ root: true })
     if (url.pathname === "/active") return Response.json({ active: await env.PLATFORM.active() })
     if (url.pathname === "/count" || url.pathname === "/instance") return env.PLATFORM.object("Counter", "main", request)
-    if (url.pathname === "/whoami") return Response.json({ userId: request.headers.get("x-claxedo-user-id") })
+    if (url.pathname === "/whoami") {
+      const handle = request.headers.get("x-claxedo-caller")
+      return Response.json({ handle, caller: await env.PLATFORM.caller(handle), userIdHeader: request.headers.get("x-claxedo-user-id") })
+    }
+    if (url.pathname === "/handles/resolve") return Response.json({ caller: await env.PLATFORM.caller(await request.text()) })
     if (url.pathname === "/outbound") {
       const answer = await fetch(url.searchParams.get("url") ?? "")
       return Response.json({ status: answer.status, body: await answer.json() })
@@ -33,7 +37,8 @@ export default {
       const active = await env.PLATFORM.active()
       const object = await env.PLATFORM.object("Counter", "main", new Request("https://plugin.invalid/count"))
       const outbound = await fetch("https://allowed.example.com/after")
-      return Response.json({ active, object: object.status, outbound: outbound.status })
+      const caller = await env.PLATFORM.caller(request.headers.get("x-claxedo-caller"))
+      return Response.json({ active, object: object.status, outbound: outbound.status, caller })
     }
     if (url.pathname === "/fail") throw new Error("the counter failed")
     return env.PLATFORM.object(url.pathname.split("/")[2] ?? "", "main", request)

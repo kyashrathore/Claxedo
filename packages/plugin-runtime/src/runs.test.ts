@@ -1,5 +1,5 @@
-import { describe, expect, test } from "vitest"
-import type { PluginBackendActivation, PluginBackendState } from "./activations"
+import { describe, expect, test } from "bun:test"
+import type { PluginBackendActivation, PluginBackendState } from "./host-port"
 import { PluginBackendRuns, type PluginDispatch } from "./runs"
 
 type Deferred<T> = { promise: Promise<T>; resolve(value: T): void }
@@ -19,11 +19,8 @@ function state(epoch: number, active = true): PluginBackendState {
 
 function activation(epoch: number): PluginBackendActivation {
   return {
-    orgId: "org_1",
-    pluginId: "counter",
     epoch,
     bundleHash: "a".repeat(64),
-    generation: "same-configuration",
     manifest: {
       id: "counter",
       name: "Counter",
@@ -73,14 +70,14 @@ function harness() {
 describe("plugin backend runs", () => {
   test("a newer epoch ends the previous run and aborts its facets", async () => {
     const { runs, reads, loads, aborted, dispatch, settle } = harness()
-    const first = runs.dispatch("counter", dispatch)
+    const first = runs.dispatch(dispatch)
     await settle()
     reads[0].resolve(state(1))
     await settle()
     loads[0].resolve("worker")
     expect(await first).toBe("sent:worker@1")
 
-    const refresh = runs.current("counter")
+    const refresh = runs.current()
     await settle()
     reads[1].resolve(state(2))
     expect((await refresh)?.activation.epoch).toBe(2)
@@ -89,8 +86,8 @@ describe("plugin backend runs", () => {
 
   test("a read that started earlier never replaces one that started later", async () => {
     const { runs, reads, aborted, settle } = harness()
-    const older = runs.current("counter")
-    const newer = runs.current("counter")
+    const older = runs.current()
+    const newer = runs.current()
     await settle()
     reads[1].resolve(state(2))
     expect((await newer)?.activation.epoch).toBe(2)
@@ -101,11 +98,11 @@ describe("plugin backend runs", () => {
 
   test("work that resumes after its run was replaced starts nothing on it and runs on the current one", async () => {
     const { runs, reads, loads, sent, aborted, dispatch, settle } = harness()
-    const request = runs.dispatch("counter", dispatch)
+    const request = runs.dispatch(dispatch)
     await settle()
     reads[0].resolve(state(1))
     await settle()
-    const refresh = runs.current("counter")
+    const refresh = runs.current()
     await settle()
     reads[1].resolve(state(2))
     await refresh
@@ -121,11 +118,11 @@ describe("plugin backend runs", () => {
 
   test("work that resumes after deactivation starts no facet", async () => {
     const { runs, reads, loads, sent, dispatch, settle } = harness()
-    const request = runs.dispatch("counter", dispatch)
+    const request = runs.dispatch(dispatch)
     await settle()
     reads[0].resolve(state(1))
     await settle()
-    const refresh = runs.current("counter")
+    const refresh = runs.current()
     await settle()
     reads[1].resolve(state(2, false))
     await refresh
@@ -138,15 +135,15 @@ describe("plugin backend runs", () => {
 
   test("work suspended across a deactivation and an identical reactivation runs only on the new epoch", async () => {
     const { runs, reads, loads, sent, aborted, dispatch, settle } = harness()
-    const request = runs.dispatch("counter", dispatch)
+    const request = runs.dispatch(dispatch)
     await settle()
     reads[0].resolve(state(1))
     await settle()
-    const deactivate = runs.current("counter")
+    const deactivate = runs.current()
     await settle()
     reads[1].resolve(state(2, false))
     await deactivate
-    const reactivate = runs.current("counter")
+    const reactivate = runs.current()
     await settle()
     reads[2].resolve(state(3))
     await reactivate
@@ -158,7 +155,7 @@ describe("plugin backend runs", () => {
     expect(await request).toBe("sent:worker@3")
     expect(sent).toEqual(["worker@3"])
     expect(aborted).toEqual([])
-    const stale = runs.admits("counter", 1)
+    const stale = runs.admits(1)
     await settle()
     reads[4].resolve(state(3))
     expect(await stale).toBe(false)
@@ -166,13 +163,13 @@ describe("plugin backend runs", () => {
 
   test("a missing bundle is read again on the next dispatch", async () => {
     const { runs, reads, loads, dispatch, settle } = harness()
-    const first = runs.dispatch("counter", dispatch)
+    const first = runs.dispatch(dispatch)
     await settle()
     reads[0].resolve(state(1))
     await settle()
     loads[0].resolve(undefined)
     expect(await first).toBe("unavailable")
-    const second = runs.dispatch("counter", dispatch)
+    const second = runs.dispatch(dispatch)
     await settle()
     reads[1].resolve(state(1))
     await settle()
@@ -180,10 +177,10 @@ describe("plugin backend runs", () => {
     expect(await second).toBe("sent:worker@1")
   })
 
-  test("admits only the current generation", async () => {
+  test("admits only the current epoch", async () => {
     const { runs, reads, settle } = harness()
-    const current = runs.admits("counter", 1)
-    const stale = runs.admits("counter", 0)
+    const current = runs.admits(1)
+    const stale = runs.admits(0)
     await settle()
     reads[0].resolve(state(1))
     reads[1].resolve(state(1))

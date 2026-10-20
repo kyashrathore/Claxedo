@@ -388,6 +388,7 @@
         "@claxedo/local-server": "workspace:*",
         "@claxedo/mcp": "workspace:*",
         "@claxedo/plugin-api": "workspace:*",
+        "@claxedo/plugin-runtime": "workspace:*",
         "@claxedo/process-ownership": "workspace:*",
         "@claxedo/sandbox-contract": "workspace:*",
         "@claxedo/sandbox-manager": "workspace:*",
@@ -578,6 +579,20 @@
         "openai": "6.26.0",
         "typescript": "catalog:",
         "typescript-5": "npm:typescript@5.9.3",
+      },
+    },
+    "packages/plugin-runtime": {
+      "name": "@claxedo/plugin-runtime",
+      "version": "0.1.0",
+      "dependencies": {
+        "@claxedo/helpers": "workspace:*",
+        "@claxedo/plugin-api": "workspace:*",
+      },
+      "devDependencies": {
+        "@cloudflare/workers-types": "catalog:",
+        "@tsconfig/node-lts": "22.0.4",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
       },
     },
     "packages/process-ownership": {
@@ -1214,6 +1229,8 @@
     "@claxedo/plugin-api": ["@claxedo/plugin-api@workspace:packages/claxedo-plugin-api"],
 
     "@claxedo/plugin-build": ["@claxedo/plugin-build@workspace:packages/claxedo-plugin-build"],
+
+    "@claxedo/plugin-runtime": ["@claxedo/plugin-runtime@workspace:packages/plugin-runtime"],
 
     "@claxedo/process-ownership": ["@claxedo/process-ownership@workspace:packages/process-ownership"],
 

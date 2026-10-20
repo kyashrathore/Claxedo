@@ -168,10 +168,13 @@ const ENTRIES = [
   // Every entry's GitHub sign-in reads the person's profile and address list
   // together (`platform/auth/github-user-info.ts`).
   { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 177, packages: 23 },
-  // Both Agent Plugins entries carry the plugin-backend platform
-  // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the
-  // manifest, and `cloudflare:workers` for the supervisor and its entrypoints,
-  // plus `agent-plugins/signed-scope.ts`, the caller and write guard the
+  // Both Agent Plugins entries carry the plugin-backend platform: the hosted
+  // adapter in `src/plugin-backends/` (four modules: the route, the D1 row,
+  // the R2 bundles and the supervisor over that host port), the runtime
+  // itself as `@claxedo/plugin-runtime`, whose supervisor and entrypoints are
+  // the entry's only `cloudflare:workers` import until the full-hosted
+  // sandbox provisioner adds its own, and `@claxedo/plugin-api` for the
+  // manifest, plus `agent-plugins/signed-scope.ts`, the caller and write guard the
   // activation and source stores share, and the Pi launch a session served by
   // its own Durable Object is delivered (`agent-plugins/runtime/session-host-launch.ts`).
   // The activation store reads a plugin set's state and builds its writes in
@@ -194,7 +197,7 @@ const ENTRIES = [
   // The hosted connections setup picks which code-host connection can read a
   // pasted repository by the rule the local connections host shares
   // (`connections/repository-access.ts`).
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 230, packages: 27 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 227, packages: 27 },
   // The full-hosted entry alone carries the session rows pass
   // (`session/session-rows-pass.ts`) and its wiring to the sandbox and the
   // relay (`hosted-workerd/full-hosted-sandbox.ts`): it delivers the pass to a
@@ -208,8 +211,10 @@ const ENTRIES = [
   // finds a cloud runtime gone, it ends that runtime's sessions' turns in the registry and tells
   // their readers (`workspace/runtime-lost.ts`,
   // `authority/adapters/d1/runtime-lost-sessions.ts`), since only this entry
-  // has cloud runtimes to lose.
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 242, packages: 27 },
+  // has cloud runtimes to lose. Its provisioner imports `cloudflare:workers`
+  // itself, so `@claxedo/plugin-runtime` is one package more here than in the
+  // Agent Plugins entry.
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 239, packages: 28 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {

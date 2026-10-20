@@ -60,6 +60,7 @@
     "@claxedo/local-server": "workspace:*",
     "@claxedo/mcp": "workspace:*",
     "@claxedo/plugin-api": "workspace:*",
+    "@claxedo/plugin-runtime": "workspace:*",
     "@claxedo/process-ownership": "workspace:*",
     "@claxedo/sandbox-contract": "workspace:*",
     "@claxedo/sandbox-manager": "workspace:*",

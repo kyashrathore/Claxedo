@@ -1,20 +1,7 @@
 import type { D1Database } from "@cloudflare/workers-types"
-import type { PluginBackend, PluginManifest } from "@claxedo/plugin-api/manifest"
+import type { PluginManifest } from "@claxedo/plugin-api/manifest"
 import { pluginManifestSchema } from "@claxedo/plugin-api/manifest-schema"
-
-export type PluginBackendActivation = Readonly<{
-  orgId: string
-  pluginId: string
-  /** Rises on every activation and deactivation and is never reused; every capability is fenced by it. */
-  epoch: number
-  bundleHash: string
-  manifest: PluginManifest & { backend: PluginBackend }
-  /** Digest of the bundle hash and the manifest, naming the configuration the Worker Loader caches. */
-  generation: string
-}>
-
-/** The organization's latest epoch for a plugin, with the activation it names while the plugin is active. */
-export type PluginBackendState = Readonly<{ epoch: number; activation?: PluginBackendActivation }>
+import type { PluginBackendState } from "@claxedo/plugin-runtime"
 
 type ActivationRow = { epoch: number; active: number; bundle_hash: string; manifest_json: string }
 
@@ -25,11 +12,6 @@ function backendManifest(value: unknown, pluginId: string) {
   return { ...manifest, backend: manifest.backend }
 }
 
-async function generationOf(bundleHash: string, manifest: PluginManifest) {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${bundleHash}\n${JSON.stringify(manifest)}`))
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")
-}
-
 export async function readPluginBackendState(database: D1Database, orgId: string, pluginId: string): Promise<PluginBackendState> {
   const row = await database
     .prepare("select epoch, active, bundle_hash, manifest_json from plugin_backend_activations where org_id = ? and plugin_id = ?")
@@ -37,9 +19,7 @@ export async function readPluginBackendState(database: D1Database, orgId: string
     .first<ActivationRow>()
   if (!row) return { epoch: 0 }
   if (row.active !== 1) return { epoch: row.epoch }
-  const manifest = backendManifest(JSON.parse(row.manifest_json), pluginId)
-  const generation = await generationOf(row.bundle_hash, manifest)
-  return { epoch: row.epoch, activation: { orgId, pluginId, epoch: row.epoch, bundleHash: row.bundle_hash, manifest, generation } }
+  return { epoch: row.epoch, activation: { epoch: row.epoch, bundleHash: row.bundle_hash, manifest: backendManifest(JSON.parse(row.manifest_json), pluginId) } }
 }
 
 export async function writePluginBackendActivation(

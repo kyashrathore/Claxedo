@@ -127,6 +127,15 @@ async function call(member: Member | undefined, method: string, path: string, bo
   return { status: response.status, body: (await response.json()) as Record<string, unknown> }
 }
 
+async function resolveHandle(member: Member, pluginId: string, handle: string) {
+  const response = await miniflare.dispatchFetch(`${ORIGIN}/api/plugins/${pluginId}/handles/resolve`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${member.token}`, "content-type": "text/plain" },
+    body: handle,
+  })
+  return { status: response.status, body: (await response.json()) as Record<string, unknown> }
+}
+
 function refusal(status: number, code: string) {
   return { status, body: { error: expect.objectContaining({ code }) } }
 }
@@ -181,11 +190,28 @@ describe("a plugin backend on workerd", () => {
     expect(await call(alice, "GET", "/counter/count")).toEqual({ status: 200, body: { value: 2, version: "counter-v1" } })
   })
 
-  test("hands the plugin the caller's user id and nothing the caller sent in its place", async () => {
+  test("hands the plugin a caller handle that names the signed caller, and nothing the caller sent in its place", async () => {
     const response = await miniflare.dispatchFetch(`${ORIGIN}/api/plugins/counter/whoami`, {
-      headers: { authorization: `Bearer ${carol.token}`, "x-claxedo-user-id": alice.userId },
+      headers: { authorization: `Bearer ${carol.token}`, "x-claxedo-user-id": alice.userId, "x-claxedo-caller": "f".repeat(32) },
     })
-    expect(await response.json()).toEqual({ userId: carol.userId })
+    const body = (await response.json()) as { handle: string }
+    expect(body).toEqual({ handle: expect.stringMatching(/^[0-9a-f]{32}$/), caller: { userId: carol.userId, orgId: alice.orgId }, userIdHeader: null })
+    expect(body.handle).not.toBe("f".repeat(32))
+  })
+
+  test("a handle keeps naming its caller after its request answered, within the run that minted it", async () => {
+    const { handle } = (await call(carol, "GET", "/counter/whoami")).body as { handle: string }
+    expect(await resolveHandle(alice, "counter", handle)).toEqual({ status: 200, body: { caller: { userId: carol.userId, orgId: alice.orgId } } })
+    expect(await resolveHandle(alice, "counter", "0".repeat(32))).toEqual({ status: 200, body: { caller: null } })
+  })
+
+  test("two plugins in one organization keep separate objects, and one plugin's handle names nobody in the other", async () => {
+    await activate(alice, counterHash, { ...counter.manifest, id: "counter-two" })
+    expect(await call(alice, "POST", "/counter-two/count")).toEqual({ status: 200, body: { value: 1, version: "counter-v1" } })
+    expect(await call(alice, "GET", "/counter/count")).toEqual({ status: 200, body: { value: 2, version: "counter-v1" } })
+    const { handle } = (await call(carol, "GET", "/counter/whoami")).body as { handle: string }
+    expect(await resolveHandle(alice, "counter-two", handle)).toEqual({ status: 200, body: { caller: null } })
+    expect(await resolveHandle(alice, "counter", handle)).toEqual({ status: 200, body: { caller: { userId: carol.userId, orgId: alice.orgId } } })
   })
 
   test("serves the plugin's answer with its content type, unsniffable and sandboxed on this origin", async () => {
@@ -284,10 +310,12 @@ describe("a plugin backend on workerd", () => {
     const running = (await readPluginBackendState(database, alice.orgId, "counter")).activation
     const before = (await call(alice, "GET", "/counter/instance")).body.instance
     expect(typeof before).toBe("string")
+    const { handle } = (await call(carol, "GET", "/counter/whoami")).body as { handle: string }
     await operate("deactivate", alice)
     await operate("activate", alice, running!.bundleHash)
     const after = (await call(alice, "GET", "/counter/instance")).body.instance
     expect(after).not.toBe(before)
+    expect(await resolveHandle(alice, "counter", handle)).toEqual({ status: 200, body: { caller: null } })
   })
 
   test("an epoch is active only while it is the organization's current activation, and an identical reactivation is a new epoch", async () => {
@@ -313,7 +341,7 @@ describe("a plugin backend on workerd", () => {
     await operate("deactivate", alice)
     await operate("activate", alice, running.bundleHash)
     releaseHold()
-    expect(await pending).toEqual({ status: 200, body: { active: false, object: 409, outbound: 403 } })
+    expect(await pending).toEqual({ status: 200, body: { active: false, object: 409, outbound: 403, caller: null } })
     expect((await call(alice, "GET", "/counter/active")).body).toEqual({ active: true })
   })
 

@@ -5,12 +5,12 @@ import { pluginManifestSchema } from "@claxedo/plugin-api/manifest-schema"
 import { AuthenticationError, type ControlPlanePrincipal } from "@claxedo/server-core/platform/auth/authentication"
 import { D1WorkspaceAuthority } from "../../authority/adapters/d1/workspace-authority"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
+import { pluginSupervisor, type PluginSupervisorNamespace } from "@claxedo/plugin-runtime"
 import { activatePluginBackend, deactivatePluginBackend } from "../lifecycle"
 import { pluginBackendRouteContribution } from "../routes"
-import { pluginSupervisor, type PluginSupervisorNamespace } from "../supervisor.cf"
 
 export { PluginSupervisor } from "../supervisor.cf"
-export { PluginOutbound, PluginPlatform } from "../entrypoints.cf"
+export { PluginOutbound, PluginPlatform } from "@claxedo/plugin-runtime/entrypoints"
 
 type Env = { CONTROL_PLANE_DB: D1Database; PLUGIN_SUPERVISOR: PluginSupervisorNamespace; DEPLOYMENT_ID: string }
 
@@ -54,7 +54,7 @@ async function admin(request: Request, env: Env) {
   const ports = { database: env.CONTROL_PLANE_DB, supervisors: env.PLUGIN_SUPERVISOR }
   if (url.pathname === "/__admin/active") {
     const input = activeInput.parse(body)
-    return Response.json({ active: await pluginSupervisor(env.PLUGIN_SUPERVISOR, input.orgId).active(input) })
+    return Response.json({ active: await pluginSupervisor(env.PLUGIN_SUPERVISOR, input).active(input) })
   }
   if (url.pathname === "/__admin/activate") await activatePluginBackend(ports, activateInput.parse(body))
   else await deactivatePluginBackend(ports, deactivateInput.parse(body))

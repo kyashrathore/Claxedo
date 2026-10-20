@@ -182,8 +182,8 @@
       // Scoped to the exact files whose job is that hand-off, so the brokers and
       // dispatchers they call stay fully enforced.
       "files": [
-        "packages/claxedo-server/src/plugin-backends/entrypoints.cf.ts",
-        "packages/claxedo-server/src/plugin-backends/supervisor.cf.ts",
+        "packages/plugin-runtime/src/entrypoints.cf.ts",
+        "packages/plugin-runtime/src/supervisor.cf.ts",
         "packages/claxedo-server/scripts/sandbox/cloudflare-worker/src/runtime-request.ts"
       ],
       "rules": {

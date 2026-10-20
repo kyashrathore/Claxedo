@@ -17,8 +17,9 @@ import type { SessionRowsPasses } from "../../session/session-rows-pass"
 import type { WorkspaceRuntimeContext } from "../../workspace/route-support"
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
 import { pluginBackendRouteContribution } from "../../plugin-backends/routes"
-import { PluginSupervisor, type PluginSupervisorNamespace } from "../../plugin-backends/supervisor.cf"
-import { PluginOutbound, PluginPlatform } from "../../plugin-backends/entrypoints.cf"
+import type { PluginSupervisorNamespace } from "@claxedo/plugin-runtime"
+import { PluginOutbound, PluginPlatform } from "@claxedo/plugin-runtime/entrypoints"
+import { PluginSupervisor } from "../../plugin-backends/supervisor.cf"
 import { timedAuthentication, timedD1, timedFetch } from "../../platform/http/server-timing"
 
 export { LiveSyncRoom, PluginOutbound, PluginPlatform, PluginSupervisor }

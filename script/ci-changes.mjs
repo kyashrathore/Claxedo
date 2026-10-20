@@ -62,6 +62,7 @@ const SERVER_DEPENDENCY_PREFIXES = [
   "packages/claxedo-server-core/",
   "packages/claxedo-tasks/",
   "packages/harness/",
+  "packages/plugin-runtime/",
   "packages/process-ownership/",
   "packages/sandbox-contract/",
   "packages/sandbox-manager/",
