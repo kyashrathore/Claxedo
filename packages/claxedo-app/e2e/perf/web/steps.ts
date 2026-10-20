@@ -167,6 +167,7 @@ export async function summarizeStep(input: RunInput, session: Session, spec: Mea
   const keys = state.keys.filter((key) => key.at >= referenceMs).map((key) => key.latencyMs)
   const traceFile = recording.traceEvents.length > 0 ? path.join(input.out, `${input.label}-${input.profile.name}-${spec.scenario}-${spec.step}-rep${input.rep}.trace.json`) : undefined
   if (traceFile) await fs.writeFile(traceFile, JSON.stringify({ traceEvents: recording.traceEvents }))
+  if (traceFile && recording.profile) await fs.writeFile(traceFile.replace(/\.trace\.json$/, ".cpuprofile"), JSON.stringify(recording.profile))
   const first = spec.required[0]
   const result: StepResult = {
     scenario: spec.scenario, step: spec.step, profile: input.profile.name, cache: spec.cache, rep: input.rep, reference: spec.reference,

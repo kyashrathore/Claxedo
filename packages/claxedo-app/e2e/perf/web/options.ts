@@ -17,6 +17,7 @@ export type Options = {
   readonly census: boolean
   readonly stacks: boolean
   readonly onboardingOnly: boolean
+  readonly dist: string | undefined
 }
 
 const LOCAL_PROFILES: readonly ProfileName[] = ["fast", "india-staging"]
@@ -33,6 +34,7 @@ export function readOptions(argv: readonly string[]): Options {
     return name
   })
   if (target !== "local" && (value("long") || argv.includes("--stream"))) throw new Error("--long and --stream seed their sessions, so they need the local target")
+  if (target !== "local" && value("dist")) throw new Error("--dist serves a built app from the local stack, so it needs the local target")
   if (target !== "local" && !value("cookies")) throw new Error("--target=<url> needs --cookies=<file> with the browser's exported cookies for that origin")
   return {
     target,
@@ -49,5 +51,6 @@ export function readOptions(argv: readonly string[]): Options {
     census: argv.includes("--census"),
     stacks: argv.includes("--stacks"),
     onboardingOnly: argv.includes("--onboarding-only"),
+    dist: value("dist"),
   }
 }

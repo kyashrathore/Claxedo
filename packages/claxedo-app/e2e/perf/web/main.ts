@@ -24,7 +24,7 @@ async function main() {
   const browser = await chromium.launch({ channel: "chromium" })
   let target: Target | undefined
   try {
-    if (options.target === "local") target = await localTarget({ seedTurns: options.seedTurns, railSessions: options.railSessions, longMiB: options.longMiB, streamSessions: options.stream ? options.reps * options.profiles.length : 0, log })
+    if (options.target === "local") target = await localTarget({ seedTurns: options.seedTurns, railSessions: options.railSessions, longMiB: options.longMiB, streamSessions: options.stream ? options.reps * options.profiles.length : 0, dist: options.dist, log })
     else {
       const partial = await urlTarget({ url: options.target, cookieFile: options.cookies ?? "" })
       target = { ...partial, sessions: await discoverSessions(browser, partial) }
