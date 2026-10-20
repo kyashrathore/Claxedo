@@ -1,0 +1,48 @@
+Subject: icon: a hook glyph for hook tool calls
+
+What: CODEX_CUSTOM_ARTWORK gains a hook drawing, Icon's table names it as `hook`, and the Codex alias table and its sprite glyph map route `hook` through `codex-custom-hook`.
+Why: the transcript gives a hook_prompt tool call the `hook` icon (genericToolIcon in claxedo-app's transcript/basic-tool.tsx), a name IconProps accepts only with this entry, and the Codex sprite has no hook symbol, so the glyph is drawn locally like the other codex-custom ids.
+
+diff --git a/src/components/codex-custom-artwork.tsx b/src/components/codex-custom-artwork.tsx
+index 8bbe6bf838..8eaa07f3ed 100644
+--- a/src/components/codex-custom-artwork.tsx
++++ b/src/components/codex-custom-artwork.tsx
+@@ -1,5 +1,6 @@
+ /** Shared Codex control geometry; distinct from OpenCode’s source artwork. */
+ export const CODEX_CUSTOM_ARTWORK = {
++  hook: `<circle cx="10" cy="4" r="2.25" stroke="currentColor" stroke-width="1.25"/><path d="M10 6.25V14.5M10 14.5C10 18.5 3 18.5 3 14.5V11.5L5.25 13.5M10 14.5C10 18.5 17 18.5 17 14.5V11.5L14.75 13.5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>`,
+   "diff-split": `<rect x="3" y="4" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.25"/><path d="M10 4.75V15.25" stroke="currentColor" stroke-width="1"/><rect x="4.75" y="6" width="3.5" height="8" rx="0.75" fill="var(--text-diff-delete-base)"/><rect x="11.75" y="6" width="3.5" height="8" rx="0.75" fill="var(--text-diff-add-base)"/>`,
+   "diff-unified": `<rect x="3" y="4" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.25"/><path d="M3.75 10H16.25" stroke="currentColor" stroke-width="1"/><rect x="5" y="5.75" width="10" height="2.5" rx="0.75" fill="var(--text-diff-delete-base)"/><rect x="5" y="11.75" width="10" height="2.5" rx="0.75" fill="var(--text-diff-add-base)"/>`,
+   "expand-all": `<path d="M6 8V3.5M6 3.5L3.75 5.75M6 3.5L8.25 5.75M6 12V16.5M6 16.5L3.75 14.25M6 16.5L8.25 14.25M10.5 6.5H16M10.5 10H14.5M10.5 13.5H16" stroke="currentColor" stroke-width="1.33" stroke-linecap="round" stroke-linejoin="round"/>`,
+diff --git a/src/components/codex-icon-map.tsx b/src/components/codex-icon-map.tsx
+index cec940b320..a30b25b1b2 100644
+--- a/src/components/codex-icon-map.tsx
++++ b/src/components/codex-icon-map.tsx
+@@ -6,6 +6,7 @@ import { PROCESS_ICON_GLYPHS } from "./process-icon-map"
+  * not from the Apache-2.0 `openai/codex` repository. Known, accepted for now.
+  */
+ export const UI_CODEX_ICON_ALIASES = {
++  hook: "codex-custom-hook",
+   "pi": "codex-custom-pi",
+   "opencode": "codex-custom-opencode",
+   "openai": "codex-custom-openai",
+diff --git a/src/components/icon.tsx b/src/components/icon.tsx
+index 3ba73d5fb2..5cd0b10c21 100644
+--- a/src/components/icon.tsx
++++ b/src/components/icon.tsx
+@@ -21,6 +21,7 @@ export { ensureSvgSpriteHost }
+ const terminalPrompt = `<path d="M3.75 5.4165L8.33333 9.99984L3.75 14.5832M10.4167 14.5832H16.25" stroke="currentColor" stroke-linecap="square"/>`
+ 
+ const icons = {
++  hook: CODEX_CUSTOM_ARTWORK.hook,
+   "codex-collapse-all": CODEX_CUSTOM_ARTWORK["collapse-all"],
+   "codex-expand-all": CODEX_CUSTOM_ARTWORK["expand-all"],
+   "codex-diff-unified": CODEX_CUSTOM_ARTWORK["diff-unified"],
+@@ -351,6 +352,7 @@ export function Icon(props: IconProps) {
+  * render an invisible icon silently.
+  */
+ const CODEX_CUSTOM_GLYPHS = {
++  "codex-custom-hook": "hook",
+   "codex-custom-pi": "pi",
+   "codex-custom-opencode": "opencode",
+   "codex-custom-openai": "openai",

@@ -1,0 +1,17 @@
+Subject: package: export styles/foundation
+
+What: package.json exports ./styles/foundation as src/styles/foundation.css.
+Why: the app's signed-out sign-in document imports only the kit's foundation (layer order, tokens, base, utilities, animations) with no component sheet, through claxedo-app's src/ui/foundation.css.
+
+diff --git a/package.json b/package.json
+index 61ec7b6fcf..bffec06237 100644
+--- a/package.json
++++ b/package.json
+@@ -40,6 +40,7 @@
+     "./context/*": "./src/context/*.tsx",
+     "./styles": "./src/styles/index.css",
+     "./styles/tailwind": "./src/styles/tailwind/index.css",
++    "./styles/foundation": "./src/styles/foundation.css",
+     "./theme": "./src/theme/index.ts",
+     "./theme/*": "./src/theme/*.ts",
+     "./theme/context": "./src/theme/context.tsx",

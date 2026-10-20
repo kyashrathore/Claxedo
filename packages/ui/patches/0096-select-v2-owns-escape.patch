@@ -1,0 +1,18 @@
+Subject: select-v2: an open dropdown owns Escape
+
+What: SelectV2's content carries data-owns-escape.
+Why: the dialog stack ignores an Escape whose target sits inside [data-owns-escape]; without the mark, Escape on a dropdown open in a dialog (the new task dialog's project or status) closed the dialog too and lost what was typed in it.
+
+diff --git a/src/v2/components/select-v2.tsx b/src/v2/components/select-v2.tsx
+index f629991405..955f983d55 100644
+--- a/src/v2/components/select-v2.tsx
++++ b/src/v2/components/select-v2.tsx
+@@ -206,7 +206,7 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
+         </span>
+       </Kobalte.Trigger>
+       <Kobalte.Portal>
+-        <Kobalte.Content data-component="menu-v2-content" data-slot="select-v2-content">
++        <Kobalte.Content data-component="menu-v2-content" data-slot="select-v2-content" data-owns-escape>
+           <Kobalte.Listbox data-slot="select-v2-listbox" />
+         </Kobalte.Content>
+       </Kobalte.Portal>
