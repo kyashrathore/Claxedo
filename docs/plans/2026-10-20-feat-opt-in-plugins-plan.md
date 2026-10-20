@@ -21,7 +21,7 @@ The user's rulings:
  - the MCP groups, the CLI documents command and the `documents.*` operations;
  - the runtime hydration contribution, the tool-name vocabulary and the `WORKSPACE_RUNTIME_TASKS_*` names.
 10. What stays in core is generic platform code: the supervisor, installs, the registry client, the proxy MCP groups, session files projection (hydration made generic), plugin-origin sessions and public links.
-11. Tasks and Documents are rebuilt as installable plugins. They get clean facet SQLite schemas, blobs for attachments and content, and rendered UI with the kit and a Tiptap editor inside the sandboxed frame. A2UI stays for agent replies.
+11. Tasks and Documents are rebuilt as installable plugins. They get clean facet SQLite schemas, blobs for attachments and content, and A2UI pages built from the catalog's shared building blocks, including a Tiptap `RichTextEditor` (owner ruling: every user may have the building blocks).
 12. Reset: hosted, delete and recreate the staging control-plane D1 (the baseline changes) and empty the Documents R2 bucket. Local, one `DROP TABLE IF EXISTS` migration, or a fresh data dir.
 13. Slices P0–P10 each leave the system working. The old in-process Tasks and Documents are deleted only at their cutover slices (P7b, P8b).
 14. Gate P0 must prove Worker Loader and facets on the production Cloudflare account and the local `workerd` packaging. If production refuses, a deployment offers no backend plugins: there is no in-process fallback.
@@ -370,7 +370,6 @@ type StartSpec = { origin; projectId; placement; configuration: { harness, model
 - Deleted: `./http` as a host export, `./local`, `./hosted`, `./runtime-host`, `./mcp`, `./host/*`, `./storage/sqlite`, `./storage/d1`, `./cli` and `./operations`.
 - The backend may import only `@claxedo/plugin-api{,/backend}`, pure `@claxedo/helpers` subpaths, `@claxedo/agent-runtime-contract` types, `hono` and `zod`; never `@claxedo/server-core`, `node:*` or `drizzle-orm` (P9 ratchet).
 - A new `release` script runs `buildPluginApp`, `buildPluginBackend` and tools extraction, writing `dist/release/{release.json, <sha256> blobs}`. `@claxedo/plugin-build` gains `buildPluginRelease({ rootDir })` with full sha256.
-- Shared editor: a new workspace package `packages/plugin-editor` (`@claxedo/plugin-editor`) holds the kit-styled Tiptap editor (Markdown in and out). Each plugin bundles its own copy, so a non-user downloads nothing.
 
 **5.2 Manifests**
 
@@ -420,16 +419,12 @@ type StartSpec = { origin; projectId; placement; configuration: { harness, model
 - `TasksStorePort` (`claxedo-tasks/src/ports/store.ts:165`) is implemented once by `src/storage/facet.ts` over `ctx.storage.sql`. The SQLite and D1 stores and their conformance doubles are deleted, and `./conformance` runs against the facet store under Miniflare.
 - No data migration (owner ruling).
 
-**5.4 UI decision: rendered UI with the kit in the sandboxed frame (recommended)**
+**5.4 UI decision: A2UI surfaces with shared building blocks (owner ruling, 2026-10-20)**
 
-Options:
-- **(a) A2UI-only.** Safest, since data alone crosses. But the catalog has no rich-text editor, and adding one means every agent and plugin gets ProseMirror in the core bundle, which is exactly what non-users must not download. Its per-patch postMessage cost on boards also stays (R6 in the earlier plan).
-- **(b) Rendered pages in the slot frame** (`frame/slot.tsx:31`, opaque origin, `connect-src 'none'`, kit and theme injected: `live/runtime.ts:8-16`). Tiptap runs on plugin-owned DOM inside the plugin's own bundle. Data reaches it only through `server.backend().fetch` and `events` over the port, and images go in as `data:`/`blob:` (allowed by `img-src`).
-
-Recommend **(b)** for Tasks and Documents pages and editors, on web and desktop (desktop moves installed plugins from in-app to frames, §1.6). A2UI stays for agent replies (`ui_show`), transcript tool cards (`transcript.toolCards` templates, which are data) and simple settings surfaces.
-- **Tasks UI.** A Notion-like board and list with inline-editable titles, a Tiptap description (Markdown canonical, so `task_get` and `task_edit` stay agent-friendly), drag between columns (pointer and keyboard), image paste and drop into the editor (stored as attachments), subtasks as a checklist, and the preset and Start bar. The preset settings section is also rendered. The A2UI page in `src/app/page/*` is deleted at P7c.
-- **Documents UI** (new page; the first-party plan had none): document list per project, the Tiptap editor, version history, a share dialog (people, teams and public link), and "Open in session" (`documents_open` hydrates through §3.9).
-- **Verification.** Design checks follow the kit's look (screenshots at desktop width and in `phone`). The `a2ui-surface-design` skill applies only to the cards.
+The owner ruled that every user may download the catalog's building blocks: "every user need to have those building block components, that's fine". Tasks and Documents pages stay A2UI surface pages. The renderer gains generic components any plugin or agent reply can use: `RichTextEditor` (Tiptap, Markdown in and out, slash menu, lazily loaded chunk), `Dialog`, a borderless title `TextField` variant, clickable `ListItem` and Board cards, and property chips. These are built by the Tasks redesign lane. No `@claxedo/plugin-editor` package and no rendered frame pages. What stays plugin-only is each plugin's own code: its program, backend, tools and data.
+- **Tasks UI.** A Linear and Notion-like board and list with inline-editable titles, a `RichTextEditor` description (Markdown canonical, so `task_get` and `task_edit` stay agent-friendly), drag between columns (pointer and keyboard), image paste and drop into the editor (stored as attachments), subtasks as a checklist, and the preset and Start bar. The preset settings section uses the same components.
+- **Documents UI** (new A2UI page; the first-party plan had none): document list per project, the `RichTextEditor`, version history, a share dialog (people, teams and public link), and "Open in session" (`documents_open` hydrates through §3.9).
+- **Verification.** Design checks follow the design guide and the `a2ui-surface-design` skill (screenshots at desktop width and in `phone`, light and dark).
 
 ### 6. Security
 
@@ -510,8 +505,8 @@ Every ceiling change is the exact measured number, with its owner named in the a
 - New negative flow: a member who has not enabled it sees no Tasks rail row, no `/tasks` route (it 404s into the shell's not-found) and no `task_*` tools in an MCP `tools/list`.
 - Checks: everything in "Commands used"; `d1:baseline:check`; `rg -n "@claxedo/tasks" packages --glob '!packages/claxedo-tasks/**'` returns only the registry harness script.
 - **Staging D1 reset after merge.**
-- [ ] **P7c. Tasks rendered UI.**
-- `@claxedo/plugin-editor` (Tiptap and Markdown); the Tasks page and presets as rendered frame pages; the A2UI page deleted.
+- [ ] **P7c. Tasks UI.**
+- The catalog's `RichTextEditor`, `Dialog`, title field, clickable rows and cards and property chips (generic, in `@claxedo/plugin-api/surface` and the app renderer), and the Linear and Notion-like Tasks page and presets built from them.
 - Flows `63-tasks-board` and `63-tasks-presets` are rewritten by role and name: edit the description with bold and a list, read it back as Markdown through `task_get`, paste an image, drag across columns, use the keyboard path on phone. Red runs are recorded.
 - Checks: tasks test and `verify:closure`; app check; ratchets.
 - [ ] **P8a. Documents backend on the platform:** facets, blobs, links, session files, tools; tested as P7a.
@@ -520,10 +515,10 @@ Every ceiling change is the exact measured number, with its owner named in the a
 - Flow: install Documents, have an agent open a doc in a session, see the edit written back, open the public link anonymously, and revoke it.
 - Checks: as P7b, plus cli test (`claxedo help` loses `documents`) and desktop `test:broad` (IPC inventory without `documents.*`).
 - Delete the staging R2 bucket (§4).
-- [ ] **P8c. Documents page** (rendered, shares the editor). Flows and checks as P7c.
+- [ ] **P8c. Documents page** (an A2UI page with the `RichTextEditor`). Flows and checks as P7c.
 - [ ] **P9. Ratchets and closures.**
 - `script/app-plugin-isolation.test.ts` (in `test:architecture-ratchets`): no production module outside the two plugin packages and the registry harness imports them; plugin packages import only the §5.1 allowlist.
-- Add `@claxedo/tasks`, `@claxedo/documents` and `@claxedo/plugin-editor` to `forbiddenPackages` of the `server-workerd`, local-server, desktop, desktop-renderer and deployment-closure policies.
+- Add `@claxedo/tasks` and `@claxedo/documents` to `forbiddenPackages` of the `server-workerd`, local-server, desktop, desktop-renderer and deployment-closure policies.
 - New authoritative check: no emitted app or renderer chunk resolves into `packages/claxedo-tasks|documents`.
 - Set every product ceiling exactly; the `tasks-app` and `documents-app` policies move to measuring the release bundles.
 - Checks: ratchets; every `verify:closure`.
