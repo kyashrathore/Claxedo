@@ -1,24 +1,24 @@
 import { requireAuthority, type WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
-import type { StartBlocker } from "@claxedo/tasks"
-import type { TasksCloudRootCreator, TasksCloudRootRequest, TasksCloudRoots } from "@claxedo/tasks/hosted"
-import type { ControlPlaneServices } from "../../../authority/services"
+import type { SessionStartBlocker } from "@claxedo/server-core/plugin-platform/sessions/session-start"
+import type { ControlPlaneServices } from "../../authority/services"
 import {
   createCloudCreateAdmission,
   type CloudCreateAdmission,
   type CloudCreateCaller,
   type CloudCreateUsage,
-} from "../../../workspace/cloud-create-admission"
-import { startCloudWorkspace } from "../../../workspace/cloud-workspace-start"
+} from "../../workspace/cloud-create-admission"
+import { startCloudWorkspace } from "../../workspace/cloud-workspace-start"
 import {
   allocateOriginCloudWorkspace,
   originCloudRoot,
   originCloudWorkspaceId,
   type OriginCloudRootInput,
   type OriginCloudWorkspaceRows,
-} from "../../../workspace/origin-cloud-workspace"
-import type { SandboxStart } from "../../../workspace/sandbox-start"
+} from "../../workspace/origin-cloud-workspace"
+import type { SandboxStart } from "../../workspace/sandbox-start"
+import type { CloudRootCreator, CloudRootRequest, CloudRoots } from "./host"
 
-export type HostedTasksCloudRootsInput = {
+export type HostedCloudRootsInput = {
   services: ControlPlaneServices
   rows: OriginCloudWorkspaceRows
   /**
@@ -26,9 +26,9 @@ export type HostedTasksCloudRootsInput = {
    * it takes the lease, announces the start to the owner's open clients and
    * drives the sandbox to ready in the background, preparing every step with
    * the capability set the start names (the owner's accounts, the project's
-   * environment, the root's Tasks grant and its selected plugins and skills).
-   * A deployment that names none cannot start a cloud root, and a cloud Start
-   * is refused before anything is filed.
+   * environment, the root's plugin grants and its selected plugins and
+   * skills). A deployment that names none cannot start a cloud root, and a
+   * cloud start is refused before anything is filed.
    */
   sandboxStart?: SandboxStart
   /**
@@ -42,8 +42,9 @@ export type HostedTasksCloudRootsInput = {
   cloudCreateAdmission?: CloudCreateAdmission
   /**
    * The usage side effects a workspace's first explicit start runs on the
-   * lease it opens, fired identically for a task-driven root: the event that makes the
-   * spend attributable and the tenant stamp the concurrency cap counts.
+   * lease it opens, fired identically for an origin's root: the event that
+   * makes the spend attributable and the tenant stamp the concurrency cap
+   * counts.
    * Absent, a root's lease is created but unattributed, which is exactly what
    * leaves it invisible to the cap.
    */
@@ -67,14 +68,14 @@ type RootFiler = {
   admit(authority: WorkspaceAuthority, args: RootWorkspaceArgs): Promise<void>
 }
 
-const UNSTARTABLE: StartBlocker = { code: "placement_unsupported", detail: "This control plane cannot start a cloud root" }
+const UNSTARTABLE: SessionStartBlocker = { code: "placement_unsupported", detail: "This control plane cannot start a cloud root" }
 
 /**
  * A signed caller files the root as themselves. An owner is filed by
  * canonical actor through the authority's runtime-principal path, in the
  * owner's organization, which is the actor's scope and the authoritative one.
  */
-function rootFiler(creator: TasksCloudRootCreator): RootFiler {
+function rootFiler(creator: CloudRootCreator): RootFiler {
   if (creator.kind === "signed") {
     const { auth } = creator
     return {
@@ -95,11 +96,11 @@ function rootFiler(creator: TasksCloudRootCreator): RootFiler {
   }
 }
 
-/** The Tasks plugin's cloud roots over this deployment's workspace authority, admission and sandbox start. */
-export function createHostedTasksCloudRoots(input: HostedTasksCloudRootsInput): TasksCloudRoots {
+/** Origins' cloud roots over this deployment's workspace authority, admission and sandbox start. */
+export function createHostedCloudRoots(input: HostedCloudRootsInput): CloudRoots {
   const { services } = input
   const admission = input.cloudCreateAdmission ?? createCloudCreateAdmission({ services })
-  const rootOf = (root: TasksCloudRootRequest): OriginCloudRootInput => ({ services, rows: input.rows, ...root })
+  const rootOf = (root: CloudRootRequest): OriginCloudRootInput => ({ services, rows: input.rows, ...root })
   return {
     refusal: async (root) => {
       const existing = await originCloudRoot(rootOf(root))

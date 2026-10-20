@@ -23,6 +23,7 @@ import { hostedAppPluginRoutes } from "../../plugin-backends/compose"
 import { DEFAULT_APP_PLUGIN_REGISTRY_URL } from "../../plugin-backends/registry"
 import { PluginOutbound, PluginPlatform } from "@claxedo/plugin-runtime/entrypoints"
 import { PluginSupervisor } from "../../plugin-backends/supervisor.cf"
+import { composeHostedSessionPorts } from "../../plugin-backends/sessions/compose"
 import { timedAuthentication, timedD1, timedFetch } from "../../platform/http/server-timing"
 
 export { LiveSyncRoom, PluginOutbound, PluginPlatform, PluginSupervisor }
@@ -91,14 +92,14 @@ export function composeBetterAuthD1AgentPlugins(
       fetch: timedFetch(),
     },
   })
-  const tasks = composeHostedTasksPlugin({
+  const sandboxStart = base.options.productWorkspace?.sandboxStart
+  const sessions = composeHostedSessionPorts({
     services: base.plane.services,
     database,
-    authentication,
-    ...(base.options.productWorkspace?.sandboxStart ? { sandboxStart: base.options.productWorkspace.sandboxStart } : {}),
+    ...(sandboxStart ? { sandboxStart } : {}),
     cloudCreateAdmission: {
-      // The same entitlement gate the create route answers through, so a
-      // task-driven create is billed or refused on the same tenant — the
+      // The same entitlement gate the create route answers through, so an
+      // origin's create is billed or refused on the same tenant — the
       // workspace routes' `countActiveOrgSandboxLeases`/`sandboxUsage` and cap
       // knobs apply here by the same name.
       entitlement: base.options.cloudWorkspaceAdmission,
@@ -115,6 +116,13 @@ export function composeBetterAuthD1AgentPlugins(
     ...(base.options.productWorkspace?.sandboxUsage
       ? { sandboxUsage: base.options.productWorkspace.sandboxUsage }
       : {}),
+  })
+  const tasks = composeHostedTasksPlugin({
+    services: base.plane.services,
+    database,
+    authentication,
+    sessions,
+    cloudSelectedCapabilities: Boolean(sandboxStart),
     grants: {
       signingEnv,
       passes,

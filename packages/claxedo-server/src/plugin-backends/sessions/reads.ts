@@ -1,27 +1,22 @@
 import type { D1Database } from "@cloudflare/workers-types"
-import type { RegisteredSession } from "../host/registered-sessions"
+import type { RegisteredSession } from "@claxedo/server-core/plugin-platform/sessions/registered-sessions"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
-
-/** The repository and ref a project's cloud roots clone. */
-export type TasksProjectSource = { repoUrl: string; gitBranch?: string; repoName?: string }
+import type { OriginCloudWorkspaceRows } from "../../workspace/origin-cloud-workspace"
 
 /**
- * What the hosted Tasks bridge reads about workspaces and sessions, from the
+ * What the hosted session host reads about workspaces and sessions, from the
  * D1 rows the workspace and session authorities write. Only cloud workspaces
  * are answered: a machine's workspace is served through its host tunnel,
- * which this bridge does not dispatch to.
+ * which this host does not dispatch to.
  */
-export type TasksHostReads = {
-  workspace(workspaceId: string): Promise<Workspace | undefined>
+export type SessionHostReads = OriginCloudWorkspaceRows & {
   /**
    * The cloud workspaces `ownerUserId` holds in a project, without the roots
-   * cloud-placement Starts allocated there: those carry the project's id in
+   * cloud-placement starts allocated there: those carry the project's id in
    * D1, and counting them would make a project with one workspace look like
    * it has several.
    */
   projectWorkspaces(projectId: string, ownerUserId: string): Promise<Workspace[]>
-  /** The repository and ref a project's cloud roots clone, from the oldest of its workspaces that names one. */
-  projectSource(projectId: string): Promise<TasksProjectSource | undefined>
   /** The registered, undeleted sessions among these ids, as the rows their runtimes publish. */
   sessions(sessionIds: readonly string[]): Promise<ReadonlyMap<string, RegisteredSession>>
 }
@@ -63,13 +58,13 @@ function cloudWorkspaceOf(row: WorkspaceRow, defaultDirectory: string): Workspac
   }
 }
 
-export type D1TasksHostReadsInput = Readonly<{
+export type D1SessionHostReadsInput = Readonly<{
   database: D1Database
   /** Where a cloud workspace whose row names no directory is checked out in its sandbox. */
   cloudWorkspaceDirectory: string
 }>
 
-export function createD1TasksHostReads({ database, cloudWorkspaceDirectory }: D1TasksHostReadsInput): TasksHostReads {
+export function createD1SessionHostReads({ database, cloudWorkspaceDirectory }: D1SessionHostReadsInput): SessionHostReads {
   const cloudWorkspace = (row: WorkspaceRow) => cloudWorkspaceOf(row, cloudWorkspaceDirectory)
   return {
     async workspace(workspaceId) {
@@ -80,11 +75,17 @@ export function createD1TasksHostReads({ database, cloudWorkspaceDirectory }: D1
       return row ? cloudWorkspace(row) : undefined
     },
 
+    // A root is recorded by whoever started it: an app plugin's origin, or a
+    // link of the in-process Tasks plugin, whose links have their own table.
     async projectWorkspaces(projectId, ownerUserId) {
       const rows = await database
         .prepare(`
           select ${WORKSPACE_COLUMNS} from workspaces w
           where w.project_id = ? and w.owner_user_id = ? and w.backing = 'cloud-vm' and w.deleted_at is null
+            and not exists (
+              select 1 from plugin_session_origins origin
+              where origin.workspace_id = w.workspace_id and origin.placement = 'cloud'
+            )
             and not exists (
               select 1 from task_session_links link
               where link.session_workspace_id = w.workspace_id and link.placement = 'cloud'

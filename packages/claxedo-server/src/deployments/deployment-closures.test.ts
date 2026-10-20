@@ -193,17 +193,17 @@ const ENTRIES = [
   // runtime preparation also follows for whether a driver carries a gateway
   // credential (`agent-plugins/mcp/gateway-reach.ts`).
   // Both compose the Tasks plugin over this host's owners
-  // (`hosted-workerd/tasks-plugin/compose.ts`) and allocate its cloud roots
-  // through the workspace create admission and sandbox start
-  // (`hosted-workerd/tasks-plugin/cloud-roots.ts`); the plugin's own code is
-  // `@claxedo/tasks`. A grant a project's switch turns off is withdrawn by
+  // (`hosted-workerd/tasks-plugin/compose.ts`) and start its sessions through
+  // the session host app plugins share, which allocates cloud roots through
+  // the workspace create admission and sandbox start
+  // (`plugin-backends/sessions/`); the plugin's own code is `@claxedo/tasks`. A grant a project's switch turns off is withdrawn by
   // `agent-plugins/runtime/grant-withdrawal.ts`, whatever plugin minted it.
   // The hosted connections setup picks which code-host connection can read a
   // pasted repository by the rule the local connections host shares
   // (`connections/repository-access.ts`). The app-plugin routes answer the
   // Marketplace's catalog from the registry's signed index
   // (`plugin-backends/catalog.ts` over `@claxedo/plugin-api/registry-index`).
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 236, packages: 27 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 240, packages: 27 },
   // The full-hosted entry alone carries the session rows pass
   // (`session/session-rows-pass.ts`) and its wiring to the sandbox and the
   // relay (`hosted-workerd/full-hosted-sandbox.ts`): it delivers the pass to a
@@ -220,7 +220,7 @@ const ENTRIES = [
   // has cloud runtimes to lose. Its provisioner imports `cloudflare:workers`
   // itself, so `@claxedo/plugin-runtime` is one package more here than in the
   // Agent Plugins entry.
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 248, packages: 28 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 252, packages: 28 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {

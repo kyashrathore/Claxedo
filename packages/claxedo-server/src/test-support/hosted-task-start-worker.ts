@@ -11,6 +11,7 @@ import { UNUSED_DURABLE_SESSION_LOG, UNUSED_PROJECTION_STORE } from "../authorit
 import type { ControlPlaneCredentials, ControlPlaneServices } from "../authority/services"
 import { memorySandboxPassRegister } from "@claxedo/server-core/platform/auth/sandbox-pass-register"
 import { composeHostedTasksPlugin } from "../deployments/hosted-workerd/tasks-plugin/compose"
+import { composeHostedSessionPorts } from "../plugin-backends/sessions/compose"
 import { orgSandboxDrivers } from "../sandbox/org-sandbox-drivers"
 import { createOrgSandboxManager } from "../sandbox/org-sandbox-manager"
 import { createD1SandboxLeaseStore } from "../sandbox/stores/d1"
@@ -187,7 +188,8 @@ function compose(env: Env) {
     services,
     database,
     authentication,
-    sandboxStart: starts.start,
+    sessions: composeHostedSessionPorts({ services, database, sandboxStart: starts.start }),
+    cloudSelectedCapabilities: true,
     grants: {
       signingEnv: {
         CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM,

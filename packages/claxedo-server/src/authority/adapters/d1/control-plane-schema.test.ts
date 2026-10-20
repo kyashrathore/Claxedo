@@ -4,7 +4,7 @@ import { afterEach, expect, test } from "vitest"
 import { currentControlPlaneBaseline } from "../../../../scripts/control-plane-schema"
 
 /** sha256 of the host's and Tasks' baselines merged. A deployed database must hold exactly this schema, so changing it means resetting every deployed D1 database. */
-const RECORDED_BASELINE_SHA256 = "1e99739eae07960345ecdc32f19bf0203126c546fd7c9393d176695c1e5dd55e"
+const RECORDED_BASELINE_SHA256 = "ae7c2c33fcf64c34b2b8b6fc7f85ac7069b0a9b87c9b39e0f0cca2f3b26577b3"
 
 const open: Database.Database[] = []
 afterEach(() => open.splice(0).forEach((database) => database.close()))
