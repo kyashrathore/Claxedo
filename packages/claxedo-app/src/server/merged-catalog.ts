@@ -35,7 +35,8 @@ function rereadWhenInvalidated(queryClient: QueryClient, rereads: ReadonlyMap<st
 export function mergedCatalog(queryClient: QueryClient, serverUrl: string, reread: () => Promise<unknown>, accountPlacements: AccountPlacements | undefined) {
   const catalogs: readonly Catalog[] = accountPlacements ? ["local", "account"] : ["local"]
   const watched = catalogs.map((catalog) => observeCatalog(queryClient, serverUrl, catalog))
-  const rereads = new Map<string, () => Promise<unknown>>([[hashKey(placementCatalogKey(serverUrl, "local")), reread]])
+  const localHash = hashKey(placementCatalogKey(serverUrl, "local"))
+  const rereads = new Map<string, () => Promise<unknown>>([[localHash, reread]])
   if (accountPlacements) rereads.set(hashKey(placementCatalogKey(serverUrl, "account")), accountPlacements.reread)
   const forgetInvalidations = rereadWhenInvalidated(queryClient, rereads)
   let last: { local: BootstrapCatalog; linked: LinkedCatalog | undefined; merged: BootstrapCatalog } | undefined
@@ -44,7 +45,7 @@ export function mergedCatalog(queryClient: QueryClient, serverUrl: string, rerea
     if (last?.local !== current || last.linked !== linked) last = { local: current, linked, merged: withAccountPlacements(current, linked) }
     return last.merged
   }
-  const read = () => queryClient.getQueryData<BootstrapCatalog>(placementCatalogKey(serverUrl, "local"))
+  const read = () => queryClient.getQueryCache().get<BootstrapCatalog>(localHash)?.state.data
   const catalog = () => {
     for (const watch of watched) watch.revision()
     const current = read()

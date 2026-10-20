@@ -1,4 +1,4 @@
-import type { QueryClient } from "@tanstack/solid-query"
+import { hashKey, type QueryClient } from "@tanstack/solid-query"
 import type { HostedAccount } from "./account"
 import { linkAccountCatalog, type LinkedCatalog } from "./account-link"
 import { readArray } from "@claxedo/helpers/readers"
@@ -14,6 +14,7 @@ export type AccountPlacements = {
 
 export function createAccountPlacements(account: HostedAccount, serverUrl: string, queryClient: QueryClient): AccountPlacements {
   const key = queryKeys.accountCatalog(serverUrl)
+  const keyHash = hashKey(key)
   const read = async () => accountCatalogFromWire(readArray(await account.run("workspace.list.provisioner"), "workspaces") ?? [])
   const fetch = async (staleTime: number) => { await queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime }) }
   let last: { local: readonly PlacementRecord[]; account: AccountCatalog; linked: LinkedCatalog } | undefined
@@ -21,7 +22,7 @@ export function createAccountPlacements(account: HostedAccount, serverUrl: strin
     load: () => fetch(Number.POSITIVE_INFINITY),
     reread: () => fetch(0),
     link: (local) => {
-      const catalog = queryClient.getQueryData<AccountCatalog>(key)
+      const catalog = queryClient.getQueryCache().get<AccountCatalog>(keyHash)?.state.data
       if (!catalog) return undefined
       if (last?.local !== local || last.account !== catalog) last = { local, account: catalog, linked: linkAccountCatalog(local, catalog) }
       return last.linked
