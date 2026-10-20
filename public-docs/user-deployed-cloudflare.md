@@ -152,8 +152,9 @@ The control plane's edge Worker runs in the Cloudflare data center that
 receives each request. Turn on [read replication](https://developers.cloudflare.com/d1/best-practices/read-replication/)
 for both databases (the database's **Settings** in the dashboard, or a `PUT` of
 `{"read_replication":{"mode":"auto"}}` to the database's API endpoint) so the
-people who work far from the databases' region read from a nearby replica; the
-deploy prints each database's replication mode. Replicas cost nothing extra,
+people who work far from the databases' region read from a nearby replica.
+The deploy refuses while either database has replication off, and prints the
+call that turns it on. Replicas cost nothing extra,
 and writes still run on the writer beside the primary. The first deploy that
 creates the edge Worker moves the control plane's routes to it; that needs
 `CLOUDFLARE_API_TOKEN`, and a deploy signed in with `wrangler login` instead

@@ -7,7 +7,7 @@ import { brotliDecompressSync } from "node:zlib"
 import { describe, expect, test } from "vitest"
 
 import { browserArtifactBuildId, prepareBrowserArtifactsForWorkers } from "./browser-app"
-import { d1DatabaseIdByName, d1Placement, d1PlacementReport, nativeClientVerificationSql, verifyNativeClientProvisioning } from "./d1-databases"
+import { d1DatabaseIdByName, d1Placement, d1PlacementReport, requireReadReplication, nativeClientVerificationSql, verifyNativeClientProvisioning } from "./d1-databases"
 import {
   appPlan,
   deployPlan,
@@ -201,8 +201,27 @@ describe("D1 provisioning", () => {
     expect(d1PlacementReport("claxedo-control-plane", replicated, undefined)).toBe("claxedo-control-plane runs in ENAM, read replication auto")
     expect(d1PlacementReport("claxedo-control-plane", { region: "APAC", replication: "auto" }, "apac")).toBe("claxedo-control-plane runs in APAC, read replication auto")
     expect(d1PlacementReport("claxedo-control-plane", replicated, "apac")).toMatch(/runs in ENAM, read replication auto; CLAXEDO_D1_LOCATION asks for APAC.*recreate it to move it$/)
-    expect(d1PlacementReport("claxedo-control-plane", { region: "ENAM", replication: "disabled" }, undefined))
-      .toBe("claxedo-control-plane runs in ENAM, read replication disabled; every query from far away crosses to ENAM until read replication is enabled on it")
+    expect(d1PlacementReport("claxedo-control-plane", { region: "ENAM", replication: "disabled" }, undefined)).toBe("claxedo-control-plane runs in ENAM, read replication disabled")
+  })
+
+  test("refuses a control plane whose databases have no read replicas, naming the call that turns them on for each", () => {
+    expect(() => requireReadReplication([
+      { name: "claxedo-auth", id: "11111111-1111-4111-8111-111111111111", replication: "auto" },
+      { name: "claxedo-control-plane", id: "22222222-2222-4222-8222-222222222222", replication: "auto" },
+    ])).not.toThrow()
+    let refusal = ""
+    try {
+      requireReadReplication([
+        { name: "claxedo-auth", id: "11111111-1111-4111-8111-111111111111", replication: "disabled" },
+        { name: "claxedo-control-plane", id: "22222222-2222-4222-8222-222222222222", replication: "auto" },
+      ])
+    } catch (error) {
+      refusal = error instanceof Error ? error.message : String(error)
+    }
+    expect(refusal).toMatch(/^read replication is off on claxedo-auth; the edge Worker needs it, so enable it and deploy again: curl /)
+    expect(refusal).toContain('d1/database/11111111-1111-4111-8111-111111111111" ')
+    expect(refusal).toContain(`--data '{"read_replication":{"mode":"auto"}}'`)
+    expect(refusal).not.toContain("22222222-2222-4222-8222-222222222222")
   })
 
   test("takes a D1 location and the writer's placement region only in the forms Wrangler accepts, and gives the edge Worker a name of its own", () => {

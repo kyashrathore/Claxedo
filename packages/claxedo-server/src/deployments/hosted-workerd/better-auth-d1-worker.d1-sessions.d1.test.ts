@@ -5,6 +5,8 @@ import { betterAuthD1WorkerEnv, workerDatabases, WORKER_ORIGIN as API, type Work
 import worker, { betterAuthD1CompositionInput, createBetterAuthD1Worker, d1SessionStart, type BetterAuthD1WorkerEnv } from "./better-auth-d1-worker.cf"
 import { composeBetterAuthD1UserDeployedControlPlane } from "../../authority/adapters/worker/better-auth-d1-compose"
 import { settledCompositionCache } from "./settled-composition-cache"
+import { generateCanonicalOwnerClaim, ownerClaimMutationSql, ownerClaimProvisioning } from "../../../scripts/deploy/claim-owner"
+import { USER_DEPLOYED_OWNER_CLAIM_HEADER } from "../../authority/adapters/d1/owner-identity"
 
 const active: WorkerDatabases[] = []
 
@@ -167,6 +169,39 @@ test("the edge hands a write to the writer before composing or authenticating an
   expect(composed).toEqual(["writer", "edge"])
   expect(opened.auth.at(-1)).toBe(afterSignIn)
   expect(read.headers.get("server-timing")).not.toContain("forward")
+
+  const current = await edge.fetch(new Request(`${API}/api/auth/get-session`, { headers: { origin: API, cookie: session } }), edgeEnv, context)
+  const subject = ((await current.json()) as { user: { id: string } }).user.id
+  const claim = generateCanonicalOwnerClaim()
+  await bound.controlPlaneDatabase.prepare(ownerClaimMutationSql(await ownerClaimProvisioning({ deploymentId: "deployment-1", origin: API, subject, claim }))).run()
+  const claimed = await edge.fetch(new Request(`${API}/api/claxedo/auth/bootstrap-owner`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: API, cookie: session, [USER_DEPLOYED_OWNER_CLAIM_HEADER]: claim },
+    body: "{}",
+  }), edgeEnv, context)
+  expect(claimed.status, await claimed.clone().text()).toBe(200)
+
+  const principalCookie = (response: Response) => response.headers.getSetCookie().find((cookie) => cookie.startsWith("__Host-claxedo.principal="))
+  const signedPost = (cookie: string) => post("/api/control/session-registrations/reserve", {}, cookie)
+  await Promise.all(readiness)
+  const edgeComposed = composed.filter((role) => role === "edge").length
+  const forwardedPost = await edge.fetch(signedPost(session), edgeEnv, context)
+  const directPost = await writer.fetch(signedPost(session), writerEnv, context)
+  expect(forwardedPost.status).toBe(directPost.status)
+  expect(principalCookie(forwardedPost)?.split("=")[0]).toBe("__Host-claxedo.principal")
+  expect(principalCookie(forwardedPost)?.split("; ").slice(1)).toEqual(principalCookie(directPost)?.split("; ").slice(1))
+  expect(composed.filter((role) => role === "edge")).toHaveLength(edgeComposed)
+
+  const profile = (cookie: string) => new Request(`${API}/api/claxedo/auth/profile`, { headers: { origin: API, cookie } })
+  const verified = await edge.fetch(profile(`${session}; __Host-claxedo.d1-auth=${afterSignIn}`), edgeEnv, context)
+  expect(verified.status).toBe(200)
+  const cached = principalCookie(verified)?.split("; ")[0]
+  if (!cached) throw new Error("a live verification on the edge issued no principal cookie")
+  const authSessions = opened.auth.length
+  const admitted = await edge.fetch(profile(`${session}; ${cached}`), edgeEnv, context)
+  expect(admitted.status).toBe(200)
+  expect(opened.auth.length, "a cached principal reads nothing from the auth database").toBe(authSessions)
+  expect(admitted.headers.get("server-timing")).not.toContain("forward")
 
   const refused = await createBetterAuthD1Worker({ composition: composing("unreachable") }).fetch(
     post("/api/auth/sign-out", {}, session),

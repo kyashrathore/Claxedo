@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url"
 import { asRecord, stringField } from "@claxedo/server-core/platform/json/index"
 
 import { BROWSER_BUILD_ATTESTATION, BROWSER_DIRECTORY, buildBrowserApp, publishBrowserApp } from "./browser-app"
-import { d1PlacementReport, ensureD1Database, prepareD1Databases } from "./d1-databases"
+import { d1PlacementReport, ensureD1Database, requireReadReplication, prepareD1Databases } from "./d1-databases"
 import { waitForProbe, type ProbeOptions } from "./release-probe"
 import { stageWorkerControlPlaneMigrations } from "./staged-control-plane-migrations"
 import {
@@ -128,7 +128,7 @@ export function deployPlan(
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([name, value]) => `  ${name} = ${value}`),
     "",
-    "Steps: find or create both D1 databases -> apply their migrations -> provision the native OAuth clients",
+    "Steps: find or create both D1 databases -> refuse unless both have read replication -> apply their migrations -> provision the native OAuth clients",
     "       -> wrangler deploy the writer with its secrets, beside the databases",
     "       -> move the control plane's routes off the writer if it still holds them",
     "       -> wrangler deploy the edge Worker with the same secrets and the routes on the public origin's host",
@@ -279,6 +279,10 @@ async function publishControlPlane(input: Publish, variables: Readonly<Record<st
   for (const [name, database] of [[deployment.databases.AUTH_DB, auth], [deployment.databases.CONTROL_PLANE_DB, controlPlane]] as const) {
     console.log(`  ${d1PlacementReport(name, database, deployment.d1Location)}`)
   }
+  requireReadReplication([
+    { name: deployment.databases.AUTH_DB, ...auth },
+    { name: deployment.databases.CONTROL_PLANE_DB, ...controlPlane },
+  ])
 
   await prepareD1Databases({ configArgs, origin: deployment.appOrigin, betterAuthSecret, introspectionSecret })
   console.log("✓ Migrations applied and native OAuth clients provisioned")

@@ -158,8 +158,10 @@ the two deploys those paths answer the deploy-window 503), then deploys the
 edge with the same secrets.
 
 Both staging databases need read replication enabled; without it the edge's
-reads from India cross to ENAM. The job prints each database's mode, so after
-a reset that prints `read replication disabled`, enable it again:
+reads from India would cross to ENAM on every round, so the job refuses to
+deploy either Worker or move the routes while either database reports
+`read_replication.mode` other than `auto`, and names the call to make. After a
+reset, enable it on the recreated database again:
 
 ```sh
 for id in <auth database id> <control-plane database id>; do

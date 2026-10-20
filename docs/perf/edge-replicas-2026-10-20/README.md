@@ -35,7 +35,7 @@ State: the bookmark the browser carries lives in its cookie jar, shared by its t
 
 ## Per route
 
-Rounds are serial D1 rounds as `countD1Rounds` pins them (`better-auth-d1-signed-rounds.d1.test.ts`, `signed-read-rounds.d1.test.ts`, `runtime-session-authority.turn-start.test.ts`, `workspace/harness-runtime.d1.test.ts`, `connections/hosted-d1/setup.test.ts`); a cookie-signed request adds two (session ⋈ user, then evidence ‖ identity), included below. The session layer adds no statement. "Today" is 0.36 s of client ↔ IAD on a reused connection plus 0.035–0.107 s per round; "edge read" is about 0.12 s client ↔ SIN plus one replica round per serial round (unknown until staging, taken here as 5–70 ms); "via writer" is today's path plus the edge invocation.
+Rounds are serial D1 rounds as `countD1Rounds` pins them (`better-auth-d1-signed-rounds.d1.test.ts`, `signed-read-rounds.d1.test.ts`, `runtime-session-authority.turn-start.test.ts`, `workspace/harness-runtime.d1.test.ts`, `connections/hosted-d1/setup.test.ts`); a cookie-signed request adds two (session ⋈ user, then evidence ‖ identity), included below; one admitted on a principal the browser principal cache holds ([session-cache-2026-10-20](../session-cache-2026-10-20/README.md)) pays neither, on the edge as on one Worker. The session layer adds no statement. "Today" is 0.36 s of client ↔ IAD on a reused connection plus 0.035–0.107 s per round; "edge read" is about 0.12 s client ↔ SIN plus one replica round per serial round (unknown until staging, taken here as 5–70 ms); "via writer" is today's path plus the edge invocation.
 
 | route (caller) | runs | start | rounds | today (s) | after (s) |
 |---|---|---|---|---|---|
@@ -65,6 +65,7 @@ The local stack has one D1 database per binding, so a replica, its lag and every
 
 - `split-rig.ts` beside this file, the built plain user-deployed bundle as edge and writer under local workerd (on dev 94f63ca666 with this branch; 60 samples each after five warm-ups): a bookmarked read at the edge (`GET /p/:token`, one D1 read) 2.50 ms wall p50, server `total` 1 ms; a write through the edge (`POST /api/auth/sign-in/social`, which writes a verification row) 3.72 ms; the same write on one Worker with no edge 3.66 ms. The forward costs 0.06 ms of wall time, and `forward` less the writer's `total` reads 0 at workerd's 1 ms timer resolution. Each forwarded answer carries one `auth` entry and one `compose` mark, the writer's.
 - `better-auth-d1-worker.d1-sessions.d1.test.ts`: a sign-up through the edge composes once, on the writer; the next read starts its auth session at the bookmark the sign-in handed back and sees the account; a read without one starts unconstrained; an unreachable writer answers 503.
+- The same test, with the principal cache: a write forwarded to the writer answers the same status and the same principal-cache cookie as the writer answering it directly, and an edge read admitted on that cookie opens no auth-database session.
 - `d1-sessions.d1.test.ts`: the cookie's attributes; header and cookie merge to the newer; a malformed or foreign value is ignored; one session per database per request, batches included; no cookie on a read or on a request that ran nothing; the cookie joins Better Auth's own cookies and survives an immutable redirect.
 - Signed e2e on web and phone and the desktop sign-in run the Miniflare stack as the same two Workers (`hosted-miniflare.ts` renders both configs; the edge answers the port and binds the writer), so every write in them went through the forward.
 
@@ -91,7 +92,7 @@ The local stack has one D1 database per binding, so a replica, its lag and every
    bunx wrangler d1 info claxedo-acc-control-stg-260830-232009-3851   # read_replication.mode auto
    ```
 
-   The token needs D1:Edit. The dashboard's database Settings does the same.
+   The token needs D1:Edit. The dashboard's database Settings does the same. Until both report `auto` the `control-plane` job refuses before it deploys either Worker or moves a route, with an error naming this call for each database still off (`requireReadReplication`, `scripts/deploy/d1-databases.ts`).
 2. Keep `CLAXEDO_STAGING_WORKER_PLACEMENT_REGION=aws:us-east-1`: it now pins the writer.
 3. Check the deploy token can list zones and list and delete the zone's Worker routes (Zone Read, Workers Routes Edit), the access `wrangler deploy` already uses to attach routes; the first deploy moves the routes with it.
 4. Merge to `staging`. The `control-plane` job deploys the writer `claxedo-user-deployed-locked-staging`, moves the seven control-plane routes off it, and deploys `claxedo-user-deployed-locked-staging-edge` with the same secrets. No new secret, variable, DNS record or custom domain.

@@ -57,21 +57,30 @@ export async function ensureD1Database(name: string, location?: D1Location) {
 }
 
 /**
- * The line the deploy prints about where a database runs. The Worker runs
- * where each request arrives, so a person far from the primary pays a
- * cross-region round trip per query (~230 ms each from India to ENAM) unless
- * read replication answers their reads nearby; only recreating a database
- * moves its primary.
+ * The line the deploy prints about where a database runs. A database in
+ * another region than the deployment asked for stays there: only recreating
+ * it moves its primary.
  */
 export function d1PlacementReport(name: string, placement: { region: string; replication: string }, location: D1Location | undefined) {
   const runs = `${name} runs in ${placement.region}, read replication ${placement.replication}`
-  const moved = location && placement.region.toLowerCase() !== location
-    ? `; CLAXEDO_D1_LOCATION asks for ${location.toUpperCase()}, and a database stays where it was created: recreate it to move it`
-    : ""
-  const replicas = placement.replication === "auto"
-    ? ""
-    : `; every query from far away crosses to ${placement.region} until read replication is enabled on it`
-  return `${runs}${moved}${replicas}`
+  if (!location || placement.region.toLowerCase() === location) return runs
+  return `${runs}; CLAXEDO_D1_LOCATION asks for ${location.toUpperCase()}, and a database stays where it was created: recreate it to move it`
+}
+
+/**
+ * Refuses a control plane whose databases have no read replicas. The edge
+ * Worker answers reads where each request arrives through the Sessions API,
+ * and without replicas every one of their rounds would cross to the primary
+ * (~230 ms each from India to ENAM), slower than the writer it stands in
+ * front of. The error names the call that turns replication on
+ * (developers.cloudflare.com/d1/best-practices/read-replication/).
+ */
+export function requireReadReplication(databases: readonly { name: string; id: string; replication: string }[]) {
+  const disabled = databases.filter((database) => database.replication !== "auto")
+  if (disabled.length === 0) return
+  const enable = disabled.map((database) =>
+    `curl -sS -X PUT "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/${database.id}" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" --data '{"read_replication":{"mode":"auto"}}'`)
+  throw new Error(`read replication is off on ${disabled.map((database) => database.name).join(" and ")}; the edge Worker needs it, so enable it and deploy again: ${enable.join(" && ")}`)
 }
 
 /**
