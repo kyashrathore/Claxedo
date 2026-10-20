@@ -50,7 +50,7 @@ function walk(directory: string, root = directory): string[] {
   })
 }
 
-function normalizeSource(source: string) {
+export function normalizeSource(source: string) {
   const packages = source.indexOf("/packages/")
   if (packages >= 0) return source.slice(packages + 1)
   const modules = source.lastIndexOf("node_modules/")

@@ -4,6 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { installPaintedFrames } from "../../harness/painted-frames"
 import { createSourceMapper, summarizeProfile } from "../panel/trace"
+import { startCoverage, type FileUse } from "./coverage"
 import { profileSelfByUrl, summarizeMainThread, type MainThreadSummary } from "./main-thread"
 import { installWebProbe, type ProbeCensus, type ProbeState } from "./probe"
 import type { StreamReply } from "./options"
@@ -34,6 +35,7 @@ export type StepResult = {
   readonly cpu: { readonly byChunk: readonly { readonly url: string; readonly ms: number }[]; readonly top: readonly string[] } | undefined
   readonly probeLongTasks: { readonly count: number; readonly tbtMs: number }
   readonly census: ProbeCensus | undefined
+  readonly coverage: readonly FileUse[] | undefined
   readonly hostLoad: string
   readonly traceFile: string | undefined
 }
@@ -51,6 +53,7 @@ export type RunInput = {
   readonly stacks: boolean
   readonly census: boolean
   readonly streamReply: StreamReply | undefined
+  readonly coverage: boolean
   readonly onboardingOnly: boolean
   readonly log: (line: string) => void
 }
@@ -124,6 +127,8 @@ export type Measure = {
 
 export async function measure(input: RunInput, session: Session, spec: Measure): Promise<StepResult> {
   const { page, recorder } = session
+  const distDir = input.target.distDir
+  const coverage = input.coverage && spec.reference === "navigation" && distDir ? await startCoverage(session.cdp, distDir) : undefined
   await recorder.begin({ trace: true, profile: true })
   let recording: Recording | undefined
   try {
@@ -137,7 +142,8 @@ export async function measure(input: RunInput, session: Session, spec: Measure):
     recording = await recorder.end()
   }
   const state = await readProbe(page)
-  return summarizeStep(input, session, spec, recording, state)
+  const used = await coverage?.take(page)
+  return { ...(await summarizeStep(input, session, spec, recording, state)), coverage: used }
 }
 
 export type Span = { readonly referenceMs: number; readonly endMs: number }
@@ -178,7 +184,7 @@ export async function summarizeStep(input: RunInput, session: Session, spec: Mea
     keys: keys.length > 0 ? { p50: round(quantile(keys, 0.5)), p95: round(quantile(keys, 0.95)), max: round(Math.max(...keys)), n: keys.length } : undefined,
     waterfall, lazyChunks, mainThread, cpu,
     probeLongTasks: { count: longTasks.length, tbtMs: round(longTasks.reduce((sum, task) => sum + Math.max(0, task.duration - 50), 0)) },
-    census: state.census, hostLoad: hostLoad(), traceFile,
+    census: state.census, coverage: undefined, hostLoad: hostLoad(), traceFile,
   }
   input.log(`${input.profile.name} ${spec.scenario}/${spec.step} rep ${input.rep}: ${result.primary.name} ${result.primary.ms} ms; ${waterfall.requests} requests (${describeProtocols(waterfall.protocols)}), ${(waterfall.transferBytes / 1000).toFixed(0)} kB, ${waterfall.waves} waves; TBT ${mainThread?.tbtMs ?? "—"} ms; ${result.hostLoad}`)
   return result

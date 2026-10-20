@@ -17,6 +17,7 @@ export type Options = {
   readonly longMiB: readonly number[]
   readonly stream: StreamReply | undefined
   readonly census: boolean
+  readonly coverage: boolean
   readonly stacks: boolean
   readonly onboardingOnly: boolean
   readonly dist: string | undefined
@@ -59,6 +60,7 @@ export function readOptions(argv: readonly string[]): Options {
     longMiB: value("long")?.split(",").map(Number) ?? [],
     stream: streamReply(argv),
     census: argv.includes("--census"),
+    coverage: argv.includes("--coverage"),
     stacks: argv.includes("--stacks"),
     onboardingOnly: argv.includes("--onboarding-only"),
     dist: value("dist"),

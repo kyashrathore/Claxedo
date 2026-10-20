@@ -123,6 +123,23 @@ function bytesSection(bytes: DistBytes) {
   ].join("\n")
 }
 
+function coverageSection(results: readonly StepResult[]) {
+  return groups(results).filter((group) => group.some((result) => result.coverage)).flatMap((group) => {
+    const rep = group.find((result) => result.coverage) ?? group[0]
+    const files = rep.coverage ?? []
+    const total = files.reduce((sum, file) => sum + file.bytes, 0)
+    const used = files.reduce((sum, file) => sum + file.used, 0)
+    const percent = (part: number, whole: number) => (whole > 0 ? `${((100 * part) / whole).toFixed(0)}%` : "—")
+    const unused = files.filter((file) => file.modules.length > 0 && file.bytes > 50_000).flatMap((file) => file.modules.slice(0, 15).map((module) => [file.path.split("/").pop() ?? "", module.source, kb(module.bytes), kb(module.bytes - module.used)]))
+    return [
+      `### ${rep.scenario}/${rep.step}, ${rep.profile}, rep ${rep.rep}`, "",
+      `${kb(used)} of ${kb(total)} kB ran or matched (${percent(used, total)}).`, "",
+      table(["file", "kind", "kB", "used kB", "used"], files.map((file) => [file.path, file.kind, kb(file.bytes), kb(file.used), percent(file.used, file.bytes)])), "",
+      unused.length ? table(["chunk", "module", "kB", "unused kB"], unused) : "", "",
+    ]
+  })
+}
+
 function lazyChunkSection(results: readonly StepResult[]) {
   const rows = groups(results).flatMap((group) => {
     const rep = representative(group)
@@ -144,6 +161,8 @@ export function renderMarkdown(meta: RunMeta, results: readonly StepResult[], by
     const rep = representative(group)
     sections.push(`## Waterfall: ${rep.scenario}/${rep.step}, ${rep.profile}, rep ${rep.rep}`, "", `${rep.waterfall.requests} requests (${describeProtocols(rep.waterfall.protocols)}), ${kb(rep.waterfall.transferBytes)} kB transferred for ${kb(rep.waterfall.decodedBytes)} kB decoded, ${rep.waterfall.waves} dependency waves, last response at ${fmt(rep.waterfall.lastEndMs)} ms.`, "", waterfallRows(rep.waterfall.rows), "", `### Main thread: ${rep.scenario}/${rep.step}, ${rep.profile}`, "", mainThreadSection(rep), "")
   }
+  const coverage = coverageSection(results)
+  if (coverage.length) sections.push("## Coverage at boot", "", "JavaScript is the bytes of each chunk inside a function the boot ran, from V8's block coverage; a module's bytes come from the chunk's hidden source map. A stylesheet's used bytes are its rules whose selector, without interactive pseudo-classes and pseudo-elements, matches an element when the step settles.", "", ...coverage)
   const census = censusSection(results)
   if (census) sections.push("## Mutation census (median per step)", "", census, "")
   if (bytes) sections.push("## Bytes", "", bytesSection(bytes), "")
