@@ -14,7 +14,7 @@ const DEVICE_DECL: IntegrationDeclaration = {
   prompts: [{ id: "token", label: "Token", secret: true }],
 }
 
-function harness(polls: DevicePoll[] | (() => Promise<DevicePoll>), options: { verifyLabel?: string } = {}) {
+function harness(polls: DevicePoll[] | (() => Promise<DevicePoll>), options: { verifyLabel?: string; verify?: () => Promise<{ ok: true; accountLabel?: string }>; startFails?: () => boolean } = {}) {
   const registry = createIntegrationRegistry()
   const started: number[] = []
   let pollIndex = 0
@@ -24,10 +24,11 @@ function harness(polls: DevicePoll[] | (() => Promise<DevicePoll>), options: { v
       "work-source": workSourcePort,
     },
     auth: {
-      verify: async () => ({ ok: true, ...(options.verifyLabel ? { accountLabel: options.verifyLabel } : {}) }),
+      verify: options.verify ?? (async () => ({ ok: true, ...(options.verifyLabel ? { accountLabel: options.verifyLabel } : {}) })),
       device: {
         async start() {
           started.push(1)
+          if (options.startFails?.()) throw new Error("github is unreachable")
           return {
             deviceCode: "device-abc",
             userCode: "WDJB-MJHT",
@@ -108,6 +109,33 @@ describe("device-flow connect", () => {
     expect((await credentials.get(providerId))?.kind).toBe("oauth_token")
     const secret = JSON.parse((await credentials.readSecret(providerId))!)
     expect(secret).toEqual({ access: "ghu_access", refresh: "ghr_refresh" })
+    await service.dispose()
+  })
+
+  test("the account is named while the grant's secret is written, and the row waits for its name", async () => {
+    let named: (label: { ok: true; accountLabel: string }) => void = () => undefined
+    const { service, credentials, connections } = harness([authorized], { verify: () => new Promise((resolve) => (named = resolve)) })
+    const result = await service.connectOAuth({ integrationId: "github" })
+    if (!result.ok) throw new Error("expected ok")
+    const polled = service.pollAttempt(result.attemptId)
+    while ((await credentials.get(connectionProviderId("connection-1"))) === undefined) await new Promise((resolve) => setTimeout(resolve, 1))
+    expect(await connections.list(), "the row is written only once the account is named").toEqual([])
+    named({ ok: true, accountLabel: "octocat" })
+    expect((await polled)?.status).toBe("complete")
+    expect((await connections.list())[0].accountLabel).toBe("octocat")
+    await service.dispose()
+  })
+
+  test("a connect over an existing connection is refused even when the provider cannot start a grant", async () => {
+    let unreachable = false
+    const { service, connections } = harness([authorized], { startFails: () => unreachable })
+    const first = await service.connectOAuth({ integrationId: "github" })
+    if (!first.ok) throw new Error("expected ok")
+    await service.pollAttempt(first.attemptId)
+    expect((await connections.list()).length).toBe(1)
+    unreachable = true
+    expect(await service.connectOAuth({ integrationId: "github" })).toEqual({ ok: false, code: "connection_exists" })
+    await expect(service.connectOAuth({ integrationId: "github", confirmReplace: true })).rejects.toThrow("github is unreachable")
     await service.dispose()
   })
 
