@@ -362,7 +362,7 @@ describe("repository document recovery and Git contracts", () => {
     ).rejects.toBeInstanceOf(DocumentPathError)
     expect(await fs.readdir(outside)).toEqual([])
 
-    await fs.rm(path.join(value.root, "nested"))
+    await fs.unlink(path.join(value.root, "nested"))
     await fs.rename(detached, path.join(value.root, "nested"))
   })
 

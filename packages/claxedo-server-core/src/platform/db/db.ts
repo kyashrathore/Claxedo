@@ -60,8 +60,13 @@ const require = createRequire(import.meta.url)
  * points build the same query builder, and every caller here uses only that
  * shared surface.
  */
+type BunStatement = ReturnType<CompatibleSqlite["prepare"]> & { finalize(): void }
+type BunSqliteDatabase = CompatibleSqlite & {
+  prepare(sql: string, ...options: unknown[]): BunStatement
+  close(...options: unknown[]): unknown
+}
 type BunSqliteModule = {
-  Database: new (file: string) => CompatibleSqlite
+  Database: new (file: string) => BunSqliteDatabase
 }
 type BunDrizzleModule = {
   drizzle: (config: { client: CompatibleSqlite }) => ClaxedoDB.Client
@@ -126,6 +131,38 @@ export function textColumns(rows: Record<string, unknown>[], name: string): stri
   return rows.map((row) => textColumn(row, name)).filter((value): value is string => value !== undefined)
 }
 
+/**
+ * bun:sqlite closes with `sqlite3_close_v2`, which leaves a connection that
+ * still has unfinalized statements open as a zombie until the last one is
+ * finalized (https://www.sqlite.org/c3ref/close.html). Drizzle's bun-sqlite
+ * session prepares a fresh statement for every query and never finalizes it,
+ * so a closed database kept its file open until the garbage collector reached
+ * those statements; on Windows an open file cannot be deleted, so neither could
+ * its data directory (EBUSY). better-sqlite3 finalizes its own statements on
+ * close. Statements are held weakly so a long-lived connection does not retain
+ * every query it has run.
+ */
+function finalizingOnClose(BunDatabase: BunSqliteModule["Database"]): BunSqliteModule["Database"] {
+  return class extends BunDatabase {
+    readonly #open = new Set<WeakRef<BunStatement>>()
+    readonly #collected = new FinalizationRegistry<WeakRef<BunStatement>>((ref) => this.#open.delete(ref))
+
+    override prepare(sql: string, ...options: unknown[]) {
+      const statement = super.prepare(sql, ...options)
+      const ref = new WeakRef(statement)
+      this.#open.add(ref)
+      this.#collected.register(statement, ref)
+      return statement
+    }
+
+    override close(...options: unknown[]) {
+      for (const ref of this.#open) ref.deref()?.finalize()
+      this.#open.clear()
+      return super.close(...options)
+    }
+  }
+}
+
 function openDatabase(file: string) {
   if (file !== ":memory:") mkdirSync(path.dirname(file), { recursive: true })
   if (bunRuntime()) {
@@ -133,7 +170,7 @@ function openDatabase(file: string) {
     const bunDrizzle: unknown = require("drizzle-orm/bun-sqlite")
     if (!isBunSqliteModule(bun)) throw new Error("bun:sqlite does not export a Database constructor")
     if (!isBunDrizzleModule(bunDrizzle)) throw new Error("drizzle-orm/bun-sqlite does not export drizzle")
-    const sqlite = new bun.Database(file)
+    const sqlite = new (finalizingOnClose(bun.Database))(file)
     return { sqlite, db: bunDrizzle.drizzle({ client: sqlite }) }
   }
 
