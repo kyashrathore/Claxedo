@@ -72,7 +72,7 @@ function exactHttpsOrigin(env: NodeJS.ProcessEnv, name: string) {
 /**
  * The app Worker renders `workers_dev = false` and is reached only through the
  * custom domain `wrangler deploy --domain` attaches, which must sit on a zone
- * in the same Cloudflare account; the control plane has no address of its own.
+ * in the same Cloudflare account; the control plane's routes sit on that host.
  */
 function customDomainOrigin(env: NodeJS.ProcessEnv, name: string) {
   const origin = exactHttpsOrigin(env, name)

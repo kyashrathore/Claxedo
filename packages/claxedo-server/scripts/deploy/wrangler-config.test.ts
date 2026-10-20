@@ -22,7 +22,8 @@ function render(overrides: Partial<Parameters<typeof renderWorkerWranglerConfig>
     controlPlaneMigrationsDir: "migrations/control-plane",
     requestLimiterNamespaceId: "2101",
     documentsBucket: "claxedo-documents",
-    variables: { CLAXEDO_DEPLOYMENT_ID: "claxedo", BETTER_AUTH_URL: "https://api.example.com" },
+    publicOriginHost: "app.example.com",
+    variables: { CLAXEDO_DEPLOYMENT_ID: "claxedo", BETTER_AUTH_URL: "https://app.example.com" },
     ...overrides,
   })
 }
@@ -36,7 +37,16 @@ describe("the user-deployed Worker Wrangler config", () => {
     expect(config).toContain('migrations_dir = "migrations/control-plane"')
     expect(config).toContain('database_id = "11111111-1111-4111-8111-111111111111"')
     expect(config).toContain("workers_dev = false")
-    expect(config).toContain('[vars]\nBETTER_AUTH_URL = "https://api.example.com"\nCLAXEDO_DEPLOYMENT_ID = "claxedo"')
+    expect(config).toContain('[vars]\nBETTER_AUTH_URL = "https://app.example.com"\nCLAXEDO_DEPLOYMENT_ID = "claxedo"')
+  })
+
+  test("serves the control plane's paths as routes on the public origin's host, declared before the bundle contract's alias table", () => {
+    const config = render()
+    const routes = '\nroutes = ["app.example.com/api/*", "app.example.com/internal/*", "app.example.com/.well-known/*", "app.example.com/bindings/*", "app.example.com/health*", "app.example.com/global/health*", "app.example.com/path*"]\n'
+    expect(config).toContain(routes)
+    expect(config.indexOf(routes)).toBeLessThan(config.indexOf("[alias]"))
+    expect(config).toContain(`${routes}compatibility_date = `)
+    expect(() => render({ publicOriginHost: "https://app.example.com" })).toThrow(/bare hostname/)
   })
 
   test("places the Worker smartly unless the deployment pins it to a cloud region", () => {
@@ -83,16 +93,16 @@ describe("the user-deployed Worker Wrangler config", () => {
     expect(() => render({ variables: { CLAXEDO_DEPLOYMENT_ID: " claxedo" } })).toThrow(/trimmed/)
   })
 
-  test("renders the app as the public origin: SPA-routed assets behind the Worker, and both services bound", () => {
+  test("renders the app as the public origin: SPA-routed assets behind the Worker, the relay bound and no control-plane binding", () => {
     const browserDirectory = path.join(serverRoot, "app")
-    const config = renderAppWranglerConfig({ appWorkerName: "claxedo-app", controlPlaneWorkerName: "claxedo", relayWorkerName: "claxedo-relay", browserDirectory })
+    const config = renderAppWranglerConfig({ appWorkerName: "claxedo-app", relayWorkerName: "claxedo-relay", browserDirectory })
     expect(config).toContain('name = "claxedo-app"')
     expect(config).toContain(`main = ${JSON.stringify(path.join(serverRoot, "scripts/deploy/app-worker.ts"))}`)
     expect(config).toContain(`directory = ${JSON.stringify(browserDirectory)}`)
     expect(config).toContain('binding = "ASSETS"')
     expect(config).toContain('not_found_handling = "single-page-application"')
     expect(config).toContain("run_worker_first = true")
-    expect(config).toContain('binding = "CONTROL_PLANE"\nservice = "claxedo"')
+    expect(config).not.toContain("CONTROL_PLANE")
     expect(config).toContain('binding = "RELAY"\nservice = "claxedo-relay"')
   })
 })

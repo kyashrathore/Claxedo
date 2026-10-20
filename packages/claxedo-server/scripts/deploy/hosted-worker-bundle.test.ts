@@ -36,6 +36,7 @@ function config(artifactId: (typeof CERTIFIED_HOSTED_WORKER_ARTIFACT_IDS)[number
     controlPlaneMigrationsDir: STAGED_CONTROL_PLANE_MIGRATIONS_DIR,
     requestLimiterNamespaceId: "3101",
     documentsBucket: "claxedo-documents",
+    publicOriginHost: "app.example.test",
     ...(artifact.agentPlugins ? { agentPluginsBucket: "claxedo-agent-plugins" } : {}),
     variables: { CLAXEDO_DEPLOYMENT_ID: "claxedo" },
   })

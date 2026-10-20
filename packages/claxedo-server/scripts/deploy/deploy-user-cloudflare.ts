@@ -27,6 +27,7 @@ import {
   probeWrangler,
   runWrangler,
 } from "./wrangler-cli"
+import { controlPlaneRoutePatterns } from "./public-origin"
 import { renderAppWranglerConfig, renderSessionHostWranglerConfig, renderWorkerWranglerConfig } from "./wrangler-config"
 
 /**
@@ -99,8 +100,8 @@ export function versionTag(sha: string) {
 export function appPlan(target: UserCloudflareTarget) {
   return [
     `Relay Worker        ${target.relayWorkerName} (already deployed; bound by the app Worker as RELAY)`,
-    `App Worker          ${target.appWorkerName} (binds ${target.workerName} as CONTROL_PLANE and the relay as RELAY)`,
-    `Public origin       ${target.appOrigin}  (custom domain ${new URL(target.appOrigin).hostname}: the app, /api and /relay)`,
+    `App Worker          ${target.appWorkerName} (the app and /relay; binds the relay as RELAY)`,
+    `Public origin       ${target.appOrigin}  (custom domain ${new URL(target.appOrigin).hostname}: the app and /relay, with the control plane's routes on it)`,
   ].join("\n")
 }
 
@@ -110,7 +111,7 @@ export function deployPlan(
   provided: Readonly<Record<string, string>>,
 ) {
   return [
-    `Worker              ${deployment.workerName} (${deployment.artifact.artifactId}; reached only through the app Worker)`,
+    `Worker              ${deployment.workerName} (${deployment.artifact.artifactId}; routes ${controlPlaneRoutePatterns(new URL(deployment.appOrigin).hostname).join(" ")})`,
     `Session host        ${deployment.sessionHostWorkerName} (SessionDO, bound by the relay as SESSION_HOST)`,
     appPlan(deployment),
     `D1 databases        AUTH_DB=${deployment.databases.AUTH_DB}  CONTROL_PLANE_DB=${deployment.databases.CONTROL_PLANE_DB}  (created if missing)`,
@@ -126,12 +127,13 @@ export function deployPlan(
       .map(([name, value]) => `  ${name} = ${value}`),
     "",
     "Steps: find or create both D1 databases -> apply their migrations -> provision the native OAuth clients",
-    "       -> wrangler deploy the Worker with its secrets -> wrangler deploy the session-host Worker, which binds the Worker as CONTROL_PLANE",
+    "       -> wrangler deploy the Worker with its secrets and its routes on the public origin's host",
+    "       -> wrangler deploy the session-host Worker, which binds the Worker as CONTROL_PLANE",
   ].join("\n")
 }
 
 const APP_STEPS = [
-  "Steps: build the app -> (a first publish: wrangler deploy the app Worker so the origin fronts the control plane)",
+  "Steps: build the app -> (a first publish: wrangler deploy the app Worker so its custom domain exists and the control plane's routes on it serve)",
   "       -> write the control plane's bootstrap and auth descriptor into the shell, read through the origin",
   "       -> wrangler deploy the app Worker on the public origin",
   "       -> wait for the origin to serve this commit's control plane and the build it just published",
@@ -234,6 +236,7 @@ async function publishControlPlane(input: Publish, variables: Readonly<Record<st
         documentsBucket: deployment.documentsBucket,
         ...(deployment.agentPluginsBucket ? { agentPluginsBucket: deployment.agentPluginsBucket } : {}),
         ...(deployment.workerPlacementRegion ? { placementRegion: deployment.workerPlacementRegion } : {}),
+        publicOriginHost: new URL(deployment.appOrigin).hostname,
         variables,
       }),
     )
@@ -306,7 +309,6 @@ async function publishApp(target: UserCloudflareTarget, input: Omit<Publish, "de
   const render = (browserDirectory: string) =>
     writeFile(appConfig, renderAppWranglerConfig({
       appWorkerName: target.appWorkerName,
-      controlPlaneWorkerName: target.workerName,
       relayWorkerName: target.relayWorkerName,
       browserDirectory,
     }))

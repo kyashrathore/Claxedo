@@ -2,6 +2,7 @@ import path from "node:path"
 
 import type { CertifiedHostedWorkerArtifact } from "../../src/deployments/hosted-workerd/certified-worker-artifacts"
 import { HOSTED_WORKER_BUNDLE_CONTRACT } from "./hosted-worker-bundle"
+import { controlPlaneRoutePatterns } from "./public-origin"
 
 const SERVER_ROOT = path.resolve(import.meta.dirname, "../..")
 
@@ -19,6 +20,8 @@ export type WorkerWranglerConfigInput = Readonly<{
   agentPluginsBucket?: string
   /** A cloud region in Wrangler's `placement.region` form; absent, placement is smart. */
   placementRegion?: string
+  /** The public origin's hostname, the app Worker's custom domain, on which the control plane's paths become its routes. */
+  publicOriginHost: string
   variables: Readonly<Record<string, string>>
 }>
 
@@ -89,8 +92,22 @@ new_sqlite_classes = ["SandboxProvisioner"]
 `,
       }
     : { binding: "", migration: "" }
+  // Simple routes: Wrangler resolves each pattern's zone from its hostname
+  // with the same zone access `wrangler deploy --domain` already uses for the
+  // app Worker, so a deployment names no zone of its own. The bundle contract
+  // below ends in the `[alias]` table, so these top-level keys come first.
+  const routes = controlPlaneRoutePatterns(input.publicOriginHost).map(quote).join(", ")
   return `name = ${quote(input.workerName)}
 main = ${quote(fromConfig(input.configDirectory, input.artifact.entrypointFromPackageRoot))}
+# The control plane answers its paths on the app's own host through Worker
+# routes, which "take precedence if configured on the same hostname" as the
+# app Worker's custom domain (developers.cloudflare.com/workers/configuration/
+# routing/routes/). A request on a route reaches this placed Worker through the
+# edge's own forwarding, which kept a client's requests on one warm machine; a
+# service-binding call from the app Worker reached a machine chosen per call,
+# and staging answered cold on 66 of 126 probes against 25 of 126 on routes
+# (docs/perf/worker-cold-starts-2026-10-19).
+routes = [${routes}]
 ${HOSTED_WORKER_BUNDLE_CONTRACT}
 
 [version_metadata]
@@ -200,14 +217,15 @@ export const APP_WORKER = path.join(SERVER_ROOT, "scripts/deploy/app-worker.ts")
 
 /**
  * The app Worker on the deployment's one public origin: the browser app's
- * assets, with the control plane and the relay bound as services behind the
- * paths `public-origin.ts` names, so it is published after both exist. It runs
- * ahead of every asset: the forwarded paths, the hashed chunks whose fallback
- * it refuses, and the shell whose response names a signed-in boot's preloads.
+ * assets, with the relay bound as a service behind `/relay`, so it is
+ * published after the relay exists. It runs ahead of every asset: the relay's
+ * paths, the hashed chunks whose fallback it refuses, and the shell whose
+ * response names a signed-in boot's preloads. The control plane's paths never
+ * reach it on a deployed origin: they are the control plane's own routes on
+ * the same host (`renderWorkerWranglerConfig`).
  */
 export function renderAppWranglerConfig(input: Readonly<{
   appWorkerName: string
-  controlPlaneWorkerName: string
   relayWorkerName: string
   browserDirectory: string
 }>) {
@@ -223,10 +241,6 @@ binding = "ASSETS"
 not_found_handling = "single-page-application"
 html_handling = "auto-trailing-slash"
 run_worker_first = true
-
-[[services]]
-binding = "CONTROL_PLANE"
-service = ${quote(input.controlPlaneWorkerName)}
 
 [[services]]
 binding = "RELAY"

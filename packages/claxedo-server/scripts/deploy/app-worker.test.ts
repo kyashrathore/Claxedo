@@ -8,7 +8,7 @@ import { Miniflare } from "miniflare"
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import { unstable_getMiniflareWorkerOptions } from "wrangler"
 import { prepareBrowserArtifactsForWorkers } from "./browser-app"
-import { publicOriginRoute } from "./public-origin"
+import { controlPlaneRoutePatterns, publicOriginRoute } from "./public-origin"
 import { shellPreloadLinks } from "./shell-preloads"
 import { renderAppWranglerConfig } from "./wrangler-config"
 
@@ -19,34 +19,6 @@ const SOURCE = {
   "sprite-new.svg": `<svg xmlns="http://www.w3.org/2000/svg"><title>${"x".repeat(4096)}</title></svg>`,
   "tiny-new.js": "1",
 }
-
-const CONTROL_PLANE_STUB = `
-export default {
-  async fetch(request) {
-    const url = new URL(request.url)
-    if (url.pathname === "/api/cp/events") {
-      const encoder = new TextEncoder()
-      const body = new ReadableStream({
-        async start(controller) {
-          controller.enqueue(encoder.encode("event: first\\n\\n"))
-          await new Promise((resolve) => setTimeout(resolve, 400))
-          controller.enqueue(encoder.encode("event: second\\n\\n"))
-          controller.close()
-        },
-      })
-      return new Response(body, { headers: { "content-type": "text/event-stream" } })
-    }
-    const seen = {
-      url: request.url,
-      method: request.method,
-      cookie: request.headers.get("cookie"),
-      body: request.method === "POST" ? await request.text() : null,
-      clientAcceptEncoding: request.cf?.clientAcceptEncoding ?? null,
-    }
-    return Response.json(seen, { headers: { "set-cookie": "__Secure-claxedo.session_token=minted; Path=/; Secure; HttpOnly" } })
-  },
-}
-`
 
 const RELAY_STUB = `
 export default {
@@ -80,7 +52,7 @@ beforeAll(async () => {
   await prepareBrowserArtifactsForWorkers(browser)
 
   const config = path.join(directory, "app-wrangler.toml")
-  await writeFile(config, renderAppWranglerConfig({ appWorkerName: "app-worker-test", controlPlaneWorkerName: "control-plane-stub", relayWorkerName: "relay-stub", browserDirectory: browser }))
+  await writeFile(config, renderAppWranglerConfig({ appWorkerName: "app-worker-test", relayWorkerName: "relay-stub", browserDirectory: browser }))
   const { workerOptions, main } = unstable_getMiniflareWorkerOptions(config)
   if (main === undefined) throw new Error("the app Wrangler config names no main module")
   const { outputFiles: [script] } = await build({ entryPoints: [main], bundle: true, format: "esm", platform: "neutral", write: false })
@@ -90,7 +62,6 @@ beforeAll(async () => {
     cf: false,
     workers: [
       { ...workerOptions, modules: true, script: script.text },
-      { name: "control-plane-stub", modules: true, script: CONTROL_PLANE_STUB, compatibilityDate: "2025-05-01" },
       { name: "relay-stub", modules: true, script: RELAY_STUB, compatibilityDate: "2025-05-01" },
     ],
   })
@@ -137,6 +108,14 @@ const stored = (name: string) => readFile(path.join(directory, "dist", "assets",
 const dispatch = (pathname: string, init?: Parameters<Miniflare["dispatchFetch"]>[1]) => app.dispatchFetch(`https://app.test${pathname}`, init)
 
 describe("the public origin's routes", () => {
+  test("names the control plane's route patterns on the origin's host, one per prefix", () => {
+    expect(controlPlaneRoutePatterns("app.example.com")).toEqual([
+      "app.example.com/api/*", "app.example.com/internal/*", "app.example.com/.well-known/*", "app.example.com/bindings/*",
+      "app.example.com/health*", "app.example.com/global/health*", "app.example.com/path*",
+    ])
+    expect(() => controlPlaneRoutePatterns("https://app.example.com")).toThrow(/bare hostname/)
+  })
+
   test("names the Worker a path belongs to", () => {
     expect(publicOriginRoute("/api/claxedo/mode")).toBe("control-plane")
     expect(publicOriginRoute("/internal/relay/target")).toBe("control-plane")
@@ -145,47 +124,27 @@ describe("the public origin's routes", () => {
     expect(publicOriginRoute("/bindings/b_1/v1/messages")).toBe("control-plane")
     expect(publicOriginRoute("/global/health")).toBe("control-plane")
     expect(publicOriginRoute("/path")).toBe("control-plane")
-    expect(publicOriginRoute("/paths")).toBe("assets")
+    expect(publicOriginRoute("/path?directory=%2Fwork")).toBe("control-plane")
+    expect(publicOriginRoute("/paths")).toBe("control-plane")
     expect(publicOriginRoute("/relay/workspaces/ws_1/session")).toBe("relay")
     expect(publicOriginRoute("/relay")).toBe("assets")
     expect(publicOriginRoute("/relayed")).toBe("assets")
-    expect(publicOriginRoute("/healthy")).toBe("assets")
+    expect(publicOriginRoute("/healthy")).toBe("control-plane")
     expect(publicOriginRoute("/w/ws_1/session/ses_1")).toBe("assets")
     expect(publicOriginRoute("/assets/main.js")).toBe("assets")
   })
 })
 
-describe("the control plane behind the public origin", () => {
-  test("receives the request on the public origin with its cookie and the edge's cf, and its Set-Cookie reaches the browser", async () => {
-    const response = await dispatch("/api/claxedo/mode", { headers: { cookie: "__Secure-claxedo.session_token=held", "accept-encoding": "br" } })
-    expect(response.status).toBe(200)
-    expect(await response.json()).toMatchObject({ url: "https://app.test/api/claxedo/mode", method: "GET", cookie: "__Secure-claxedo.session_token=held", clientAcceptEncoding: "br" })
-    expect(response.headers.get("set-cookie")).toContain("__Secure-claxedo.session_token=minted")
-  })
-
-  test("forwards a JSON body, the resolver's internal routes, the OAuth metadata, the health probe and a sandbox's brokered vendor call", async () => {
-    const posted = await dispatch("/api/workspace/create", { method: "POST", headers: { "content-type": "application/json" }, body: "{\"name\":\"ws\"}" })
-    expect(await posted.json()).toMatchObject({ method: "POST", body: "{\"name\":\"ws\"}" })
-    const brokered = await dispatch("/bindings/b_1/v1/messages", { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer placeholder" }, body: "{\"model\":\"m\"}" })
-    expect(await brokered.json()).toMatchObject({ url: "https://app.test/bindings/b_1/v1/messages", method: "POST", body: "{\"model\":\"m\"}" })
-    for (const pathname of ["/internal/relay/target?workspaceId=ws_1", "/.well-known/oauth-authorization-server", "/health", "/global/health", "/path?directory=%2Fwork", "/bindings/b_1/repos/x/info/refs"]) {
-      expect(await (await dispatch(pathname)).json()).toMatchObject({ url: `https://app.test${pathname}` })
+describe("a control-plane path that reaches the app Worker", () => {
+  test("is answered as a deploy window the clients retry, never as the shell", async () => {
+    for (const pathname of ["/api/claxedo/mode", "/api/auth/get-session", "/internal/relay/target?workspaceId=ws_1", "/.well-known/oauth-authorization-server", "/health", "/global/health", "/path?directory=%2Fwork", "/bindings/b_1/v1/messages"]) {
+      const response = await dispatch(pathname, { headers: { cookie: "__Secure-claxedo.session_token=held" } })
+      expect(response.status).toBe(503)
+      expect(response.headers.get("cache-control")).toBe("no-store")
+      expect(await response.json()).toEqual({ error: { code: "deployment_candidate_unavailable" } })
     }
-  })
-
-  test("streams an event stream chunk by chunk", async () => {
-    const response = await dispatch("/api/cp/events")
-    expect(response.headers.get("content-type")).toBe("text/event-stream")
-    const reader = response.body!.getReader()
-    const decoder = new TextDecoder()
-    const startedAt = Date.now()
-    const first = await reader.read()
-    const firstAt = Date.now() - startedAt
-    expect(decoder.decode(first.value)).toBe("event: first\n\n")
-    const second = await reader.read()
-    expect(decoder.decode(second.value)).toBe("event: second\n\n")
-    expect(Date.now() - startedAt - firstAt).toBeGreaterThanOrEqual(300)
-    expect((await reader.read()).done).toBe(true)
+    const posted = await dispatch("/api/workspace/create", { method: "POST", headers: { "content-type": "application/json" }, body: "{\"name\":\"ws\"}" })
+    expect(posted.status).toBe(503)
   })
 })
 
@@ -287,8 +246,8 @@ describe("the app's assets", () => {
     expect(await fallback.text()).toMatch(/^<!doctype html>/)
   })
 
-  test("client routes outside the forwarded paths keep the single-page fallback", async () => {
-    for (const pathname of ["/w/workspace-1/session/ses_1", "/relay", "/healthy"]) {
+  test("client routes outside the control plane's and the relay's paths keep the single-page fallback", async () => {
+    for (const pathname of ["/w/workspace-1/session/ses_1", "/relay", "/relayed", "/settings"]) {
       const response = await serve(pathname, { "accept-encoding": "identity" })
       expect(response.status).toBe(200)
       expect(decoded(response)).toContain("main-new.js")

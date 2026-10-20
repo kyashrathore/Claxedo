@@ -41,29 +41,43 @@ queued run waits instead of cancelling.
 
 `CLAXEDO_STAGING_APP_ORIGIN` (`https://app.claxedo.dev`) is the deployment's one
 public origin. Its Worker, `claxedo-user-deployed-app-staging`
-(`packages/claxedo-server/scripts/deploy/app-worker.ts`), serves the browser
-app's assets and forwards `/api/*`, `/internal/*`, `/.well-known/*` and
-`/health` to the control-plane Worker and `/relay/*` to the relay Worker over
-[service bindings](https://developers.cloudflare.com/workers/runtime-apis/bindings/service-bindings/),
-which add no network hop ("zero overhead or added latency"; the bound Worker's
-`fetch` handler still runs where its own placement puts it, since
-[placement affects fetch handlers](https://developers.cloudflare.com/workers/configuration/smart-placement/)
-and the control plane keeps its region pin beside its databases). A browser
-therefore opens one TLS connection and sends no CORS preflight: every request,
+(`packages/claxedo-server/scripts/deploy/app-worker.ts`), holds the custom
+domain, serves the browser app's assets and forwards `/relay/*` to the relay
+Worker over a [service binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/service-bindings/).
+The control plane's own paths (`/api/*`, `/internal/*`, `/.well-known/*`,
+`/bindings/*`, `/health*`, `/global/health*`, `/path*`, the list in
+`scripts/deploy/public-origin.ts`) are the control-plane Worker's
+[routes](https://developers.cloudflare.com/workers/configuration/routing/routes/)
+on that same host, rendered into its Wrangler config by
+`renderWorkerWranglerConfig` and attached by its own `wrangler deploy`: routes
+"take precedence if configured on the same hostname" as a custom domain, so a
+request on them reaches the placed control plane through the edge's own
+forwarding and never runs the app Worker. A service-binding call from the app
+Worker reached a machine in the placed region chosen anew per call and left
+the control plane cold on half of staging's requests
+([worker-cold-starts-2026-10-19](../perf/worker-cold-starts-2026-10-19/README.md));
+a request on a route keeps a client's requests on one warm machine. A browser
+still opens one TLS connection and sends no CORS preflight: every request,
 WebSocket upgrade and event stream is same-origin. The control-plane Worker
 has no custom domain of its own; `BETTER_AUTH_URL` is the public origin, the
 GitHub OAuth callback is `https://app.claxedo.dev/api/auth/callback/github`,
-and the session cookie is host-only on that origin.
+and the session cookie is host-only on that origin. A control-plane path that
+reaches the app Worker anyway (the window of a first publish, below) is
+answered 503 `deployment_candidate_unavailable`, the code the clients retry.
 
 The `app` job runs after `control-plane` and `relay`, since its Worker binds
-both by name (`CLAXEDO_STAGING_RELAY_WORKER_NAME` names the relay). It builds
-the app (which bakes no origin: it reaches its server on whatever origin serves
-it), publishes the Worker with `--domain`, and waits until the origin's
-`/health` reports this commit's version tag (`claxedo-<sha12>`),
-`/api/claxedo/mode` reports signed auth, and `claxedo-browser-build.json`
-carries the hash of that build. The `control-plane` job itself can prove only
-that `wrangler deploy` published a version, because nothing reaches the
-Worker except the app Worker.
+the relay by name (`CLAXEDO_STAGING_RELAY_WORKER_NAME`) and the control
+plane's routes serve only once the host has the app Worker's custom domain,
+which the app's `wrangler deploy --domain` creates with its DNS record. On a
+first publish `deploy-user-cloudflare.ts` therefore deploys the app Worker
+before it reads the control plane's bootstrap through the origin
+(`originFrontsControlPlane`), then writes that bootstrap into the shell and
+deploys again. It builds the app (which bakes no origin: it reaches its server
+on whatever origin serves it), and waits until the origin's `/health` reports
+this commit's version tag (`claxedo-<sha12>`), `/api/claxedo/mode` reports
+signed auth, and `claxedo-browser-build.json` carries the hash of that build.
+The `control-plane` job itself can prove only that `wrangler deploy` published
+a version and attached the routes.
 
 ### The session-host Worker is not a separate job
 

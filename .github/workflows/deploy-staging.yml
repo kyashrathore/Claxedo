@@ -290,9 +290,10 @@ jobs:
         run: ./node_modules/.bin/tsx scripts/deploy-cloudflare.ts
 
   # The app Worker is the public origin: the browser app's assets, with the
-  # control plane bound as CONTROL_PLANE and the relay as RELAY behind /api and
-  # /relay. It deploys after both and proves the origin serves this commit's
-  # control plane and this build.
+  # relay bound as RELAY behind /relay; the control plane's paths are its own
+  # routes on the same host, attached by the control-plane job. The app deploys
+  # after both and proves the origin serves this commit's control plane and
+  # this build.
   app:
     name: app (the public origin)
     needs: [plan, gate, unit, control-plane, relay]

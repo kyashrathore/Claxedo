@@ -7,7 +7,6 @@ type Fetcher = { fetch(request: Request): Promise<Response> }
 
 export type AppWorkerEnv = {
   ASSETS: Fetcher
-  CONTROL_PLANE: Fetcher
   RELAY: Fetcher
 }
 
@@ -115,8 +114,8 @@ async function asset(request: EdgeRequest, env: AppWorkerEnv, url: URL): Promise
   return varied
 }
 
-/** The request as the bound Worker receives it, on the same origin so the control plane's own origin check holds, with the edge's `cf`. */
-function forwarded(request: EdgeRequest, url: URL, headers: Headers = request.headers): Request {
+/** The request as the relay receives it, on the same origin, with the edge's `cf`; the relay places a workspace's room by the edge country. */
+function forwarded(request: EdgeRequest, url: URL, headers: Headers): Request {
   const init: EdgeRequestInit = { method: request.method, headers, body: request.body, redirect: "manual", cf: request.cf }
   return new Request(url, init)
 }
@@ -129,16 +128,29 @@ function withoutCookie(headers: Headers): Headers {
 }
 
 /**
- * The public origin: the browser app's assets, and beside them the control
- * plane and the relay over service bindings, so a browser opens one connection
- * and sends no CORS preflight. A WebSocket upgrade or a streaming body passes
- * through as the bound Worker answered it.
+ * A control-plane path reaches this Worker only while the control plane's
+ * routes on this host are not serving: on a first publish the custom domain
+ * that lets a route serve is created by this Worker's own deploy, and the
+ * control plane deploys before it. The single-page fallback would answer such
+ * a request with the shell as JSON; `deployment_candidate_unavailable` is the
+ * code the app, the desktop and the code host connectors already read as a
+ * deploy window and retry.
+ */
+const routeNotServing = () =>
+  Response.json({ error: { code: "deployment_candidate_unavailable" } }, { status: 503, headers: { "cache-control": "no-store" } })
+
+/**
+ * The public origin: the browser app's assets, and beside them the relay over
+ * a service binding, so a browser opens one connection and sends no CORS
+ * preflight. The control plane's paths are its own Worker routes on this host.
+ * A WebSocket upgrade or a streaming body passes through as the relay answered
+ * it.
  */
 export default {
   async fetch(request: EdgeRequest, env: AppWorkerEnv): Promise<Response> {
     const url = new URL(request.url)
     const route = publicOriginRoute(url.pathname)
-    if (route === "control-plane") return env.CONTROL_PLANE.fetch(forwarded(request, url))
+    if (route === "control-plane") return routeNotServing()
     if (route === "relay") {
       url.pathname = url.pathname.slice(RELAY_PATH_PREFIX.length)
       return env.RELAY.fetch(forwarded(request, url, withoutCookie(request.headers)))

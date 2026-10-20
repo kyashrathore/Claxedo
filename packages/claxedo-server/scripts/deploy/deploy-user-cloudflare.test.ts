@@ -84,14 +84,14 @@ describe("deploy-user-cloudflare", () => {
     const plan = deployPlan(deployment, workerVariables(deployment, "sha256:config"), {
       BETTER_AUTH_SECRET: "super-secret-value-that-must-not-print",
     })
-    expect(plan).toContain("Worker              claxedo (user-deployed-better-auth-d1; reached only through the app Worker)")
+    expect(plan).toContain("Worker              claxedo (user-deployed-better-auth-d1; routes app.example.com/api/* app.example.com/internal/* app.example.com/.well-known/* app.example.com/bindings/* app.example.com/health* app.example.com/global/health* app.example.com/path*)")
     expect(plan).toContain("Relay Worker        claxedo-relay (already deployed; bound by the app Worker as RELAY)")
-    expect(plan).toContain("App Worker          claxedo-app (binds claxedo as CONTROL_PLANE and the relay as RELAY)")
-    expect(plan).toContain("Public origin       https://app.example.com  (custom domain app.example.com: the app, /api and /relay)")
+    expect(plan).toContain("App Worker          claxedo-app (the app and /relay; binds the relay as RELAY)")
+    expect(plan).toContain("Public origin       https://app.example.com  (custom domain app.example.com: the app and /relay, with the control plane's routes on it)")
     expect(appPlan(userCloudflareTarget(env))).toBe([
       "Relay Worker        claxedo-relay (already deployed; bound by the app Worker as RELAY)",
-      "App Worker          claxedo-app (binds claxedo as CONTROL_PLANE and the relay as RELAY)",
-      "Public origin       https://app.example.com  (custom domain app.example.com: the app, /api and /relay)",
+      "App Worker          claxedo-app (the app and /relay; binds the relay as RELAY)",
+      "Public origin       https://app.example.com  (custom domain app.example.com: the app and /relay, with the control plane's routes on it)",
     ].join("\n"))
     expect(plan).toContain("AUTH_DB=claxedo-auth  CONTROL_PLANE_DB=claxedo-control-plane  (created if missing)")
     expect(plan).toContain("https://app.example.com/api/auth/callback/github")

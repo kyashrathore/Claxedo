@@ -26,6 +26,7 @@ function coreConfig(artifactId: (typeof CERTIFIED_HOSTED_WORKER_ARTIFACT_IDS)[nu
     controlPlaneMigrationsDir: STAGED_CONTROL_PLANE_MIGRATIONS_DIR,
     requestLimiterNamespaceId: "3123456789",
     documentsBucket: "claxedo-documents",
+    publicOriginHost: "app.example.test",
     ...(artifact.agentPlugins ? { agentPluginsBucket: "claxedo-agent-plugins" } : {}),
     variables: { CLAXEDO_SANDBOX_POSTURE: artifact.sandboxPosture },
   })
