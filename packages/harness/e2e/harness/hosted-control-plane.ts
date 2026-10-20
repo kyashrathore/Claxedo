@@ -80,7 +80,8 @@ function requestProvisioning(child: ChildProcess, input: Record<string, string>,
 
 export async function startHostedControlPlane(input: Input) {
   const credentials = input.credentials
-  const config = await writeHostedE2eWranglerConfig(HOSTED_E2E_PUBLIC_HOSTNAME)
+  const configs = await writeHostedE2eWranglerConfig(HOSTED_E2E_PUBLIC_HOSTNAME)
+  const removeConfigs = () => Promise.all(Object.values(configs).map((file) => fs.rm(file, { force: true })))
   const attemptsFile = path.join(input.root, "hosted-outbound-attempts.jsonl")
   const child = spawn(process.env.CLAXEDO_E2E_NODE ?? "node", [
     "--import", "tsx", "scripts/e2e/hosted-miniflare.ts",
@@ -93,7 +94,7 @@ export async function startHostedControlPlane(input: Input) {
       XDG_CONFIG_HOME: path.join(input.root, ".config"),
       NODE_EXTRA_CA_CERTS: credentials.certificate,
       CLAXEDO_E2E_HOSTED_MINIFLARE: JSON.stringify({
-        config, root: input.root, port: input.port, certificate: credentials.certificate,
+        config: configs.writer, edgeConfig: configs.edge, root: input.root, port: input.port, certificate: credentials.certificate,
         key: credentials.key, sandboxOrigin: input.sandboxOrigin, gitUrl: input.gitUrl,
         relayUrl: input.relayUrl, signingPrivateKey: HOSTED_SIGNING_PRIVATE_KEY,
         signingPublicKey: HOSTED_SIGNING_PUBLIC_KEY,
@@ -109,7 +110,7 @@ export async function startHostedControlPlane(input: Input) {
       child.kill("SIGTERM")
       await new Promise<void>((resolve) => child.once("exit", () => resolve()))
     }
-    await fs.rm(config, { force: true })
+    await removeConfigs()
     throw error
   }
   return {
@@ -140,7 +141,7 @@ export async function startHostedControlPlane(input: Input) {
         child.kill("SIGTERM")
         await new Promise<void>((resolve) => child.once("exit", () => resolve()))
       }
-      await fs.rm(config, { force: true })
+      await removeConfigs()
     },
   }
 }

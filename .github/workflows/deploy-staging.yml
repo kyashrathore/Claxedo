@@ -197,8 +197,9 @@ jobs:
       CLAXEDO_RELAY_WORKER_NAME: ${{ vars.CLAXEDO_STAGING_RELAY_WORKER_NAME }}
       CLAXEDO_AUTH_D1_DATABASE_NAME: ${{ vars.CLAXEDO_STAGING_AUTH_D1_DATABASE_NAME }}
       CLAXEDO_CONTROL_PLANE_D1_DATABASE_NAME: ${{ vars.CLAXEDO_STAGING_CONTROL_PLANE_D1_DATABASE_NAME }}
-      # Where a recreated database lands, and the region the Worker is pinned
-      # beside it; unset, Cloudflare places the database and the Worker.
+      # Where a recreated database lands, and the region the writer Worker is
+      # pinned to beside it; unset, Cloudflare places the database and the
+      # writer. The edge Worker, `<CLAXEDO_WORKER_NAME>-edge`, has no placement.
       CLAXEDO_D1_LOCATION: ${{ vars.CLAXEDO_STAGING_D1_LOCATION }}
       CLAXEDO_WORKER_PLACEMENT_REGION: ${{ vars.CLAXEDO_STAGING_WORKER_PLACEMENT_REGION }}
       # Optional: unset, the control plane refuses every idle-stop post, and only

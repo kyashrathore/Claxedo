@@ -38,7 +38,7 @@ export type UserCloudflareDeployment = UserCloudflareTarget & Readonly<{
   agentPluginsBucket?: string
   /** Where a database this deploy creates is placed; an existing one is reported against it. */
   d1Location?: D1Location
-  /** A cloud region the Worker is pinned to, in Wrangler's `placement.region` form (`aws:us-east-1`). */
+  /** The cloud region the writer Worker is pinned to, beside the databases' primary, in Wrangler's `placement.region` form (`aws:us-east-1`). */
   workerPlacementRegion?: string
   /** The runtime image a full-hosted Worker's Boat sandboxes boot; empty on a control-plane-only deployment. */
   sandboxVariables: Readonly<Record<string, string>>
@@ -83,6 +83,13 @@ function customDomainOrigin(env: NodeJS.ProcessEnv, name: string) {
   return origin
 }
 
+function workerPlacementRegion(env: NodeJS.ProcessEnv) {
+  const value = env.CLAXEDO_WORKER_PLACEMENT_REGION?.trim()
+  if (!value) return undefined
+  if (!/^(aws|gcp|azure):[a-z0-9-]+$/.test(value)) throw new Error("CLAXEDO_WORKER_PLACEMENT_REGION must name a cloud region such as aws:us-east-1")
+  return value
+}
+
 const isD1Location = (value: string): value is D1Location => (D1_LOCATIONS as readonly string[]).includes(value)
 
 function d1Location(env: NodeJS.ProcessEnv): D1Location | undefined {
@@ -92,12 +99,6 @@ function d1Location(env: NodeJS.ProcessEnv): D1Location | undefined {
   return value
 }
 
-function workerPlacementRegion(env: NodeJS.ProcessEnv) {
-  const value = env.CLAXEDO_WORKER_PLACEMENT_REGION?.trim()
-  if (!value) return undefined
-  if (!/^(aws|gcp|azure):[a-z0-9-]+$/.test(value)) throw new Error("CLAXEDO_WORKER_PLACEMENT_REGION must name a cloud region such as aws:us-east-1")
-  return value
-}
 
 /** Deterministic per Worker, so a re-deploy keeps the limiter namespace the first deploy chose. */
 export function allocatedRequestLimiterNamespaceId(deploymentId: string, workerName: string) {
@@ -107,7 +108,10 @@ export function allocatedRequestLimiterNamespaceId(deploymentId: string, workerN
 
 /** Where a deployment lives: the names and the one public origin every deploy command addresses. */
 export type UserCloudflareTarget = Readonly<{
+  /** The writer: the control-plane Worker beside the databases, which owns the Durable Objects. */
   workerName: string
+  /** The control plane's edge Worker, which holds its routes and hands every write to the writer. */
+  edgeWorkerName: string
   appWorkerName: string
   sessionHostWorkerName: string
   /** The relay Worker the app Worker binds as its `RELAY` service; deployed before the app. */
@@ -122,6 +126,8 @@ export function userCloudflareTarget(env: NodeJS.ProcessEnv): UserCloudflareTarg
   const workerName = requireNonLegacyWorkerName(setting(env, "CLAXEDO_WORKER_NAME", "claxedo"))
   const appWorkerName = requireNonLegacyWorkerName(setting(env, "CLAXEDO_APP_WORKER_NAME", `${workerName}-app`))
   if (appWorkerName === workerName) throw new Error("the API and app Workers need different names")
+  const edgeWorkerName = requireNonLegacyWorkerName(setting(env, "CLAXEDO_EDGE_WORKER_NAME", `${workerName}-edge`))
+  if (edgeWorkerName === workerName || edgeWorkerName === appWorkerName) throw new Error("the control plane's edge Worker needs a name of its own")
   const appOrigin = customDomainOrigin(env, "CLAXEDO_APP_ORIGIN")
   const databases = {
     AUTH_DB: setting(env, "CLAXEDO_AUTH_D1_DATABASE_NAME", `${workerName}-auth`),
@@ -132,6 +138,7 @@ export function userCloudflareTarget(env: NodeJS.ProcessEnv): UserCloudflareTarg
   }
   return Object.freeze({
     workerName,
+    edgeWorkerName,
     appWorkerName,
     sessionHostWorkerName: requireNonLegacyWorkerName(setting(env, "CLAXEDO_SESSION_HOST_WORKER_NAME", `${workerName}-session-host`)),
     relayWorkerName: requireNonLegacyWorkerName(setting(env, "CLAXEDO_RELAY_WORKER_NAME", `${workerName}-relay`)),

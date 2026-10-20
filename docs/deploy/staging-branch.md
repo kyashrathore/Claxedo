@@ -11,7 +11,7 @@ Merging to `staging` deploys Claxedo Cloud staging. One workflow owns the run:
 | 2 | `gate` | nothing | `bun run lint`, `bun typecheck`, `bun run test:ci-policy`, `bun run test:architecture-ratchets` |
 | 2 | `unit` | nothing | `.github/workflows/test.yml` with `linux-unit-only` (full unit suite, Linux) |
 | 3 | `boat-image` | the Boat sandbox image this checkout builds, with every control-plane deploy | `packages/claxedo-server/scripts/sandbox/build-sandbox-image.ts --agent-plugins --push-if-missing` |
-| 3 | `control-plane` | Better Auth + D1 Worker and **the session-host Worker** | `packages/claxedo-server/scripts/deploy/deploy-user-cloudflare.ts --component=control-plane` |
+| 3 | `control-plane` | the Better Auth + D1 writer and edge Workers and **the session-host Worker** | `packages/claxedo-server/scripts/deploy/deploy-user-cloudflare.ts --component=control-plane` |
 | 4 | `relay` | workspace relay Worker (Durable Object) | `packages/workspace-relay/scripts/deploy-cloudflare.ts` |
 | 5 | `app` | **the browser app on the public origin**, whose Worker binds the control plane and the relay | `packages/claxedo-server/scripts/deploy/deploy-user-cloudflare.ts --component=app` |
 | 5 | `sandbox-image` | Cloudflare sandbox Worker container image | `.github/workflows/deploy-cloudflare-sandbox-worker.yml` |
@@ -46,21 +46,19 @@ domain, serves the browser app's assets and forwards `/relay/*` to the relay
 Worker over a [service binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/service-bindings/).
 The control plane's own paths (`/api/*`, `/internal/*`, `/.well-known/*`,
 `/bindings/*`, `/health*`, `/global/health*`, `/path*`, the list in
-`scripts/deploy/public-origin.ts`) are the control-plane Worker's
+`scripts/deploy/public-origin.ts`) are the control plane's edge Worker's
 [routes](https://developers.cloudflare.com/workers/configuration/routing/routes/)
 on that same host, rendered into its Wrangler config by
-`renderWorkerWranglerConfig` and attached by its own `wrangler deploy`: routes
-"take precedence if configured on the same hostname" as a custom domain, so a
-request on them reaches the placed control plane through the edge's own
-forwarding and never runs the app Worker: one Worker invocation per request
-instead of two and a service binding. A simultaneous A/B against a custom
+`renderEdgeWorkerWranglerConfig` and attached by its own `wrangler deploy`:
+routes "take precedence if configured on the same hostname" as a custom
+domain, so a request on them never runs the app Worker. A simultaneous A/B against a custom
 domain of the control plane measured the route as the same path, with the
 same cold rate and answer times; the cold rate itself follows staging's
 traffic, not the path
 ([worker-cold-starts-2026-10-19](../perf/worker-cold-starts-2026-10-19/README.md)). A browser
 still opens one TLS connection and sends no CORS preflight: every request,
-WebSocket upgrade and event stream is same-origin. The control-plane Worker
-has no custom domain of its own; `BETTER_AUTH_URL` is the public origin, the
+WebSocket upgrade and event stream is same-origin. Neither control-plane
+Worker has a custom domain of its own; `BETTER_AUTH_URL` is the public origin, the
 GitHub OAuth callback is `https://app.claxedo.dev/api/auth/callback/github`,
 and the session cookie is host-only on that origin. A control-plane path that
 reaches the app Worker anyway (the window of a first publish, below) is
@@ -82,10 +80,10 @@ a version and attached the routes.
 
 ### The session-host Worker is not a separate job
 
-After the control-plane Worker serves its new version, `deploy-user-cloudflare.ts`
+After the control plane's writer and edge serve their new versions, `deploy-user-cloudflare.ts`
 publishes `packages/session-host` (one `SessionDO` per top-level Pi session) as
 `CLAXEDO_SESSION_HOST_WORKER_NAME`, `claxedo-session-host-staging` on staging. It
-binds the control-plane Worker as its `CONTROL_PLANE` service, so it is published
+binds the writer as its `CONTROL_PLANE` service, so it is published
 after it, and the relay binds its `SessionDO` as `SESSION_HOST` by that script
 name, so the relay job comes after both. The dry run bundles it too. Its
 variables are the control plane's `/api/runtime-authority/session-authorize` and
@@ -140,11 +138,36 @@ baseline; rows are never converted. To reset staging, delete that database
 (wrangler asks to confirm) and rerun the `control-plane` job, which recreates
 it empty by name and applies the baseline. The recreated database is placed
 at `CLAXEDO_STAGING_D1_LOCATION` (the 2026-10-05 reset created it in ENAM with
-no location), and the job prints where each database runs.
-`CLAXEDO_STAGING_WORKER_PLACEMENT_REGION` pins the Worker beside the databases
+no location), and the job prints where each database runs and whether it has
+read replicas. `AUTH_DB` is untouched.
+
+The control plane is two Workers from one bundle
+([edge-replicas-2026-10-20](../perf/edge-replicas-2026-10-20/README.md)). The
+writer keeps `CLAXEDO_WORKER_NAME` (`claxedo-user-deployed-locked-staging`),
+its Durable Objects and the session host's `CONTROL_PLANE` binding, and has no
+route; `CLAXEDO_STAGING_WORKER_PLACEMENT_REGION` pins it beside the databases
 (`aws:us-east-1` for ENAM): smart placement left the staging Worker in LHR
 (`cf-placement: remote-LHR`) with both databases in ENAM, and every signed
-request from India then took 1.5–3 s. `AUTH_DB` is untouched.
+request from India then took 1.5–3 s. The edge, `<CLAXEDO_WORKER_NAME>-edge`
+(`CLAXEDO_EDGE_WORKER_NAME` overrides it), has no placement and holds the
+routes: it answers a signed browser's reads from the nearest D1 read replica
+and hands every other request to the writer over its `CONTROL_PLANE_WRITER`
+service binding. The job deploys the writer, then moves the control plane's
+routes off it if it still holds them (the first deploy of the split; between
+the two deploys those paths answer the deploy-window 503), then deploys the
+edge with the same secrets.
+
+Both staging databases need read replication enabled; without it the edge's
+reads from India cross to ENAM. The job prints each database's mode, so after
+a reset that prints `read replication disabled`, enable it again:
+
+```sh
+for id in <auth database id> <control-plane database id>; do
+  curl -sS -X PUT "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$id" \
+    -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" \
+    --data '{"read_replication":{"mode":"auto"}}'
+done
+```
 
 ```sh
 bunx wrangler d1 delete <CLAXEDO_STAGING_CONTROL_PLANE_D1_DATABASE_NAME>

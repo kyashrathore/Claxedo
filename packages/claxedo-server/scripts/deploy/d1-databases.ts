@@ -30,35 +30,48 @@ export function d1DatabaseIdByName(listOutput: string, name: string) {
   return id
 }
 
-/** The region `wrangler d1 info --json` reports the database running in (`ENAM`, `APAC`, …). */
-export function d1RunningRegion(infoOutput: string, name: string) {
-  const region = stringField(asRecord(parseJson(infoOutput)), "running_in_region")
+/**
+ * Where `wrangler d1 info --json` reports the database's primary running
+ * (`ENAM`, `APAC`, …) and whether it has read replicas (`auto`) or answers
+ * every query itself (`disabled`).
+ */
+export function d1Placement(infoOutput: string, name: string) {
+  const info = asRecord(parseJson(infoOutput))
+  const region = stringField(info, "running_in_region")
   if (!region) throw new Error(`wrangler d1 info ${name} reported no running_in_region`)
-  return region
+  const replication = stringField(asRecord(info?.read_replication), "mode")
+  if (!replication) throw new Error(`wrangler d1 info ${name} reported no read_replication mode`)
+  return { region, replication }
 }
 
 /** Find the database by name, creating it on the first deploy at `location`; where it runs is reported either way. */
 export async function ensureD1Database(name: string, location?: D1Location) {
   const list = () => runWrangler(["d1", "list", "--json"], { capture: true })
-  const region = async () => d1RunningRegion(await runWrangler(["d1", "info", name, "--json"], { capture: true }), name)
+  const placement = async () => d1Placement(await runWrangler(["d1", "info", name, "--json"], { capture: true }), name)
   const existing = d1DatabaseIdByName(await list(), name)
-  if (existing) return { id: existing, created: false, region: await region() }
+  if (existing) return { id: existing, created: false, ...(await placement()) }
   await runWrangler(["d1", "create", name, ...(location ? ["--location", location] : [])])
   const created = d1DatabaseIdByName(await list(), name)
   if (!created) throw new Error(`wrangler d1 create ${name} did not produce a listed database`)
-  return { id: created, created: true, region: await region() }
+  return { id: created, created: true, ...(await placement()) }
 }
 
 /**
- * The line the deploy prints about where a database runs. A database in
- * another region than the deployment asked for costs every request a
- * cross-region round trip per query (on staging, ~250 ms each from India to an
- * ENAM database, 1.5–3 s per signed request), and only recreating it moves it.
+ * The line the deploy prints about where a database runs. The Worker runs
+ * where each request arrives, so a person far from the primary pays a
+ * cross-region round trip per query (~230 ms each from India to ENAM) unless
+ * read replication answers their reads nearby; only recreating a database
+ * moves its primary.
  */
-export function d1RegionReport(name: string, region: string, location: D1Location | undefined) {
-  const runs = `${name} runs in ${region}`
-  if (!location || region.toLowerCase() === location) return runs
-  return `${runs}; CLAXEDO_D1_LOCATION asks for ${location.toUpperCase()}, and a database stays where it was created: recreate it to move it`
+export function d1PlacementReport(name: string, placement: { region: string; replication: string }, location: D1Location | undefined) {
+  const runs = `${name} runs in ${placement.region}, read replication ${placement.replication}`
+  const moved = location && placement.region.toLowerCase() !== location
+    ? `; CLAXEDO_D1_LOCATION asks for ${location.toUpperCase()}, and a database stays where it was created: recreate it to move it`
+    : ""
+  const replicas = placement.replication === "auto"
+    ? ""
+    : `; every query from far away crosses to ${placement.region} until read replication is enabled on it`
+  return `${runs}${moved}${replicas}`
 }
 
 /**

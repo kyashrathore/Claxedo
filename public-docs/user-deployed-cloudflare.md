@@ -137,15 +137,28 @@ are forward-only; restore data to a point in time with
 | `CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME` | required | Your organization's display name. |
 | `CLAXEDO_AUTH_METHODS` | `github` | Comma-separated `github`, `google`, `email-password`; OAuth methods need their `*_CLIENT_ID` and `*_CLIENT_SECRET`. Email-password requires `CLAXEDO_EMAIL_FROM`. |
 | `CLAXEDO_EMAIL_FROM` | unset | Transactional sender address on an onboarded Cloudflare Email Service domain. Enables invitations; required for email-password. |
-| `CLAXEDO_WORKER_NAME` | `claxedo` | The control plane Worker. |
+| `CLAXEDO_WORKER_NAME` | `claxedo` | The control plane's writer Worker, which runs every request that may write beside your databases and holds the Durable Objects. |
+| `CLAXEDO_EDGE_WORKER_NAME` | `<worker>-edge` | The control plane's edge Worker, which holds its routes on your public origin, answers signed reads where each request arrives and hands everything else to the writer. |
 | `CLAXEDO_APP_WORKER_NAME` | `<worker>-app` | The web app Worker. |
 | `CLAXEDO_DEPLOYMENT_ID`, `CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID` | the Worker name | Stable identities stored with your data; never change them after the first deploy. |
 | `CLAXEDO_AUTH_D1_DATABASE_NAME`, `CLAXEDO_CONTROL_PLANE_D1_DATABASE_NAME` | `<worker>-auth`, `<worker>-control-plane` | The two D1 databases. |
 | `CLAXEDO_D1_LOCATION` | Cloudflare's choice | Where a database the deploy creates is placed: `wnam`, `enam`, `weur`, `eeur`, `apac` or `oc`. Pick the region your people work from; a database stays where it was created, and the deploy prints where each one runs. |
-| `CLAXEDO_WORKER_PLACEMENT_REGION` | smart placement | Pins the control plane Worker to a cloud region in Wrangler's form, for example `aws:us-east-1`. Set it to the region your databases run in: a signed request performs several D1 reads in sequence, and a Worker in another region pays a round trip for each. |
+| `CLAXEDO_WORKER_PLACEMENT_REGION` | smart placement | Pins the writer Worker to a cloud region in Wrangler's form, for example `aws:us-east-1`. Set it to the region your databases run in: a signed write performs several D1 queries in sequence, and a Worker in another region pays a round trip for each. |
 | `CLAXEDO_DOCUMENTS_BUCKET` | `<worker>-documents` | The R2 bucket Pages are stored in; create it with `wrangler r2 bucket create`. |
 | `CLAXEDO_TELEMETRY_MODE` | off | `on` sends product events and unhandled route errors to your PostHog project, with ids hashed; it then requires the `CLAXEDO_POSTHOG_KEY` secret. Unset or `off`, nothing is sent. |
 | `CLAXEDO_POSTHOG_HOST` | `https://us.i.posthog.com` | Your PostHog ingest origin, for example `https://eu.i.posthog.com`. |
+
+The control plane's edge Worker runs in the Cloudflare data center that
+receives each request. Turn on [read replication](https://developers.cloudflare.com/d1/best-practices/read-replication/)
+for both databases (the database's **Settings** in the dashboard, or a `PUT` of
+`{"read_replication":{"mode":"auto"}}` to the database's API endpoint) so the
+people who work far from the databases' region read from a nearby replica; the
+deploy prints each database's replication mode. Replicas cost nothing extra,
+and writes still run on the writer beside the primary. The first deploy that
+creates the edge Worker moves the control plane's routes to it; that needs
+`CLOUDFLARE_API_TOKEN`, and a deploy signed in with `wrangler login` instead
+stops with Wrangler naming the routes to unassign from the writer in the
+dashboard.
 
 `--agent-plugins` deploys the Agent Plugins build, which adds team plugins from one repository. It binds the R2
 bucket `CLAXEDO_AGENT_PLUGINS_BUCKET` (default `<worker>-agent-plugins`, created with
