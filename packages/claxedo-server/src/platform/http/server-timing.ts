@@ -67,8 +67,7 @@ export function timedFetch(request?: (input: RequestInfo | URL, init?: RequestIn
     const counted = busy
     return charged(ledger.busy.upstream, () => charged(counted, () => send(input, init)))
   }
-  // Bun's `typeof fetch` also declares `preconnect`, which workerd's fetch lacks and no caller here uses.
-  return sent as typeof fetch
+  return Object.assign(sent, { preconnect: fetch.preconnect })
 }
 
 /** Records `fact` on the current request; outside a request it records nothing. */

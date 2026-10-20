@@ -18,7 +18,7 @@ async function github(input: RequestInfo | URL, init?: RequestInit): Promise<Res
   await new Promise((resolve) => setTimeout(resolve, GITHUB_MS))
   calls.push({ url: `${url.host}${url.pathname}`, started, ended: performance.now() })
   if (url.href === "https://github.com/login/oauth/access_token") {
-    expect(new URLSearchParams(String(init?.body)).get("code")).toBe("granted")
+    expect(init?.body instanceof URLSearchParams ? init.body.get("code") : undefined).toBe("granted")
     return Response.json({ access_token: "gho_granted", token_type: "bearer", scope: "read:user,user:email" })
   }
   if (url.href === "https://api.github.com/user") return Response.json({ id: 4242, login: "octo", name: "Octo Cat", email: null, avatar_url: "https://avatars.example.test/octo" })
@@ -72,7 +72,7 @@ test("a returning person's GitHub callback signs them in in six auth-database ro
   expect(again.landed.status).toBe(302)
   expect(again.landed.headers.get("set-cookie")).toMatch(/__Secure-claxedo\.session_token=/)
   expect(again.statements.some((sql) => sql.includes(`"expiresAt" <`)), "expired verification rows are retired after the response").toBe(false)
-  expect(again.statements.some((sql) => /^update "account"/.test(sql)), "the provider's tokens are not written back").toBe(false)
+  expect(again.statements.some((sql) => sql.startsWith(`update "account"`)), "the provider's tokens are not written back").toBe(false)
   expect(again.rounds).toBe(6)
   const reads = calls.filter((call) => call.url.startsWith("api.github.com"))
   expect(reads.map((call) => call.url).sort()).toEqual(["api.github.com/user", "api.github.com/user/emails"])

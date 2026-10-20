@@ -325,7 +325,7 @@ function socialProviders(configured: BetterAuthConfiguration["private"]["socialP
  * of a request that consumed a row.
  */
 export async function retireExpiredVerifications(database: D1Database, now = Date.now()) {
-  await database.prepare(`delete from "verification" where "expiresAt" < ?`).bind(new Date(now).toISOString()).run()
+  await database.prepare(`delete from verification where "expiresAt" < ?`).bind(new Date(now).toISOString()).run()
 }
 
 export function createBetterAuthD1Foundation(input: BetterAuthD1RuntimeInput) {

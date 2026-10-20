@@ -447,7 +447,7 @@ function ownershipReadOnce(attempts: HostedConnectionAttempts): HostedConnection
     read.set(state, known)
     return known
   }
-  return Object.assign(Object.create(attempts) as HostedConnectionAttempts, { ownership })
+  return { ...attempts, ownership }
 }
 
 function d1Attempts(input: HostedD1ConnectionsSetupInput) {

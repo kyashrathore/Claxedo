@@ -96,7 +96,7 @@ describe("Better Auth D1 Worker", () => {
     await send("/api/auth/callback/github?code=granted&state=state")
     await send("/api/auth/reset-password/token")
     await Promise.all(kept)
-    expect(authDatabase.prepare).toHaveBeenCalledWith(`delete from "verification" where "expiresAt" < ?`)
+    expect(authDatabase.prepare).toHaveBeenCalledWith(`delete from verification where "expiresAt" < ?`)
     expect(run).toHaveBeenCalledTimes(2)
   })
 
