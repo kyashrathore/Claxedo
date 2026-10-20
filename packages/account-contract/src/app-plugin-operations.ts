@@ -4,12 +4,12 @@ import { operationInput } from "./operation-input"
 import { array, object, optional } from "./hosted-output"
 
 const APP_PLUGINS = "/api/claxedo/app-plugins"
-const pluginPath = (suffix: string) => operationPath(`${APP_PLUGINS}/:pluginId${suffix}`, { accepts: { pluginId: isPluginId } })
+const appPluginPath = (suffix: string) => operationPath(`${APP_PLUGINS}/:pluginId${suffix}`, { accepts: { pluginId: isPluginId } })
 const noContent = optional(object)
 
 function pluginChange(method: "POST" | "DELETE", suffix: string) {
   return defineOperation({
-    method, path: pluginPath(suffix),
+    method, path: appPluginPath(suffix),
     input: operationInput({ pluginId: requiredParameter }),
     output: noContent, retry: "never",
     exposure: { renderer: true, app: false },
@@ -41,7 +41,7 @@ export const APP_PLUGIN_OPERATIONS = {
     exposure: { renderer: true, app: false },
   }),
   "appPlugins.bundle": defineOperation({
-    method: "GET", path: pluginPath("/bundles/:sha256/app.js"),
+    method: "GET", path: appPluginPath("/bundles/:sha256/app.js"),
     input: operationInput({ pluginId: requiredParameter, sha256: requiredParameter }),
     output: object, retry: "safe",
     exposure: { renderer: true, app: false },
@@ -55,7 +55,7 @@ export const APP_PLUGIN_OPERATIONS = {
     body: selectBody("id", "version"),
   }),
   "appPlugins.update": defineOperation({
-    method: "POST", path: pluginPath("/update"),
+    method: "POST", path: appPluginPath("/update"),
     input: operationInput({ pluginId: requiredParameter, version: bodyField }),
     output: object, retry: "never",
     exposure: { renderer: true, app: false },

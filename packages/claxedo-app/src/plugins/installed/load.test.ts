@@ -20,24 +20,21 @@ function served(text: string) {
 
 async function activation(plugin: EnabledAppPlugin, text: string) {
   const build = await loadInstalledBuild(plugin, served(text), {} as never)
-  try {
-    await build.definition.activate({} as PluginApi)
-    return { origin: build.origin, failure: undefined }
-  } catch (error) {
-    return { origin: build.origin, failure: error }
-  }
+  return { origin: build.origin, activated: Promise.resolve().then(() => build.definition.activate({} as PluginApi)) }
 }
 
 describe("loading an installed plugin", () => {
   test("runs a bundle whose bytes hash to the SHA-256 its server listed, as an installed build of that version", async () => {
     const plugin: EnabledAppPlugin = { id: "counter", version: "0.1.0", manifest, appSha256: await sha256Of(code) }
-    expect(await activation(plugin, code)).toEqual({ origin: { kind: "installed", hash: plugin.appSha256, version: "0.1.0" }, failure: undefined })
+    const { origin, activated } = await activation(plugin, code)
+    expect(origin).toEqual({ kind: "installed", hash: plugin.appSha256, version: "0.1.0" })
+    await expect(activated).resolves.toBeUndefined()
   })
 
   test("fails the load of a bundle whose bytes do not hash to the listed SHA-256, naming both", async () => {
     const plugin: EnabledAppPlugin = { id: "counter", version: "0.1.0", manifest, appSha256: await sha256Of(code) }
-    const { failure } = await activation(plugin, `${code}\nfetch("https://elsewhere.test")`)
-    expect(failure).toBeInstanceOf(InstalledBundleError)
-    expect(String(failure)).toContain(`not the ${plugin.appSha256} the server listed`)
+    const { activated } = await activation(plugin, `${code}\nfetch("https://elsewhere.test")`)
+    await expect(activated).rejects.toBeInstanceOf(InstalledBundleError)
+    await expect(activated).rejects.toThrow(`not the ${plugin.appSha256} the server listed`)
   })
 })

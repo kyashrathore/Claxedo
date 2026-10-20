@@ -21,13 +21,6 @@ export type TestRegistry = {
   readonly close: () => Promise<void>
 }
 
-/**
- * An empty registry tree and an Ed25519 key generated for this run. `publish`
- * builds a plugin package's release with the release CLI, signed under the
- * key id the Worker's test composition trusts, so a flow publishes the
- * plugins it needs after the stack is up: the Worker reads the tree on every
- * registry request.
- */
 export async function createTestRegistry(): Promise<TestRegistry> {
   const pair = (await crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"])) as CryptoKeyPair
   const signingKey = Buffer.from(await crypto.subtle.exportKey("pkcs8", pair.privateKey)).toString("base64")

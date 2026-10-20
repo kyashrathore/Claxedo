@@ -34,7 +34,7 @@ export const freshness = {
   livePlugins: { kind: "event-owned", events: ["pluginsChanged"] },
   appPluginsEnabled: { kind: "once", reason: "installs and enablements change through this app's Marketplace writes, which invalidate every app-plugin read; another person's change is read at the next start" },
   appPluginsInstalled: { kind: "once", reason: "under the app-plugins prefix, so every Marketplace write refreshes it" },
-  appPluginsCatalog: { kind: "once", reason: "the registry's index changes only when a release is published; the Marketplace rereads it each time its page mounts" },
+  appPluginsCatalog: { kind: "once", reason: "the registry's index changes only when a release is published, which the next start reads; every Marketplace write rereads it under the app-plugins prefix" },
   usage: { kind: "event-owned", events: ["usageChanged"] },
   accountSpend: { kind: "event-owned", events: ["usageChanged"] },
   machineTime: placementOwned,

@@ -37,7 +37,9 @@ describe("the App plugins directory", () => {
     const [off] = appPluginEntries([install("counter", "0.2.0", { active: false })], catalog)
     expect([appPluginMainAction(off!, true), appPluginMainAction(off!, false)]).toEqual(["turnOnForOrganization", undefined])
   })
+})
 
+describe("an App plugin's status and access", () => {
   test("says what state an install is in, and that an update exists only for a version older than the registry's latest", () => {
     const [older] = appPluginEntries([install("counter", "0.1.0", { enabledForMe: true })], catalog)
     expect([appPluginUpdate(older!), appPluginStatus(older!)?.key]).toEqual(["0.2.0", "marketplace.status.updateAvailable"])

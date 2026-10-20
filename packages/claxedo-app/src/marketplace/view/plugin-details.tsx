@@ -4,11 +4,11 @@ import type { PluginCandidate, PluginHarness, PluginToolGroup } from "@/server"
 import { marketplaceDictionary } from "../i18n"
 import { isBuiltIn, pluginLabel, pluginStatus } from "../model"
 import { PluginActions } from "./detail-actions"
+import { DetailHeaderFrame } from "./detail-header"
 import { PluginFacts } from "./detail-facts"
 import { PluginSections } from "./detail-sections"
 import { PluginIconTile } from "./plugin-icon"
 import { SkillView } from "./skill-view"
-import { PluginStatusLine } from "./status"
 
 export type DetailHandlers = {
   readonly pending: boolean
@@ -23,26 +23,18 @@ function DetailHeader(props: { readonly plugin: PluginCandidate }): JSX.Element 
   const name = () => pluginLabel(props.plugin)
   const builtIn = () => isBuiltIn(props.plugin)
   return (
-    <header class="flex items-start gap-3 border-b border-border-weak-base p-4">
-      <PluginIconTile icon={props.plugin.icon} name={name()} size="pane" builtIn={builtIn()} />
-      <div class="min-w-0 flex-1">
-        <h2 class="truncate text-16-medium text-text-strong">{name()}</h2>
-        <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-11-regular text-text-weaker">
-          <Show when={props.plugin.manifest?.version}>{(version) => <span>v{version()}</span>}</Show>
-          <span class="truncate">
-            {builtIn() ? t("marketplace.builtIn") : (props.plugin.source?.label ?? t("marketplace.retainedArtifact"))}
-          </span>
-          <Show when={props.plugin.relativePath}>{(path) => <span class="truncate text-12-mono">{path()}</span>}</Show>
-        </div>
-        <Show when={pluginStatus(props.plugin)}>
-          {(value) => (
-            <div class="mt-1.5">
-              <PluginStatusLine status={value()} wrap={builtIn()} />
-            </div>
-          )}
-        </Show>
-      </div>
-    </header>
+    <DetailHeaderFrame
+      name={name()}
+      icon={<PluginIconTile icon={props.plugin.icon} name={name()} size="pane" builtIn={builtIn()} />}
+      version={props.plugin.manifest?.version ?? undefined}
+      status={pluginStatus(props.plugin)}
+      wrapStatus={builtIn()}
+    >
+      <span class="truncate">
+        {builtIn() ? t("marketplace.builtIn") : (props.plugin.source?.label ?? t("marketplace.retainedArtifact"))}
+      </span>
+      <Show when={props.plugin.relativePath}>{(path) => <span class="truncate text-12-mono">{path()}</span>}</Show>
+    </DetailHeaderFrame>
   )
 }
 

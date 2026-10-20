@@ -73,7 +73,7 @@ The runtime admits every platform call a backend makes (`packages/plugin-runtime
 
 `lifecycle.ts` verifies a release and copies both bundles into R2 before any row names them, writes D1, then refreshes the plugin's supervisor, so the previous configuration's objects stop at once rather than at the next request. Uninstall deletes the rows and the plugin's links. It then has the supervisor purge, which deletes each facet its registry names, and only then its own storage with its wakes and blob accounting (the Cloudflare gate found that a running facet outlives `deleteAll`). Finally it deletes the plugin's `plugin-data/<orgId>/<pluginId>/` prefix. The data is deleted even when no install was found, so an uninstall that failed after its rows were deleted completes on retry.
 
-`compose.ts` builds the routes for the Agent Plugins entries; the fixture Worker composes the same routes over the test key.
+`compose.ts` builds the routes for the Agent Plugins entries; `composeBetterAuthD1AgentPlugins` takes the registry's keys as `registryKeys`, by default `PLUGIN_REGISTRY_KEYS`. Two test compositions add the test key: `fixtures/worker.fixture.ts` for this suite, and `fixtures/full-hosted.fixture.cf.ts`, the full-hosted Worker (`createFullHostedWorker(registryKeysWithTestKey)`) the app's signed e2e stack runs when a flow asks for a registry (`packages/claxedo-app/e2e/README.md`).
 
 ## Deployment
 

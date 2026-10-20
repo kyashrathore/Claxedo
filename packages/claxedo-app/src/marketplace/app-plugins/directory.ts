@@ -8,9 +8,8 @@ export function createAppPluginDirectory(query: () => string) {
   const server = useServer()
   const access = useAccess()
   const offered = server.queries.appPlugins.offered
-  const reread = { enabled: offered, refetchOnMount: "always" as const }
-  const installed = useQuery(() => ({ ...server.queries.appPlugins.installed(), ...reread }))
-  const catalog = useQuery(() => ({ ...server.queries.appPlugins.catalog(), ...reread }))
+  const installed = useQuery(() => ({ ...server.queries.appPlugins.installed(), enabled: offered }))
+  const catalog = useQuery(() => ({ ...server.queries.appPlugins.catalog(), enabled: offered }))
   const entries = createMemo(() => appPluginEntries(installed.data ?? [], catalog.data))
   const visible = createMemo(() => entries().filter((entry) => matchesAppPlugin(entry, query().trim().toLowerCase())))
   return {

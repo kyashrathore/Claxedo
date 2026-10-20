@@ -36,7 +36,6 @@ export type SignedStack = {
   makeWorkspace(name: string, projectName?: string): Promise<Workspace>
   runtime(workspaceId: string): HttpTransport
   controlPlaneRequests(): readonly string[]
-  /** The run's app-plugin registry, when the stack was started with one. */
   appPluginRegistry: TestRegistry | undefined
   close(): Promise<void>
 }

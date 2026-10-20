@@ -1,7 +1,5 @@
-import { createSignal } from "solid-js"
-import { useErrorCopy, useTranslator, type DomainTranslate } from "@/i18n"
+import { useTranslator, type DomainTranslate } from "@/i18n"
 import {
-  toAppError,
   useServer,
   type MarketplaceCatalog,
   type PluginCandidate,
@@ -11,6 +9,7 @@ import {
 import { requestConfirm, showToast, useDialog } from "@/ui"
 import { marketplaceDictionary, type MarketplaceKey } from "./i18n"
 import { isBuiltIn, pluginLabel, toolGroups } from "./model"
+import { createPendingWrite } from "./pending-write"
 import { withCurrentRevision } from "./revision"
 
 type ActionInput = {
@@ -43,22 +42,6 @@ function createActivator(input: ActionInput) {
   }
 }
 
-function createPending() {
-  const errorCopy = useErrorCopy("marketplace")
-  const [pending, setPending] = createSignal<string>()
-  const run = async (plugin: PluginCandidate, failure: string, work: () => Promise<void>) => {
-    setPending(plugin.pluginInstanceId)
-    try {
-      await work()
-    } catch (error) {
-      showToast({ title: failure, description: errorCopy(toAppError(error)).message })
-    } finally {
-      setPending(undefined)
-    }
-  }
-  return { pending, run }
-}
-
 function confirmDisable(dialog: ReturnType<typeof useDialog>, t: Translate, plugin: PluginCandidate) {
   const builtIn = isBuiltIn(plugin)
   return requestConfirm(dialog, {
@@ -86,7 +69,7 @@ export function createPluginActions(input: ActionInput) {
   const dialog = useDialog()
   const t = useTranslator(marketplaceDictionary)
   const activateAll = createActivator(input)
-  const { pending, run } = createPending()
+  const { pending, run } = createPendingWrite()
   const activate = async (plugin: PluginCandidate, choice: boolean | null) => {
     if (!input.catalog()) return
     const subjects = isBuiltIn(plugin)
@@ -94,7 +77,7 @@ export function createPluginActions(input: ActionInput) {
       : [plugin.pluginInstanceId]
     if (choice === false && !(await confirmDisable(dialog, t, plugin))) return
     const decision = isBuiltIn(plugin) && choice === true ? null : choice
-    await run(plugin, t("marketplace.toast.changeFailed"), async () =>
+    await run(plugin.pluginInstanceId, t("marketplace.toast.changeFailed"), async () =>
       reportFailedSync(t, await activateAll(subjects, decision)),
     )
   }
@@ -102,10 +85,10 @@ export function createPluginActions(input: ActionInput) {
     const failure = t(enabled ? "marketplace.toast.groupOnFailed" : "marketplace.toast.groupOffFailed", {
       group: group.id,
     })
-    return run(plugin, failure, async () => void (await activateAll([group.pluginInstanceId], enabled)))
+    return run(plugin.pluginInstanceId, failure, async () => void (await activateAll([group.pluginInstanceId], enabled)))
   }
   const update = (plugin: PluginCandidate) =>
-    run(plugin, t("marketplace.toast.updateFailed"), async () => {
+    run(plugin.pluginInstanceId, t("marketplace.toast.updateFailed"), async () => {
       await withCurrentRevision({
         revision: () => input.catalog()?.revision,
         reread: input.reread,

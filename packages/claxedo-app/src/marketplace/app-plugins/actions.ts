@@ -1,8 +1,8 @@
-import { createSignal } from "solid-js"
-import { useErrorCopy, useTranslator, type DomainTranslate } from "@/i18n"
-import { toAppError, useServer, type AppPluginsApi } from "@/server"
-import { requestConfirm, showToast, useDialog } from "@/ui"
+import { useTranslator, type DomainTranslate } from "@/i18n"
+import { useServer, type AppPluginsApi } from "@/server"
+import { requestConfirm, useDialog } from "@/ui"
 import { marketplaceDictionary, type MarketplaceKey } from "../i18n"
+import { createPendingWrite } from "../pending-write"
 import { useConsentDrawer } from "./consent-drawer"
 import { appPluginUpdate, type AppPluginEntry } from "./model"
 
@@ -28,22 +28,6 @@ function confirmOrganizationOff(dialog: ReturnType<typeof useDialog>, t: Transla
   })
 }
 
-function createPending(t: Translate) {
-  const errorCopy = useErrorCopy("marketplace")
-  const [pending, setPending] = createSignal<string>()
-  const run = async (entry: AppPluginEntry, work: () => Promise<void>) => {
-    setPending(entry.id)
-    try {
-      await work()
-    } catch (error) {
-      showToast({ title: t("marketplace.app.toast.failed", { name: entry.name }), description: errorCopy(toAppError(error)).message })
-    } finally {
-      setPending(undefined)
-    }
-  }
-  return { pending, run }
-}
-
 function signedApi(api: AppPluginsApi | undefined): AppPluginsApi {
   if (!api) throw new Error("App plugins need a signed account")
   return api
@@ -54,10 +38,11 @@ export function createAppPluginActions() {
   const dialog = useDialog()
   const t = useTranslator(marketplaceDictionary)
   const consent = useConsentDrawer()
-  const { pending, run } = createPending(t)
+  const write = createPendingWrite()
+  const run = (entry: AppPluginEntry, work: () => Promise<void>) => write.run(entry.id, t("marketplace.app.toast.failed", { name: entry.name }), work)
   const api = () => signedApi(server.appPlugins)
   return {
-    pending,
+    pending: write.pending,
     install: (entry: AppPluginEntry) => consent(entry, "install", (version) => api().install(entry.id, version)),
     turnOn: (entry: AppPluginEntry) => consent(entry, "turnOn", () => api().setEnabled(entry.id, true)),
     turnOff: (entry: AppPluginEntry) => run(entry, () => api().setEnabled(entry.id, false)),
