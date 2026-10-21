@@ -169,12 +169,13 @@ const ENTRIES = [
   // together (`platform/auth/github-user-info.ts`).
   { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 177, packages: 23 },
   // Both Agent Plugins entries carry the app-plugin platform: the hosted
-  // adapter in `src/plugin-backends/` (twelve modules: the backend route and
+  // adapter in `src/plugin-backends/` (seventeen modules: the backend route and
   // the `/api/claxedo/app-plugins` routes with their composition and paths,
   // the signed caller's organization they share, the D1 installs, the install
   // lifecycle, the registry client that verifies a release and its blobs, the
   // R2 bundles, the platform calls a backend makes of this host, the public
-  // links they create, and the supervisor over that host port), the runtime
+  // links they create, the supervisor over that host port, and the five that
+  // serve agent tools, named below), the runtime
   // itself as `@claxedo/plugin-runtime`, whose supervisor and entrypoints are
   // the entry's only `cloudflare:workers` import until the full-hosted
   // sandbox provisioner adds its own, and `@claxedo/plugin-api` for the
@@ -203,7 +204,15 @@ const ENTRIES = [
   // (`connections/repository-access.ts`). The app-plugin routes answer the
   // Marketplace's catalog from the registry's signed index
   // (`plugin-backends/catalog.ts` over `@claxedo/plugin-api/registry-index`).
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 236, packages: 27 },
+  // They serve app plugins' agent tools: the listing, renewal and tool-call
+  // routes (`plugin-backends/tool-routes.ts`), who reaches a plugin's tools
+  // (`plugin-backends/tool-access.ts`), the cloud root's plugin tools grant
+  // (`plugin-backends/tool-grant.ts`), the install's tool-name check
+  // (`plugin-backends/tool-names.ts`), the one way a backend's answer is
+  // served (`plugin-backends/plugin-answer.ts`), and each plugin's tool switch
+  // read from the activation store (`agent-plugins/app-plugin-tool-consent.ts`);
+  // the hosted MCP endpoint's proxy groups are `@claxedo/mcp/plugin-proxy`.
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 242, packages: 27 },
   // The full-hosted entry alone carries the session rows pass
   // (`session/session-rows-pass.ts`) and its wiring to the sandbox and the
   // relay (`hosted-workerd/full-hosted-sandbox.ts`): it delivers the pass to a
@@ -220,7 +229,7 @@ const ENTRIES = [
   // has cloud runtimes to lose. Its provisioner imports `cloudflare:workers`
   // itself, so `@claxedo/plugin-runtime` is one package more here than in the
   // Agent Plugins entry.
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 248, packages: 28 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 254, packages: 28 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {

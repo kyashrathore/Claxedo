@@ -12,7 +12,7 @@ An organization's owners and admins install app plugins from the Claxedo registr
 | `objects` | The Durable Object classes the entry exports. Only these can be reached through `env.PLATFORM.object`. |
 | `outbound` | The hosts the backend may `fetch`, over https on the default port. Everything else is refused. |
 | `routes` | `METHOD /path` patterns the backend serves. `:name` matches one segment and a trailing `*` one or more. A request for anything else is refused before it reaches the plugin, and no route may sit under `/_`, which is the platform's. |
-| `tools` | Optional. The agent tools the backend serves: a `group` (`id`, `label`) and the `definitions` module. A release cannot carry them until P6. |
+| `tools` | Optional. The agent tools the backend serves: a `group` (`id`, `label`) and the `definitions` module, whose declarations the release carries as `tools` (below, Agent tools). |
 
 The top-level `permissions` list names the platform calls the backend may make (`projects.read`, `blobs`, `events`, `schedule`, `links`, and the ones later slices serve).
 
@@ -45,18 +45,32 @@ Every route reads the signed caller and asks the authority for their organizatio
 | Route | Who | Answer |
 | --- | --- | --- |
 | `GET /` | member | The installs the caller's app loads. |
-| `GET /installed` | member | Every install, with `enabledForMe` and `orgDefault`. |
+| `GET /installed` | member | Every install, with `enabledForMe` and `orgDefault`, and for a release that declares tools `tools: { label, names, on }`, `on` being the caller's tool switch. |
 | `GET /catalog` | member | `{ canManage, registry, plugins }`: whether the caller manages the organization's installs, and the registry's signed index, each entry `{ id, name, description?, latest, versions, manifest, available }`, where `available` is false for a backend this deployment cannot run. An index that is missing or does not verify answers `registry: "unavailable"` with no plugins; the installs are still `GET /installed`'s. |
 | `GET /:id/bundles/:sha256/app.js` | member | The app bundle, as immutable JavaScript; 404 `app_plugin_bundle_not_found` unless `GET /` holds it with that hash. |
 | `POST /:id/enable`, `DELETE /:id/enable` | member | 204; 404 `app_plugin_not_installed`. |
-| `POST /` `{ id, version }` | admin | 201 with the install; 409 `app_plugin_installed`, 422 `app_plugin_release_invalid`, 502 `app_plugin_release_unavailable`, 409 `app_plugin_platform_unavailable` for a backend where no supervisor runs. |
+| `POST /` `{ id, version }` | admin | 201 with the install; 409 `app_plugin_installed`, 422 `app_plugin_release_invalid`, 502 `app_plugin_release_unavailable`, 409 `app_plugin_platform_unavailable` for a backend where no supervisor runs, 409 `app_plugin_tool_name_taken` for a release declaring a tool Claxedo itself or another installed plugin serves (also on update). |
 | `POST /:id/update` `{ version }` | admin | 200 with the install; 409 `app_plugin_storage_downgrade` for a release whose `storage` is lower than the installed one's. |
 | `POST /:id/disable`, `DELETE /:id/disable` | admin | 204. Off and back on for everyone; storage is kept. |
 | `POST /:id/default`, `DELETE /:id/default` | admin | 204. |
 | `DELETE /:id` | admin | 204, after deleting the install, every member's choice, its links and everything the plugin stored. |
+| `GET /tools` | member, or a cloud root's plugin tools grant | The tools the caller's plugins serve, as `PluginToolsListing[]` (`{ pluginId, label, tools }`); see Agent tools. |
+| `POST /tools/grant` | a cloud root's plugin tools grant | `{ token, expiresAt }`, a fresh grant naming the plugins still on for the root; 403 `app_plugin_disabled` when none is, 401 `plugin_tools_grant_invalid` for anything but a live grant. |
 | `GET /links/:token` | anyone | The path the plugin's live link was created for, answered by the backend as a `link` caller while the plugin is installed and active; 404 `plugin_link_not_found` otherwise. Documents still owns `/p` until its cutover, so links live here. |
 
 `ALL /api/plugins/:pluginId/*` (`routes.ts`) answers 404 `plugin_not_activated` unless the organization has the plugin installed and active, and 404 `plugin_not_enabled` unless the caller has it enabled. Otherwise the request goes to the plugin's supervisor (`pluginSupervisor(namespace, { orgId, pluginId })`) with the caller's user id, which the runtime turns into a caller handle. Only the body and its `content-type` are forwarded, and only the plugin's status, body and `content-type` come back, with `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox`, because the answer is served from the control plane's own origin.
+
+## Agent tools
+
+A release's `tools` are the agent tools its backend serves. The MCP side is `@claxedo/mcp/plugin-proxy` (`packages/claxedo-mcp/README.md`, App plugin tools); this host answers who may call what:
+
+- **Names.** An install or update is refused with 409 `app_plugin_tool_name_taken` when the release declares a tool any of this deployment's MCP mounts registers itself (`reservedToolNames`, every name the entry's tool groups register) or one another plugin installed in the organization declares (`tool-names.ts`). There is no compatibility list.
+- **Who reaches a plugin's tools** (`tool-access.ts`): the plugin is installed and active, enabled for the user, its release declares tools, and its tool switch is on for the user. The switch is the agent-plugin activation subject `app-plugin:<pluginId>` (`agent-plugins/app-plugin-tool-consent.ts`), read from the same activation store as the built-in tool groups with a positive default: the user's choice for the project, else their own default, else the organization's, else on. It needs no artifact, so it never enters artifact selection.
+- **Callers.**
+  - A signed person: the hosted first-party MCP endpoint calls in-process as the account (`hostedAppPluginsServerPlugin`'s `app-plugin-tools` MCP service), and the person's agent is the caller. `x-claxedo-agent` may state the session; a person stating their own session gains nothing they could not do.
+  - A cloud root's plugin tools grant (`tool-grant.ts`): a sandbox pass under the audience `plugin-tools` naming the root's `{ user, org, project, workspace }` and `plugins`, minted at launch only while some plugin's tools are on for the root (`pluginToolsRootGrant`, the root grant group `app-plugin-tools`) and delivered as `WORKSPACE_RUNTIME_PLUGIN_TOOLS_GRANT`. Every listing and call re-reads, as the root's owner and for its project, which of the named plugins are still on, so a plugin turned off is refused at once; the call's caller then also names the project and workspace. A revoked or expired grant is refused 401 `plugin_tools_grant_invalid`, and a workspace that no longer answers for its owner 403 `plugin_tools_grant_owner_changed`.
+- **Withdrawal.** When a member disables a plugin, an admin turns it off, clears the default or uninstalls it, or anyone writes an `app-plugin:<id>` choice, the grant withdrawal (`agent-plugins/runtime/grant-withdrawal.ts`) revokes the outstanding grants of every root in the organization that has no app plugin's tools on any more, with the reason `app_plugin_disabled`. A root that still has some plugin on keeps its grant, and the per-call re-read refuses the plugin turned off.
+- **A tool call**, `POST /api/plugins/:pluginId/_tools/:name` with `{ arguments }` (at most 1 MiB, else 413 `plugin_tool_call_too_large`): 404 `plugin_tools_not_enabled` when the caller does not reach the plugin's tools, 404 `plugin_tool_not_declared` for a name the release does not declare, otherwise the supervisor's `tool` delivers it to the backend's `/_tools/<name>` as an `agent` caller, and its answer comes back under the same headers as any plugin answer. The MCP proxy, not this route, refuses an answer that is not a tool result of at most 256 KiB.
 
 ## The platform on this host
 
@@ -100,5 +114,15 @@ The Agent Plugins artifacts (`scripts/deploy/wrangler-config.ts`) bind `CLAXEDO_
   - a link read anonymously as a link caller that cannot act as a person, and refused once expired or revoked;
   - a held request refused every platform call once its epoch ended;
 - uninstall: it deletes the plugin's objects, a running one included, its blobs, wakes and links, and every member's choice, while another plugin's data stays and a reinstall continues the epoch. The live-sync room is the fixture's `RecordingRoom`, which records nudges.
+
+`plugin-tools.workerd.test.ts` runs the same fixture Worker, which also composes the hosted first-party MCP endpoint over the app plugins' MCP service, the activation store the tool switch is read from, the pass register and the grant withdrawal, against the `fixtures/notes` plugin, whose release carries three tools. An MCP client speaks to the endpoint as each member. The suite covers:
+
+- tools absent while the plugin is not installed and for a member who has not enabled it, and listed, with their declared input schema, once they enable it;
+- a `tools/call` reaching the backend's `/_tools/<name>` as the member's agent, and an answer over 256 KiB refused;
+- tools vanishing when the member turns the switch off, while the plugin's page routes stay theirs, and coming back when they clear it;
+- an undeclared tool name and another organization's member reaching nothing;
+- an install refused for a tool name another installed plugin or Claxedo itself serves;
+- a cloud root's grant listing and calling as the root's agent and renewing; refused once revoked, once the plugin is disabled (the withdrawal revokes it), and refused the plugin and its renewal once the switch is off for the root's project;
+- uninstall taking the tools from every member.
 
 `supervisor.test.ts` in the runtime pins the purge's order against the real supervisor class.

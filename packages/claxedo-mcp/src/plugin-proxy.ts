@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { decodeApiError } from "@claxedo/helpers/api-error"
 import { pluginToolDeclarationSchema, type PluginToolDeclaration } from "@claxedo/plugin-api/release"
 import {
   appPluginToolGroupId,
@@ -76,13 +77,11 @@ async function boundedText(response: Response, limit: number): Promise<string | 
   return new TextDecoder().decode(bytes)
 }
 
-function refusalMessage(text: string, fallback: string): string {
+function jsonOf(text: string): unknown {
   try {
-    const parsed: unknown = JSON.parse(text)
-    const message = z.object({ error: z.object({ message: z.string().min(1) }) }).safeParse(parsed)
-    return message.success ? message.data.error.message : fallback
+    return JSON.parse(text)
   } catch {
-    return fallback
+    return undefined
   }
 }
 
@@ -90,14 +89,9 @@ function refusalMessage(text: string, fallback: string): string {
 export async function pluginToolResult(tool: string, response: Response): Promise<McpToolResult> {
   const text = await boundedText(response, PLUGIN_TOOL_RESULT_MAX_BYTES)
   if (text === undefined) return mcpToolRefusal(`${tool} answered more than ${PLUGIN_TOOL_RESULT_MAX_BYTES / 1024} KiB`)
-  if (!response.ok) return mcpToolRefusal(refusalMessage(text, `${tool} failed`))
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(text)
-  } catch {
-    return mcpToolRefusal(`${tool} answered something that is not a tool result`)
-  }
-  const result = resultSchema.safeParse(parsed)
+  const body = jsonOf(text)
+  if (!response.ok) return mcpToolRefusal(decodeApiError(response.status, body)?.message || `${tool} failed`)
+  const result = resultSchema.safeParse(body)
   return result.success ? result.data : mcpToolRefusal(`${tool} answered something that is not a tool result`)
 }
 
