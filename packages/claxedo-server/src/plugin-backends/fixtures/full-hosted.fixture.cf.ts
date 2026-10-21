@@ -1,7 +1,7 @@
 import { createFullHostedWorker } from "../../deployments/hosted-workerd/better-auth-d1-worker.agent-plugins.full-hosted.cf"
 import { registryKeysWithTestKey } from "../registry-test-key"
 
-export { LiveSyncRoom, PluginOutbound, PluginPlatform, PluginSupervisor } from "../../deployments/hosted-workerd/better-auth-d1-worker.agent-plugins.full-hosted.cf"
+export { LiveSyncRoom, PluginOutbound, PluginPlatform } from "../../deployments/hosted-workerd/better-auth-d1-worker.agent-plugins.full-hosted.cf"
 
 /**
  * The certified full-hosted Worker with the registry test key added, for the
@@ -12,5 +12,7 @@ export { LiveSyncRoom, PluginOutbound, PluginPlatform, PluginSupervisor } from "
 const worker = createFullHostedWorker(registryKeysWithTestKey)
 
 export class SandboxProvisioner extends worker.SandboxProvisioner {}
+
+export class PluginSupervisor extends worker.PluginSupervisor {}
 
 export default worker.handler

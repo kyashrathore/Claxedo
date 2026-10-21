@@ -12,7 +12,7 @@ The host owns everything else: who the caller is, which organization they act in
 | --- | --- |
 | `readState(orgId, pluginId)` | `PluginBackendState`: the install's current `epoch`, and its `activation` (`epoch`, the backend bundle's `bundleHash`, the validated `manifest` with its `backend`) while the backend is active. |
 | `readBundle(sha256)` | The backend bundle stored under that SHA-256, or undefined when none is. The runtime verifies the digest before it loads the code, so a store that answers other bytes is refused. |
-| `platform(call, scope, caller)` | A platform call the runtime has already admitted (below): projects, blobs, events and links. The host decides what the caller may do and where the data lives. |
+| `platform(call, scope, caller)` | A platform call the runtime has already admitted (below): projects, blobs, events, links and sessions. The host decides what the caller may do and where the data lives. |
 | `limits` | Optional. `blobTotalBytes` overrides the 1 GiB a plugin's blobs may hold in one organization. |
 
 The supervisor asks `readState` and `readBundle` on every request it serves. A state whose epoch is lower than one the supervisor has already applied is ignored as stale, so a replica that lags cannot bring back an ended run; a host must never answer an epoch it did not write.
@@ -59,9 +59,9 @@ A backend never receives a user id it could replay. The supervisor mints a 128-b
 - `call(call, handle)` is every other call (`PluginPlatformCall`). `admitPlatformCall` (`platform-admission.ts`) admits it, in this order:
   1. the epoch is the current activation, else 409 `plugin_backend_replaced`;
   2. its fields parse, else 400 `plugin_call_invalid`;
-  3. the manifest's `permissions` hold the call's permission, else 403 `plugin_permission_not_declared`;
+  3. the manifest's `permissions` hold every permission the call needs (`platformCallPermissions`: its own, and `workspaces.cloud` for a cloud `sessions.preview` or `sessions.start`), else 403 `plugin_permission_not_declared`;
   4. a call that needs a caller has a live handle, else 401 `plugin_caller_invalid`;
-  5. a call that acts as a person (projects, `links.create`, an event to the caller or a project) has a person, else 403 `plugin_caller_not_a_person`.
+  5. a call that acts as a person (projects, `links.create`, an event to the caller or a project, every session call but `sessions.state`) has a person, else 403 `plugin_caller_not_a_person`.
 - `fetch` goes through `PluginOutbound`, which allows https on the default port to the manifest's `outbound` hosts, and only while the epoch is current (otherwise 403 `plugin_backend_replaced`).
 
 The runtime answers some calls itself and holds the limits; the host answers the rest through `platform`:
@@ -74,6 +74,8 @@ The runtime answers some calls itself and holds the limits; the host answers the
 | `events.publish` | `events` | the host's delivery; the runtime refuses data over 8 KiB (413 `plugin_event_too_large`) and more than 10 a second (429 `plugin_event_rate_limited`) |
 | `schedule.at`, `cancel`, `list` | `schedule` | the runtime (`wakes.ts`) |
 | `links.create`, `links.revoke` | `links` | the host |
+| `sessions.harnesses`, `preview`, `start`, `handoff`, `abandon` | `sessions.start`; a cloud `preview` or `start` also `workspaces.cloud` | the host, as the caller |
+| `sessions.state`, `authorizeOpen` | `sessions.read` | the host |
 
 **Wakes.** `schedule.at(name, at, payload)` stores a wake in the supervisor's `plugin_wakes` table and arms the supervisor's own alarm at the earliest one. A wake is set at least 30 s ahead (400 `plugin_wake_too_soon`), carries at most 4 KiB of JSON (413), and a plugin holds at most 100 (429 `plugin_wake_limit`). When the alarm fires, `wakeDue(scope, now)` takes every due wake off the table before delivering it, so each runs at most once, as `POST /_wake/<name>` with a `system` caller. A wake due while no backend is active is dropped. The alarm reaches platform code, never a facet. Facet alarms stay unsupported (below); plugins schedule through `schedule.at`.
 
@@ -131,7 +133,7 @@ Inside a facet, `ctx.id` is the supervisor's id: every facet reported the same i
 
 - `runs.test.ts`: the run transitions, with controlled reads and loads;
 - `caller-handles.test.ts`: handle lifetime, epochs and expiry over a controlled clock;
-- `platform-admission.test.ts`: every call refused for a dead epoch and an undeclared permission, a person's calls refused without a person, and malformed calls;
+- `platform-admission.test.ts`: every call refused for a dead epoch and an undeclared permission, a cloud session start refused without `workspaces.cloud`, a person's calls refused without a person, and malformed calls;
 - `supervisor.test.ts`: the purge's order and refusals, and the schedule's alarm arming, against the supervisor class over a recording `ctx` with a real SQLite database.
 
 The runtime on workerd is tested through the hosted adapter's suite, `packages/claxedo-server/src/plugin-backends/plugin-backends.workerd.test.ts`.

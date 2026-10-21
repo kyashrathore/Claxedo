@@ -9,7 +9,7 @@ export type {
   PluginRunScope,
   PluginScope,
 } from "./host-port"
-export { refusedCall } from "./platform-admission"
+export { answeredCall, refusedCall } from "./platform-admission"
 export { pluginRefusal } from "./refusal"
 export { pluginSupervisor, pluginSupervisorName } from "./supervisor-stub"
 export type { PluginSupervisorNamespace, PluginSupervisorStub } from "./supervisor-stub"

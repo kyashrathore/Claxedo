@@ -438,6 +438,7 @@ CREATE TABLE plugin_session_origins (
   session_id text not null,
   workspace_id text not null,
   placement text not null check (placement in ('local', 'cloud')),
+  configuration_digest text not null check (length(configuration_digest) = 64 and configuration_digest not glob '*[^0-9a-f]*'),
   created_at integer not null,
   primary key (org_id, plugin_id, scope, key),
   foreign key (org_id, plugin_id) references app_plugin_installs (org_id, plugin_id) deferrable initially deferred

@@ -203,7 +203,10 @@ const ENTRIES = [
   // (`connections/repository-access.ts`). The app-plugin routes answer the
   // Marketplace's catalog from the registry's signed index
   // (`plugin-backends/catalog.ts` over `@claxedo/plugin-api/registry-index`).
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 240, packages: 27 },
+  // The plugin supervisor answers a backend's session calls over the same
+  // session host (`plugin-backends/sessions/platform.ts`), recording each
+  // origin's session in `plugin_session_origins` (`sessions/origins.ts`).
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 242, packages: 27 },
   // The full-hosted entry alone carries the session rows pass
   // (`session/session-rows-pass.ts`) and its wiring to the sandbox and the
   // relay (`hosted-workerd/full-hosted-sandbox.ts`): it delivers the pass to a
@@ -220,7 +223,7 @@ const ENTRIES = [
   // has cloud runtimes to lose. Its provisioner imports `cloudflare:workers`
   // itself, so `@claxedo/plugin-runtime` is one package more here than in the
   // Agent Plugins entry.
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 252, packages: 28 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 254, packages: 28 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {

@@ -35,6 +35,11 @@ export type SessionReserveInput<Actor> = {
  * the registration state machine reaches `compensated` only through
  * `compensation_pending`, and a compensated origin can never register a
  * session, which is what keeps the deleted id from coming back as one.
+ *
+ * A session its runtime already registered rolls forward instead: the
+ * authority refuses to compensate it (`registration_transition_denied`), and
+ * the runtime's own delete is what removes it from the registry, so that
+ * refusal leaves nothing to undo here.
  */
 export function createSessionRelease<Actor>(input: SessionReserveInput<Actor>): NonNullable<SessionHost<Actor>["release"]> {
   return async (released): Promise<void> => {
@@ -49,7 +54,12 @@ export function createSessionRelease<Actor>(input: SessionReserveInput<Actor>): 
       workspaceId: released.workspaceId,
       reason: released.reason,
     }
-    await authority.beginSessionCompensation(transition)
+    try {
+      await authority.beginSessionCompensation(transition)
+    } catch (error) {
+      if (error instanceof ClaxedoError && error.code === "registration_transition_denied") return
+      throw error
+    }
     await authority.completeSessionCompensation(transition)
   }
 }

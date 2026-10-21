@@ -58,9 +58,11 @@ beforeAll(async () => {
         (org_id, plugin_id, version, active, app_sha256, backend_sha256, manifest_json, release_json, signature, key_id, installed_by, changed_by, changed_at)
         values ('org', 'notes', '1.0.0', 1, ?, null, '{}', '{}', 'sig', 'key', 'alice', 'alice', 1)`)
       .bind("a".repeat(64)),
-    database.prepare(`insert into plugin_session_origins (org_id, plugin_id, scope, key, session_id, workspace_id, placement, created_at)
-      values ('org', 'notes', 'prj', 'draft-1', 'ses_plugin_root', 'ws_plugin_root', 'cloud', 1),
-             ('org', 'notes', 'prj', 'draft-2', 'ses_plugin_local', 'ws_plugin_local', 'local', 1)`),
+    database
+      .prepare(`insert into plugin_session_origins (org_id, plugin_id, scope, key, session_id, workspace_id, placement, configuration_digest, created_at)
+        values ('org', 'notes', 'prj', 'draft-1', 'ses_plugin_root', 'ws_plugin_root', 'cloud', ?1, 1),
+               ('org', 'notes', 'prj', 'draft-2', 'ses_plugin_local', 'ws_plugin_local', 'local', ?1, 1)`)
+      .bind("d".repeat(64)),
     database.prepare(`insert into task_session_links
       (scope_id, task_id, slot, attempt, session_id, session_workspace_id, preset_id, preset_revision, preset_name_at_start, configuration_digest, created_at, placement)
       values ('org', 'tsk_1', 'primary', 1, 'ses_root', 'ws_task_root', 'tpr_1', 1, 'Cloud', 'digest', 1, 'cloud')`),

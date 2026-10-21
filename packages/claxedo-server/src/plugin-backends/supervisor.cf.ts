@@ -5,6 +5,7 @@ import type { LiveSyncRoomNamespace } from "../platform/http/live-sync-publish"
 import { readPluginBundle, type AppPluginsBucket } from "./bundles"
 import { readPluginBackendState } from "./installs"
 import { hostedPlatform } from "./platform-host"
+import type { HostedSessionPorts } from "./sessions/compose"
 
 export type HostedPluginBackendEnv = PluginRuntimeEnv & {
   CONTROL_PLANE_DB: D1Database
@@ -25,16 +26,24 @@ function blobQuota(env: HostedPluginBackendEnv): number | undefined {
 /**
  * The hosted Worker's answers to the runtime: the install in D1, the backend
  * bundle in the plugin artifact bucket, and the platform calls over D1, that
- * bucket and the organizations' live-sync rooms.
+ * bucket, the organizations' live-sync rooms and the deployment's session
+ * host.
  */
-export function hostedPluginHostPort(env: HostedPluginBackendEnv): PluginHostPort {
+export function hostedPluginHostPort(env: HostedPluginBackendEnv, sessions?: () => HostedSessionPorts): PluginHostPort {
   const blobTotalBytes = blobQuota(env)
   return {
     ...(blobTotalBytes ? { limits: { blobTotalBytes } } : {}),
     readState: (orgId, pluginId) => readPluginBackendState(env.CONTROL_PLANE_DB, orgId, pluginId),
     readBundle: (sha256) => readPluginBundle(env.CLAXEDO_AGENT_PLUGINS, "backend", sha256),
-    platform: hostedPlatform({ database: env.CONTROL_PLANE_DB, bucket: env.CLAXEDO_AGENT_PLUGINS, rooms: env.LIVE_SYNC_ROOM }),
+    platform: hostedPlatform({ database: env.CONTROL_PLANE_DB, bucket: env.CLAXEDO_AGENT_PLUGINS, rooms: env.LIVE_SYNC_ROOM, ...(sessions ? { sessions } : {}) }),
   }
 }
 
-export class PluginSupervisor extends pluginSupervisorClass(hostedPluginHostPort) {}
+/**
+ * The supervisor class a Worker entry exports, over the session host its own
+ * composition builds for `env`: the supervisor runs in that Worker, so a
+ * plugin's session starts through the same ports the entry's routes use.
+ */
+export function hostedPluginSupervisorClass<Env extends HostedPluginBackendEnv>(sessions: (env: Env) => HostedSessionPorts) {
+  return pluginSupervisorClass((env: Env) => hostedPluginHostPort(env, () => sessions(env)))
+}

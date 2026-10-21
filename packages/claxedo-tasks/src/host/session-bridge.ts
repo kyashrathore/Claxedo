@@ -36,12 +36,12 @@ const TASKS_SESSION_NAMESPACE = "tasks"
 export type TasksSessionHost = SessionHost<TasksActor>
 
 /** One root per `(scope, task, slot, attempt)`: the key is the kit's own origin string, so the root, the session and the reservation share it. */
-function platformOrigin(input: { scopeId: string; taskId: string; slot: ConfigurationSlot; attempt: number }): PlatformSessionOrigin {
+function tasksSessionOrigin(input: { scopeId: string; taskId: string; slot: ConfigurationSlot; attempt: number }): PlatformSessionOrigin {
   return { namespace: TASKS_SESSION_NAMESPACE, key: startOriginId(input.scopeId, input.taskId, input.slot, input.attempt) }
 }
 
 function taskOrigin(origin: SessionOrigin): PlatformSessionOrigin {
-  return platformOrigin({ scopeId: origin.scopeId, taskId: origin.taskId, slot: origin.slot, attempt: origin.attempt })
+  return tasksSessionOrigin({ scopeId: origin.scopeId, taskId: origin.taskId, slot: origin.slot, attempt: origin.attempt })
 }
 
 /**
@@ -65,7 +65,7 @@ type CloudCapabilities = Extract<PresetExecution, { placement: "cloud" }>["capab
 function cloudRoot(command: StartPreviewCommand | StartCommand, capabilities: CloudCapabilities): CloudRoot<TasksActor> {
   return {
     actor: command.actor,
-    origin: platformOrigin({ scopeId: command.actor.scopeId, taskId: command.task.id, slot: command.slot, attempt: command.attempt }),
+    origin: tasksSessionOrigin({ scopeId: command.actor.scopeId, taskId: command.task.id, slot: command.slot, attempt: command.attempt }),
     projectId: command.task.projectId,
     orgId: command.actor.scopeId,
     displayName: `${command.task.title} (${command.slot}, attempt ${command.attempt})`,
@@ -101,7 +101,7 @@ export function createTasksSessionBridge(host: TasksSessionHost): TasksSessionBr
       }
       const created = await createOriginSession(host, {
         actor: command.actor,
-        origin: platformOrigin({ scopeId: command.actor.scopeId, taskId: command.task.id, slot: command.slot, attempt: command.attempt }),
+        origin: tasksSessionOrigin({ scopeId: command.actor.scopeId, taskId: command.task.id, slot: command.slot, attempt: command.attempt }),
         target,
         title: command.task.title,
         configuration: resolved.configuration,
@@ -123,7 +123,7 @@ export function createTasksSessionBridge(host: TasksSessionHost): TasksSessionBr
       const runtime = handledTarget(command.runtime)
       return handOffToSession(host, {
         actor: command.actor,
-        origin: platformOrigin({ scopeId: command.actor.scopeId, taskId: command.task.id, slot: command.slot, attempt: command.attempt }),
+        origin: tasksSessionOrigin({ scopeId: command.actor.scopeId, taskId: command.task.id, slot: command.slot, attempt: command.attempt }),
         session: command.session,
         parts: [
           { type: "text", text: startFirstMessage({ task: command.task, handoffText: command.handoffText }) },
@@ -137,7 +137,7 @@ export function createTasksSessionBridge(host: TasksSessionHost): TasksSessionBr
       const runtime = handledTarget(command.runtime)
       return abandonOriginSession(host, {
         actor: command.actor,
-        origin: platformOrigin({ scopeId: command.actor.scopeId, taskId: command.task.id, slot: command.slot, attempt: command.attempt }),
+        origin: tasksSessionOrigin({ scopeId: command.actor.scopeId, taskId: command.task.id, slot: command.slot, attempt: command.attempt }),
         session: command.sessionRef,
         configurationDigest: command.configurationDigest,
         reason: "The Tasks link this session was created for was never committed",

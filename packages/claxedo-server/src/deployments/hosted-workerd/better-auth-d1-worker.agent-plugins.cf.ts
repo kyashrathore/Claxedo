@@ -22,11 +22,11 @@ import { hostedOrgAdministers } from "../../credentials/worker/org-administers"
 import { hostedAppPluginRoutes } from "../../plugin-backends/compose"
 import { DEFAULT_APP_PLUGIN_REGISTRY_URL } from "../../plugin-backends/registry"
 import { PluginOutbound, PluginPlatform } from "@claxedo/plugin-runtime/entrypoints"
-import { PluginSupervisor } from "../../plugin-backends/supervisor.cf"
+import { hostedPluginSupervisorClass, type HostedPluginBackendEnv } from "../../plugin-backends/supervisor.cf"
 import { composeHostedSessionPorts } from "../../plugin-backends/sessions/compose"
 import { timedAuthentication, timedD1, timedFetch } from "../../platform/http/server-timing"
 
-export { LiveSyncRoom, PluginOutbound, PluginPlatform, PluginSupervisor }
+export { LiveSyncRoom, PluginOutbound, PluginPlatform }
 
 export type BetterAuthD1AgentPluginsWorkerEnv = BetterAuthD1WorkerEnv & {
   CLAXEDO_AGENT_PLUGINS?: AppPluginsBucket
@@ -164,6 +164,7 @@ export function composeBetterAuthD1AgentPlugins(
   base.runtimeDelivery?.composeRuntime({ prepareRuntime, pluginRuntime: feature.pluginRuntime })
   return {
     ...base,
+    pluginSessions: sessions,
     options: {
       ...base.options,
       sandboxPasses: passes,
@@ -189,6 +190,11 @@ const composition = settledCompositionCache(
   (env: BetterAuthD1AgentPluginsWorkerEnv) => composeBetterAuthD1AgentPlugins(env),
   (created) => created.authReady,
 )
+
+/** The Agent Plugins Worker's env as its plugin supervisor receives it, with the bindings the entry refuses to compose without. */
+export type AgentPluginsSupervisorEnv = HostedPluginBackendEnv & BetterAuthD1AgentPluginsWorkerEnv
+
+export class PluginSupervisor extends hostedPluginSupervisorClass((env: AgentPluginsSupervisorEnv) => composition(env).pluginSessions) {}
 
 const handler = createBetterAuthD1Worker({ composition })
 export default handler

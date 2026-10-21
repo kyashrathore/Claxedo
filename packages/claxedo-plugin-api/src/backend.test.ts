@@ -29,6 +29,49 @@ describe("definePluginBackend", () => {
     ])
   })
 
+  test("the sessions client sends each call under the request's handle and answers the platform's value", async () => {
+    const session = { sessionId: "ses_1", workspaceId: "ws_1" }
+    const origin = { scope: "prj_1", key: "draft-1" }
+    const start = {
+      origin,
+      projectId: "prj_1",
+      placement: "local" as const,
+      configuration: { harness: { id: "codex", access: "native" as const }, model: { providerID: "openai", modelID: "gpt-5" }, effort: null },
+    }
+    const { platform, calls } = binding((call) => ({ ok: true, value: call.name === "sessions.start" ? { session } : call.name }))
+    const backend = definePluginBackend({
+      fetch: async (_request, bound) =>
+        Response.json([
+          await bound.sessions.harnesses({ projectId: "prj_1", placement: "cloud" }),
+          await bound.sessions.preview(start),
+          await bound.sessions.start({ ...start, digest: "d" }),
+          await bound.sessions.handoff({ origin, session, text: "Go", attachments: [{ key: "a.png" }] }),
+          await bound.sessions.abandon({ origin, session }),
+          await bound.sessions.state([origin]),
+          await bound.sessions.authorizeOpen(session),
+        ]),
+    })
+    const response = await backend.fetch(new Request("https://plugin.test/x", { headers: { [PLUGIN_CALLER_HEADER]: "h1" } }), { PLATFORM: platform })
+    expect(await response.json()).toEqual([
+      "sessions.harnesses",
+      "sessions.preview",
+      { session },
+      "sessions.handoff",
+      "sessions.abandon",
+      "sessions.state",
+      "sessions.authorizeOpen",
+    ])
+    expect(calls).toEqual([
+      { call: { name: "sessions.harnesses", projectId: "prj_1", placement: "cloud" }, handle: "h1" },
+      { call: { name: "sessions.preview", ...start }, handle: "h1" },
+      { call: { name: "sessions.start", ...start, digest: "d" }, handle: "h1" },
+      { call: { name: "sessions.handoff", origin, session, text: "Go", attachments: [{ key: "a.png" }] }, handle: "h1" },
+      { call: { name: "sessions.abandon", origin, session }, handle: "h1" },
+      { call: { name: "sessions.state", origins: [origin] }, handle: "h1" },
+      { call: { name: "sessions.authorizeOpen", session }, handle: "h1" },
+    ])
+  })
+
   test("a refused call throws the platform's status and code", async () => {
     const { platform } = binding(() => ({ ok: false, status: 403, code: "plugin_permission_not_declared", message: "no" }))
     const backend = definePluginBackend({

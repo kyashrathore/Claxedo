@@ -8,7 +8,7 @@
     "name": "Counter",
     "version": "0.1.0",
     "app": "./src/app.js",
-    "permissions": ["projects.read", "blobs", "events", "schedule", "links"],
+    "permissions": ["projects.read", "blobs", "events", "schedule", "links", "sessions.read", "sessions.start", "workspaces.cloud"],
     "backend": {
       "entry": "./src/backend.js",
       "objects": ["Counter"],
@@ -39,7 +39,8 @@
         "POST /wakes/:name",
         "DELETE /wakes/:name",
         "POST /links",
-        "DELETE /links/:token"
+        "DELETE /links/:token",
+        "POST /sessions/:call"
       ]
     }
   }

@@ -43,6 +43,67 @@ let held: Promise<void> = Promise.resolve()
 /** What the test registry serves, by path. */
 const registry = new Map<string, string>()
 
+type RuntimeSession = { id: string; instructions: string; messages: string[]; prompts: unknown[][] }
+
+/** The sessions the workspace runtimes behind the relay hold, and every request they were sent. */
+const runtimeSessions = new Map<string, RuntimeSession>()
+const runtimeRequests: string[] = []
+
+const bearerOf = (request: Request) => (request.headers.get("authorization") ?? "").replace(/^Bearer /, "")
+
+const control = (path: string, body: unknown) => miniflare.dispatchFetch(`${ORIGIN}${path}`, { method: "POST", body: JSON.stringify(body) })
+
+/**
+ * The workspace runtime behind the relay, as much of it as a session start,
+ * handoff and abandonment read and write. As the real runtime's session
+ * routes do, a create that carries a reservation registers the session with
+ * the control plane before it answers, every session route asks the control
+ * plane whether the token's actor may use that session, and a person's turn
+ * lands in the session's published row.
+ */
+async function runtime(outbound: Request): Promise<Response> {
+  const match = /^\/workspaces\/([^/]+)(\/.*)$/.exec(new URL(outbound.url).pathname)
+  const path = match?.[2] ?? ""
+  runtimeRequests.push(`${outbound.method} ${path}`)
+  if (path === "/session/capabilities") {
+    return Response.json({ modelSelection: { status: "optional", models: [{ providerId: "openai", modelId: "gpt-5", name: "GPT-5" }] } })
+  }
+  if (path === "/session" && outbound.method === "POST") {
+    const body = (await outbound.json()) as { id: string; title?: string; instructions?: string }
+    const operationId = outbound.headers.get("x-claxedo-session-registration-operation")
+    if (operationId) {
+      const registered = await control("/__register", { token: bearerOf(outbound), operationId, sessionId: body.id, createdAt: 10, updatedAt: 10, ...(body.title ? { title: body.title } : {}) })
+      if (!registered.ok) return Response.json({ error: { code: "registration_denied", message: await registered.text() } }, { status: 403 })
+    }
+    runtimeSessions.set(body.id, { id: body.id, instructions: body.instructions ?? "", messages: [], prompts: [] })
+    return Response.json({ id: body.id, time: { created: 10, updated: 10 } }, { status: 201 })
+  }
+  const session = /^\/session\/([^/]+)(\/message|\/config|\/prompt_async)?$/.exec(path)
+  const row = session ? runtimeSessions.get(decodeURIComponent(session[1] ?? "")) : undefined
+  if (!row) return Response.json({ error: { code: "not_found", message: path } }, { status: 404 })
+  const authorized = await control("/__authorize", { token: bearerOf(outbound), sessionId: row.id, action: outbound.method === "GET" ? "read" : "write" })
+  if (!authorized.ok) return Response.json({ error: { code: "session_authorization_denied", message: await authorized.text() } }, { status: 403 })
+  if (outbound.method === "DELETE" && !session?.[2]) {
+    runtimeSessions.delete(row.id)
+    return Response.json({ ok: true })
+  }
+  if (session?.[2] === "/prompt_async") {
+    const prompt = (await outbound.json()) as { messageID: string; parts: unknown[] }
+    row.messages.push(prompt.messageID)
+    row.prompts.push(prompt.parts)
+    const published = await control("/__human-turn", { sessionId: row.id })
+    if (!published.ok) return new Response(await published.text(), { status: 500 })
+    return new Response(null, { status: 204 })
+  }
+  if (session?.[2] === "/message") {
+    return Response.json(row.messages.map((id) => ({ info: { id, role: "user", sessionID: row.id, time: { created: 11 } }, parts: [{ id: `prt_${id}`, sessionID: row.id, messageID: id, type: "text", text: "Draft the notes" }] })))
+  }
+  if (session?.[2] === "/config") {
+    return Response.json({ harness: { id: "codex", access: "native" }, model: { providerID: "openai", modelID: "gpt-5" }, variant: null, instructions: row.instructions })
+  }
+  return Response.json({ id: row.id, time: { created: 10, updated: 10 } })
+}
+
 function holdOutbound() {
   const arrived = new Promise<void>((resolve) => {
     holdArrived = resolve
@@ -200,6 +261,7 @@ beforeAll(async () => {
         const served = registry.get(url.pathname)
         return served === undefined ? new Response("not found", { status: 404 }) : new Response(served)
       }
+      if (url.host === "relay.test") return runtime(outbound)
       if (url.pathname === "/hold") {
         holdArrived()
         await held
@@ -528,6 +590,7 @@ describe("the platform API a backend gets", () => {
     expect((await appPlugins(alice, "POST", "/counter-two/update", { version: "0.1.1" })).status).toBe(200)
     expect(await call(alice, "GET", "/counter-two/projects")).toEqual(refusal(403, "plugin_permission_not_declared"))
     expect(await call(alice, "GET", "/counter-two/wakes")).toEqual(refusal(403, "plugin_permission_not_declared"))
+    expect(await call(alice, "POST", "/counter-two/sessions/state", { origins: [] })).toEqual(refusal(403, "plugin_permission_not_declared"))
     expect((await call(alice, "GET", "/counter-two/whoami")).body.caller).toEqual({ orgId: alice.orgId, origin: "person", userId: alice.userId })
   })
 
@@ -593,6 +656,132 @@ describe("the platform API a backend gets", () => {
     expect(await request(undefined, "GET", created.url)).toEqual(refusal(404, "plugin_link_not_found"))
     expect(await call(alice, "DELETE", `/counter/links/${created.token}`)).toEqual(refusal(404, "plugin_link_not_found"))
     expect(await request(undefined, "GET", "/api/claxedo/app-plugins/links/not-a-token")).toEqual(refusal(404, "plugin_link_not_found"))
+  })
+})
+
+describe("sessions a plugin starts through env.PLATFORM", () => {
+  const REPO = "https://github.com/acme/notes.git"
+  const configuration = { harness: { id: "codex", access: "native" }, model: { providerID: "openai", modelID: "gpt-5" }, effort: null }
+  let frank: Member
+  let projectId: string
+
+  const startOf = (key: string, extra: Record<string, unknown> = {}) => ({
+    origin: { scope: projectId, key },
+    projectId,
+    placement: "local",
+    configuration,
+    instructions: "Write the release notes.",
+    title: `Notes ${key}`,
+    ...extra,
+  })
+
+  async function started(key: string, extra: Record<string, unknown> = {}) {
+    const preview = await call(frank, "POST", "/counter/sessions/preview", startOf(key, extra))
+    expect(preview).toEqual({ status: 200, body: { digest: expect.stringMatching(/^[0-9a-f]{64}$/), blockers: [] } })
+    return call(frank, "POST", "/counter/sessions/start", { ...startOf(key, extra), digest: preview.body.digest })
+  }
+
+  const originRows = () =>
+    database
+      .prepare("select scope, key, session_id, workspace_id, placement from plugin_session_origins where org_id = ? and plugin_id = 'counter' order by created_at, key")
+      .bind(frank.orgId)
+      .all()
+      .then((result) => result.results)
+
+  const creates = () => runtimeRequests.filter((entry) => entry === "POST /session").length
+
+  beforeAll(async () => {
+    frank = await owner("frank")
+    expect((await appPlugins(frank, "POST", "", { id: "counter", version: "0.1.0" })).status).toBe(201)
+    expect(await appPlugins(frank, "POST", "/counter/enable")).toEqual(noContent)
+    const filed = await miniflare.dispatchFetch(`${ORIGIN}/__workspace`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${frank.token}` },
+      body: JSON.stringify({ workspaceId: "ws_frank_main", repoUrl: REPO }),
+    })
+    projectId = ((await filed.json()) as { projectId: string }).projectId
+  })
+
+  test("a start runs as the caller in the project's workspace, is recorded under its origin, and a start sent again answers the same session", async () => {
+    const before = creates()
+    const first = await started("draft-1")
+    expect(first).toEqual({ status: 200, body: { session: { sessionId: expect.stringMatching(/^ses_plugin_[0-9a-f]{32}$/), workspaceId: "ws_frank_main" } } })
+    const again = await started("draft-1")
+    expect(again).toEqual(first)
+    expect(creates()).toBe(before + 1)
+    expect(runtimeSessions.get((first.body.session as { sessionId: string }).sessionId)?.instructions).toBe("Write the release notes.")
+    expect(await originRows()).toEqual([{ scope: projectId, key: "draft-1", session_id: (first.body.session as { sessionId: string }).sessionId, workspace_id: "ws_frank_main", placement: "local" }])
+    const stale = await call(frank, "POST", "/counter/sessions/start", { ...startOf("draft-1"), instructions: "Something else.", digest: "0".repeat(64) })
+    expect(stale).toEqual(refusal(409, "plugin_session_digest_stale"))
+  })
+
+  test("the first message is handed to the origin's session at most once, with the plugin's own images as files", async () => {
+    const session = (await started("draft-1")).body.session as { sessionId: string; workspaceId: string }
+    const put = await miniflare.dispatchFetch(`${ORIGIN}/api/plugins/counter/blobs/images/dot.gif`, {
+      method: "PUT",
+      headers: { authorization: `Bearer ${frank.token}`, "content-type": "image/gif" },
+      body: "GIF89a",
+    })
+    expect(put.status).toBe(200)
+    const handoff = { origin: { scope: projectId, key: "draft-1" }, session, text: "Draft the notes", attachments: [{ key: "images/dot.gif" }] }
+    expect(await call(frank, "POST", "/counter/sessions/handoff", handoff)).toEqual({ status: 200, body: { sent: true } })
+    expect(await call(frank, "POST", "/counter/sessions/handoff", handoff)).toEqual({ status: 200, body: { sent: false } })
+    const runtimeSession = runtimeSessions.get(session.sessionId)
+    expect(runtimeSession?.messages).toHaveLength(1)
+    expect(runtimeSession?.prompts).toEqual([[
+      { type: "text", text: "Draft the notes" },
+      { type: "file", mime: "image/gif", filename: "dot.gif", url: `data:image/gif;base64,${Buffer.from("GIF89a").toString("base64")}` },
+    ]])
+    expect(await call(frank, "POST", "/counter/sessions/state", { origins: [{ scope: projectId, key: "draft-1" }, { scope: projectId, key: "never" }] })).toEqual({
+      status: 200,
+      body: [{ origin: { scope: projectId, key: "draft-1" }, session, state: "live", handoff: "sent" }],
+    })
+    expect(await call(frank, "POST", "/counter/sessions/handoff", { ...handoff, origin: { scope: projectId, key: "never" } })).toEqual(refusal(404, "plugin_session_origin_unknown"))
+    expect(await call(frank, "POST", "/counter/sessions/abandon", { origin: handoff.origin, session })).toEqual({ status: 200, body: { removed: false } })
+    expect(runtimeSessions.has(session.sessionId)).toBe(true)
+  })
+
+  test("abandoning a session no message reached deletes it and its record, and the origin then names no session", async () => {
+    const session = (await started("draft-2")).body.session as { sessionId: string; workspaceId: string }
+    const origin = { scope: projectId, key: "draft-2" }
+    expect(await call(frank, "POST", "/counter/sessions/abandon", { origin, session })).toEqual({ status: 200, body: { removed: true } })
+    expect(runtimeSessions.has(session.sessionId)).toBe(false)
+    expect((await originRows()).map((row) => row.key)).toEqual(["draft-1"])
+    expect(await call(frank, "POST", "/counter/sessions/state", { origins: [origin] })).toEqual({ status: 200, body: [] })
+  })
+
+  test("a start that continues a session reads its transcript only when the caller may open it", async () => {
+    const previous = (await started("draft-1")).body.session as { sessionId: string; workspaceId: string }
+    expect(await call(frank, "POST", "/counter/sessions/open", { session: previous })).toEqual({ status: 200, body: { allowed: true } })
+    const unknown = { sessionId: "ses_someone_elses", workspaceId: "ws_frank_main" }
+    expect(await call(frank, "POST", "/counter/sessions/open", { session: unknown })).toEqual({ status: 200, body: { allowed: false } })
+    expect(await call(frank, "POST", "/counter/sessions/preview", startOf("draft-3", { continueFrom: unknown }))).toEqual(refusal(403, "plugin_session_forbidden"))
+    const continued = await started("draft-3", { continueFrom: previous })
+    expect(continued).toEqual({ status: 200, body: { session: expect.objectContaining({ workspaceId: "ws_frank_main" }), continuedFrom: previous } })
+    const instructions = runtimeSessions.get((continued.body.session as { sessionId: string }).sessionId)?.instructions ?? ""
+    expect(instructions.startsWith("Write the release notes.\n\n## The previous session\n\n")).toBe(true)
+  })
+
+  test("a cloud start allocates the origin's own workspace, which a later local start does not take as the project's", async () => {
+    const harnesses = await call(frank, "POST", "/counter/sessions/harnesses", { projectId, placement: "local" })
+    expect(harnesses.body).toEqual(expect.arrayContaining([{ id: "codex", access: "native", label: "Codex", models: [{ providerID: "openai", modelID: "gpt-5", name: "GPT-5" }] }]))
+    const cloud = await started("cloud-1", { placement: "cloud", selection: { plugins: [], skills: [] } })
+    const root = (cloud.body.session as { workspaceId: string }).workspaceId
+    expect(cloud).toEqual({ status: 200, body: { session: expect.objectContaining({ workspaceId: expect.stringMatching(/^ws_[0-9a-f]{24}$/) }) } })
+    expect(root).not.toBe("ws_frank_main")
+    expect((await originRows()).find((row) => row.key === "cloud-1")).toMatchObject({ workspace_id: root, placement: "cloud" })
+    expect(await started("draft-4")).toEqual({ status: 200, body: { session: expect.objectContaining({ workspaceId: "ws_frank_main" }) } })
+    expect(await call(frank, "POST", "/counter/sessions/preview", startOf("cloud-1"))).toEqual(refusal(409, "plugin_session_conflict"))
+  })
+
+  test("a member of another organization reaches none of these sessions, and an uninstall deletes the origins while the sessions stay", async () => {
+    const session = (await started("draft-1")).body.session as { sessionId: string; workspaceId: string }
+    expect(await call(alice, "POST", "/counter/sessions/state", { origins: [{ scope: projectId, key: "draft-1" }] })).toEqual({ status: 200, body: [] })
+    expect(await call(alice, "POST", "/counter/sessions/open", { session })).toEqual({ status: 200, body: { allowed: false } })
+    expect(await call(alice, "POST", "/counter/sessions/preview", { ...startOf("draft-9"), projectId })).toEqual(refusal(403, "plugin_project_forbidden"))
+    expect(await appPlugins(frank, "DELETE", "/counter")).toEqual(noContent)
+    expect(await originRows()).toEqual([])
+    expect(runtimeSessions.has(session.sessionId)).toBe(true)
   })
 })
 

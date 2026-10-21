@@ -1,3 +1,4 @@
+import type { SessionRef } from "@claxedo/agent-runtime-contract"
 import type { PluginPermission } from "./manifest"
 
 /** The one header a request to a backend carries about its caller: an opaque handle only `identity.caller` resolves. */
@@ -26,10 +27,27 @@ export const PLUGIN_WAKE_LIMITS = Object.freeze({ namePattern: /^[A-Za-z0-9._-]{
 
 export const PLUGIN_LINK_LIMITS = Object.freeze({ pathMaxLength: 1024, perPlugin: 1000 })
 
+export const PLUGIN_SESSION_LIMITS = Object.freeze({
+  originPartMaxLength: 256,
+  titleMaxLength: 200,
+  instructionsBytes: 64 * 1024,
+  textBytes: 64 * 1024,
+  attachments: 6,
+  attachmentBytes: 1_572_864,
+  attachmentTypes: Object.freeze(["image/png", "image/jpeg", "image/gif", "image/webp"] as const),
+  originsPerState: 100,
+  selectionReferences: 256,
+})
+
 /** Who a request or a wake acts for. A `person` and an `agent` carry a user; a `link` request and a `system` wake carry none. */
 export type PluginCallerOrigin = "person" | "agent" | "link" | "system"
 
-export type PluginCaller = Readonly<{ orgId: string; origin: PluginCallerOrigin; userId?: string }>
+/**
+ * An `agent` caller also names the session it acts from, and whether a person
+ * other than that session's owner drives it: a member-driven session's agent
+ * may not start a session of its own.
+ */
+export type PluginCaller = Readonly<{ orgId: string; origin: PluginCallerOrigin; userId?: string; session?: SessionRef; ownerDriven?: boolean }>
 
 export type PluginProject = Readonly<{ id: string; repoKey: string }>
 
@@ -47,6 +65,70 @@ export type PluginWake = Readonly<{ name: string; at: number; payload?: unknown 
 
 export type PluginLink = Readonly<{ token: string; url: string; path: string; expiresAt?: number }>
 
+/**
+ * What a backend starts a session for: a scope it names, such as a project,
+ * and a key unique within it, such as a task's slot and attempt. One origin
+ * has at most one session, so a start sent again answers the one it created.
+ */
+export type PluginSessionOrigin = Readonly<{ scope: string; key: string }>
+
+/** `local` runs in the project's own workspace; `cloud` in an isolated cloud workspace of the origin's own, which needs `workspaces.cloud`. */
+export type PluginSessionPlacement = "local" | "cloud"
+
+export type PluginSessionConfiguration = Readonly<{
+  harness: Readonly<{ id: string; access: "native" | "connection" }>
+  model: Readonly<{ providerID: string; modelID: string }>
+  /** Null leaves the model's own default. */
+  effort: string | null
+}>
+
+/** The Marketplace plugins and skills a cloud session's workspace is prepared with. */
+export type PluginSessionSelection = Readonly<{
+  plugins: readonly Readonly<{ sourceId: string; pluginName: string }>[]
+  skills: readonly Readonly<{ sourceId: string; skillName: string }>[]
+}>
+
+export type PluginSessionStart = Readonly<{
+  origin: PluginSessionOrigin
+  projectId: string
+  placement: PluginSessionPlacement
+  configuration: PluginSessionConfiguration
+  /** Kept on the session and reapplied on every later turn. */
+  instructions?: string
+  /** Cloud placement only. */
+  selection?: PluginSessionSelection
+  /** A session whose transcript is carried into the instructions; the caller must be allowed to open it at the read. */
+  continueFrom?: SessionRef
+  title?: string
+}>
+
+/** Why a start cannot run where it would, in a sentence a person reads. */
+export type PluginSessionBlocker = Readonly<{ code: string; detail: string }>
+
+/** What a start would run, named by `digest`: a start whose digest no longer matches is refused. */
+export type PluginSessionPreview = Readonly<{ digest: string; blockers: readonly PluginSessionBlocker[] }>
+
+/** The origin's session, or the cloud workspace whose start is still under way: send the same start again once it runs. */
+export type PluginSessionStarted = Readonly<{ session: SessionRef; continuedFrom?: SessionRef }> | Readonly<{ preparing: Readonly<{ workspaceId: string }> }>
+
+/** One of the plugin's own blobs, sent as a file beside a first message. */
+export type PluginSessionAttachment = Readonly<{ key: string; filename?: string }>
+
+export type PluginSessionLiveness = "live" | "archived" | "deleted" | "unavailable"
+
+/** Whether the origin's first message reached its session; `unknown` when nothing should be sent on the strength of the answer. */
+export type PluginSessionHandoff = "sent" | "pending" | "unknown"
+
+export type PluginSessionState = Readonly<{ origin: PluginSessionOrigin; session: SessionRef; state: PluginSessionLiveness; handoff: PluginSessionHandoff }>
+
+/** A harness a session can start with at a placement, and the models it offers there; none listed means it was not asked. */
+export type PluginSessionHarness = Readonly<{
+  id: string
+  access: "native" | "connection"
+  label: string
+  models: readonly Readonly<{ providerID: string; modelID: string; name?: string }>[]
+}>
+
 /** One call a backend makes of the platform, as `env.PLATFORM.call` carries it. */
 export type PluginPlatformCall =
   | { readonly name: "identity.caller" }
@@ -63,6 +145,19 @@ export type PluginPlatformCall =
   | { readonly name: "schedule.list" }
   | { readonly name: "links.create"; readonly path: string; readonly expiresAt?: number }
   | { readonly name: "links.revoke"; readonly token: string }
+  | { readonly name: "sessions.harnesses"; readonly projectId: string; readonly placement: PluginSessionPlacement }
+  | ({ readonly name: "sessions.preview" } & PluginSessionStart)
+  | ({ readonly name: "sessions.start"; readonly digest: string } & PluginSessionStart)
+  | {
+      readonly name: "sessions.handoff"
+      readonly origin: PluginSessionOrigin
+      readonly session: SessionRef
+      readonly text: string
+      readonly attachments?: readonly PluginSessionAttachment[]
+    }
+  | { readonly name: "sessions.abandon"; readonly origin: PluginSessionOrigin; readonly session: SessionRef }
+  | { readonly name: "sessions.state"; readonly origins: readonly PluginSessionOrigin[] }
+  | { readonly name: "sessions.authorizeOpen"; readonly session: SessionRef }
 
 export type PluginPlatformCallName = PluginPlatformCall["name"]
 
@@ -82,7 +177,21 @@ export const PLATFORM_CALL_PERMISSIONS: Readonly<Record<PluginPlatformCallName, 
   "schedule.list": "schedule",
   "links.create": "links",
   "links.revoke": "links",
+  "sessions.harnesses": "sessions.start",
+  "sessions.preview": "sessions.start",
+  "sessions.start": "sessions.start",
+  "sessions.handoff": "sessions.start",
+  "sessions.abandon": "sessions.start",
+  "sessions.state": "sessions.read",
+  "sessions.authorizeOpen": "sessions.read",
 })
+
+/** Every permission a call needs: its own, and `workspaces.cloud` for a preview or start that would place a cloud workspace. */
+export function platformCallPermissions(call: PluginPlatformCall): readonly PluginPermission[] {
+  const own = PLATFORM_CALL_PERMISSIONS[call.name]
+  const cloud = (call.name === "sessions.preview" || call.name === "sessions.start") && call.placement === "cloud"
+  return [...(own ? [own] : []), ...(cloud ? (["workspaces.cloud"] as const) : [])]
+}
 
 export type PluginPlatformRefusal = Readonly<{ ok: false; status: number; code: string; message: string }>
 
@@ -134,6 +243,15 @@ export type PluginBackendPlatform = Readonly<{
     create(link: { path: string; expiresAt?: number }): Promise<PluginLink>
     revoke(token: string): Promise<void>
   }
+  sessions: {
+    harnesses(input: { projectId: string; placement: PluginSessionPlacement }): Promise<readonly PluginSessionHarness[]>
+    preview(start: PluginSessionStart): Promise<PluginSessionPreview>
+    start(start: PluginSessionStart & { digest: string }): Promise<PluginSessionStarted>
+    handoff(input: { origin: PluginSessionOrigin; session: SessionRef; text: string; attachments?: readonly PluginSessionAttachment[] }): Promise<{ sent: boolean }>
+    abandon(input: { origin: PluginSessionOrigin; session: SessionRef }): Promise<{ removed: boolean }>
+    state(origins: readonly PluginSessionOrigin[]): Promise<readonly PluginSessionState[]>
+    authorizeOpen(session: SessionRef): Promise<boolean>
+  }
 }>
 
 /**
@@ -175,6 +293,15 @@ export function pluginPlatform(binding: PluginPlatformBinding, request?: Request
     links: {
       create: (link) => call({ name: "links.create", ...link }),
       revoke: (token) => call({ name: "links.revoke", token }),
+    },
+    sessions: {
+      harnesses: (input) => call({ name: "sessions.harnesses", ...input }),
+      preview: (start) => call({ name: "sessions.preview", ...start }),
+      start: (start) => call({ name: "sessions.start", ...start }),
+      handoff: (input) => call({ name: "sessions.handoff", ...input }),
+      abandon: (input) => call({ name: "sessions.abandon", ...input }),
+      state: (origins) => call({ name: "sessions.state", origins }),
+      authorizeOpen: (session) => call({ name: "sessions.authorizeOpen", session }),
     },
   }
 }

@@ -25,7 +25,16 @@ function activation(permissions: readonly PluginPermission[] = []): PluginBacken
   }
 }
 
-const EVERY_PERMISSION: PluginPermission[] = ["projects.read", "blobs", "events", "schedule", "links"]
+const EVERY_PERMISSION: PluginPermission[] = ["projects.read", "blobs", "events", "schedule", "links", "sessions.read", "sessions.start", "workspaces.cloud"]
+
+const SESSION = { sessionId: "ses_1", workspaceId: "ws_1" }
+const ORIGIN = { scope: "prj_1", key: "draft-1" }
+const START = {
+  origin: ORIGIN,
+  projectId: "prj_1",
+  placement: "local",
+  configuration: { harness: { id: "codex", access: "native" }, model: { providerID: "openai", modelID: "gpt-5" }, effort: null },
+} as const
 
 /** One well-formed call of each name. */
 const CALLS = {
@@ -43,6 +52,13 @@ const CALLS = {
   "schedule.list": { name: "schedule.list" },
   "links.create": { name: "links.create", path: "/count" },
   "links.revoke": { name: "links.revoke", token: "t" },
+  "sessions.harnesses": { name: "sessions.harnesses", projectId: "prj_1", placement: "cloud" },
+  "sessions.preview": { name: "sessions.preview", ...START },
+  "sessions.start": { name: "sessions.start", ...START, digest: "d".repeat(64) },
+  "sessions.handoff": { name: "sessions.handoff", origin: ORIGIN, session: SESSION, text: "Go", attachments: [{ key: "images/a.png" }] },
+  "sessions.abandon": { name: "sessions.abandon", origin: ORIGIN, session: SESSION },
+  "sessions.state": { name: "sessions.state", origins: [ORIGIN] },
+  "sessions.authorizeOpen": { name: "sessions.authorizeOpen", session: SESSION },
 } as const
 
 function code(answer: ReturnType<typeof admitPlatformCall>) {
@@ -66,8 +82,29 @@ describe("admitting a platform call", () => {
     }
   })
 
+  test("a preview or start that would place a cloud workspace needs workspaces.cloud beside sessions.start, and nothing else does", () => {
+    const without = activation(EVERY_PERMISSION.filter((entry) => entry !== "workspaces.cloud"))
+    for (const name of ["sessions.preview", "sessions.start"] as const) {
+      const cloud = { ...CALLS[name], placement: "cloud" }
+      expect(code(admitPlatformCall({ raw: cloud, epoch: 3, activation: without, caller: person })), name).toBe("plugin_permission_not_declared")
+      expect(code(admitPlatformCall({ raw: cloud, epoch: 3, activation: activation(EVERY_PERMISSION), caller: person })), name).toBe("admitted")
+      expect(code(admitPlatformCall({ raw: CALLS[name], epoch: 3, activation: without, caller: person })), name).toBe("admitted")
+    }
+    expect(code(admitPlatformCall({ raw: CALLS["sessions.harnesses"], epoch: 3, activation: without, caller: person }))).toBe("admitted")
+  })
+
   test("a call that acts as a person needs a live handle for a person, and a link or a wake cannot make it", () => {
-    for (const name of ["projects.list", "projects.authorize", "links.create"] as const) {
+    for (const name of [
+      "projects.list",
+      "projects.authorize",
+      "links.create",
+      "sessions.harnesses",
+      "sessions.preview",
+      "sessions.start",
+      "sessions.handoff",
+      "sessions.abandon",
+      "sessions.authorizeOpen",
+    ] as const) {
       expect(code(admitPlatformCall({ raw: CALLS[name], epoch: 3, activation: activation(EVERY_PERMISSION), caller: undefined })), name).toBe("plugin_caller_invalid")
       expect(code(admitPlatformCall({ raw: CALLS[name], epoch: 3, activation: activation(EVERY_PERMISSION), caller: link })), name).toBe("plugin_caller_not_a_person")
       expect(code(admitPlatformCall({ raw: CALLS[name], epoch: 3, activation: activation(EVERY_PERMISSION), caller: system })), name).toBe("plugin_caller_not_a_person")
@@ -77,6 +114,7 @@ describe("admitting a platform call", () => {
     expect(code(admitPlatformCall({ raw: CALLS["events.publish"], epoch: 3, activation: activation(EVERY_PERMISSION), caller: system }))).toBe("admitted")
     expect(code(admitPlatformCall({ raw: CALLS["identity.caller"], epoch: 3, activation: activation(), caller: undefined }))).toBe("plugin_caller_invalid")
     expect(code(admitPlatformCall({ raw: CALLS["identity.caller"], epoch: 3, activation: activation(), caller: link }))).toBe("admitted")
+    expect(code(admitPlatformCall({ raw: CALLS["sessions.state"], epoch: 3, activation: activation(EVERY_PERMISSION), caller: system }))).toBe("admitted")
   })
 
   test("refuses a call whose fields the contract does not accept", () => {
@@ -91,6 +129,13 @@ describe("admitting a platform call", () => {
       { name: "links.create", path: "/count?x=1" },
       { name: "projects.authorize", projectId: "prj_1", access: "admin" },
       { name: "identity.caller", extra: true },
+      { name: "sessions.preview", ...START, selection: { plugins: [], skills: [] } },
+      { name: "sessions.preview", ...START, origin: { scope: "prj 1", key: "draft" } },
+      { name: "sessions.start", ...START, digest: "not-a-digest" },
+      { name: "sessions.handoff", origin: ORIGIN, session: SESSION, text: "Go", attachments: [{ key: "../escape" }] },
+      { name: "sessions.handoff", origin: ORIGIN, session: SESSION, text: "x".repeat(64 * 1024 + 1) },
+      { name: "sessions.state", origins: Array.from({ length: 101 }, () => ORIGIN) },
+      { name: "sessions.authorizeOpen", session: { sessionId: "ses_1" } },
     ]
     for (const raw of invalid) {
       expect(code(admitPlatformCall({ raw, epoch: 3, activation: activation(EVERY_PERMISSION), caller: person })), JSON.stringify(raw)).toBe("plugin_call_invalid")
