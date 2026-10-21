@@ -1,17 +1,21 @@
 import { createEffect, type JSX } from "solid-js"
-import { loadOnboardingAccountViews } from "@/accounts"
+import { loadAccountsTranslations, loadOnboardingAccountViews } from "@/accounts"
+import { useTranslatedLazyView } from "@/i18n"
+import { loadUsageTranslations } from "@/usage"
 import { loadProjectCreate } from "@/projects"
-import { lazyView } from "@/lib/lazy-view"
 import { useServer } from "@/server"
 import type { PageProps, RouteEntry } from "@/shell"
 import { prefetchOnboardingReads } from "./prefetch"
 
 export const onboardingPath = "/welcome"
 
-const FirstProjectCanvas = lazyView(() => Promise.all([import("./view/first-project-canvas"), loadOnboardingAccountViews(), loadProjectCreate()]).then(([module]) => module.FirstProjectCanvas))
+const loadFirstProjectCanvas = () => Promise.all([import("./view/first-project-canvas"), loadOnboardingAccountViews(), loadProjectCreate()]).then(([module]) => module.FirstProjectCanvas)
+
+const onboardingTranslations = () => Promise.all([loadAccountsTranslations(), loadUsageTranslations()])
 
 function OnboardingRoute(props: PageProps): JSX.Element {
   const server = useServer()
+  const FirstProjectCanvas = useTranslatedLazyView(loadFirstProjectCanvas, onboardingTranslations)
   let prefetched = false
   createEffect(() => {
     const capabilities = server.capabilities()

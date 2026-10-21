@@ -1,4 +1,5 @@
 import type { Component, JSX } from "solid-js"
+import type { Translations } from "@/i18n"
 import type { ToolCardTemplate } from "@claxedo/plugin-api"
 import type { PlacementId, ProjectId, SessionId, TerminalId } from "@/server"
 
@@ -77,6 +78,7 @@ export type SettingsSection = {
   readonly group: "account" | "workspace" | "app"
   readonly order?: number
   readonly available?: () => boolean
+  readonly translations?: () => Promise<Translations>
   readonly view: Component
 }
 

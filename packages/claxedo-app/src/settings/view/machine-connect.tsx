@@ -33,7 +33,7 @@ function Step(props: { readonly number: string; readonly title: string; readonly
   )
 }
 
-export function MachineConnectSteps() {
+function MachineConnectSteps() {
   const t = useTranslator(settingsDictionary)
   return (
     <ol class="settings-steps">
@@ -46,7 +46,7 @@ export function MachineConnectSteps() {
   )
 }
 
-function ConnectMachineDrawer() {
+export function ConnectMachineDrawer() {
   const t = useTranslator(settingsDictionary)
   const dialog = useDialog()
   return (
@@ -54,9 +54,4 @@ function ConnectMachineDrawer() {
       <MachineConnectSteps />
     </Drawer>
   )
-}
-
-export function useConnectMachine(): () => void {
-  const dialog = useDialog()
-  return () => dialog.show(() => <ConnectMachineDrawer />)
 }

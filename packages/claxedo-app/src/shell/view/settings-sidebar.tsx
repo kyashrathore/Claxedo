@@ -1,6 +1,6 @@
 import { A } from "@solidjs/router"
 import { createMemo, For, Show, type Accessor, type JSX } from "solid-js"
-import { useTranslator } from "@/i18n"
+import { useTranslator, WithTranslations, type Translations } from "@/i18n"
 import { shellDictionary } from "../i18n"
 import { byOrder, useShellRegistries } from "../registries"
 import { useShellRoute } from "../router"
@@ -13,6 +13,16 @@ const groups: readonly SettingsSection["group"][] = ["account", "workspace", "ap
 
 export function activeSectionId(params: Readonly<Record<string, string>>): string | undefined {
   return params.section
+}
+
+export function settingsTranslations(sections: readonly SettingsSection[]): Promise<readonly Translations[]> {
+  const loads = new Set(sections.flatMap((section) => (section.translations ? [section.translations] : [])))
+  return Promise.all([...loads].map((load) => load()))
+}
+
+export function SettingsTranslations(props: { readonly children: JSX.Element }): JSX.Element {
+  const registries = useShellRegistries()
+  return <WithTranslations load={() => settingsTranslations(registries.settingsSections.list())}>{props.children}</WithTranslations>
 }
 
 export function useSettingsSections(): Accessor<readonly SettingsSection[]> {
@@ -35,22 +45,24 @@ export function SettingsSidebar(): JSX.Element {
         <span>{t("shell.back")}</span>
       </A>
       <h2 class="settings-nav-title">{t("shell.settings")}</h2>
-      <For each={groups}>
-        {(group) => (
-          <Show when={sections().some((section) => section.group === group)}>
-            <div class="settings-nav-group" role="group" aria-label={t(`shell.settingsGroup.${group}`)}>
-              <div class="sidebar-section-label settings-nav-group-title" aria-hidden="true">{t(`shell.settingsGroup.${group}`)}</div>
-              <For each={sections().filter((section) => section.group === group)}>
-                {(section) => (
-                  <A href={settingsPath(section.id)} class="sidebar-row settings-nav-row" aria-current={active() === section.id ? "page" : undefined}>
-                    {section.title()}
-                  </A>
-                )}
-              </For>
-            </div>
-          </Show>
-        )}
-      </For>
+      <SettingsTranslations>
+        <For each={groups}>
+          {(group) => (
+            <Show when={sections().some((section) => section.group === group)}>
+              <div class="settings-nav-group" role="group" aria-label={t(`shell.settingsGroup.${group}`)}>
+                <div class="sidebar-section-label settings-nav-group-title" aria-hidden="true">{t(`shell.settingsGroup.${group}`)}</div>
+                <For each={sections().filter((section) => section.group === group)}>
+                  {(section) => (
+                    <A href={settingsPath(section.id)} class="sidebar-row settings-nav-row" aria-current={active() === section.id ? "page" : undefined}>
+                      {section.title()}
+                    </A>
+                  )}
+                </For>
+              </div>
+            </Show>
+          )}
+        </For>
+      </SettingsTranslations>
     </div>
   )
 }

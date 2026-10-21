@@ -546,8 +546,13 @@ export const desktopRenderer: Policy = {
   // The transcript's loader of motion's `animate`, which keeps it out of the
   // web boot (owner: the app's transcript domain, `transcript/tool-motion.ts`).
   // It adds no package edge.
-  // 1552/37, no headroom.
-  ceilings: { modules: 1552, packages: 37 },
+  // The doors that include a dictionary before they draw, which keep the
+  // settings-only dictionaries out of the web boot (owner: the app's i18n,
+  // `i18n/with-translations.tsx`), and the settings domain's dictionary loader
+  // and lazy connect-machine drawer (`settings/translations.ts`,
+  // `settings/connect-machine.tsx`). They add no package edge.
+  // 1555/37, no headroom.
+  ceilings: { modules: 1555, packages: 37 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

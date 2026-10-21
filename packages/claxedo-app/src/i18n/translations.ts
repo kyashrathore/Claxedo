@@ -9,6 +9,7 @@ export type TranslationRegistry = {
   readonly add: (domain: Translations) => () => void
   readonly pending: (locale: Locale) => boolean
   readonly load: (locale: Locale) => Promise<void>
+  readonly include: (domains: readonly Translations[]) => Promise<void>
 }
 
 export function createTranslationRegistry(locale: Accessor<Locale>): TranslationRegistry {
@@ -41,5 +42,9 @@ export function createTranslationRegistry(locale: Accessor<Locale>): Translation
     },
     pending: dictionaries.pending,
     load,
+    include: async (domains) => {
+      for (const domain of domains) if (dictionaries.add(domain)) markAdded()
+      await load(untrack(locale))
+    },
   }
 }
