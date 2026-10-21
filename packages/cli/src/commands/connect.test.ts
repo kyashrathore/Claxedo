@@ -24,8 +24,14 @@ import { freePort } from "@claxedo/helpers/net"
 import { connect, type ConnectDeps } from "./connect"
 import { hostOnline, statusLines } from "./status"
 
-/** Bounded below bun's 5 s test timeout, so a wait that never ends fails naming what it waited for. */
-const until = (predicate: () => boolean | Promise<boolean>, what: string) => waitUntil(predicate, what, 4_000)
+/**
+ * Bounded below the test timeout, so a wait that never ends fails naming what
+ * it waited for: bun's 5 s, and on Windows windows-test-timeout.mjs's 20 s,
+ * because a stale daemon file there is judged by a creation-identity read that
+ * starts PowerShell, and a test process's first PowerShell start has taken over
+ * 5 s on the hosted runner.
+ */
+const until = (predicate: () => boolean | Promise<boolean>, what: string) => waitUntil(predicate, what, process.platform === "win32" ? 15_000 : 4_000)
 
 /**
  * The real `connect` command function against the strict fake control plane,

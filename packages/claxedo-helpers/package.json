@@ -185,7 +185,7 @@
     "build": "bun scripts/build.ts",
     "prepublishOnly": "npm run build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "bun test src"
+    "test": "node ../../script/windows-test-timeout.mjs bun test src"
   },
   "devDependencies": {
     "@tsconfig/node-lts": "22.0.4",
