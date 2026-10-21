@@ -71,7 +71,7 @@ test("external stdio startup isolates refusal, retires crashed questions, and pe
     `http://runtime.test${pathname}${pathname.includes("?") ? "&" : "?"}directory=${encodeURIComponent(directory)}`,
     { method, headers: { "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) },
   ))
-  const peerLog = async () => (await readFile(logPath, "utf8")).trim().split("\n").map(line => JSON.parse(line) as { pid: number; method?: string })
+  const peerLog = async () => (await readFile(logPath, "utf8")).trim().split("\n").map(line => JSON.parse(line) as { pid: number; agent: string; method?: string })
   const pendingQuestion = async (id: string) => {
     let questions: Array<{ id: string }> = []
     for (let n = 0; n < 200 && !questions.length; n++) {
@@ -99,15 +99,15 @@ test("external stdio startup isolates refusal, retires crashed questions, and pe
     const starts = log.filter(row => row.method === "session/new")
     expect(starts).toHaveLength(3)
     // Each session runs its own agent process, so a refused startup takes no other session's agent with it.
-    expect(new Set(starts.map(row => row.pid)).size).toBe(3)
+    expect(new Set(starts.map(row => row.agent)).size).toBe(3)
     expect(log.some(row => row.method === "session/prompt")).toBe(false)
 
     const interrupted = request("/session", "POST", { id: "interrupted" })
     const pending = await pendingQuestion("interrupted")
     expect(pending).toHaveLength(1)
-    const interruptedPid = (await peerLog()).filter(row => row.method === "session/new").at(-1)!.pid
-    pids.add(interruptedPid)
-    process.kill(interruptedPid, "SIGKILL")
+    const interruptedAgent = (await peerLog()).filter(row => row.method === "session/new").at(-1)!
+    pids.add(interruptedAgent.pid)
+    process.kill(interruptedAgent.pid, "SIGKILL")
     expect((await interrupted).status).toBe(500)
     expect(await (await request("/session-start/interrupted")).json()).toMatchObject({ status: "failed" })
     expect(await (await request("/question?sessionId=interrupted")).json()).toEqual([])
@@ -121,7 +121,7 @@ test("external stdio startup isolates refusal, retires crashed questions, and pe
     expect((await restarted).status).toBe(201)
     const recoveredLog = await peerLog()
     for (const row of recoveredLog) pids.add(row.pid)
-    expect(recoveredLog.filter(row => row.method === "session/new").at(-1)!.pid).not.toBe(interruptedPid)
+    expect(recoveredLog.filter(row => row.method === "session/new").at(-1)!.agent).not.toBe(interruptedAgent.agent)
     expect(recoveredLog.some(row => row.method === "session/prompt")).toBe(false)
   } finally {
     await host.dispose()

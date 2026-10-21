@@ -1,7 +1,11 @@
 // Deterministic external ACP peer for restart and missing-history acceptance.
 import { createInterface } from "node:readline"
+import { randomUUID } from "node:crypto"
 import { appendFileSync, existsSync } from "node:fs"
 const [logFile, recovery] = process.argv.slice(2)
+// Names this process in the log: Windows hands an exited process's pid to the
+// next process it creates, so a pid cannot tell two agents apart.
+const agent = randomUUID()
 let pendingPrompt
 const send = body => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...body }) + "\n")
 const input = createInterface({ input: process.stdin })
@@ -10,11 +14,11 @@ const input = createInterface({ input: process.stdin })
 input.on("close", () => process.exit(0))
 input.on("line", line => {
   const message = JSON.parse(line)
-  appendFileSync(logFile, JSON.stringify({ pid: process.pid, ...message }) + "\n")
+  appendFileSync(logFile, JSON.stringify({ pid: process.pid, agent, ...message }) + "\n")
   if (message.method === "initialize") {
     send({ id: message.id, result: { protocolVersion: 1, agentCapabilities: recovery === "unsupported" ? {} : { sessionCapabilities: { resume: {} } } } })
   } else if (message.method === "session/new") {
-    send({ id: message.id, result: { sessionId: `upstream-${process.pid}-${message.id}` } })
+    send({ id: message.id, result: { sessionId: `upstream-${agent}-${message.id}` } })
   } else if (message.method === "session/resume") {
     // The host attaches an idle session on a fresh agent before each turn; the
     // scripted loss or expired login happens only once the host has restarted.

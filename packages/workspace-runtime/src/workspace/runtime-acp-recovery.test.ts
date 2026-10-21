@@ -84,14 +84,14 @@ for (const recovery of ["resume", "missing", "auth", "unsupported", "approval", 
         const log = (await readFile(logFile, "utf8")).trim().split("\n").map(line => JSON.parse(line))
         const prompts = log.filter(row => row.method === "session/prompt")
         expect(prompts).toHaveLength(3)
-        const pidOf = (text: string) => prompts.find(row => JSON.stringify(row.params).includes(text))?.pid
+        const agentOf = (text: string) => prompts.find(row => JSON.stringify(row.params).includes(text))?.agent
         // Each session runs its own agent. The stopped one keeps its agent while
         // its cancellation is unresolved: the cancel reaches the agent that holds
         // the prompt, and only the turn that follows the settlement attaches a
         // fresh one.
-        expect(log.find(row => row.method === "session/cancel")?.pid).toBe(pidOf("Wait for cancellation."))
-        expect(pidOf("Continue after settlement.")).not.toBe(pidOf("Wait for cancellation."))
-        expect(pidOf("Independent sibling.")).not.toBe(pidOf("Wait for cancellation."))
+        expect(log.find(row => row.method === "session/cancel")?.agent).toBe(agentOf("Wait for cancellation."))
+        expect(agentOf("Continue after settlement.")).not.toBe(agentOf("Wait for cancellation."))
+        expect(agentOf("Independent sibling.")).not.toBe(agentOf("Wait for cancellation."))
         expect(JSON.stringify(log)).not.toContain("Must not run.")
         return
       }
@@ -148,7 +148,7 @@ for (const recovery of ["resume", "missing", "auth", "unsupported", "approval", 
       // The idle session is released after its creation and after its turn, so
       // its creation, its first turn and the restart's turn each ran their own
       // agent; an agent that cannot resume keeps the one it started with.
-      expect(new Set(log.map(row => row.pid)).size).toBe(recovery === "unsupported" ? 2 : 3)
+      expect(new Set(log.map(row => row.agent)).size).toBe(recovery === "unsupported" ? 2 : 3)
     } finally { await active.host.dispose(); await rm(directory, { recursive: true, force: true }) }
   }, recovery === "cancel" ? 15_000 : undefined)
 }

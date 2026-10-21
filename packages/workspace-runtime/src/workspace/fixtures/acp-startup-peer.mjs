@@ -1,8 +1,12 @@
 // Deterministic ACP peer for public-route and interactive startup acceptance.
 // No model, credentials, network requests, or tools are involved.
 import { createInterface } from "node:readline"
+import { randomUUID } from "node:crypto"
 import { appendFileSync } from "node:fs"
 
+// Names this process in the log: Windows hands an exited process's pid to the
+// next process it creates, so a pid cannot tell two agents apart.
+const agent = randomUUID()
 const pending = new Map()
 const logFile = process.argv[2]
 // "patterns" asks for a name the runtime validates against a pattern, beside
@@ -15,7 +19,7 @@ const configOptions = [{ id: "model", name: "Model", category: "model", type: "s
 
 createInterface({ input: process.stdin }).on("line", (line) => {
   const message = JSON.parse(line)
-  if (logFile) appendFileSync(logFile, JSON.stringify({ pid: process.pid, ...message }) + "\n")
+  if (logFile) appendFileSync(logFile, JSON.stringify({ pid: process.pid, agent, ...message }) + "\n")
   if (message.method === "initialize") {
     send({ id: message.id, result: { protocolVersion: 1, agentInfo: { name: "Startup Acceptance", version: "1" }, agentCapabilities: {}, _meta: { claxedo: { version: 1 } } } })
   } else if (message.method === "session/new") {
@@ -33,7 +37,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     } else if (message.result?.action !== "accept") {
       send({ id, error: { code: -32600, message: "Startup was not accepted" } })
     } else {
-      send({ id, result: { sessionId: `startup-${process.pid}-${id}`, configOptions } })
+      send({ id, result: { sessionId: `startup-${agent}-${id}`, configOptions } })
     }
   } else if (message.method === "session/prompt") {
     send({ method: "session/update", params: { sessionId: message.params.sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Prompt received after startup." } } } })
