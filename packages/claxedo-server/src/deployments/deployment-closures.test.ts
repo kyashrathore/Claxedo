@@ -215,7 +215,7 @@ const ENTRIES = [
   // served (`plugin-backends/plugin-answer.ts`), and each plugin's tool switch
   // read from the activation store (`agent-plugins/app-plugin-tool-consent.ts`);
   // the hosted MCP endpoint's proxy groups are `@claxedo/mcp/plugin-proxy`.
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 242, packages: 27 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 248, packages: 27 },
   // The full-hosted entry alone carries the session rows pass
   // (`session/session-rows-pass.ts`) and its wiring to the sandbox and the
   // relay (`hosted-workerd/full-hosted-sandbox.ts`): it delivers the pass to a
@@ -232,7 +232,7 @@ const ENTRIES = [
   // has cloud runtimes to lose. Its provisioner imports `cloudflare:workers`
   // itself, so `@claxedo/plugin-runtime` is one package more here than in the
   // Agent Plugins entry.
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 254, packages: 28 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 260, packages: 28 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {
