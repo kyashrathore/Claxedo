@@ -18,9 +18,9 @@ The top-level `permissions` list names the platform calls the backend may make (
 
 ## Releases and the registry
 
-A release (`@claxedo/plugin-api/release`) is `{ id, version, manifest, app: { sha256, size }, backend?: { sha256, size }, storage, builtAt }`, signed with Ed25519 over its canonical JSON. `@claxedo/plugin-build`'s `buildPluginRelease` builds both bundles and names each by its full SHA-256; `signPluginRelease` signs it, and `claxedo-plugin-build/src/release-cli.ts` writes a signed release and its blobs as a registry tree. The tree's `index.json` (`@claxedo/plugin-api/registry-index`) is a signed list of `{ id, name, description?, latest, versions, manifest }`, versions newest first and `manifest` the latest's; the CLI re-signs it with each release it publishes (`indexWithRelease`, `signPluginIndex`), taking the description from the package's own `description`.
+A release (`@claxedo/plugin-api/release`) is `{ id, version, manifest, app: { sha256, size }, backend?: { sha256, size }, storage, tools?, builtAt }`, signed with Ed25519 over its canonical JSON. `@claxedo/plugin-build`'s `buildPluginRelease` builds both bundles and names each by its full SHA-256; `signPluginRelease` signs it, and `claxedo-plugin-build/src/release-cli.ts` writes a signed release and its blobs as a registry tree. The tree's `/index.json` (`@claxedo/plugin-api/registry-index`) is a signed list of `{ id, name, description?, latest, versions, manifest }`, versions newest first and `manifest` the latest's; the CLI re-signs it with each release it publishes (`indexWithRelease`, `signPluginIndex`), taking the description from the package's own `description`.
 
-The registry serves `index.json`, `releases/<id>/<version>.json` and `blobs/<sha256>`, from `CLAXEDO_APP_PLUGIN_REGISTRY_URL` (default `https://plugins.claxedo.dev`). `registry.ts` verifies the signature under `PLUGIN_REGISTRY_KEYS`, that the release names the id and version asked for, and each blob's size and SHA-256 before anything is stored. `registry-test-key.ts` adds a key from `CLAXEDO_APP_PLUGIN_REGISTRY_TEST_KEY` for test compositions only; `deployment-closures.test.ts` refuses any deployed Worker that reaches it.
+The registry serves `/index.json`, `releases/<id>/<version>.json` and `blobs/<sha256>`, from `CLAXEDO_APP_PLUGIN_REGISTRY_URL` (default `https://plugins.claxedo.dev`). `registry.ts` verifies the signature under `PLUGIN_REGISTRY_KEYS`, that the release names the id and version asked for, and each blob's size and SHA-256 before anything is stored. `registry-test-key.ts` adds a key from `CLAXEDO_APP_PLUGIN_REGISTRY_TEST_KEY` for test compositions only; `deployment-closures.test.ts` refuses any deployed Worker that reaches it.
 
 ## Storage
 
@@ -118,7 +118,7 @@ The Agent Plugins artifacts (`scripts/deploy/wrangler-config.ts`) bind `CLAXEDO_
 `plugin-tools.workerd.test.ts` runs the same fixture Worker, which also composes the hosted first-party MCP endpoint over the app plugins' MCP service, the activation store the tool switch is read from, the pass register and the grant withdrawal, against the `fixtures/notes` plugin, whose release carries three tools. An MCP client speaks to the endpoint as each member. The suite covers:
 
 - tools absent while the plugin is not installed and for a member who has not enabled it, and listed, with their declared input schema, once they enable it;
-- a `tools/call` reaching the backend's `/_tools/<name>` as the member's agent, and an answer over 256 KiB refused;
+- an MCP tools/call request reaching the backend's `/_tools/<name>` as the member's agent, and an answer over 256 KiB refused;
 - tools vanishing when the member turns the switch off, while the plugin's page routes stay theirs, and coming back when they clear it;
 - an undeclared tool name and another organization's member reaching nothing;
 - an install refused for a tool name another installed plugin or Claxedo itself serves;
