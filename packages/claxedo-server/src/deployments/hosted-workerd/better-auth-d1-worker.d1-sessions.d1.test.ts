@@ -69,7 +69,8 @@ test("a sign-up writes through a primary session and hands back its bookmark, an
   const env = betterAuthD1WorkerEnv(
     { authDatabase: recording(bound.authDatabase, opened.auth), controlPlaneDatabase: recording(bound.controlPlaneDatabase, opened.control) },
     {
-      CLAXEDO_AUTH_METHODS: "github,email-password",
+      CLAXEDO_D1_EDGE_READS: "on",
+    CLAXEDO_AUTH_METHODS: "github,email-password",
       CLAXEDO_EMAIL_FROM: "sign-in@example.test",
       EMAIL: { send: async (message: { text: string }) => { mail.push(message.text); return { messageId: "m" } } },
     },
@@ -120,6 +121,7 @@ test("the edge hands a write to the writer before composing or authenticating an
   const opened = { auth: [] as string[], control: [] as string[] }
   const mail: string[] = []
   const shared = {
+    CLAXEDO_D1_EDGE_READS: "on",
     CLAXEDO_AUTH_METHODS: "github,email-password",
     CLAXEDO_EMAIL_FROM: "sign-in@example.test",
     EMAIL: { send: async (message: { text: string }) => { mail.push(message.text); return { messageId: "m" } } },
@@ -210,5 +212,37 @@ test("the edge hands a write to the writer before composing or authenticating an
   )
   expect(refused.status).toBe(503)
   expect(await refused.json()).toEqual({ error: { code: "deployment_candidate_unavailable" } })
+  await Promise.all(readiness)
+})
+
+test("with edge reads off the one Worker reads the bare bindings: no D1 session, no bookmark cookie or header, whatever the request carries", async () => {
+  const bound = await workerDatabases()
+  active.push(bound)
+  const opened: string[] = []
+  const mail: string[] = []
+  const env = betterAuthD1WorkerEnv(
+    { authDatabase: recording(bound.authDatabase, opened), controlPlaneDatabase: recording(bound.controlPlaneDatabase, opened) },
+    {
+      CLAXEDO_AUTH_METHODS: "github,email-password",
+      CLAXEDO_EMAIL_FROM: "sign-in@example.test",
+      EMAIL: { send: async (message: { text: string }) => { mail.push(message.text); return { messageId: "m" } } },
+    },
+  )
+  const readiness: Promise<unknown>[] = []
+  const context = { waitUntil: (work: Promise<unknown>) => void readiness.push(work) } as unknown as ExecutionContext
+  const signedUp = await worker.fetch(new Request(`${API}/api/auth/sign-up/email`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: API, "cf-connecting-ip": "10.0.0.3", "x-claxedo-d1-bookmarks": "auth=00000000-00000001-00000000-00000000000000000000000000000000" },
+    body: JSON.stringify({ email: "lin@example.test", password: "correct-horse-battery-staple", name: "Lin" }),
+  }), env, context)
+  expect(signedUp.status, await signedUp.clone().text()).toBe(200)
+  const read = await worker.fetch(new Request(`${API}/api/auth/get-session`, { headers: { origin: API, cookie: "__Host-claxedo.d1-auth=00000000-00000001-00000000-00000000000000000000000000000000" } }), env, context)
+  expect(read.status).toBe(200)
+  for (const response of [signedUp, read]) {
+    expect(bookmark(response, "auth")).toBeUndefined()
+    expect(response.headers.get("x-claxedo-d1-bookmarks")).toBeNull()
+    expect(response.headers.get("server-timing")).not.toContain("forward")
+  }
+  expect(opened).toEqual([])
   await Promise.all(readiness)
 })

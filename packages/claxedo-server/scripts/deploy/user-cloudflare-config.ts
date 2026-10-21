@@ -38,8 +38,15 @@ export type UserCloudflareDeployment = UserCloudflareTarget & Readonly<{
   agentPluginsBucket?: string
   /** Where a database this deploy creates is placed; an existing one is reported against it. */
   d1Location?: D1Location
-  /** The cloud region the writer Worker is pinned to, beside the databases' primary, in Wrangler's `placement.region` form (`aws:us-east-1`). */
+  /** The cloud region the control-plane Worker (the writer, with edge reads on) is pinned to, beside the databases' primary, in Wrangler's `placement.region` form (`aws:us-east-1`). */
   workerPlacementRegion?: string
+  /**
+   * `CLAXEDO_D1_EDGE_READS=on`: the control plane is a writer beside the
+   * databases and an edge Worker that answers signed reads from D1 read
+   * replicas. Off (the default), it is the one pinned Worker with no D1
+   * sessions. D1 read replication is in beta, so a deployment opts in.
+   */
+  edgeReads: boolean
   /** The runtime image a full-hosted Worker's Boat sandboxes boot; empty on a control-plane-only deployment. */
   sandboxVariables: Readonly<Record<string, string>>
   /** Present only when the deploy says `CLAXEDO_TELEMETRY_MODE=on`; the Worker's PostHog key is then a required secret. */
@@ -81,6 +88,12 @@ function customDomainOrigin(env: NodeJS.ProcessEnv, name: string) {
     throw new Error(`${name} must be a custom domain on your Cloudflare zone, not ${hostname}`)
   }
   return origin
+}
+
+function edgeReads(env: NodeJS.ProcessEnv) {
+  const mode = env.CLAXEDO_D1_EDGE_READS?.trim().toLowerCase()
+  if (mode !== undefined && mode !== "" && mode !== "on" && mode !== "off") throw new Error("CLAXEDO_D1_EDGE_READS must be on or off")
+  return mode === "on"
 }
 
 function workerPlacementRegion(env: NodeJS.ProcessEnv) {
@@ -223,6 +236,7 @@ export function userCloudflareDeployment(
       : {}),
     ...(location ? { d1Location: location } : {}),
     ...(placementRegion ? { workerPlacementRegion: placementRegion } : {}),
+    edgeReads: edgeReads(env),
     sandboxVariables,
     telemetryVariables,
     requiredSecrets: [
@@ -283,6 +297,7 @@ export function workerVariables(deployment: UserCloudflareDeployment, configurat
     ...deployment.integrationClientIds,
     ...deployment.sandboxVariables,
     ...deployment.telemetryVariables,
+    ...(deployment.edgeReads ? { CLAXEDO_D1_EDGE_READS: "on" } : {}),
     ...(deployment.artifact.agentPlugins
       ? { CLAXEDO_HOSTED_CREDENTIALS_ENABLED: "1", CLAXEDO_PUBLIC_URL: deployment.appOrigin }
       : {}),

@@ -36,6 +36,12 @@ export { LiveSyncRoom }
 export type ControlPlaneWriter = { fetch(request: Request): Promise<Response> }
 
 export type BetterAuthD1WorkerEnv = HostedCoreWorkerEnv & {
+  /**
+   * `on` when the deployment reads at the edge: both Workers run every
+   * request's statements in D1 sessions and hand bookmarks on. Unset, the
+   * one Worker reads the bare bindings, as D1 runs them, on the primary.
+   */
+  CLAXEDO_D1_EDGE_READS?: string
   /** Bound only on the edge Worker: the writer every `primary` request is handed to. */
   CONTROL_PLANE_WRITER?: ControlPlaneWriter
   EMAIL?: CloudflareEmailBinding
@@ -66,13 +72,19 @@ function requiredSetting(value: string | undefined, name: string) {
   return value.trim()
 }
 
+function readsAtTheEdge(env: Pick<BetterAuthD1WorkerEnv, "CLAXEDO_D1_EDGE_READS">) {
+  return env.CLAXEDO_D1_EDGE_READS === "on"
+}
+
 /**
- * The two databases as every composition of this Worker reads them: through
- * the current request's D1 session (`inD1Sessions` below), and timed. A path
- * that reached a bare binding instead would run outside the session, so its
- * writes would be missing from the bookmark the client carries away.
+ * The two databases as every composition of this Worker reads them, timed;
+ * when the deployment reads at the edge, through the current request's D1
+ * session (`inD1Sessions` below). A path that reached a bare binding there
+ * would run outside the session, so its writes would be missing from the
+ * bookmark the client carries away.
  */
-export function workerDatabases(env: Pick<BetterAuthD1WorkerEnv, "AUTH_DB" | "CONTROL_PLANE_DB">) {
+export function workerDatabases(env: Pick<BetterAuthD1WorkerEnv, "AUTH_DB" | "CONTROL_PLANE_DB" | "CLAXEDO_D1_EDGE_READS">) {
+  if (!readsAtTheEdge(env)) return { auth: timedD1(env.AUTH_DB), controlPlane: timedD1(env.CONTROL_PLANE_DB) }
   return {
     auth: timedD1(requestSessionD1(env.AUTH_DB, "auth")),
     controlPlane: timedD1(requestSessionD1(env.CONTROL_PLANE_DB, "control")),
@@ -304,6 +316,7 @@ export function createBetterAuthD1Worker(input: {
 
   return {
     fetch(request: Request, env: BetterAuthD1WorkerEnv, context?: ExecutionContext) {
+      if (!readsAtTheEdge(env)) return timedResponse(request, () => respond(request, env, context))
       const start = d1SessionStart(request)
       if (start === "primary" && env.CONTROL_PLANE_WRITER) return forwardToWriter(env.CONTROL_PLANE_WRITER, request)
       return timedResponse(request, () => inD1Sessions(request, start, () => respond(request, env, context)))

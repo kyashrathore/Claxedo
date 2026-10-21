@@ -11,7 +11,7 @@ Merging to `staging` deploys Claxedo Cloud staging. One workflow owns the run:
 | 2 | `gate` | nothing | `bun run lint`, `bun typecheck`, `bun run test:ci-policy`, `bun run test:architecture-ratchets` |
 | 2 | `unit` | nothing | `.github/workflows/test.yml` with `linux-unit-only` (full unit suite, Linux) |
 | 3 | `boat-image` | the Boat sandbox image this checkout builds, with every control-plane deploy | `packages/claxedo-server/scripts/sandbox/build-sandbox-image.ts --agent-plugins --push-if-missing` |
-| 3 | `control-plane` | the Better Auth + D1 writer and edge Workers and **the session-host Worker** | `packages/claxedo-server/scripts/deploy/deploy-user-cloudflare.ts --component=control-plane` |
+| 3 | `control-plane` | the Better Auth + D1 Worker (with edge reads on, its writer and edge Workers) and **the session-host Worker** | `packages/claxedo-server/scripts/deploy/deploy-user-cloudflare.ts --component=control-plane` |
 | 4 | `relay` | workspace relay Worker (Durable Object) | `packages/workspace-relay/scripts/deploy-cloudflare.ts` |
 | 5 | `app` | **the browser app on the public origin**, whose Worker binds the control plane and the relay | `packages/claxedo-server/scripts/deploy/deploy-user-cloudflare.ts --component=app` |
 | 5 | `sandbox-image` | Cloudflare sandbox Worker container image | `.github/workflows/deploy-cloudflare-sandbox-worker.yml` |
@@ -46,10 +46,12 @@ domain, serves the browser app's assets and forwards `/relay/*` to the relay
 Worker over a [service binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/service-bindings/).
 The control plane's own paths (`/api/*`, `/internal/*`, `/.well-known/*`,
 `/bindings/*`, `/health*`, `/global/health*`, `/path*`, the list in
-`scripts/deploy/public-origin.ts`) are the control plane's edge Worker's
+`scripts/deploy/public-origin.ts`) are
 [routes](https://developers.cloudflare.com/workers/configuration/routing/routes/)
-on that same host, rendered into its Wrangler config by
-`renderEdgeWorkerWranglerConfig` and attached by its own `wrangler deploy`:
+on that same host of the control-plane Worker, or with edge reads on (below)
+of its edge Worker, rendered into that Worker's Wrangler config by
+`renderWorkerWranglerConfig` or `renderEdgeWorkerWranglerConfig` and attached
+by its own `wrangler deploy`:
 routes "take precedence if configured on the same hostname" as a custom
 domain, so a request on them never runs the app Worker. A simultaneous A/B against a custom
 domain of the control plane measured the route as the same path, with the
@@ -80,10 +82,11 @@ a version and attached the routes.
 
 ### The session-host Worker is not a separate job
 
-After the control plane's writer and edge serve their new versions, `deploy-user-cloudflare.ts`
+After the control plane serves its new version, `deploy-user-cloudflare.ts`
 publishes `packages/session-host` (one `SessionDO` per top-level Pi session) as
 `CLAXEDO_SESSION_HOST_WORKER_NAME`, `claxedo-session-host-staging` on staging. It
-binds the writer as its `CONTROL_PLANE` service, so it is published
+binds the control-plane Worker under `CLAXEDO_WORKER_NAME` (the writer, with
+edge reads on) as its `CONTROL_PLANE` service, so it is published
 after it, and the relay binds its `SessionDO` as `SESSION_HOST` by that script
 name, so the relay job comes after both. The dry run bundles it too. Its
 variables are the control plane's `/api/runtime-authority/session-authorize` and
@@ -141,36 +144,6 @@ at `CLAXEDO_STAGING_D1_LOCATION` (the 2026-10-05 reset created it in ENAM with
 no location), and the job prints where each database runs and whether it has
 read replicas. `AUTH_DB` is untouched.
 
-The control plane is two Workers from one bundle
-([edge-replicas-2026-10-20](../perf/edge-replicas-2026-10-20/README.md)). The
-writer keeps `CLAXEDO_WORKER_NAME` (`claxedo-user-deployed-locked-staging`),
-its Durable Objects and the session host's `CONTROL_PLANE` binding, and has no
-route; `CLAXEDO_STAGING_WORKER_PLACEMENT_REGION` pins it beside the databases
-(`aws:us-east-1` for ENAM): smart placement left the staging Worker in LHR
-(`cf-placement: remote-LHR`) with both databases in ENAM, and every signed
-request from India then took 1.5–3 s. The edge, `<CLAXEDO_WORKER_NAME>-edge`
-(`CLAXEDO_EDGE_WORKER_NAME` overrides it), has no placement and holds the
-routes: it answers a signed browser's reads from the nearest D1 read replica
-and hands every other request to the writer over its `CONTROL_PLANE_WRITER`
-service binding. The job deploys the writer, then moves the control plane's
-routes off it if it still holds them (the first deploy of the split; between
-the two deploys those paths answer the deploy-window 503), then deploys the
-edge with the same secrets.
-
-Both staging databases need read replication enabled; without it the edge's
-reads from India would cross to ENAM on every round, so the job refuses to
-deploy either Worker or move the routes while either database reports
-`read_replication.mode` other than `auto`, and names the call to make. After a
-reset, enable it on the recreated database again:
-
-```sh
-for id in <auth database id> <control-plane database id>; do
-  curl -sS -X PUT "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$id" \
-    -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" \
-    --data '{"read_replication":{"mode":"auto"}}'
-done
-```
-
 ```sh
 bunx wrangler d1 delete <CLAXEDO_STAGING_CONTROL_PLANE_D1_DATABASE_NAME>
 ```
@@ -193,6 +166,49 @@ CLAXEDO_AUTH_D1_DATABASE_NAME=claxedo-acc-auth-stg-260830-232009-3851 \
 CLAXEDO_CONTROL_PLANE_D1_DATABASE_NAME=claxedo-acc-control-stg-260830-232009-3851 \
 bun run deploy:user-cloudflare:claim-owner --email <your GitHub email>
 ```
+
+### Edge reads
+
+Staging alone reads at the edge: the `control-plane` job sets
+`CLAXEDO_D1_EDGE_READS=on`, and every other deployment keeps the default, off.
+D1 read replication, which edge reads stand on, is a public beta
+([release notes, 2025-04-10](https://developers.cloudflare.com/d1/platform/release-notes/)),
+and Cloudflare recommends trying it on a non-production database first
+([read replication beta](https://blog.cloudflare.com/d1-read-replication-beta/)).
+
+With edge reads on, the control plane is two Workers from one bundle
+([edge-replicas-2026-10-20](../perf/edge-replicas-2026-10-20/README.md)):
+- The writer keeps `CLAXEDO_WORKER_NAME` (`claxedo-user-deployed-locked-staging`),
+  its Durable Objects and the session host's `CONTROL_PLANE` binding, and has
+  no route. `CLAXEDO_STAGING_WORKER_PLACEMENT_REGION` pins it beside the
+  databases (`aws:us-east-1` for ENAM): smart placement left the staging Worker
+  in LHR (`cf-placement: remote-LHR`) with both databases in ENAM, and every
+  signed request from India then took 1.5–3 s.
+- The edge, `<CLAXEDO_WORKER_NAME>-edge` (`CLAXEDO_EDGE_WORKER_NAME` overrides
+  it), has no placement and holds the routes. It answers a signed browser's
+  reads from the nearest D1 read replica and hands every other request to the
+  writer over its `CONTROL_PLANE_WRITER` service binding.
+
+The job deploys the writer, moves the control plane's routes off it if it
+still holds them, then deploys the edge with the same secrets. Between the two
+deploys those paths answer the deploy-window 503. It refuses, before it changes
+anything, while either database reports `read_replication.mode` other than
+`auto`, and names the call that turns replication on. After a reset, enable it
+on the recreated database again:
+
+```sh
+for id in <auth database id> <control-plane database id>; do
+  curl -sS -X PUT "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$id" \
+    -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" \
+    --data '{"read_replication":{"mode":"auto"}}'
+done
+```
+
+To turn edge reads off, set `CLAXEDO_D1_EDGE_READS` to `off` (or remove it) in
+`deploy-staging.yml` and run the `control-plane` job. It moves the routes off
+the edge Worker, deploys the one Worker with them and with no D1 sessions,
+then deletes the edge Worker; the deploy-window 503 answers between the first
+two steps.
 
 It prints one line to paste into the developer console of the signed-in app tab.
 

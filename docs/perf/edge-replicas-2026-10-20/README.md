@@ -1,6 +1,6 @@
 # The control plane at the edge over D1 read replicas, 20 October 2026
 
-A signed browser read from India no longer crosses to IAD: the control plane is now two Workers from one bundle, an edge Worker with no placement that answers bookmark-carrying reads from the nearest D1 read replica, and the existing Worker pinned beside the databases as the writer, which runs every request that may write. The edge hands those requests to the writer over a service binding before it composes or authenticates anything, so a write pays today's path (client → SIN edge → IAD) and the writer's rounds stay beside the primary. Expected from the cold-start note's numbers: a warm signed read 0.42–0.60 s → about 0.14–0.33 s, a cold one 0.85 s → about 0.2–0.4 s, a write unchanged within the edge invocation it adds (0.15 ms of wall time on local workerd). This note is the design, the per-route classification, what changed, what the owner runs on Cloudflare, and what only staging can confirm. Every platform claim cites developers.cloudflare.com.
+A deployment that sets `CLAXEDO_D1_EDGE_READS=on` answers a signed browser read from India without crossing to IAD: its control plane is two Workers from one bundle, an edge Worker with no placement that answers bookmark-carrying reads from the nearest D1 read replica, and the existing Worker pinned beside the databases as the writer, which runs every request that may write. The edge hands those requests to the writer over a service binding before it composes or authenticates anything, so a write pays today's path (client → SIN edge → IAD) and the writer's rounds stay beside the primary. Expected from the cold-start note's numbers: a warm signed read 0.42–0.60 s → about 0.14–0.33 s, a cold one 0.85 s → about 0.2–0.4 s, a write unchanged within the edge invocation it adds (0.15 ms of wall time on local workerd). Only staging turns it on. D1 read replication is a public beta ([release notes, 2025-04-10](https://developers.cloudflare.com/d1/platform/release-notes/)) that Cloudflare recommends trying on a non-production database first ([read replication beta](https://blog.cloudflare.com/d1-read-replication-beta/)), so the setting is off by default, and off the control plane is exactly the one pinned Worker it was before, with no D1 session and no bookmark. This note is the design, the per-route classification, what changed, what the owner runs on Cloudflare, and what only staging can confirm. Every platform claim cites developers.cloudflare.com.
 
 ## Platform facts
 
@@ -18,7 +18,15 @@ A signed browser read from India no longer crosses to IAD: the control plane is 
 
 A single edge Worker would answer reads near the person and pay every write round across the ocean. A `first-primary` session sends its first statement to the primary and the rest to a replica "consistent with the bookmark", which right after a write is the primary or a wait for the replica. From SIN each such round costs about 0.23 s against 0.035–0.05 s beside the primary (`d1-signed-reads-2026-10-18`), so a signed write of R rounds goes from about 0.36 + 0.04·R s to 0.12 + 0.23·R s: worse from two rounds on, and a sandbox key save (seven rounds) from about 0.64 s to 1.7 s. The writer keeps those rounds in IAD.
 
-## How a request runs
+## One setting, two modes
+
+`CLAXEDO_D1_EDGE_READS` (`on`|`off`, default off) is read once, by the deploy (`userCloudflareDeployment`), and decides which Workers exist:
+- **Off:** one Worker under `CLAXEDO_WORKER_NAME`, pinned, holding the routes (`renderWorkerWranglerConfig` with no `edgeWorkerName`), with no `CLAXEDO_D1_EDGE_READS` variable. `workerDatabases` hands every composition the bare bindings and `createBetterAuthD1Worker().fetch` answers through `timedResponse` alone, as before this branch: no classifier, no session, no bookmark cookie or header. Live-sync notices carry no bookmark, since no request has a session to read one from, and clients that see none send none.
+- **On:** the writer and the edge below, both with `CLAXEDO_D1_EDGE_READS=on`, which is what makes `workerDatabases` wrap the bindings in sessions and `fetch` classify. The deploy refuses unless both databases report `read_replication.mode` `auto`.
+
+`controlPlaneSteps` (`scripts/deploy/control-plane-workers.ts`) orders the publish from the mode and whether an edge Worker is deployed: on, writer → routes off the writer → edge; off with an edge Worker left from before, routes off the edge → the one Worker with its routes → the edge deleted (`wrangler delete <edge> --force`); off with none, the one Worker. The routes move through the zone's Worker-routes API, since Wrangler deploys routes only when none is "assigned to another worker" and keeps a Worker's old routes when it deploys none.
+
+## How a request runs (edge reads on)
 
 1. The browser, desktop, a machine, the relay or a sandbox sends a request to a control-plane path on `app.claxedo.dev`. The route belongs to the edge Worker (`renderEdgeWorkerWranglerConfig`), which runs in the data center that took the request.
 2. `createBetterAuthD1Worker().fetch` (`deployments/hosted-workerd/better-auth-d1-worker.cf.ts`) asks `d1SessionStart(request)`, the one classifier:
@@ -67,7 +75,7 @@ The local stack has one D1 database per binding, so a replica, its lag and every
 - `better-auth-d1-worker.d1-sessions.d1.test.ts`: a sign-up through the edge composes once, on the writer; the next read starts its auth session at the bookmark the sign-in handed back and sees the account; a read without one starts unconstrained; an unreachable writer answers 503.
 - The same test, with the principal cache: a write forwarded to the writer answers the same status and the same principal-cache cookie as the writer answering it directly, and an edge read admitted on that cookie opens no auth-database session.
 - `d1-sessions.d1.test.ts`: the cookie's attributes; header and cookie merge to the newer; a malformed or foreign value is ignored; one session per database per request, batches included; no cookie on a read or on a request that ran nothing; the cookie joins Better Auth's own cookies and survives an immutable redirect.
-- Signed e2e on web and phone and the desktop sign-in run the Miniflare stack as the same two Workers (`hosted-miniflare.ts` renders both configs; the edge answers the port and binds the writer), so every write in them went through the forward.
+- The e2e Miniflare stack runs as either mode from the deploy's own configs (`hosted-wrangler-config.ts`): by default the one Worker; with `CLAXEDO_E2E_D1_EDGE_READS=on` the edge answers the port and binds the writer, so every write in the flows goes through the forward. The signed web and phone flows and the desktop sign-in ran in both modes.
 
 ## What only staging proves
 
@@ -80,26 +88,23 @@ The local stack has one D1 database per binding, so a replica, its lag and every
 
 ## The owner's Cloudflare steps
 
-1. Enable replication on both staging databases. Their ids are in `bunx wrangler d1 list --json` (names `claxedo-acc-auth-stg-260830-232009-3851` and `claxedo-acc-control-stg-260830-232009-3851`):
+1. Replication on both staging databases is already `auto` (the owner enabled it). A database that is reset is recreated without it; turn it back on, with its id from `bunx wrangler d1 list --json`:
 
    ```sh
-   for id in <auth database id> <control-plane database id>; do
-     curl -sS -X PUT "https://api.cloudflare.com/client/v4/accounts/683a2c01a4d43b2fa998cde8ddedaf0e/d1/database/$id" \
-       -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" \
-       --data '{"read_replication":{"mode":"auto"}}'
-   done
-   bunx wrangler d1 info claxedo-acc-auth-stg-260830-232009-3851      # read_replication.mode auto
-   bunx wrangler d1 info claxedo-acc-control-stg-260830-232009-3851   # read_replication.mode auto
+   curl -sS -X PUT "https://api.cloudflare.com/client/v4/accounts/683a2c01a4d43b2fa998cde8ddedaf0e/d1/database/<id>" \
+     -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" \
+     --data '{"read_replication":{"mode":"auto"}}'
+   bunx wrangler d1 info <name>   # read_replication.mode auto
    ```
 
-   The token needs D1:Edit. The dashboard's database Settings does the same. Until both report `auto` the `control-plane` job refuses before it deploys either Worker or moves a route, with an error naming this call for each database still off (`requireReadReplication`, `scripts/deploy/d1-databases.ts`).
-2. Keep `CLAXEDO_STAGING_WORKER_PLACEMENT_REGION=aws:us-east-1`: it now pins the writer.
+   Until both report `auto` the `control-plane` job refuses before it deploys either Worker or moves a route, with an error naming this call for each database still off (`requireReadReplication`, `scripts/deploy/d1-databases.ts`).
+2. `deploy-staging.yml` sets `CLAXEDO_D1_EDGE_READS: "on"` in the `control-plane` job's environment, staging's only change of setting. Keep `CLAXEDO_STAGING_WORKER_PLACEMENT_REGION=aws:us-east-1`: it pins the writer.
 3. Check the deploy token can list zones and list and delete the zone's Worker routes (Zone Read, Workers Routes Edit), the access `wrangler deploy` already uses to attach routes; the first deploy moves the routes with it.
-4. Merge to `staging`. The `control-plane` job deploys the writer `claxedo-user-deployed-locked-staging`, moves the seven control-plane routes off it, and deploys `claxedo-user-deployed-locked-staging-edge` with the same secrets. No new secret, variable, DNS record or custom domain.
+4. Merge to `staging`. The `control-plane` job deploys the writer `claxedo-user-deployed-locked-staging`, moves the seven control-plane routes off it, and deploys `claxedo-user-deployed-locked-staging-edge` with the same secrets. No new secret, DNS record or custom domain.
 
-### Rollback
+### Turning it off
 
-Delete the edge Worker, which takes its routes with it, then redeploy the control plane from the previous commit, whose writer config carries the routes again: `bunx wrangler delete --name claxedo-user-deployed-locked-staging-edge`, then dispatch the `control-plane` job on that commit. Between the two the public origin answers control-plane paths with the deploy-window 503. Replication can stay on: without the Sessions API every query goes to the primary.
+Set `CLAXEDO_D1_EDGE_READS: "off"` (or remove the line) in `deploy-staging.yml` and run the `control-plane` job: it moves the routes off the edge Worker, deploys the one Worker with them, with no D1 session, and deletes the edge Worker. The deploy-window 503 answers between the first two. Replication can stay on: without the Sessions API every query goes to the primary.
 
 ## Staging measurement plan
 

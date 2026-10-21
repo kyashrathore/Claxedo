@@ -30,6 +30,7 @@ import {
 import { controlPlaneRoutePatterns } from "./public-origin"
 import { renderAppWranglerConfig, renderEdgeWorkerWranglerConfig, renderSessionHostWranglerConfig, renderWorkerWranglerConfig } from "./wrangler-config"
 import { releaseWorkerRoutes } from "./worker-routes"
+import { controlPlaneSteps } from "./control-plane-workers"
 
 /**
  * `wrangler deploy --dry-run` bundles offline and never resolves a resource,
@@ -111,9 +112,15 @@ export function deployPlan(
   variables: Readonly<Record<string, string>>,
   provided: Readonly<Record<string, string>>,
 ) {
+  const routes = controlPlaneRoutePatterns(new URL(deployment.appOrigin).hostname).join(" ")
+  const placement = `placement ${deployment.workerPlacementRegion ?? "smart"}`
   return [
-    `Writer Worker       ${deployment.workerName} (${deployment.artifact.artifactId}; placement ${deployment.workerPlacementRegion ?? "smart"}; every request that may write)`,
-    `Edge Worker         ${deployment.edgeWorkerName} (the same bundle where requests arrive; routes ${controlPlaneRoutePatterns(new URL(deployment.appOrigin).hostname).join(" ")})`,
+    ...(deployment.edgeReads
+      ? [
+          `Writer Worker       ${deployment.workerName} (${deployment.artifact.artifactId}; ${placement}; every request that may write)`,
+          `Edge Worker         ${deployment.edgeWorkerName} (the same bundle where requests arrive; D1 edge reads on; routes ${routes})`,
+        ]
+      : [`Worker              ${deployment.workerName} (${deployment.artifact.artifactId}; ${placement}; D1 edge reads off; routes ${routes})`]),
     `Session host        ${deployment.sessionHostWorkerName} (SessionDO, bound by the relay as SESSION_HOST)`,
     appPlan(deployment),
     `D1 databases        AUTH_DB=${deployment.databases.AUTH_DB}  CONTROL_PLANE_DB=${deployment.databases.CONTROL_PLANE_DB}  (created if missing)`,
@@ -128,10 +135,19 @@ export function deployPlan(
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([name, value]) => `  ${name} = ${value}`),
     "",
-    "Steps: find or create both D1 databases -> refuse unless both have read replication -> apply their migrations -> provision the native OAuth clients",
-    "       -> wrangler deploy the writer with its secrets, beside the databases",
-    "       -> move the control plane's routes off the writer if it still holds them",
-    "       -> wrangler deploy the edge Worker with the same secrets and the routes on the public origin's host",
+    ...(deployment.edgeReads
+      ? [
+          "Steps: find or create both D1 databases -> refuse unless both have read replication -> apply their migrations -> provision the native OAuth clients",
+          "       -> wrangler deploy the writer with its secrets, beside the databases",
+          "       -> move the control plane's routes off the writer if it still holds them",
+          "       -> wrangler deploy the edge Worker with the same secrets and the routes on the public origin's host",
+        ]
+      : [
+          "Steps: find or create both D1 databases -> apply their migrations -> provision the native OAuth clients",
+          `       -> if ${deployment.edgeWorkerName} is deployed: move the control plane's routes off it`,
+          "       -> wrangler deploy the Worker with its secrets and its routes on the public origin's host",
+          `       -> if ${deployment.edgeWorkerName} is deployed: delete it`,
+        ]),
     "       -> wrangler deploy the session-host Worker, which binds the Worker as CONTROL_PLANE",
   ].join("\n")
 }
@@ -242,7 +258,8 @@ async function publishControlPlane(input: Publish, variables: Readonly<Record<st
       publicOriginHost: new URL(deployment.appOrigin).hostname,
       variables: { ...variables, ...placed },
     }
-    await writeFile(workerConfig, renderWorkerWranglerConfig(config))
+    if (!deployment.edgeReads) return await writeFile(workerConfig, renderWorkerWranglerConfig(config))
+    await writeFile(workerConfig, renderWorkerWranglerConfig({ ...config, edgeWorkerName: deployment.edgeWorkerName }))
     await writeFile(edgeConfig, renderEdgeWorkerWranglerConfig({ ...config, edgeWorkerName: deployment.edgeWorkerName }))
   }
   const configArgs = ["--config", workerConfig]
@@ -259,7 +276,7 @@ async function publishControlPlane(input: Publish, variables: Readonly<Record<st
 
   if (input.dryRun) {
     await writeWorkerConfigs(DRY_RUN_DATABASE_IDS)
-    for (const [config, outdir] of [[workerConfig, "bundle"], [edgeConfig, "edge-bundle"]]) {
+    for (const [config, outdir] of deployment.edgeReads ? [[workerConfig, "bundle"], [edgeConfig, "edge-bundle"]] : [[workerConfig, "bundle"]]) {
       await runWrangler(
         ["deploy", "--config", config, "--dry-run", "--outdir", path.join(temporary, outdir), "--tsconfig", tsconfig],
         { env: offlineEnvironment() },
@@ -273,21 +290,26 @@ async function publishControlPlane(input: Publish, variables: Readonly<Record<st
   const controlPlane = await ensureD1Database(deployment.databases.CONTROL_PLANE_DB, deployment.d1Location)
   await writeWorkerConfigs(
     { AUTH_DB: auth.id, CONTROL_PLANE_DB: controlPlane.id },
-    { CLAXEDO_D1_PRIMARY_LOCATION: controlPlane.region.toLowerCase() },
+    deployment.edgeReads ? { CLAXEDO_D1_PRIMARY_LOCATION: controlPlane.region.toLowerCase() } : {},
   )
   console.log(`✓ D1 databases ready (${auth.created || controlPlane.created ? "created" : "found"})`)
   for (const [name, database] of [[deployment.databases.AUTH_DB, auth], [deployment.databases.CONTROL_PLANE_DB, controlPlane]] as const) {
     console.log(`  ${d1PlacementReport(name, database, deployment.d1Location)}`)
   }
-  requireReadReplication([
-    { name: deployment.databases.AUTH_DB, ...auth },
-    { name: deployment.databases.CONTROL_PLANE_DB, ...controlPlane },
-  ])
+  if (deployment.edgeReads) {
+    requireReadReplication([
+      { name: deployment.databases.AUTH_DB, ...auth },
+      { name: deployment.databases.CONTROL_PLANE_DB, ...controlPlane },
+    ])
+  }
 
   await prepareD1Databases({ configArgs, origin: deployment.appOrigin, betterAuthSecret, introspectionSecret })
   console.log("✓ Migrations applied and native OAuth clients provisioned")
 
-  for (const workerName of [deployment.workerName, deployment.edgeWorkerName]) {
+  const steps = controlPlaneSteps({ edgeReads: deployment.edgeReads, edgeDeployed: !deployment.edgeReads && await workerDeployed(deployment.edgeWorkerName) })
+  const names = { writer: deployment.workerName, edge: deployment.edgeWorkerName }
+  const configs = { writer: workerConfig, edge: edgeConfig }
+  for (const workerName of steps.flatMap((step) => (step.kind === "deploy" ? [names[step.worker]] : []))) {
     const missing = missingSecrets(deployment, provided, await secretsAlreadyOnWorker(workerName))
     if (missing.length > 0) throw new Error(`set these secrets in the environment and run again, ${workerName} lacks them: ${missing.join(", ")}`)
   }
@@ -316,28 +338,40 @@ async function publishControlPlane(input: Publish, variables: Readonly<Record<st
     const versionId = deployedVersionId(await readFile(outputFile, "utf8"), workerName)
     console.log(`✓ Worker deployed: ${workerName} version ${versionId}, tag ${versionTag(input.sha)}`)
   }
-  await deployWorker(workerConfig, deployment.workerName)
-  await releaseWriterRoutes(deployment)
-  await deployWorker(edgeConfig, deployment.edgeWorkerName)
+  for (const step of steps) {
+    if (step.kind === "deploy") await deployWorker(configs[step.worker], names[step.worker])
+    else if (step.kind === "release-routes") await releaseControlPlaneRoutes(deployment, names[step.from])
+    else {
+      await runWrangler(["delete", names[step.worker], "--force"])
+      console.log(`✓ ${names[step.worker]} deleted: the control plane answers on ${deployment.workerName} alone`)
+    }
+  }
 
   await runWrangler([...sessionHostArgs, "--keep-vars=false"])
   console.log(`✓ Session host deployed: ${deployment.sessionHostWorkerName}`)
 }
 
 /**
- * Moves the control plane's routes off the writer, which held them before
- * the edge Worker existed, so the edge's deploy can take them; between the
- * two the public origin answers those paths from the app Worker with the
- * deploy-window 503 the clients retry. Listing a zone's routes needs an API
- * token; a deploy signed in through `wrangler login` instead has Wrangler
- * name any route the writer still holds when it refuses the edge's.
+ * Moves the control plane's routes off `script`, the Worker that held them
+ * before this deploy, so the other can take them. Listing a zone's routes
+ * needs an API token; a deploy signed in through `wrangler login` instead has
+ * Wrangler name any route still held when it refuses the other Worker's.
  */
-async function releaseWriterRoutes(deployment: UserCloudflareDeployment) {
+async function releaseControlPlaneRoutes(deployment: UserCloudflareDeployment, script: string) {
   const token = process.env.CLOUDFLARE_API_TOKEN?.trim()
   if (!token) return
   const host = new URL(deployment.appOrigin).hostname
-  const released = await releaseWorkerRoutes({ script: deployment.workerName, host, patterns: controlPlaneRoutePatterns(host), token })
-  if (released.length > 0) console.log(`✓ Routes moved off ${deployment.workerName} for ${deployment.edgeWorkerName}: ${released.join(" ")}`)
+  const released = await releaseWorkerRoutes({ script, host, patterns: controlPlaneRoutePatterns(host), token })
+  if (released.length > 0) console.log(`✓ Routes moved off ${script}: ${released.join(" ")}`)
+}
+
+/** Whether a Worker named `name` is deployed on the account. */
+async function workerDeployed(name: string) {
+  const result = await probeWrangler(["deployments", "list", "--name", name, "--json"])
+  if (result.code === 0) return true
+  if (isAbsentWorkerFailure(result.stderr)) return false
+  process.stderr.write(result.stderr)
+  throw new Error(`could not tell whether ${name} is deployed`)
 }
 
 async function publishApp(target: UserCloudflareTarget, input: Omit<Publish, "deployment">) {

@@ -58,8 +58,10 @@ describe("the user-deployed Worker Wrangler config", () => {
     expect(config).toContain('[vars]\nBETTER_AUTH_URL = "https://app.example.com"\nCLAXEDO_DEPLOYMENT_ID = "claxedo"')
   })
 
-  test("the writer has no route and is placed smartly unless the deployment pins it beside the databases", () => {
-    expect(render()).not.toContain("routes =")
+  test("the one Worker holds the routes, and as the writer beside an edge Worker it has none; either is placed smartly unless the deployment pins it beside the databases", () => {
+    const routes = '\nroutes = ["app.example.com/api/*", "app.example.com/internal/*", "app.example.com/.well-known/*", "app.example.com/bindings/*", "app.example.com/health*", "app.example.com/global/health*", "app.example.com/path*"]\n'
+    expect(render()).toContain(`${routes}compatibility_date = `)
+    expect(render({ edgeWorkerName: "claxedo-edge" })).not.toContain("routes =")
     expect(render()).toContain('[placement]\nmode = "smart"')
     const pinned = render({ placementRegion: "aws:us-east-1" })
     expect(pinned).toContain('[placement]\nregion = "aws:us-east-1"')

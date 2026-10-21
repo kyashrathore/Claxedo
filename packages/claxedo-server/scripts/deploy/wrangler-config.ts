@@ -18,8 +18,10 @@ export type WorkerWranglerConfigInput = Readonly<{
   requestLimiterNamespaceId: string
   documentsBucket: string
   agentPluginsBucket?: string
-  /** The writer's cloud region in Wrangler's `placement.region` form; absent, its placement is smart. */
+  /** The control-plane Worker's cloud region in Wrangler's `placement.region` form; absent, its placement is smart. */
   placementRegion?: string
+  /** The edge Worker that holds the control plane's routes when the deployment reads at the edge; absent, this Worker holds them. */
+  edgeWorkerName?: string
   /** The public origin's hostname, the app Worker's custom domain, on which the control plane's paths become its routes. */
   publicOriginHost: string
   variables: Readonly<Record<string, string>>
@@ -112,26 +114,42 @@ period = 60
 ${agentPluginsBucket}`
 }
 
+/** The control plane's paths on the public origin's host, as one Worker's routes. */
+function controlPlaneRoutes(publicOriginHost: string) {
+  // Simple routes: Wrangler resolves each pattern's zone from its hostname
+  // with the same zone access `wrangler deploy --domain` already uses for the
+  // app Worker, so a deployment names no zone of its own. The bundle contract
+  // follows and ends in the `[alias]` table, so this top-level key comes first.
+  return `# The control plane answers its paths on the app's own host through Worker
+# routes, which "take precedence if configured on the same hostname" as the
+# app Worker's custom domain (developers.cloudflare.com/workers/configuration/
+# routing/routes/), so a request on them runs one Worker, not the app Worker
+# and a service binding.
+routes = [${controlPlaneRoutePatterns(publicOriginHost).map(quote).join(", ")}]
+`
+}
+
 /**
- * The control plane's writer: the Worker every request that may write runs
- * on, beside the databases' primary, and the one that defines the Durable
- * Object classes, so it keeps the name their namespaces and the session
- * host's binding were created under. It has no route of its own; the edge
+ * The control-plane Worker under `workerName`, pinned beside the databases'
+ * primary and the definer of the Durable Object classes, so it keeps the name
+ * their namespaces and the session host's binding were created under. It
+ * holds the control plane's routes, unless the deployment reads at the edge
+ * (`edgeWorkerName`): then it is the writer, with no route, and the edge
  * Worker and the session host reach it over service bindings.
  */
 export function renderWorkerWranglerConfig(input: WorkerWranglerConfigInput) {
   const objects = durableObjects(input.artifact)
   return `name = ${quote(input.workerName)}
 main = ${quote(fromConfig(input.configDirectory, input.artifact.entrypointFromPackageRoot))}
-${HOSTED_WORKER_BUNDLE_CONTRACT}
+${input.edgeWorkerName ? "" : controlPlaneRoutes(input.publicOriginHost)}${HOSTED_WORKER_BUNDLE_CONTRACT}
 
-# A signed write performs several sequential D1 rounds, each a cross-region
+# A signed request performs several sequential D1 rounds, each a cross-region
 # round trip when the isolate runs away from the primary: from Singapore one
 # round costs ~230 ms against ~40 ms beside it. Placement "only affects the
 # execution of fetch event handlers" (developers.cloudflare.com/workers/
-# configuration/placement/), which is how the edge Worker's service binding
-# and the session host's reach this Worker. Smart placement weighs fetch
-# subrequests from enough traffic, not D1, so a deployment pins the region.
+# configuration/placement/), which is how requests, the edge Worker's service
+# binding and the session host's reach this Worker. Smart placement weighs
+# fetch subrequests from enough traffic, not D1, so a deployment pins the region.
 [placement]
 ${input.placementRegion ? `region = ${quote(input.placementRegion)}` : 'mode = "smart"'}
 
@@ -156,20 +174,9 @@ new_sqlite_classes = [${quote(object.className)}]
  * the writer's Durable Objects by script name and defines none.
  */
 export function renderEdgeWorkerWranglerConfig(input: WorkerWranglerConfigInput & { edgeWorkerName: string }) {
-  // Simple routes: Wrangler resolves each pattern's zone from its hostname
-  // with the same zone access `wrangler deploy --domain` already uses for the
-  // app Worker, so a deployment names no zone of its own. The bundle contract
-  // below ends in the `[alias]` table, so these top-level keys come first.
-  const routes = controlPlaneRoutePatterns(input.publicOriginHost).map(quote).join(", ")
   return `name = ${quote(input.edgeWorkerName)}
 main = ${quote(fromConfig(input.configDirectory, input.artifact.entrypointFromPackageRoot))}
-# The control plane answers its paths on the app's own host through Worker
-# routes, which "take precedence if configured on the same hostname" as the
-# app Worker's custom domain (developers.cloudflare.com/workers/configuration/
-# routing/routes/), so a request on them runs one Worker, not the app Worker
-# and a service binding.
-routes = [${routes}]
-${HOSTED_WORKER_BUNDLE_CONTRACT}
+${controlPlaneRoutes(input.publicOriginHost)}${HOSTED_WORKER_BUNDLE_CONTRACT}
 
 ${sharedWorkerConfig(input)}
 [[services]]

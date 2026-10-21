@@ -12,8 +12,8 @@ import { recordedEmailOutbox } from "../../src/test-support/recorded-email"
 type Input = {
   /** The writer's Wrangler config: the Durable Objects, the databases' migrations and the bundle's entry. */
   config: string
-  /** The edge's: the same bundle, which answers the stack's port and hands writes to the writer. */
-  edgeConfig: string
+  /** With edge reads on, the edge's: the same bundle, which answers the stack's port and hands writes to the writer. */
+  edgeConfig: string | undefined
   root: string
   port: number
   certificate: string
@@ -130,11 +130,11 @@ async function main(input: Input) {
       outboundService,
     }
   }
-  // The edge is listed first, so it answers the stack's port, and reaches the
-  // writer by the names the deploy's configs give them.
+  // The first Worker answers the stack's port: the edge when there is one,
+  // which reaches the writer by the names the deploy's configs give them.
   const mf = new Miniflare({
     workers: [
-      worker(input.edgeConfig, unstable_getMiniflareWorkerOptions(input.edgeConfig).workerOptions),
+      ...(input.edgeConfig ? [worker(input.edgeConfig, unstable_getMiniflareWorkerOptions(input.edgeConfig).workerOptions)] : []),
       worker(input.config, converted.workerOptions),
     ],
     d1Persist: path.join(persistence, "v3", "d1"),
@@ -222,7 +222,7 @@ if (import.meta.main) {
   if (typeof port !== "number" || !Number.isInteger(port)) throw new Error("hosted Miniflare port is invalid")
   await main({
     config: required("config"),
-    edgeConfig: required("edgeConfig"),
+    edgeConfig: typeof field("edgeConfig") === "string" ? required("edgeConfig") : undefined,
     root: required("root"),
     port,
     certificate: required("certificate"),
