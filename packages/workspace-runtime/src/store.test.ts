@@ -3848,21 +3848,21 @@ void it("two store handles on one root cannot both create one caller's request",
   const first = new RuntimeStore(root)
   const second = new RuntimeStore(root)
 
-  assert.deepEqual(first.recordRecoveryOperation(recoveryOperation(), { callerId: "caller-a" }), { created: true })
-  const again = second.recordRecoveryOperation(recoveryOperation({ operationId: "op-2" }), { callerId: "caller-a" })
+  assert.deepEqual(first.recoveryOperations.record(recoveryOperation(), { callerId: "caller-a" }), { created: true })
+  const again = second.recoveryOperations.record(recoveryOperation({ operationId: "op-2" }), { callerId: "caller-a" })
   assert.equal(again.created, false)
   assert.equal(!again.created ? again.existing.operationId : undefined, "op-1")
-  assert.equal(second.readRecoveryOperation("op-2", { callerId: "caller-a" }), undefined)
+  assert.equal(second.recoveryOperations.read("op-2", { callerId: "caller-a" }), undefined)
   // A different caller reusing the same request id owns its own operation.
-  assert.deepEqual(second.recordRecoveryOperation(recoveryOperation({ operationId: "op-3" }), { callerId: "caller-b" }), { created: true })
+  assert.deepEqual(second.recoveryOperations.record(recoveryOperation({ operationId: "op-3" }), { callerId: "caller-b" }), { created: true })
 
-  assert.equal(second.readRecoveryOperation("op-1", { callerId: "caller-a" })?.requestId, "req-1")
-  assert.deepEqual(first.listRecoveryOperations({ sessionId: "s1" }).map((op) => op.operationId).sort(), ["op-1", "op-3"])
-  assert.deepEqual(first.listRecoveryOperations({ sessionId: "other" }), [])
+  assert.equal(second.recoveryOperations.read("op-1", { callerId: "caller-a" })?.requestId, "req-1")
+  assert.deepEqual(first.recoveryOperations.list({ sessionId: "s1" }).map((op) => op.operationId).sort(), ["op-1", "op-3"])
+  assert.deepEqual(first.recoveryOperations.list({ sessionId: "other" }), [])
 
-  second.updateRecoveryOperation({ ...recoveryOperation(), state: "running", updatedAt: 40 })
-  assert.equal(first.readRecoveryOperation("op-1", { callerId: "caller-a" })?.state, "running")
-  assert.throws(() => first.updateRecoveryOperation(recoveryOperation({ operationId: "never-recorded" })), /is not recorded in this store/)
+  second.recoveryOperations.update({ ...recoveryOperation(), state: "running", updatedAt: 40 })
+  assert.equal(first.recoveryOperations.read("op-1", { callerId: "caller-a" })?.state, "running")
+  assert.throws(() => first.recoveryOperations.update(recoveryOperation({ operationId: "never-recorded" })), /is not recorded in this store/)
   first.close()
   second.close()
 })
@@ -3890,15 +3890,15 @@ void it("settled recovery operations age out, and one still holding cleanup neve
       persistence: recoveryFact("committed" as const, stale),
     },
   }
-  store.recordRecoveryOperation(settled, { callerId: "caller-a" })
-  store.recordRecoveryOperation(unresolved, { callerId: "caller-a" })
-  store.recordRecoveryOperation(recoveryOperation({ operationId: "live", requestId: "req-live" }), { callerId: "caller-a" })
+  store.recoveryOperations.record(settled, { callerId: "caller-a" })
+  store.recoveryOperations.record(unresolved, { callerId: "caller-a" })
+  store.recoveryOperations.record(recoveryOperation({ operationId: "live", requestId: "req-live" }), { callerId: "caller-a" })
 
   // The settled one aged out; the one still holding cleanup did not, in the
   // listing as well as in the table — the list is what an owner looks at.
-  assert.deepEqual(store.listRecoveryOperations({}).map((op) => op.operationId), ["unresolved", "live"])
-  assert.equal(store.readRecoveryOperation("settled", { callerId: "caller-a" }), undefined)
-  assert.equal(store.readRecoveryOperation("unresolved", { callerId: "caller-a" })?.state, "failed")
+  assert.deepEqual(store.recoveryOperations.list({}).map((op) => op.operationId), ["unresolved", "live"])
+  assert.equal(store.recoveryOperations.read("settled", { callerId: "caller-a" }), undefined)
+  assert.equal(store.recoveryOperations.read("unresolved", { callerId: "caller-a" })?.state, "failed")
   store.close()
 })
 
@@ -3956,13 +3956,13 @@ void it("a turn the replacement superseded is still reported against its own id"
 
 void it("an update replaces the stored operation without creating a second receipt", () => {
   const store = new RuntimeStore(tmp())
-  store.recordRecoveryOperation(recoveryOperation(), { callerId: "caller-a" })
-  store.updateRecoveryOperation({ ...recoveryOperation(), state: "running", updatedAt: 40 })
+  store.recoveryOperations.record(recoveryOperation(), { callerId: "caller-a" })
+  store.recoveryOperations.update({ ...recoveryOperation(), state: "running", updatedAt: 40 })
 
-  assert.deepEqual(store.listRecoveryOperations({ sessionId: "s1" }).map((op) => op.operationId), ["op-1"])
-  assert.equal(store.readRecoveryOperation("op-1", { callerId: "caller-a" })?.state, "running")
+  assert.deepEqual(store.recoveryOperations.list({ sessionId: "s1" }).map((op) => op.operationId), ["op-1"])
+  assert.equal(store.recoveryOperations.read("op-1", { callerId: "caller-a" })?.state, "running")
   // The same request id still joins the one receipt rather than reopening it.
-  const again = store.recordRecoveryOperation(recoveryOperation({ operationId: "op-2" }), { callerId: "caller-a" })
+  const again = store.recoveryOperations.record(recoveryOperation({ operationId: "op-2" }), { callerId: "caller-a" })
   assert.equal(!again.created ? again.existing.state : undefined, "running")
   store.close()
 })
@@ -4114,21 +4114,21 @@ void it("turnCoverage refuses a session it does not hold at all", () => {
 void it("a receipt is readable by the caller that created it and by one that coalesced onto it, and by nobody else", () => {
   const root = tmp()
   const store = new RuntimeStore(root)
-  store.recordRecoveryOperation(recoveryOperation(), { callerId: "caller-a" })
-  store.addRecoveryOperationCaller("op-1", { callerId: "caller-b" })
+  store.recoveryOperations.record(recoveryOperation(), { callerId: "caller-a" })
+  store.recoveryOperations.addCaller("op-1", { callerId: "caller-b" })
   // An id this store does not hold records nobody.
-  store.addRecoveryOperationCaller("never-recorded", { callerId: "caller-c" })
+  store.recoveryOperations.addCaller("never-recorded", { callerId: "caller-c" })
 
-  assert.equal(store.readRecoveryOperation("op-1", { callerId: "caller-a" })?.requestId, "req-1")
-  assert.equal(store.readRecoveryOperation("op-1", { callerId: "caller-b" })?.requestId, "req-1")
-  assert.equal(store.readRecoveryOperation("op-1", { callerId: "caller-c" }), undefined)
+  assert.equal(store.recoveryOperations.read("op-1", { callerId: "caller-a" })?.requestId, "req-1")
+  assert.equal(store.recoveryOperations.read("op-1", { callerId: "caller-b" })?.requestId, "req-1")
+  assert.equal(store.recoveryOperations.read("op-1", { callerId: "caller-c" }), undefined)
   // Listing is scoped to the session, not the reader; only the receipt is.
-  assert.deepEqual(store.listRecoveryOperations({ sessionId: "s1" }).map((op) => op.operationId), ["op-1"])
+  assert.deepEqual(store.recoveryOperations.list({ sessionId: "s1" }).map((op) => op.operationId), ["op-1"])
   store.close()
 
   const reopened = new RuntimeStore(root)
-  assert.equal(reopened.readRecoveryOperation("op-1", { callerId: "caller-b" })?.requestId, "req-1")
-  assert.equal(reopened.readRecoveryOperation("op-1", { callerId: "caller-c" }), undefined)
+  assert.equal(reopened.recoveryOperations.read("op-1", { callerId: "caller-b" })?.requestId, "req-1")
+  assert.equal(reopened.recoveryOperations.read("op-1", { callerId: "caller-c" }), undefined)
   reopened.close()
 })
 

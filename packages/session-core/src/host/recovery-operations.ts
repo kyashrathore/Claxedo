@@ -148,7 +148,7 @@ export function createRecoveryOperations(input: RecoveryOperationsInput) {
    */
   const claimReceipt = (tracked: TrackedOperation, callerId: string): RecoveryOperation | undefined => {
     try {
-      const recorded = store.recordRecoveryOperation(tracked.operation, { callerId })
+      const recorded = store.recoveryOperations.record(tracked.operation, { callerId })
       return recorded.created ? undefined : recorded.existing
     } catch (error) {
       volatileReceipt(tracked, error)
@@ -159,7 +159,7 @@ export function createRecoveryOperations(input: RecoveryOperationsInput) {
   const update = (tracked: TrackedOperation, next: Partial<RecoveryOperation>, _callerId: string) => {
     tracked.operation = { ...tracked.operation, ...next, updatedAt: now() }
     try {
-      store.updateRecoveryOperation(tracked.operation)
+      store.recoveryOperations.update(tracked.operation)
     } catch (error) {
       volatileReceipt(tracked, error)
     }
@@ -233,7 +233,7 @@ export function createRecoveryOperations(input: RecoveryOperationsInput) {
   /** The receipt a joining caller reads its operation back by, after a restart. */
   const joinReceipt = (tracked: TrackedOperation, callerId: string) => {
     try {
-      store.addRecoveryOperationCaller(tracked.operation.operationId, { callerId })
+      store.recoveryOperations.addCaller(tracked.operation.operationId, { callerId })
     } catch (error) {
       volatileReceipt(tracked, error)
     }
@@ -242,7 +242,7 @@ export function createRecoveryOperations(input: RecoveryOperationsInput) {
 
   const readStoredOperation = (operationId: string, caller: RecoveryCaller) => {
     try {
-      return store.readRecoveryOperation(operationId, { callerId: caller.callerId })
+      return store.recoveryOperations.read(operationId, { callerId: caller.callerId })
     } catch (error) {
       record.retainOwnerFailure(record.recoveryError(
         "persistence_unavailable",
@@ -263,7 +263,7 @@ export function createRecoveryOperations(input: RecoveryOperationsInput) {
    */
   const storedOperations = (sessionId: string, problems: RecoveryError[]) => {
     try {
-      return store.listRecoveryOperations({ sessionId })
+      return store.recoveryOperations.list({ sessionId })
     } catch (error) {
       problems.push(record.recoveryError(
         "persistence_unavailable",

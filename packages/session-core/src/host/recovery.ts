@@ -32,7 +32,7 @@ import type {
   AgentRuntimeStore,
   RecoveryCaller,
 } from "./contracts"
-import type { ActiveTurn, TurnAdmissions } from "./turn-admission"
+import type { ActiveTurn, TurnAdmissionFence, TurnAdmissions } from "./turn-admission"
 import { createRecoveryFacts, messageOf } from "./recovery-facts"
 import { createRecoveryOperations, mayAct, sessionIdOf, type TrackedOperation } from "./recovery-operations"
 import type { AdmittedTurnCapture, FinalizeTurnOptions, RecoveryTurnCapture, TurnFinalization } from "./recovery-capture"
@@ -42,6 +42,8 @@ import type { LeasedTurnFailure } from "../broker-ports/index"
 export type { AdmittedTurnCapture, FinalizeTurnOptions, RecoveryTurnCapture, TurnFinalization } from "./recovery-capture"
 
 export type { CancelTarget } from "./turn-stops"
+
+export const TURN_AUTHORITY_LOST = "The turn stopped when its authorization lapsed. Send a message to continue."
 
 export type RuntimeRecoveryInput = {
   store: AgentRuntimeStore
@@ -166,6 +168,29 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
   }
 
   /**
+   * The turn's writer lost the lease that let it report the turn's outcome,
+   * so no outcome is written; the session is not left busy behind it either.
+   * This runtime still holds the session's store lease for the turn, and the
+   * store records the turn as interrupted only while no newer turn has
+   * started.
+   */
+  const interruptLostTurn = (capture: RecoveryTurnCapture, leaseId: string, fence: TurnAdmissionFence) => {
+    if (capture.assistantMessageId === undefined) return
+    try {
+      const { events } = store.interruptTurn({
+        sessionId: capture.sessionId,
+        assistantMessageId: capture.assistantMessageId,
+        leaseId,
+        fencingToken: fence.fencingToken(),
+        message: TURN_AUTHORITY_LOST,
+      })
+      for (const payload of events) input.publish({ sessionId: capture.sessionId, directory: capture.directory, payload })
+    } catch (error) {
+      if (!(error instanceof AgentRuntimeStaleTurnError)) record.reportSessionFailure(capture.sessionId, error)
+    }
+  }
+
+  /**
    * The one write that ends a turn. Normal completion, a failed turn, a
    * cancellation and a reconciliation retry all arrive here with the identity
    * they captured before their awaits, and the store refuses the write outright
@@ -187,7 +212,10 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
     // not a substitute for it: a capture without one would be the unfenced
     // write the lease exists to prevent.
     if (capture.leaseId === undefined) return { ok: false, reason: "no_authority" }
-    if (capture.fence && !capture.fence.valid()) return { ok: false, reason: "authority_lost" }
+    if (capture.fence && !capture.fence.valid()) {
+      interruptLostTurn(capture, capture.leaseId, capture.fence)
+      return { ok: false, reason: "authority_lost" }
+    }
     const emit = options.emit ?? input.publish
     let finished
     try {

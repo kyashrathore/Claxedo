@@ -3,7 +3,8 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { RECOVERY_OPERATION_RETENTION_MS, turnStopped } from "@claxedo/agent-runtime-contract"
 import type { AdapterCancelOutcome, AgentExecutionBinding, RecoveryOperation } from "@claxedo/agent-runtime-contract"
 import type { SessionBroker } from "@claxedo/harness/contract"
-import { RuntimeStore, type RuntimeStoreDatabase } from "../store"
+import { AgentRuntimeStaleTurnError, RuntimeStore, type RuntimeStoreDatabase } from "../store"
+import { RecoveryOperationRecords } from "../session/recovery-operation-records"
 import { openTestRuntimeStoreDatabase } from "../test-support/store"
 import {
   LOOPBACK_ORIGIN,
@@ -25,7 +26,7 @@ import { FakeTransport } from "../test-support/fake-transport"
 import type { AttachedSession } from "./attachments"
 import { createRuntimeGoalController } from "./goal-controller"
 import { createRuntimeLifecycle } from "./lifecycle"
-import { createRuntimeRecovery } from "./recovery"
+import { TURN_AUTHORITY_LOST, createRuntimeRecovery } from "./recovery"
 import { createTurnAdmissions } from "./turn-admission"
 
 const BUDGETS = { ackMs: 40, providerQueryMs: 40, gracefulCancelMs: 40, reconcileMs: 40 }
@@ -585,9 +586,9 @@ describe("the authority a finalization must hold", () => {
 describe("a lease that moved to another owner", () => {
   function fenced() {
     let valid = true
-    const { runtime, store, turns, dispose } = fixture()
+    const { runtime, store, turns, cancels, dispose } = fixture()
     return {
-      runtime, store, turns, dispose,
+      runtime, store, turns, cancels, dispose,
       admission: { valid: () => valid, fencingToken: () => 1, proof: () => "turn-lease" },
       revoke: () => { valid = false },
     }
@@ -617,6 +618,80 @@ describe("a lease that moved to another owner", () => {
     expect(reconciled.nextActions.map((next) => next.action)).toEqual(["inspect"])
     await f.dispose()
   })
+
+  test("ends the turn as interrupted with no outcome, and the session takes the next turn", async () => {
+    const f = fenced()
+    const sessionId = await openSession(f.runtime, "ses_interrupted")
+    await f.runtime.turns.start({ sessionId, messageId: "msg_a", text: "first", origin, admission: f.admission })
+
+    f.revoke()
+    f.turns[0].finish()
+    await until(() => f.store.getSession(sessionId)?.status === "interrupted", "the lost turn to be interrupted")
+
+    expect(f.store.getSession(sessionId)).toMatchObject({ status: "interrupted", recovery_error: TURN_AUTHORITY_LOST })
+    expect(f.store.getSession(sessionId)?.lastTurn).toBeUndefined()
+    expect(f.store.turnEvidence(sessionId, "msg_a")).toEqual({ started: true, finished: false })
+    expect(f.runtime.recovery.inspect(sessionId).facts.execution.value).toBe("unknown")
+
+    const next = { valid: () => true, fencingToken: () => 2, proof: () => "turn-lease-2" }
+    await f.runtime.turns.start({ sessionId, messageId: "msg_b", text: "again", origin, admission: next })
+    expect(f.store.getSession(sessionId)?.status).toBe("busy")
+    f.turns[1].finish()
+    await until(() => f.store.getSession(sessionId)?.status === "idle", "the next turn to finish")
+    expect(f.store.getSession(sessionId)?.lastTurn).toMatchObject({ status: "completed" })
+    await f.dispose()
+  })
+
+  test("a lost turn the containment stops is interrupted, and its late terminal changes nothing", async () => {
+    const f = fenced()
+    const { cancels } = f
+    const sessionId = await openSession(f.runtime, "ses_contained")
+    const started = await f.runtime.turns.start({ sessionId, messageId: "msg_a", text: "first", origin, admission: f.admission })
+
+    f.revoke()
+    const containing = f.runtime.recovery.submit(cancelTurnRequest(started.target!), RECOVERY_TEST_CALLER)
+    await until(() => cancels.length === 1, "the harness to be asked to stop the lost turn")
+    cancels[0].settle({ execution: "terminal", cleanup: "verified_clear" })
+    await containing
+    await until(() => f.store.getSession(sessionId)?.status === "interrupted", "the contained turn to be interrupted")
+
+    f.turns[0].finish()
+    await tick()
+    expect(f.store.getSession(sessionId)?.status).toBe("interrupted")
+    expect(f.store.turnEvidence(sessionId, "msg_a").finished).toBe(false)
+    await f.dispose()
+  })
+})
+
+describe("a writer fenced out by a newer turn", () => {
+  test("cannot interrupt the newer turn, and its late writes are refused", () => {
+    const { store, admissions, recovery, published } = owner()
+    let validA = true
+    const fenceA = { valid: () => validA, fencingToken: () => 1, proof: () => "lease-a" }
+    const claimedA = admissions.claim("ses", { turnId: "msg_a", assistantMessageId: "asst_a", fence: fenceA })!
+    store.startTurn({ sessionId: "ses", userMessageId: "msg_a", assistantMessageId: "asst_a", agent: "build", model: { providerID: "pi", modelID: "default" }, parts: [], fencingToken: 1 })
+    const captureA = recovery.captureTurn("ses", claimedA)
+
+    validA = false
+    claimedA.release()
+    const fenceB = { valid: () => true, fencingToken: () => 2, proof: () => "lease-b" }
+    const claimedB = admissions.claim("ses", { turnId: "msg_b", assistantMessageId: "asst_b", fence: fenceB })!
+    store.startTurn({ sessionId: "ses", userMessageId: "msg_b", assistantMessageId: "asst_b", agent: "build", model: { providerID: "pi", modelID: "default" }, parts: [], fencingToken: 2 })
+    published.length = 0
+
+    expect(recovery.finalizeTurn(captureA, { status: "completed", completedAt: 1 })).toEqual({ ok: false, reason: "superseded" })
+    expect(() => store.interruptTurn({ sessionId: "ses", assistantMessageId: "asst_a", leaseId: captureA.leaseId, fencingToken: 1, message: TURN_AUTHORITY_LOST }))
+      .toThrow(AgentRuntimeStaleTurnError)
+    expect(() => store.interruptTurn({ sessionId: "ses", assistantMessageId: "asst_a", leaseId: claimedB.leaseId, fencingToken: 1, message: TURN_AUTHORITY_LOST }))
+      .toThrow(AgentRuntimeStaleTurnError)
+    expect(store.interruptTurn({ sessionId: "ses", assistantMessageId: "asst_a", leaseId: claimedB.leaseId, fencingToken: 2, message: TURN_AUTHORITY_LOST }))
+      .toEqual({ events: [] })
+    expect(() => store.appendEvent({ sessionId: "ses", fencingToken: 1, payload: { type: "session.status", properties: { sessionID: "ses", status: { type: "idle" } } } as never }))
+      .toThrow(AgentRuntimeStaleTurnError)
+
+    expect(store.getSession("ses")?.status).toBe("busy")
+    expect(published).toEqual([])
+  })
 })
 
 describe("an operation that throws", () => {
@@ -644,12 +719,15 @@ describe("an operation that throws", () => {
 })
 
 describe("receipts the store already holds", () => {
-  class AdoptingStore extends RuntimeStore {
+  class AdoptingRecords extends RecoveryOperationRecords {
     existing?: RecoveryOperation
-    override recordRecoveryOperation(operation: RecoveryOperation, caller: { callerId: string }) {
+    override record(operation: RecoveryOperation, caller: { callerId: string }) {
       if (this.existing) return { created: false as const, existing: this.existing }
-      return super.recordRecoveryOperation(operation, caller)
+      return super.record(operation, caller)
     }
+  }
+  class AdoptingStore extends RuntimeStore {
+    override readonly recoveryOperations = new AdoptingRecords(this.database())
   }
 
   test("an operation another owner already accepted is adopted instead of run again", async () => {
@@ -658,7 +736,7 @@ describe("receipts the store already holds", () => {
     const sessionId = await openSession(runtime, "ses_adopt")
     const started = await runtime.turns.start({ sessionId, messageId: "msg_a", text: "first", origin })
     const request = cancelTurnRequest(started.target!, { requestId: "req_shared" })
-    store.existing = {
+    store.recoveryOperations.existing = {
       operationId: "rop_elsewhere", requestId: "req_shared", target: started.target!, action: "cancel_turn",
       scopeRevision: "1", attempt: 1, state: "running", phase: "graceful_cancel", phaseDeadlineAt: 1,
       facts: runtime.recovery.inspect(sessionId).facts, cleanupErrors: [], nextActions: [],
@@ -680,7 +758,7 @@ describe("receipts the store already holds", () => {
     const { runtime, turns, dispose } = fixture({ store })
     const sessionId = await openSession(runtime, "ses_adopt_conflict")
     const started = await runtime.turns.start({ sessionId, messageId: "msg_a", text: "first", origin })
-    store.existing = {
+    store.recoveryOperations.existing = {
       operationId: "rop_elsewhere", requestId: "req_shared", target: started.target!, action: "cancel_turn",
       scopeRevision: "an-older-scope", attempt: 1, state: "running", phase: "graceful_cancel", phaseDeadlineAt: 1,
       facts: runtime.recovery.inspect(sessionId).facts, cleanupErrors: [], nextActions: [],
@@ -730,13 +808,16 @@ describe("who may read and act", () => {
 })
 
 describe("what a session's inspection lists", () => {
-  class ListingStore extends RuntimeStore {
+  class ListingRecords extends RecoveryOperationRecords {
     stored: RecoveryOperation[] = []
     throws = false
-    override listRecoveryOperations(scope: { sessionId?: string } = {}) {
+    override list(scope: { sessionId?: string } = {}) {
       if (this.throws) throw new Error("the operations table is unreadable")
-      return [...super.listRecoveryOperations(scope), ...this.stored]
+      return [...super.list(scope), ...this.stored]
     }
+  }
+  class ListingStore extends RuntimeStore {
+    override readonly recoveryOperations = new ListingRecords(this.database())
   }
 
   test("operations this owner never recorded, and a store that cannot answer", async () => {
@@ -744,7 +825,7 @@ describe("what a session's inspection lists", () => {
     const { runtime, turns, dispose } = fixture({ store })
     const sessionId = await openSession(runtime, "ses_listing")
     const started = await runtime.turns.start({ sessionId, messageId: "msg_a", text: "first", origin })
-    store.stored = [{
+    store.recoveryOperations.stored = [{
       operationId: "rop_before_restart", requestId: "req_old", target: started.target!, action: "cancel_turn",
       scopeRevision: "1", attempt: 1, state: "needs_action", phase: "graceful_cancel", phaseDeadlineAt: 1,
       facts: runtime.recovery.inspect(sessionId).facts, cleanupErrors: [], nextActions: [],
@@ -753,7 +834,7 @@ describe("what a session's inspection lists", () => {
 
     expect(runtime.recovery.inspect(sessionId).operations.map((row) => row.operationId)).toContain("rop_before_restart")
 
-    store.throws = true
+    store.recoveryOperations.throws = true
     const unreadable = runtime.recovery.inspect(sessionId)
     expect(unreadable.operations).toEqual([])
     expect(unreadable.failures).toContainEqual(expect.objectContaining({ code: "persistence_unavailable" }))
@@ -897,10 +978,13 @@ describe("an operation that outlives the owner that issued it", () => {
   })
 
   test("an unreadable store answers nothing and reports why, rather than throwing", async () => {
-    class UnreadableStore extends RuntimeStore {
-      override readRecoveryOperation(): RecoveryOperation | undefined {
+    class UnreadableRecords extends RecoveryOperationRecords {
+      override read(): RecoveryOperation | undefined {
         throw new Error("the operations table is unreadable")
       }
+    }
+    class UnreadableStore extends RuntimeStore {
+      override readonly recoveryOperations = new UnreadableRecords(this.database())
     }
     const { runtime, dispose } = fixture({ store: openStore(UnreadableStore) })
     const sessionId = await openSession(runtime, "ses_unreadable")

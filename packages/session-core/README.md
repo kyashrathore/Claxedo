@@ -58,6 +58,15 @@ only what it alone supplies. A host boots in two steps once its store is open:
 and marks the deliveries it left dispatching as unknown, then `recoverQueuedPrompts()` on the session routes re-issues the prompts still
 queued.
 
+A turn whose producer loses its durable lease (the control plane refused a
+renewal, or the lease passed its last confirmed deadline) may not write the
+outcome its harness reports. `finalizeTurn` refuses it as `authority_lost`
+and, while the runtime still holds the session's store lease for that turn
+and no newer turn has started under a later fencing token,
+`store.interruptTurn` records the session `interrupted` with no outcome
+(`TURN_AUTHORITY_LOST`) and publishes that status, so the session leaves busy
+once the lost turn's producer stops and takes the next prompt.
+
 IDs use Web Crypto. Harness child admission derives its deterministic key with
 Web Crypto before lending the key to its synchronous admission store. The
 harness contract does not export machine probe-cache storage.

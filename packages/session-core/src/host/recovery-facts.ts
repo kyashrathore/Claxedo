@@ -86,7 +86,7 @@ export function createRecoveryFacts(input: RecoveryFactsInput) {
     const busy = store.getSession(sessionId)?.status === "busy"
     const generation = turn?.leaseId ?? retained?.capture.leaseId ?? store.readTurnAuthority(sessionId)?.leaseId ?? owner
     const producing = turn && input.isProducing(turn.leaseId)
-    const execution: ExecutionFact = producing ? "running" : busy ? "unknown" : "terminal"
+    const execution: ExecutionFact = producing ? "running" : busy || retained ? "unknown" : "terminal"
     return {
       execution: fact(execution, turn ? "runtime.admission" : "runtime.store", generation),
       cleanup: fact<CleanupFact>(turn || retained ? "owned" : "unknown", "runtime.admission", generation),

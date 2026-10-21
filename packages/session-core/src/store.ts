@@ -5,7 +5,7 @@ import { WorktreeRecords } from "./session/worktree-records"
 import { readLatestTurnView, type MessageProjectionRow } from "./session/latest-turn-view"
 import { isContiguousTurn, readJournaledTurn, readMessageCompleted, readTurnEvidence, readTurnFinished, readTurnId, readTurnPrompts, readTurnReply, readTurnEndOrd, readTurnReplyId, readUpstreamHasTurns } from "./session/turn-evidence"
 import type { SessionConfig, SessionConfigUpdate, SubagentObservation } from "@claxedo/agent-runtime-contract"
-import { recoveryScopeKey, recoveryTargetSessionId, decodeMessagePageCursor, encodeMessagePageCursor, AgentMessagePageError, type AgentMessagePage, type AgentMessagePageInput } from "@claxedo/agent-runtime-contract"
+import { decodeMessagePageCursor, encodeMessagePageCursor, AgentMessagePageError, type AgentMessagePage, type AgentMessagePageInput } from "@claxedo/agent-runtime-contract"
 import { AGENT_MESSAGE_PAGE_LIMIT, projectLatestSurfaceMessages, type AgentTurnCoverage, type AgentTurnCoveragePage } from "@claxedo/agent-runtime-contract"
 import { acceptsSessionTitle, boundSessionTitleSource } from "./session/session-title"
 import { firstTurnErrorData, normalizeHarnessIdentity, parseStoredSessionModelGroup, sessionModelGroupJson } from "@claxedo/agent-runtime-contract"
@@ -13,6 +13,7 @@ import { createMemorySubagentAdmissionStore } from "@claxedo/harness/broker"
 import { sqliteSessionStarts } from "./session/session-starts"
 import { DeliveryQueue } from "./session/delivery-queue"
 import { TurnLeases } from "./session/turn-leases"
+import { RecoveryOperationRecords } from "./session/recovery-operation-records"
 import { retractStoredParts } from "./session/part-retraction"
 import { sessionHandoff, sessionHandoffJson } from "./session/handoff-column"
 import type { AgentMessage, AgentPermission, AgentQuestion, AgentTurnOutcome, PromptFormat, PromptInput, SessionHarness, SessionModelGroup } from "@claxedo/agent-runtime-contract"
@@ -22,9 +23,6 @@ import type { AgentContentPart, AgentSessionTitleSource, AgentExecutionBinding, 
 import {
   effectivePermissionModeId,
   effectiveSessionModel,
-  RECOVERY_OPERATION_RETENTION_MS,
-  parseRecoveryOperation,
-  type RecoveryOperation,
 } from "@claxedo/agent-runtime-contract"
 import { foldUsageObservations, type RuntimeUsageObservation } from "@claxedo/agent-runtime-contract"
 import { type RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
@@ -449,6 +447,7 @@ export class RuntimeStore {
   readonly sessionStarts: AgentSessionStarts
   readonly deliveryQueue: DeliveryQueue
   readonly turnLeases: TurnLeases
+  readonly recoveryOperations: RecoveryOperationRecords
   readonly worktrees: WorktreeRecords
   private opened: RuntimeStoreDatabase
   private db: SqliteDatabase
@@ -477,6 +476,7 @@ export class RuntimeStore {
     this.authoringOwnership = new SessionAuthoringOwnership(this.db)
     this.sessionStarts = sqliteSessionStarts(this.db)
     this.turnLeases = new TurnLeases(this.db)
+    this.recoveryOperations = new RecoveryOperationRecords(this.db)
     this.worktrees = new WorktreeRecords(this.db)
     this.deliveryQueue = new DeliveryQueue(this.db, (sessionId, actorId) => this.authoringOwnership.record(sessionId, actorId))
     this.hydrateSubagentAdmission()
@@ -2259,6 +2259,47 @@ export class RuntimeStore {
     this.commit(item)
   }
 
+  /**
+   * End the session's open turn as interrupted without recording an outcome
+   * for it, for a turn whose writer lost the authority to report one. It holds
+   * only while `leaseId` is still the session's store lease and the turn is
+   * still the latest one started, under `fencingToken`: a turn admitted after
+   * it has moved one or the other, and is then left alone.
+   */
+  interruptTurn(input: {
+    sessionId: string
+    assistantMessageId: string
+    leaseId: string
+    fencingToken?: number
+    message: string
+  }): { events: AgentPresentationEvent[] } {
+    this.assertProjectionCurrent(input.sessionId)
+    this.settleDeltas(input.sessionId)
+    if (this.deleted(input.sessionId)) return { events: [] }
+    return this.db.transaction(() => {
+      if (this.readTurnAuthority(input.sessionId)?.leaseId !== input.leaseId) throw new AgentRuntimeStaleTurnError(input.sessionId)
+      this.assertFencingToken(input.sessionId, input.fencingToken)
+      const active = this.db
+        .prepare<{ provider_session_id: string | null; assistant_message_id: string | null }>(`
+          SELECT provider_session_id, assistant_message_id FROM runtime_journal
+          WHERE session_id = ? AND kind = 'control' AND type = 'turn.start'
+          ORDER BY seq DESC LIMIT 1
+        `)
+        .get(input.sessionId)
+      if (active?.assistant_message_id !== input.assistantMessageId) return { events: [] }
+      if (readTurnFinished(this.db, input.sessionId, input.assistantMessageId)) return { events: [] }
+      this.commitInside({
+        seq: this.next(input.sessionId),
+        ts: Date.now(),
+        sessionId: input.sessionId,
+        ...(active.provider_session_id ? { agentSessionId: active.provider_session_id } : {}),
+        kind: "control",
+        control: { type: "session.interrupted", message: input.message },
+      }, input.fencingToken)
+      return { events: [sessionStatus(input.sessionId, { type: "interrupted", message: input.message })] }
+    })
+  }
+
   appendEvent(input: {
     sessionId: string
     agentSessionId?: string
@@ -3041,158 +3082,6 @@ export class RuntimeStore {
 
   upstreamHasTurns(sessionId: string, upstreamSessionId: string) {
     return readUpstreamHasTurns(this.db, sessionId, upstreamSessionId)
-  }
-
-  /**
-   * Claim one recovery request id for one caller. The unique index decides the
-   * race, so two runtimes sharing this store cannot both believe they created
-   * the operation; the loser reads back the row that won.
-   */
-  recordRecoveryOperation(operation: RecoveryOperation, caller: { callerId: string }) {
-    this.pruneRecoveryOperations()
-    const scopeKey = recoveryScopeKey(operation.target)
-    const created = this.db
-      .prepare(
-        `
-        INSERT OR IGNORE INTO recovery_operation (
-          operation_id, scope_key, caller_id, request_id, session_id, action, state,
-          cleanup_fact, persistence_fact, created_at, updated_at, payload_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      )
-      .run(
-        operation.operationId,
-        scopeKey,
-        caller.callerId,
-        operation.requestId,
-        recoveryTargetSessionId(operation.target),
-        operation.action,
-        operation.state,
-        operation.facts.cleanup.value,
-        operation.facts.persistence.value,
-        operation.createdAt,
-        operation.updatedAt,
-        JSON.stringify(operation),
-      )
-    if (created.changes === 1) {
-      this.db
-        .prepare("INSERT OR IGNORE INTO recovery_operation_caller (operation_id, caller_id) VALUES (?, ?)")
-        .run(operation.operationId, caller.callerId)
-      return { created: true as const }
-    }
-    const existing = requireRow(
-      this.db
-        .prepare<{ payload_json: string }>(
-          "SELECT payload_json FROM recovery_operation WHERE scope_key = ? AND caller_id = ? AND request_id = ?",
-        )
-        .get(scopeKey, caller.callerId, operation.requestId),
-      "recovery_operation existing",
-    )
-    return { created: false as const, existing: parseRecoveryOperation(JSON.parse(existing.payload_json)) }
-  }
-
-  /**
-   * Takes no caller, unlike the read. An update is the owner writing what it
-   * observed about work it is already performing; the read is a caller asking
-   * for a receipt that names a turn and its owner generation. Only one of those
-   * is a disclosure.
-   */
-  updateRecoveryOperation(operation: RecoveryOperation) {
-    const result = this.db
-      .prepare(
-        `
-        UPDATE recovery_operation
-        SET state = ?, cleanup_fact = ?, persistence_fact = ?, updated_at = ?, payload_json = ?
-        WHERE operation_id = ?
-      `,
-      )
-      .run(
-        operation.state,
-        operation.facts.cleanup.value,
-        operation.facts.persistence.value,
-        operation.updatedAt,
-        JSON.stringify(operation),
-        operation.operationId,
-      )
-    if (result.changes === 0) {
-      throw new Error(
-        `Recovery operation ${operation.operationId} is not recorded in this store; it was never created here, `
-          + "or it settled with nothing outstanding and aged out",
-      )
-    }
-  }
-
-  /**
-   * Record a caller that coalesced onto an operation someone else created. Its
-   * own request id claimed nothing, so without this nothing would say it may
-   * read the receipt of the effect being issued on its behalf. An id this
-   * store does not hold records nobody: the caller list must not outlive the
-   * operation it describes.
-   */
-  addRecoveryOperationCaller(operationId: string, caller: { callerId: string }) {
-    if (!this.db.prepare("SELECT 1 FROM recovery_operation WHERE operation_id = ?").get(operationId)) return
-    this.db
-      .prepare("INSERT OR IGNORE INTO recovery_operation_caller (operation_id, caller_id) VALUES (?, ?)")
-      .run(operationId, caller.callerId)
-  }
-
-  readRecoveryOperation(operationId: string, caller: { callerId: string }) {
-    const row = this.db
-      .prepare<{ payload_json: string }>(
-        `
-        SELECT op.payload_json FROM recovery_operation AS op
-        JOIN recovery_operation_caller AS reader
-          ON reader.operation_id = op.operation_id AND reader.caller_id = ?
-        WHERE op.operation_id = ?
-      `,
-      )
-      .get(caller.callerId, operationId)
-    return row ? parseRecoveryOperation(JSON.parse(row.payload_json)) : undefined
-  }
-
-  /**
-   * In-flight operations, plus the settled ones a caller could still be
-   * holding a receipt for. Older settled rows are omitted rather than
-   * presented as current work.
-   */
-  listRecoveryOperations(scope: { sessionId?: string } = {}) {
-    const rows = this.db
-      .prepare<{ payload_json: string }>(
-        `
-        SELECT payload_json FROM recovery_operation
-        WHERE (? IS NULL OR session_id = ?)
-          AND (
-            state NOT IN ('succeeded', 'failed')
-            OR updated_at >= ?
-            OR cleanup_fact <> 'verified_clear'
-            OR persistence_fact = 'pending'
-          )
-        ORDER BY updated_at DESC
-      `,
-      )
-      .all(scope.sessionId ?? null, scope.sessionId ?? null, Date.now() - RECOVERY_OPERATION_RETENTION_MS)
-    return rows.map((row) => parseRecoveryOperation(JSON.parse(row.payload_json)))
-  }
-
-  /**
-   * Drop settled operations past the retention window. An operation whose
-   * facts still say something is owned, unknown or unwritten is kept whatever
-   * its age: deleting it would destroy the only record of an obligation
-   * nobody has discharged.
-   */
-  private pruneRecoveryOperations() {
-    this.db.transaction(() => {
-      const expired = `
-        SELECT operation_id FROM recovery_operation
-        WHERE state IN ('succeeded', 'failed')
-          AND updated_at < ?
-          AND cleanup_fact = 'verified_clear'
-          AND persistence_fact <> 'pending'
-      `
-      const cutoff = Date.now() - RECOVERY_OPERATION_RETENTION_MS
-      this.db.prepare(`DELETE FROM recovery_operation_caller WHERE operation_id IN (${expired})`).run(cutoff)
-      this.db.prepare(`DELETE FROM recovery_operation WHERE operation_id IN (${expired})`).run(cutoff)
-    })
   }
 
   /**
