@@ -16,8 +16,8 @@ import { CERTIFIED_HOSTED_WORKER_ARTIFACT_IDS, certifiedHostedWorkerArtifact } f
 const packageRoot = path.resolve(import.meta.dirname, "../../..")
 
 function exportedNames(source: string) {
-  const listed = [...source.matchAll(/^export \{ ([^}]+) \}$/gm)].flatMap((match) => match[1]!.split(/,\s*/))
-  const classes = [...source.matchAll(/^export class (\w+) extends /gm)].map((match) => match[1]!)
+  const listed = [...source.matchAll(/^export \{ ([^}]+) \}$/gm)].flatMap((match) => match[1].split(/,\s*/))
+  const classes = [...source.matchAll(/^export class (\w+) extends /gm)].map((match) => match[1])
   return [...listed, ...classes].toSorted()
 }
 
