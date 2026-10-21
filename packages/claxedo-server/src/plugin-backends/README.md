@@ -14,7 +14,7 @@ An organization's owners and admins install app plugins from the Claxedo registr
 | `routes` | `METHOD /path` patterns the backend serves. `:name` matches one segment and a trailing `*` one or more. A request for anything else is refused before it reaches the plugin, and no route may sit under `/_`, which is the platform's. |
 | `tools` | Optional. The agent tools the backend serves: a `group` (`id`, `label`) and the `definitions` module. A release cannot carry them until P6. |
 
-The top-level `permissions` list names the platform calls the backend may make (`projects.read`, `blobs`, `events`, `schedule`, `links`, and the ones later slices serve).
+The top-level `permissions` list names the platform calls the backend may make (`projects.read`, `blobs`, `events`, `schedule`, `links`, `sessions.read`, `sessions.start`, `workspaces.cloud`, and the ones later slices serve).
 
 ## Releases and the registry
 
@@ -30,6 +30,7 @@ The registry serves `index.json`, `releases/<id>/<version>.json` and `blobs/<sha
   - `app_plugin_org_defaults`: an admin's positive default for members who made no choice.
   - `app_plugin_epochs`: the epoch every backend capability is fenced by. It rises on every install, update, disable, re-enable and uninstall, and is never deleted, so a reinstall continues from it and a supervisor that remembers the uninstalled run reads the reinstall as newer.
   - `app_plugin_links`: each live public link by its token's SHA-256, with the plugin and path it reads, who made it, and when it expires or was revoked.
+  - `plugin_session_origins`: the session each of a plugin's origins (`scope`, `key`) started, with its workspace, its placement and the configuration digest its reservation was made under. A cloud row's workspace is that origin's own root, which the session host never offers as a project's workspace.
 - **R2** (`CLAXEDO_AGENT_PLUGINS`, typed `AppPluginsBucket` in `bundles.ts`):
   - bundles under `plugin-apps/<sha256>.js` and `plugin-backends/<sha256>.js`. They are content-addressed and shared by every organization that installs the same release, so an uninstall never deletes one;
   - each plugin's blobs under `plugin-data/<orgId>/<pluginId>/<key>`.
@@ -66,18 +67,19 @@ The runtime admits every platform call a backend makes (`packages/plugin-runtime
 - **blobs**: R2 under the plugin's prefix, with the content type as HTTP metadata. `CLAXEDO_APP_PLUGIN_BLOB_QUOTA_BYTES` sets the quota the runtime holds; absent, it is 1 GiB.
 - **events**: one `plugin.event` per recipient, nudged into the organization's live-sync room. The recipients are the members with the plugin enabled; for a `project` event, those of them who may read the project, which the publisher must read too (else 403 `plugin_project_forbidden`); for `caller`, the caller alone. `eventVisibleTo` delivers each copy only to the member it names.
 - **links**: a 32-byte token, stored only as its SHA-256, at most 1,000 live per plugin.
+- **sessions** (`sessions/platform.ts`): through the deployment's session host (`sessions/`), the one hosted Tasks starts through too, as the caller's canonical human actor (`ownerGrant` dispatch and reservation). A start needs write on the project and runs in the caller's own workspace of it, or for `placement: "cloud"` in the origin's own root (`workspace/origin-cloud-workspace.ts`), filed and started through the create route's admission. Its session id is `ses_plugin_<hash>` of `app-plugin.v1:<org>:<plugin>:<scope>:<key>`, so a start sent again finds the session it created, and each start is recorded in `plugin_session_origins`; a handoff, an abandonment and a state reading name only a session recorded there (404 `plugin_session_origin_unknown`). `continueFrom` is read only when the caller may open that session in this organization, asked at the read (403 `plugin_session_forbidden`). Refusals of the session core answer `plugin_session_<code>`: 400 `invalid_input`, 403 `forbidden`, 409 `conflict`, 422 `unsupported`, 429 `rate_limited`; a digest that moved is 409 `plugin_session_digest_stale`, and a member-driven session's agent is 403 `plugin_session_start_refused`. A Worker composition without a session host answers 503 `plugin_sessions_unavailable`.
 
 `identity.caller` carries no display name: the control-plane database holds no person's name, and the Better Auth database that does is not the supervisor's.
 
 ## Lifecycle
 
-`lifecycle.ts` verifies a release and copies both bundles into R2 before any row names them, writes D1, then refreshes the plugin's supervisor, so the previous configuration's objects stop at once rather than at the next request. Uninstall deletes the rows and the plugin's links. It then has the supervisor purge, which deletes each facet its registry names, and only then its own storage with its wakes and blob accounting (the Cloudflare gate found that a running facet outlives `deleteAll`). Finally it deletes the plugin's `plugin-data/<orgId>/<pluginId>/` prefix. The data is deleted even when no install was found, so an uninstall that failed after its rows were deleted completes on retry.
+`lifecycle.ts` verifies a release and copies both bundles into R2 before any row names them, writes D1, then refreshes the plugin's supervisor, so the previous configuration's objects stop at once rather than at the next request. Uninstall deletes the rows, the plugin's links and its session origins; the sessions themselves are their starters' and stay. It then has the supervisor purge, which deletes each facet its registry names, and only then its own storage with its wakes and blob accounting (the Cloudflare gate found that a running facet outlives `deleteAll`). Finally it deletes the plugin's `plugin-data/<orgId>/<pluginId>/` prefix. The data is deleted even when no install was found, so an uninstall that failed after its rows were deleted completes on retry.
 
 `compose.ts` builds the routes for the Agent Plugins entries; `composeBetterAuthD1AgentPlugins` takes the registry's keys as `registryKeys`, by default `PLUGIN_REGISTRY_KEYS`. Two test compositions add the test key: `fixtures/worker.fixture.ts` for this suite, and `fixtures/full-hosted.fixture.cf.ts`, the full-hosted Worker (`createFullHostedWorker(registryKeysWithTestKey)`) the app's signed e2e stack runs when a flow asks for a registry (`packages/claxedo-app/e2e/README.md`).
 
 ## Deployment
 
-The Agent Plugins artifacts (`scripts/deploy/wrangler-config.ts`) bind `CLAXEDO_AGENT_PLUGINS`, `PLUGIN_LOADER` (`[[worker_loaders]]`) and `PLUGIN_SUPERVISOR`, and add migration `v2` with `new_sqlite_classes = ["PluginSupervisor"]`. Their entries export `PluginSupervisor` (`supervisor.cf.ts`, the runtime's class over `hostedPluginHostPort`, which reads `app_plugin_installs` and the backend bundle), `PluginPlatform` and `PluginOutbound`. The hosted compatibility flags include `enable_ctx_exports`. The base artifact carries none of this and serves no app plugins.
+The Agent Plugins artifacts (`scripts/deploy/wrangler-config.ts`) bind `CLAXEDO_AGENT_PLUGINS`, `PLUGIN_LOADER` (`[[worker_loaders]]`) and `PLUGIN_SUPERVISOR`, and add migration `v2` with `new_sqlite_classes = ["PluginSupervisor"]`. Their entries export `PluginSupervisor` (`hostedPluginSupervisorClass` in `supervisor.cf.ts`: the runtime's class over `hostedPluginHostPort`, which reads `app_plugin_installs` and the backend bundle, and answers session calls over the session host the entry's own composition builds), `PluginPlatform` and `PluginOutbound`. The hosted compatibility flags include `enable_ctx_exports`. The base artifact carries none of this and serves no app plugins.
 
 ## Tests
 
@@ -99,6 +101,7 @@ The Agent Plugins artifacts (`scripts/deploy/wrangler-config.ts`) bind `CLAXEDO_
   - a wake that fires once as a system caller while `/_wake` stays unreachable from a request;
   - a link read anonymously as a link caller that cannot act as a person, and refused once expired or revoked;
   - a held request refused every platform call once its epoch ended;
+  - sessions: a start in the project's workspace recorded under its origin and answered again for a resent start, a stale digest refused, a first message with the plugin's image sent once, state read from the registry, an abandonment that deletes a session no message reached and keeps one a message did, `continueFrom` refused for a session the caller cannot open, a cloud start in the origin's own root that a later local start does not take, nothing reached from another organization, and the origins deleted by an uninstall. The relay's workspace runtime is the test's outbound service, and the session host's sandbox manager, relay token mint and registration hooks are `test-support/hosted-session-fixture.ts`, which the Tasks workerd suite shares;
 - uninstall: it deletes the plugin's objects, a running one included, its blobs, wakes and links, and every member's choice, while another plugin's data stays and a reinstall continues the epoch. The live-sync room is the fixture's `RecordingRoom`, which records nudges.
 
-`supervisor.test.ts` in the runtime pins the purge's order against the real supervisor class.
+`supervisor.test.ts` in the runtime pins the purge's order against the real supervisor class. `sessions/platform.test.ts` pins the caller rules (a member-driven agent refused a start before anything is read), and `sessions/reads.test.ts` the session host's D1 reads.

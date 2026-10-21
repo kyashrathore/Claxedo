@@ -79,12 +79,21 @@ A plugin is a package whose `package.json` carries a `claxedo` block:
 | --- | --- | --- |
 | `object(className, name, request)` | none | One of the plugin's own Durable Objects. Every object shares one `ctx.id`, so an object reads its own name from `x-claxedo-object-name`, never from `ctx.id`. |
 | `active()` | none | Whether this backend is still the plugin's current activation. |
-| `identity.caller()` | none | `{ orgId, origin, userId? }`: a `person` (or later an `agent`) with their user id, a `link` or a `system` wake without one. |
+| `identity.caller()` | none | `{ orgId, origin, userId?, session?, ownerDriven? }`: a `person` or an `agent` with their user id, an `agent` also with the session it acts from and whether that session's owner drives it; a `link` or a `system` wake without a user. |
 | `projects.list()`, `projects.authorize(projectId, "read" \| "write")` | `projects.read` | As the caller, who must be a person. |
 | `blobs.put(key, bytes, { contentType })`, `get`, `head`, `delete`, `list({ prefix, cursor })` | `blobs` | The plugin's own files in its organization. Keys match `PLUGIN_BLOB_LIMITS.keyPattern` with no empty, `.` or `..` segment. A blob is at most 16 MiB, and a plugin holds 1 GiB per organization by default. |
 | `events.publish({ audience, projectId?, topic, data? })` | `events` | Tells the frontend of every member in the audience who has the plugin enabled: `caller`, a `project`'s readers, or the `org`. Data is at most 8 KiB of JSON, 10 events a second. |
 | `schedule.at(name, at, payload?)`, `cancel(name)`, `list()` | `schedule` | Wakes at least 30 s ahead, at most 100, payload at most 4 KiB. Use these, not a Durable Object alarm. |
 | `links.create({ path, expiresAt? })`, `links.revoke(token)` | `links` | A public link that reads `GET path` without signing in, as a `link` caller, until it expires or is revoked. |
+| `sessions.harnesses({ projectId, placement })` | `sessions.start` | The harnesses a session can start with there, each `{ id, access, label, models }`; a cloud placement lists no models until its workspace runs. |
+| `sessions.preview(start)` | `sessions.start`, and `workspaces.cloud` for `placement: "cloud"` | `{ digest, blockers }` for a `PluginSessionStart`: an `origin` (`{ scope, key }`, the backend's own), a `projectId` the caller may write, a `placement`, a `configuration` (harness, model, effort), and optionally `instructions`, a cloud `selection` of plugins and skills, a `continueFrom` session whose transcript is carried into the instructions, and a `title`. |
+| `sessions.start({ ...start, digest })` | as `preview` | `{ session, continuedFrom? }`, or `{ preparing: { workspaceId } }` while a cloud workspace starts. One origin has one session: a start sent again answers it, and a digest that no longer matches is refused. |
+| `sessions.handoff({ origin, session, text, attachments? })` | `sessions.start` | Sends the first message once: `{ sent: false }` when it already reached the session. Attachments are up to 6 of the plugin's own PNG, JPEG, GIF or WebP blobs of at most 1.5 MiB. |
+| `sessions.abandon({ origin, session })` | `sessions.start` | Deletes a session no message reached and forgets its origin (`{ removed: true }`); one a message reached is kept. The origin's key is spent: start the next one under a new key. |
+| `sessions.state(origins)` | `sessions.read` | `{ origin, session, state, handoff }` for each origin that started a session, at most 100 asked at once. Needs no caller, so a wake can ask. |
+| `sessions.authorizeOpen(session)` | `sessions.read` | Whether the caller may open the session. |
+
+The session calls other than `state` act as a person. An `agent` caller from a session another member drives is refused `preview` and `start` (403 `plugin_session_start_refused`): it delegates through `subagent_spawn` instead.
 
 ## Releases
 

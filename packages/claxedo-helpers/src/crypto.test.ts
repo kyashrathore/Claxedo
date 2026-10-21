@@ -1,5 +1,15 @@
 import { describe, expect, test } from "bun:test"
-import { base64UrlDecode, base64UrlEncode, prefixedRandomId, timingSafeEqualStrings } from "./crypto"
+import { base64EncodeBytes, base64UrlDecode, base64UrlEncode, prefixedRandomId, timingSafeEqualStrings } from "./crypto"
+
+describe("base64EncodeBytes", () => {
+  test("matches Node's padded base64 byte for byte", () => {
+    for (let length = 0; length < 40; length += 1) {
+      const bytes = new Uint8Array(length)
+      for (let i = 0; i < length; i += 1) bytes[i] = (i * 53 + 7) % 256
+      expect(base64EncodeBytes(bytes)).toBe(Buffer.from(bytes).toString("base64"))
+    }
+  })
+})
 
 describe("base64UrlEncode", () => {
   test("matches Node's base64url byte for byte, and is unpadded", () => {

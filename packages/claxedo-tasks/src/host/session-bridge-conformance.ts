@@ -2,13 +2,14 @@
  * What `createTasksSessionBridge` does on every host, as cases a host package
  * runs against its own real bridge.
  *
- * `session-bridge-core.ts` is where preview, start, adoption, handoff and
- * liveness are decided; a host supplies only the ports underneath it. Asserted
- * once per host against a fake per host, a change to the core has to be proved
- * twice and a regression the weaker fake does not model passes — so the cases
- * that belong to the core live here, and each host's own file keeps what is
- * genuinely its own: reservation and compensation for the hosted bridge,
- * embedded-runtime wiring for the local one.
+ * `session-bridge.ts`, over the platform's session bridge core, is where
+ * preview, start, adoption, handoff and liveness are decided; a host supplies
+ * only the ports underneath it. Asserted once per host against a fake per
+ * host, a change to the core has to be proved twice and a regression the
+ * weaker fake does not model passes — so the cases that belong to the core
+ * live here, and each host's own file keeps what is genuinely its own:
+ * reservation and compensation for the hosted bridge, embedded-runtime wiring
+ * for the local one.
  *
  * Runner-neutral like the kit's store conformance: each case is a plain async
  * function that throws, so a package registers it with its own `test`.

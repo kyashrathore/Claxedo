@@ -10,17 +10,19 @@ import {
   type SessionRef,
   type StartCommand,
   type Task,
+  type TasksActor,
 } from "@claxedo/tasks"
 import {
   tasksSessionBridgeConformance,
   type TasksSessionBridgeFixture,
 } from "@claxedo/tasks/host/session-bridge-conformance"
 import { startedSession } from "@claxedo/tasks/test-support"
-import { createHostedTasksSessionBridge, type HostedTasksSessionBridgeInput } from "@claxedo/tasks/hosted"
 import type { ControlPlaneServices } from "../../../authority/services"
-import type { RegisteredSession } from "@claxedo/tasks/host/registered-sessions"
-import type { TasksHostReads } from "@claxedo/tasks/hosted"
-import { hostedTasksBridgePorts } from "./compose"
+import type { RegisteredSession } from "@claxedo/server-core/plugin-platform/sessions/registered-sessions"
+import type { HostedSessionHostInput } from "../../../plugin-backends/sessions/host"
+import type { SessionHostReads } from "../../../plugin-backends/sessions/reads"
+import { hostedSessionPorts } from "../../../plugin-backends/sessions/compose"
+import { hostedTasksSessionBridge } from "./compose"
 
 const mock = vi.hoisted(() => ({
   request: vi.fn(),
@@ -155,7 +157,7 @@ function services() {
     beginSessionCompensation: compensated("compensation_pending"),
     completeSessionCompensation: compensated("compensated"),
   }
-  const reads: TasksHostReads = {
+  const reads: SessionHostReads = {
     workspace: async (workspaceId) => (workspaceId === WORKSPACE.id ? WORKSPACE : undefined),
     projectWorkspaces: async (projectId, ownerUserId) =>
       projectId === WORKSPACE.project_id && ownerUserId === STARTER.userId ? [WORKSPACE] : [],
@@ -273,10 +275,10 @@ async function operationIdOf(chosen: Preset = preset()): Promise<string> {
 
 function bridge(
   input: ReturnType<typeof services>,
-  principal?: HostedTasksSessionBridgeInput["principal"],
+  principal?: HostedSessionHostInput<TasksActor>["principal"],
 ) {
-  return createHostedTasksSessionBridge({
-    ...hostedTasksBridgePorts({
+  return hostedTasksSessionBridge({
+    ...hostedSessionPorts({
       services: input.value,
       reads: input.reads,
     }),
@@ -381,8 +383,8 @@ describe("hosted tasks session bridge", () => {
     const host = runtime()
     mock.clients.length = 0
     const composition = services()
-    const kit = createHostedTasksSessionBridge({
-      ...hostedTasksBridgePorts({
+    const kit = hostedTasksSessionBridge({
+      ...hostedSessionPorts({
         services: composition.value,
         reads: composition.reads,
       }),
@@ -404,8 +406,8 @@ describe("hosted tasks session bridge", () => {
     const host = runtime()
     mock.clients.length = 0
     const composition = services()
-    const kit = createHostedTasksSessionBridge({
-      ...hostedTasksBridgePorts({
+    const kit = hostedTasksSessionBridge({
+      ...hostedSessionPorts({
         services: composition.value,
         reads: composition.reads,
       }),
@@ -575,8 +577,8 @@ describe("hosted tasks session bridge", () => {
   test("reads an unlinked session's history and removes it as the person who started it, never as the service actor", async () => {
     const host = runtime()
     const composition = services()
-    const kit = createHostedTasksSessionBridge({
-      ...hostedTasksBridgePorts({
+    const kit = hostedTasksSessionBridge({
+      ...hostedSessionPorts({
         services: composition.value,
         reads: composition.reads,
       }),
@@ -614,8 +616,8 @@ describe("hosted tasks session bridge", () => {
     runtime()
     const composition = services()
     const previous: Workspace = { ...WORKSPACE, id: "ws_previous" }
-    const kit = createHostedTasksSessionBridge({
-      ...hostedTasksBridgePorts({
+    const kit = hostedTasksSessionBridge({
+      ...hostedSessionPorts({
         services: composition.value,
         reads: { ...composition.reads, workspace: async (id) => (id === previous.id ? previous : composition.reads.workspace(id)) },
       }),

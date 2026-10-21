@@ -7,16 +7,6 @@ export {
   type TasksSignedAuth,
 } from "./composition"
 export {
-  createHostedTasksSessionBridge,
-  type HostedTasksSessionBridgeInput,
-  type TasksCloudRootAllocation,
-  type TasksCloudRootCreator,
-  type TasksCloudRootRequest,
-  type TasksCloudRoots,
-} from "./session-bridge"
-export type { TasksSessionRegistrations } from "./session-reservation"
-export { createD1TasksHostReads, type D1TasksHostReadsInput, type TasksHostReads, type TasksProjectSource } from "./d1-host-reads"
-export {
   TASKS_CAPABILITY_AUDIENCE,
   TasksCapabilityConfigurationError,
   mintTasksCapability,

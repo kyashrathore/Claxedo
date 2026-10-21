@@ -1,27 +1,31 @@
 import type { D1Database } from "@cloudflare/workers-types"
 import { base64UrlEncode, sha256Hex } from "@claxedo/helpers/crypto"
-import { PLUGIN_BLOB_LIMITS, PLUGIN_LINK_LIMITS, type PluginBlobHead, type PluginCaller, type PluginPlatformAnswer } from "@claxedo/plugin-api/backend"
-import { refusedCall, type PluginHostCall, type PluginHostPort, type PluginScope } from "@claxedo/plugin-runtime"
+import { PLUGIN_BLOB_LIMITS, PLUGIN_LINK_LIMITS, type PluginBlobHead, type PluginCaller } from "@claxedo/plugin-api/backend"
+import { answeredCall, refusedCall, type PluginHostCall, type PluginHostPort, type PluginScope } from "@claxedo/plugin-runtime"
 import type { PluginEventEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import { may, maySql } from "../authority/adapters/d1/authorization"
 import { liveSyncRoomNameForPrincipal, nudgeLiveSyncRoom, type LiveSyncRoomNamespace } from "../platform/http/live-sync-publish"
 import type { AppPluginsBucket, AppPluginsObject } from "./bundles"
 import { APP_PLUGIN_LINK_ROUTE } from "./paths"
+import type { HostedSessionPorts } from "./sessions/compose"
+import { hostedPluginSessions } from "./sessions/platform"
 
 export type HostedPlatformPorts = Readonly<{
   database: D1Database
   bucket: AppPluginsBucket
   rooms: LiveSyncRoomNamespace
+  /**
+   * The deployment's session host, read at each session call because the
+   * Worker's composition it comes from is built lazily; absent, every
+   * session call is refused as unavailable here.
+   */
+  sessions?: () => HostedSessionPorts
   now?: () => number
 }>
 
 /** Where a plugin's blobs live in the artifact bucket: each organization's plugin under its own prefix, which an uninstall deletes. */
 export function pluginDataPrefix(scope: PluginScope): string {
   return `plugin-data/${scope.orgId}/${scope.pluginId}/`
-}
-
-function ok(value?: unknown): PluginPlatformAnswer {
-  return value === undefined ? { ok: true } : { ok: true, value }
 }
 
 function headOf(prefix: string, object: AppPluginsObject): PluginBlobHead {
@@ -68,11 +72,19 @@ async function recipients(ports: HostedPlatformPorts, scope: PluginScope, call: 
  * The hosted Worker's answers to the platform calls the runtime admits:
  * projects through the D1 authority's own rules as the caller, blobs in the
  * plugin's prefix of the artifact bucket, events through the organization's
- * live-sync room to each member who has the plugin enabled, and public links
- * in `app_plugin_links`.
+ * live-sync room to each member who has the plugin enabled, public links in
+ * `app_plugin_links`, and sessions through the deployment's session host.
  */
 export function hostedPlatform(ports: HostedPlatformPorts): PluginHostPort["platform"] {
   const now = ports.now ?? Date.now
+  const blob = async (scope: PluginScope, key: string) => {
+    const object = await ports.bucket.get(`${pluginDataPrefix(scope)}${key}`)
+    if (!object) return undefined
+    const contentType = object.httpMetadata?.contentType
+    return { bytes: new Uint8Array(await object.arrayBuffer()), ...(contentType ? { contentType } : {}) }
+  }
+  const sessionHost = ports.sessions
+  const sessions = sessionHost ? () => hostedPluginSessions({ ...sessionHost(), database: ports.database, now, blob }) : undefined
   return async (call, scope, caller) => {
     const prefix = pluginDataPrefix(scope)
     switch (call.name) {
@@ -82,30 +94,30 @@ export function hostedPlatform(ports: HostedPlatformPorts): PluginHostPort["plat
           .prepare(`select p.project_id, p.repo_key from projects p where p.org_id = ? and p.deleted_at is null and ${rule.sql} order by p.repo_key`)
           .bind(scope.orgId, ...rule.bind)
           .all<{ project_id: string; repo_key: string }>()
-        return ok(results.map((row) => ({ id: row.project_id, repoKey: row.repo_key })))
+        return answeredCall(results.map((row) => ({ id: row.project_id, repoKey: row.repo_key })))
       }
       case "projects.authorize":
-        return ok(await may(ports.database, { userId: userOf(caller) }, call.access, { kind: "project", projectId: call.projectId, orgId: scope.orgId }))
+        return answeredCall(await may(ports.database, { userId: userOf(caller) }, call.access, { kind: "project", projectId: call.projectId, orgId: scope.orgId }))
       case "blobs.put": {
         await ports.bucket.put(`${prefix}${call.key}`, call.bytes, call.contentType ? { httpMetadata: { contentType: call.contentType } } : {})
         const stored = await ports.bucket.head(`${prefix}${call.key}`)
         if (!stored) throw new Error(`blob ${call.key} was not stored`)
-        return ok(headOf(prefix, stored))
+        return answeredCall(headOf(prefix, stored))
       }
       case "blobs.get": {
         const object = await ports.bucket.get(`${prefix}${call.key}`)
-        return ok(object ? { ...headOf(prefix, object), bytes: new Uint8Array(await object.arrayBuffer()) } : undefined)
+        return answeredCall(object ? { ...headOf(prefix, object), bytes: new Uint8Array(await object.arrayBuffer()) } : undefined)
       }
       case "blobs.head": {
         const object = await ports.bucket.head(`${prefix}${call.key}`)
-        return ok(object ? headOf(prefix, object) : undefined)
+        return answeredCall(object ? headOf(prefix, object) : undefined)
       }
       case "blobs.delete":
         await ports.bucket.delete(`${prefix}${call.key}`)
-        return ok()
+        return answeredCall()
       case "blobs.list": {
         const page = await ports.bucket.list({ prefix: `${prefix}${call.prefix ?? ""}`, limit: PLUGIN_BLOB_LIMITS.listPage, ...(call.cursor ? { cursor: call.cursor } : {}) })
-        return ok({ blobs: page.objects.map((object) => headOf(prefix, object)), ...(page.truncated && page.cursor ? { cursor: page.cursor } : {}) })
+        return answeredCall({ blobs: page.objects.map((object) => headOf(prefix, object)), ...(page.truncated && page.cursor ? { cursor: page.cursor } : {}) })
       }
       case "events.publish": {
         if (call.audience === "project") {
@@ -125,7 +137,7 @@ export function hostedPlatform(ports: HostedPlatformPorts): PluginHostPort["plat
           ts,
         }))
         if (events.length > 0) await nudgeLiveSyncRoom(ports.rooms, liveSyncRoomNameForPrincipal({ orgId: scope.orgId }), events)
-        return ok({ recipients: events.length })
+        return answeredCall({ recipients: events.length })
       }
       case "links.create": {
         const live = await ports.database
@@ -138,15 +150,23 @@ export function hostedPlatform(ports: HostedPlatformPorts): PluginHostPort["plat
           .prepare("insert into app_plugin_links (token_hash, org_id, plugin_id, path, created_by, created_at, expires_at) values (?, ?, ?, ?, ?, ?, ?)")
           .bind(await sha256Hex(token), scope.orgId, scope.pluginId, call.path, userOf(caller), now(), call.expiresAt ?? null)
           .run()
-        return ok({ token, url: `${APP_PLUGIN_LINK_ROUTE}/${token}`, path: call.path, ...(call.expiresAt ? { expiresAt: call.expiresAt } : {}) })
+        return answeredCall({ token, url: `${APP_PLUGIN_LINK_ROUTE}/${token}`, path: call.path, ...(call.expiresAt ? { expiresAt: call.expiresAt } : {}) })
       }
       case "links.revoke": {
         const revoked = await ports.database
           .prepare("update app_plugin_links set revoked_at = ? where token_hash = ? and org_id = ? and plugin_id = ? and revoked_at is null")
           .bind(now(), await sha256Hex(call.token), scope.orgId, scope.pluginId)
           .run()
-        return revoked.meta.changes > 0 ? ok() : refusedCall(404, "plugin_link_not_found", "This plugin has no live link with that token")
+        return revoked.meta.changes > 0 ? answeredCall() : refusedCall(404, "plugin_link_not_found", "This plugin has no live link with that token")
       }
+      case "sessions.harnesses":
+      case "sessions.preview":
+      case "sessions.start":
+      case "sessions.handoff":
+      case "sessions.abandon":
+      case "sessions.state":
+      case "sessions.authorizeOpen":
+        return sessions ? sessions()(call, scope, caller) : refusedCall(503, "plugin_sessions_unavailable", "This deployment starts no sessions for app plugins")
       default: {
         const unanswered: never = call
         throw new Error(`the hosted platform answers no call ${JSON.stringify(unanswered)}`)

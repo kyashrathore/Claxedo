@@ -1,9 +1,9 @@
 import { isAgentMessage, type AgentMessage, type SessionHarness } from "@claxedo/agent-runtime-contract"
 import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
-import { tasksErrorDetail, type ModelReference, type TasksErrorDetail } from "../index"
-import type { TasksRuntimeTarget } from "./session-bridge-core"
+import type { SessionBridgeFailure, SessionModelReference } from "./session-start"
+import type { SessionRuntimeTarget } from "./session-bridge-core"
 
-type RuntimeTarget = Pick<TasksRuntimeTarget, "request">
+type RuntimeTarget = Pick<SessionRuntimeTarget, "request">
 
 export async function readMessages(target: RuntimeTarget, sessionId: string): Promise<AgentMessage[] | null> {
   const response = await target.request(`/session/${encodeURIComponent(sessionId)}/message`).catch(() => undefined)
@@ -17,9 +17,9 @@ export async function readMessages(target: RuntimeTarget, sessionId: string): Pr
  * model is optional because a session may leave the harness's own selection in
  * place, and the harness alone is what rendering its transcript needs.
  */
-export type SessionConfiguration = {
+export type StoredSessionConfiguration = {
   harness: SessionHarness
-  model: ModelReference | null
+  model: SessionModelReference | null
   effort: string | null
   instructions: string
 }
@@ -27,7 +27,7 @@ export type SessionConfiguration = {
 export async function readSessionConfiguration(
   target: RuntimeTarget,
   sessionId: string,
-): Promise<SessionConfiguration | null> {
+): Promise<StoredSessionConfiguration | null> {
   const response = await target.request(`/session/${encodeURIComponent(sessionId)}/config`).catch(() => undefined)
   if (!response?.ok) return null
   const body = asRecord(await response.json().catch(() => undefined))
@@ -55,18 +55,18 @@ export async function sessionTimes(response: Response): Promise<SessionTimes | u
   return created === undefined || updated === undefined ? undefined : { created, updated }
 }
 
-export function untimedSession(sessionId: string): { ok: false; error: TasksErrorDetail } {
+export function untimedSession(sessionId: string): { ok: false; error: SessionBridgeFailure } {
   return {
     ok: false,
-    error: tasksErrorDetail("unsupported", `The workspace runtime answered session ${sessionId} without its creation and update times`),
+    error: { code: "unsupported", message: `The workspace runtime answered session ${sessionId} without its creation and update times` },
   }
 }
 
 /**
  * Whether this origin's first message is already on the session. The runtime
  * does not deduplicate by `messageID`, so a retry that skipped this read would
- * send the task a second time — and a history it would not return is not the
- * same answer as a history without the message.
+ * send the message a second time — and a history it would not return is not
+ * the same answer as a history without the message.
  */
 export async function alreadySent(
   target: RuntimeTarget,
@@ -78,8 +78,8 @@ export async function alreadySent(
   return messages.some((message) => message.info.id === messageId) ? "present" : "absent"
 }
 
-export async function runtimeRefusal(operation: string, response: Response): Promise<TasksErrorDetail> {
+export async function runtimeRefusal(operation: string, response: Response): Promise<SessionBridgeFailure> {
   const error = asRecord(asRecord(await response.json().catch(() => undefined))?.error)
   const detail = typeof error?.message === "string" ? error.message : `status ${response.status}`
-  return tasksErrorDetail("unsupported", `The workspace runtime refused to ${operation}: ${detail}`)
+  return { code: "unsupported", message: `The workspace runtime refused to ${operation}: ${detail}` }
 }

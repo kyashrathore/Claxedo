@@ -20,8 +20,8 @@ import { startConfigurationDigest } from "@claxedo/tasks"
 import { workspaceBackingDatabase } from "../../../test-support/workspace-backing-database"
 import type { ControlPlaneDatabase } from "../../../test-support/control-plane-migrations"
 import type { ControlPlaneServices } from "../../../authority/services"
-import { createHostedTasksSessionBridge } from "@claxedo/tasks/hosted"
-import { hostedTasksBridgePorts } from "./compose"
+import { hostedSessionPorts } from "../../../plugin-backends/sessions/compose"
+import { hostedTasksSessionBridge } from "./compose"
 
 const runtimeRequest = vi.hoisted(() => vi.fn())
 const configApplied = vi.hoisted(() => vi.fn(async (_snapshot: RuntimeSnapshot) => {}))
@@ -149,8 +149,8 @@ async function rootStart(secretBrokering: "native" | "none") {
   const inline = inlineSandboxStart(delivery.start)
   const requests: (SandboxStartRequest | undefined)[] = []
   const answers: SandboxStartAnswer[] = []
-  const bridge = createHostedTasksSessionBridge({
-    ...hostedTasksBridgePorts({
+  const bridge = hostedTasksSessionBridge({
+    ...hostedSessionPorts({
       services,
       reads: {
         workspace: async (workspaceId) => filed.get(workspaceId),

@@ -34,12 +34,12 @@ import { testRequestAuthenticationAdapter } from "../../../test-support/request-
 import { mintTasksCapability, TASKS_CAPABILITY_AUDIENCE } from "@claxedo/tasks/hosted"
 import { createD1TasksStore } from "@claxedo/tasks/storage/d1"
 import { createHostedTasksComposition, type HostedTasksCompositionInput } from "@claxedo/tasks/hosted"
-import type { TasksHostReads } from "@claxedo/tasks/hosted"
-import { createHostedTasksSessionBridge } from "@claxedo/tasks/hosted"
 import { createCloudCreateAdmission } from "../../../workspace/cloud-create-admission"
 import { hostedSandboxInput } from "../../../workspace/hosted-sandbox-input"
 import type { SandboxStart } from "../../../workspace/sandbox-start"
-import { hostedTasksBridgePorts, hostedTasksIdentityPorts } from "./compose"
+import type { SessionHostReads } from "../../../plugin-backends/sessions/reads"
+import { hostedSessionPorts } from "../../../plugin-backends/sessions/compose"
+import { hostedTasksIdentityPorts, hostedTasksSessionBridge } from "./compose"
 
 const runtime = vi.hoisted(() => ({ request: vi.fn() }))
 vi.mock("@claxedo/server-core/workspace/http/workspace-runtime-client", () => ({
@@ -916,7 +916,7 @@ describe("hosted Tasks cloud start from inside a session", () => {
   }
 
   /** The project's source and the roots the authority filed, as the D1 rows answer them. */
-  const reads: TasksHostReads = {
+  const reads: SessionHostReads = {
     workspace: async (workspaceId) => registry.roots.get(workspaceId),
     projectWorkspaces: async () => [],
     projectSource: async (projectId) => (projectId === "project-a" ? { repoUrl: PROJECT_REPO, gitBranch: "main" } : undefined),
@@ -949,8 +949,8 @@ describe("hosted Tasks cloud start from inside a session", () => {
         database: controlPlane,
         cloudSelectedCapabilities: true,
         bridge: (services) => (principal, auth, owner) =>
-          createHostedTasksSessionBridge({
-            ...hostedTasksBridgePorts({
+          hostedTasksSessionBridge({
+            ...hostedSessionPorts({
               services,
               reads,
               sandboxStart: settledStart(sandboxManager),
@@ -1088,8 +1088,8 @@ describe("hosted Tasks cloud start from inside a session", () => {
         database: await database(),
         cloudSelectedCapabilities: true,
         bridge: (services) => (principal, auth, owner) =>
-          createHostedTasksSessionBridge({
-            ...hostedTasksBridgePorts({
+          hostedTasksSessionBridge({
+            ...hostedSessionPorts({
               services,
               reads,
               sandboxStart: settledStart(sandboxManager),

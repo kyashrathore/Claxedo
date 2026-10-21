@@ -1,6 +1,6 @@
-import { expect, test } from "bun:test"
+import { expect, test } from "vitest"
 import { chooseProjectWorkspace } from "./project-workspace"
-import type { Workspace } from "@claxedo/server-core/workspace/store/index"
+import type { Workspace } from "../../workspace/store/index"
 
 const checkout = (id: string, name: string) => ({ id, project_id: "prj_1", workspace_name: name, directory: `/w/${name}`, repo_root: "/w/repo" }) as Workspace
 

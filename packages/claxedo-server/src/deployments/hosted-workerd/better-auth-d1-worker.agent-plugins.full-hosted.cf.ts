@@ -7,17 +7,18 @@ import {
   composeBetterAuthD1AgentPlugins,
   PluginOutbound,
   PluginPlatform,
-  PluginSupervisor,
   stringEnvironment,
+  type AgentPluginsSupervisorEnv,
   type AppPluginRegistryKeys,
   type BetterAuthD1AgentPluginsWorkerEnv,
 } from "./better-auth-d1-worker.agent-plugins.cf"
+import { hostedPluginSupervisorClass } from "../../plugin-backends/supervisor.cf"
 import { createBetterAuthD1Worker } from "./better-auth-d1-worker.cf"
 import { LiveSyncRoom } from "./core-worker.cf"
 import { settledCompositionCache } from "./settled-composition-cache"
 import { timedD1 } from "../../platform/http/server-timing"
 
-export { LiveSyncRoom, PluginOutbound, PluginPlatform, PluginSupervisor }
+export { LiveSyncRoom, PluginOutbound, PluginPlatform }
 
 export type BetterAuthD1FullHostedWorkerEnv = BetterAuthD1AgentPluginsWorkerEnv & {
   SANDBOX_PROVISIONER?: SandboxProvisionerNamespace
@@ -66,11 +67,14 @@ export function createFullHostedWorker(registryKeys?: AppPluginRegistryKeys) {
     if (!delivery) throw new HostedWorkerCompositionError("hosted_capability_unavailable", "The full-hosted Worker composed no sandbox delivery")
     return delivery.start
   })
-  return { handler: createBetterAuthD1Worker({ composition }), SandboxProvisioner: provisioner }
+  const supervisor = hostedPluginSupervisorClass((env: AgentPluginsSupervisorEnv & BetterAuthD1FullHostedWorkerEnv) => composition(env).pluginSessions)
+  return { handler: createBetterAuthD1Worker({ composition }), SandboxProvisioner: provisioner, PluginSupervisor: supervisor }
 }
 
 const worker = createFullHostedWorker()
 
 export class SandboxProvisioner extends worker.SandboxProvisioner {}
+
+export class PluginSupervisor extends worker.PluginSupervisor {}
 
 export default worker.handler
