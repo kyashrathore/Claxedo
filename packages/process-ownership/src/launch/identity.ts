@@ -240,6 +240,11 @@ async function readLinuxCreationIdentity(pid: number, boot: string): Promise<Cre
   const processGroupId = Number(tail[2])
   const startTicks = Number(tail[19])
   if (!Number.isFinite(processGroupId) || !Number.isFinite(startTicks)) return undefined
+  // A read that lands while the parent reaps the process still finds the file:
+  // the state is X (dead) and, once the kernel has released its signal state,
+  // the group reads -1 and the parent 0. The state is read before the group, so
+  // a reap between the two reads can show a zombie with group -1.
+  if (tail[0] === "X" || processGroupId < 0) return undefined
   const secondsSinceBoot = Math.floor(startTicks / LINUX_CLOCK_TICKS)
   return {
     pid,

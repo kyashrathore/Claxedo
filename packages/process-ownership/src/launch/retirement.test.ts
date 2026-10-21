@@ -1,5 +1,6 @@
 import { expect, spyOn, test } from "bun:test"
 import { spawn } from "node:child_process"
+import { promises as fs } from "node:fs"
 import { readCreationIdentity } from "./identity"
 import { neverExecuted, retire, retirementSettled, type RetirementResult } from "./retirement"
 import type { SignalOutcome } from "./retirement"
@@ -150,4 +151,36 @@ test.skipIf(!posix)("a leader that already exited settles once the rest of its g
   } finally {
     try { process.kill(-identity.processGroupId, "SIGKILL") } catch {}
   }
+})
+
+/**
+ * The launch gate's leader exits with its payload, so a retirement that starts
+ * right after can read `/proc/<pid>/stat` while the host reaps it, which Linux
+ * 6.12 printed as state X with parent 0 and group -1.
+ */
+test.skipIf(process.platform !== "linux")("a leader read while its parent reaps it retires as exited and is never signalled", async () => {
+  const leader = await detachedLeader()
+  const own = `/proc/${leader.identity.pid}/stat`
+  const live = await fs.readFile(own, "utf8")
+  const comm = live.lastIndexOf(")") + 2
+  const reaped = `${live.slice(0, comm)}X 0 -1 -1 ${live.slice(comm).split(" ").slice(4).join(" ")}`
+  const readFile = fs.readFile.bind(fs)
+  const read = spyOn(fs, "readFile").mockImplementation(((file: string, ...rest: unknown[]) =>
+    file === own ? Promise.resolve(reaped) : readFile(file, ...(rest as [BufferEncoding]))) as typeof fs.readFile)
+  const signalled: Array<[number, string | number | undefined]> = []
+  const kill = spyOn(process, "kill").mockImplementation((pid, signal) => {
+    if (signal === 0) throw Object.assign(new Error("no such group"), { code: "ESRCH" })
+    signalled.push([pid, signal])
+    return true
+  })
+  let outcome: RetirementResult
+  try {
+    outcome = await retire({ identity: leader.identity }, budgets)
+  } finally {
+    kill.mockRestore()
+    read.mockRestore()
+    leader.kill()
+  }
+  expect(signalled).toEqual([])
+  expect(outcome).toEqual({ leader: "exited", descendants: "unknown", signals: [] })
 })

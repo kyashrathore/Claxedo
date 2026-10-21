@@ -147,6 +147,42 @@ describe("verifying a recorded identity", () => {
   })
 })
 
+/**
+ * `/proc/<pid>/stat` as Linux 6.12 printed it while the parent reaped the
+ * process: state X, and once its signal state was released, parent 0 and group
+ * and session -1.
+ */
+function statDuringReap(stat: string, fields: { state: string; released: boolean }) {
+  const comm = stat.lastIndexOf(")") + 2
+  const tail = stat.slice(comm).split(" ")
+  tail[0] = fields.state
+  if (fields.released) tail.splice(1, 3, "0", "-1", "-1")
+  return stat.slice(0, comm) + tail.join(" ")
+}
+
+describe.skipIf(process.platform !== "linux")("a Linux read that lands while the process is reaped", () => {
+  for (const fields of [
+    { state: "X", released: true },
+    { state: "X", released: false },
+    { state: "Z", released: true },
+  ]) {
+    test(`reads as an exit, not as a different process (state ${fields.state}${fields.released ? ", released" : ""})`, async () => {
+      const recorded = await readCreationIdentity(process.pid)
+      if (!recorded) throw new Error("the running process must be readable")
+      const own = `/proc/${process.pid}/stat`
+      const live = await fs.readFile(own, "utf8")
+      const readFile = fs.readFile.bind(fs)
+      const reaped = spyOn(fs, "readFile").mockImplementation(((file: string, ...rest: unknown[]) =>
+        file === own ? Promise.resolve(statDuringReap(live, fields)) : readFile(file, ...(rest as [BufferEncoding]))) as typeof fs.readFile)
+      try {
+        expect(await verifyCreationIdentity(recorded)).toEqual({ state: "exited" })
+      } finally {
+        reaped.mockRestore()
+      }
+    })
+  }
+})
+
 describe("darwinStartMs", () => {
   test("reads lstart as UTC", () => {
     expect(darwinStartMs("Fri Sep 25 05:29:17 2026")).toBe(Date.UTC(2026, 8, 25, 5, 29, 17))
