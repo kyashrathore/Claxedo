@@ -80,6 +80,8 @@ Every signed cold boot sends five fewer requests and receives 9 to 18 kB less, i
 
 ## What is left, with its owner
 
+The first four items below (zod and the surfaces, the settings-only dictionaries, motion's `animate` and the code views' prefetch) were taken up by the boot-bytes lane, measured in [boot-bytes-2026-10-21](../boot-bytes-2026-10-21/README.md).
+
 - Zod and the A2UI catalog at boot (about 167 kB raw with the surfaces and the MCP App host, 50 of it run): the plugin API's `surface/catalog.ts` and `transcript.ts` build schemas at module scope, and the app imports the catalog for its icon names and validates first-party tool-card templates at registration. A zod-free module for the icon names and the plugin domain's choice of where first-party templates are checked would let both leave; owner: `@claxedo/plugin-api` and `src/plugins`, `src/surface`.
 - The English dictionaries the shell loads before rendering (123.0 kB raw, about 33 of it for settings-only domains): `src/i18n` and `src/registry.ts`; a domain's English would have to load with its view without a flash of keys.
 - motion's `animate` (most of motion-dom's 55.6 kB) runs only when a tool row expands (`transcript/basic-tool.tsx`, `shell-tool.tsx`), while the composer's toolbar needs only `motionValue` and `attachSpring`: the transcript's and the kit's owners.
