@@ -89,7 +89,7 @@ export function MarketplacePage(): JSX.Element {
     if (catalog) await openInstall(plugin, catalog.revision, catalog.supportedHarnesses)
   }
   const cardAction = createCardAction(actions, add)
-  const apps = useAppPlugins({ query: directory.query, selection })
+  const apps = useAppPlugins({ query: directory.query, selection, catalog: () => directory.catalog.data, reread: controls.reread })
   const unfiltered = () => directory.filter() === ALL && directory.category() === ALL
   let grid: HTMLDivElement | undefined
   const onKeyDown = directoryKeys(selection, () => grid)

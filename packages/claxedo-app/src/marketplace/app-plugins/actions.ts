@@ -1,8 +1,9 @@
 import { useTranslator, type DomainTranslate } from "@/i18n"
-import { useServer, type AppPluginsApi } from "@/server"
+import { useServer, type AppPluginsApi, type MarketplaceCatalog } from "@/server"
 import { requestConfirm, useDialog } from "@/ui"
 import { marketplaceDictionary, type MarketplaceKey } from "../i18n"
 import { createPendingWrite } from "../pending-write"
+import { withCurrentRevision } from "../revision"
 import { useConsentDrawer } from "./consent-drawer"
 import { appPluginUpdate, type AppPluginEntry } from "./model"
 
@@ -33,7 +34,10 @@ function signedApi(api: AppPluginsApi | undefined): AppPluginsApi {
   return api
 }
 
-export function createAppPluginActions() {
+export function createAppPluginActions(activation: {
+  readonly catalog: () => MarketplaceCatalog | undefined
+  readonly reread: () => Promise<void>
+}) {
   const server = useServer()
   const dialog = useDialog()
   const t = useTranslator(marketplaceDictionary)
@@ -55,6 +59,14 @@ export function createAppPluginActions() {
       await run(entry, () => api().setActiveForOrganization(entry.id, active))
     },
     setOrganizationDefault: (entry: AppPluginEntry, enabled: boolean) => run(entry, () => api().setOrganizationDefault(entry.id, enabled)),
+    setTools: (entry: AppPluginEntry, on: boolean) =>
+      write.run(entry.id, t(on ? "marketplace.app.toast.toolsOnFailed" : "marketplace.app.toast.toolsOffFailed", { name: entry.name }), () =>
+        withCurrentRevision({
+          revision: () => activation.catalog()?.revision,
+          reread: activation.reread,
+          run: (revision) => api().setTools({ pluginId: entry.id, on, revision, harnessIds: activation.catalog()?.supportedHarnesses ?? [] }),
+        }),
+      ),
     uninstall: async (entry: AppPluginEntry) => {
       if (!(await confirmUninstall(dialog, t, entry))) return
       await run(entry, () => api().uninstall(entry.id))

@@ -1,6 +1,8 @@
 import { isRecord } from "@claxedo/helpers/guards"
+import { appPluginToolGroupId } from "@claxedo/plugin-api/tools"
 import type { QueryClient } from "@tanstack/solid-query"
 import type { HostedAccount } from "./account"
+import type { MarketplaceApi } from "./api"
 import type { AppPluginCatalog, AppPluginInstall, AppPluginsApi, EnabledAppPlugin } from "./app-plugin-types"
 import { contractMismatch, responseError, ServerError, toAppError } from "./errors"
 import { fetchQuery } from "./fetch-query"
@@ -76,6 +78,7 @@ export function createAppPluginsApi(input: {
   readonly queryClient: QueryClient
   readonly account: HostedAccount | undefined
   readonly port: HostedAccount | undefined
+  readonly marketplace: Pick<MarketplaceApi, "setActivation">
 }): AppPluginsApi | undefined {
   const { transport, queryClient, port } = input
   const account = input.account
@@ -101,5 +104,9 @@ export function createAppPluginsApi(input: {
     setOrganizationDefault: (pluginId, enabled) =>
       write(() => account.run(enabled ? "appPlugins.organization.defaultOn" : "appPlugins.organization.defaultOff", plugin(pluginId))),
     uninstall: (pluginId) => write(() => account.run("appPlugins.uninstall", plugin(pluginId))),
+    setTools: (change) =>
+      write(() =>
+        input.marketplace.setActivation({ pluginInstanceId: appPluginToolGroupId(change.pluginId), harnessIds: change.harnessIds, choice: change.on, revision: change.revision }),
+      ),
   }
 }

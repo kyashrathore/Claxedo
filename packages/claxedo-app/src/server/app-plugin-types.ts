@@ -1,4 +1,5 @@
 import type { PluginManifest } from "@claxedo/plugin-api"
+import type { PluginHarness } from "./marketplace-types"
 
 export type EnabledAppPlugin = {
   readonly id: string
@@ -7,10 +8,24 @@ export type EnabledAppPlugin = {
   readonly appSha256: string
 }
 
+export type AppPluginTools = {
+  readonly label: string
+  readonly names: readonly string[]
+  readonly on: boolean
+}
+
 export type AppPluginInstall = EnabledAppPlugin & {
   readonly active: boolean
   readonly enabledForMe: boolean
   readonly orgDefault: boolean
+  readonly tools?: AppPluginTools
+}
+
+export type AppPluginToolsChange = {
+  readonly pluginId: string
+  readonly on: boolean
+  readonly revision: number
+  readonly harnessIds: readonly PluginHarness[]
 }
 
 export type AppPluginListing = {
@@ -37,5 +52,6 @@ export type AppPluginsApi = {
   readonly setEnabled: (pluginId: string, enabled: boolean) => Promise<void>
   readonly setActiveForOrganization: (pluginId: string, active: boolean) => Promise<void>
   readonly setOrganizationDefault: (pluginId: string, enabled: boolean) => Promise<void>
+  readonly setTools: (change: AppPluginToolsChange) => Promise<void>
   readonly uninstall: (pluginId: string) => Promise<void>
 }

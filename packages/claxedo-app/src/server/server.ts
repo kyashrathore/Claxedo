@@ -88,6 +88,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
   const project = (id: ProjectId) => queryClient.fetchQuery(queries.projects.byId(id))
   const wakes = createWorkspaceWakes(transport, workspaces, events)
   const cloud = createCloudApi(transport, workspaces, wakes, project, account)
+  const marketplace = createMarketplaceApi(transport, queryClient, telemetry)
   return {
     telemetry,
     sessions: createSessionsApi(transport, workspaces, status, coverage, wakes, projection, telemetry, account),
@@ -98,14 +99,14 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     git: createGitApi(transport, workspaces, queryClient),
     cloud,
     accounts: createAccountsApi(transport, queryClient, account),
-    marketplace: createMarketplaceApi(transport, queryClient, telemetry),
+    marketplace,
     folders: createFoldersApi(transport),
     integrations: createIntegrationsApi(transport, queryClient),
     agentConnections: createAgentConnectionsApi(transport, queryClient),
     providerConnect: createProviderConnectApi(transport, queryClient),
     providerCatalogs: createProviderCatalogsApi(transport, workspaces, queryClient),
     livePlugins: createLivePluginsApi(transport),
-    appPlugins: createAppPluginsApi({ transport, queryClient, account, port }),
+    appPlugins: createAppPluginsApi({ transport, queryClient, account, port, marketplace }),
     harnessConfig: createHarnessConfigApi(transport, workspaces, account),
     request: transport.request,
     operation: operations.run,

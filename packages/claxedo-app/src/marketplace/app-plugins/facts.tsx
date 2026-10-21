@@ -36,6 +36,18 @@ export function AppPluginFacts(props: { readonly entry: AppPluginEntry }): JSX.E
         )}
       </Show>
 
+      <Show when={install()?.tools}>
+        {(tools) => (
+          <>
+            <dt class="text-text-weaker">{t("marketplace.app.facts.tools")}</dt>
+            <dd class="min-w-0">
+              <div class="text-text-base">{t(tools().on ? "marketplace.app.facts.toolsOn" : "marketplace.app.facts.toolsOff")}</div>
+              <div class="break-words text-12-mono text-text-weaker">{tools().names.join(", ")}</div>
+            </dd>
+          </>
+        )}
+      </Show>
+
       <dt class="text-text-weaker">{t("marketplace.app.facts.version")}</dt>
       <dd class="text-text-base">{version()}</dd>
     </dl>

@@ -1,13 +1,19 @@
 import { createMemo, type JSX } from "solid-js"
+import type { MarketplaceCatalog } from "@/server"
 import type { createSelection } from "../directory-state"
 import { createAppPluginActions } from "./actions"
 import { AppPluginDetails } from "./details"
 import { createAppPluginDirectory } from "./directory"
 import { AppPluginsSection } from "./section"
 
-export function useAppPlugins(input: { readonly query: () => string; readonly selection: ReturnType<typeof createSelection> }) {
+export function useAppPlugins(input: {
+  readonly query: () => string
+  readonly selection: ReturnType<typeof createSelection>
+  readonly catalog: () => MarketplaceCatalog | undefined
+  readonly reread: () => Promise<void>
+}) {
   const directory = createAppPluginDirectory(input.query)
-  const actions = createAppPluginActions()
+  const actions = createAppPluginActions({ catalog: input.catalog, reread: input.reread })
   const selected = () => directory.find(input.selection.selectedAppId())
   const shown = createMemo(() => selected() !== undefined)
   const panel = createMemo(() => {

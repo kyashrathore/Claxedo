@@ -215,6 +215,12 @@ const en = {
   "marketplace.app.confirm.organizationOffBody": "Members lose it right away. Its data is kept, so turning it back on restores it.",
   "marketplace.app.confirm.turnOff": "Turn off",
   "marketplace.app.toast.failed": "Could not change {{name}}",
+  "marketplace.app.toast.toolsOnFailed": "Could not turn on {{name}}'s agent tools",
+  "marketplace.app.toast.toolsOffFailed": "Could not turn off {{name}}'s agent tools",
+  "marketplace.app.tools.switch": "{{name}}'s agent tools",
+  "marketplace.app.facts.tools": "Agent tools",
+  "marketplace.app.facts.toolsOn": "On in your sessions",
+  "marketplace.app.facts.toolsOff": "Off in your sessions",
 }
 
 export type MarketplaceKey = keyof typeof en

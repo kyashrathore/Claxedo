@@ -1,6 +1,6 @@
 import type { PluginManifest, PluginPermission } from "@claxedo/plugin-api"
 import type { MarketplaceKey } from "../i18n"
-import type { AppPluginCatalog, AppPluginInstall, AppPluginListing } from "@/server"
+import type { AppPluginCatalog, AppPluginInstall, AppPluginListing, AppPluginTools } from "@/server"
 import type { Phrase, PluginStatus } from "../model"
 
 export type AppPluginEntry = {
@@ -53,6 +53,11 @@ export function appPluginStatus(entry: AppPluginEntry): PluginStatus | undefined
   return install.enabledForMe
     ? { key: "marketplace.app.status.on", tone: "normal", attention: false }
     : { key: "marketplace.app.status.off", tone: "normal", attention: false }
+}
+
+export function appPluginTools(entry: AppPluginEntry): AppPluginTools | undefined {
+  const { install } = entry
+  return install?.active && install.enabledForMe ? install.tools : undefined
 }
 
 export function appPluginMainAction(entry: AppPluginEntry, canManage: boolean): AppPluginMainAction | undefined {
