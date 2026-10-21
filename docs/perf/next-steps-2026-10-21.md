@@ -52,6 +52,8 @@ What landed, by lane note: [one origin and request latency](./2026-10-18-web-one
 - **A lost turn lease left the session busy forever** with the reply cut short; the common trigger (one unanswered renewal) is fixed, and the presentation of a genuinely lost lease is being fixed on `fix/lost-lease-turn`.
 - **Test order differs between macOS and CI's Linux**, so order-dependent test bugs (a partial module mock, for one) surface only in CI.
 - **Windows runners stall on disk** in the Tasks plugin's SQLite tests (one case in about sixty exceeded 5 s); the Tasks tests take the 30 s timeout the Documents tests already use.
+- **Flow 40 fails since Claude Code CLI 2.1.306** (installed 21 October): the scripted model's request now lists `ToolSearch` instead of the Claxedo MCP tools, so the assertion that `mcp__claxedo__app_plugin_create` is offered up front fails on dev as well; the CLI now defers MCP tools behind tool search, and the flow needs to assert the tool is reachable through it.
+- **A Windows CLI test timed out once** (`@claxedo/cli` `connect.test.ts`, "timed out waiting for first beat") and passed on the next run; undiagnosed.
 - **e2e flakes under host load**: flow 24 "saved cloud history survives a replaced runtime" on web, flow 01 first-run reply under heavy load, and the phone baseline for `long-user-message` in flow 30, which is 106 px off on dev itself.
 
 ## Measuring
