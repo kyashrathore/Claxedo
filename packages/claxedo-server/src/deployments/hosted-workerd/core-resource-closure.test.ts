@@ -15,6 +15,12 @@ import { CERTIFIED_HOSTED_WORKER_ARTIFACT_IDS, certifiedHostedWorkerArtifact } f
 
 const packageRoot = path.resolve(import.meta.dirname, "../../..")
 
+function exportedNames(source: string) {
+  const listed = [...source.matchAll(/^export \{ ([^}]+) \}$/gm)].flatMap((match) => match[1]!.split(/,\s*/))
+  const classes = [...source.matchAll(/^export class (\w+) extends /gm)].map((match) => match[1]!)
+  return [...listed, ...classes].toSorted()
+}
+
 function coreConfig(artifactId: (typeof CERTIFIED_HOSTED_WORKER_ARTIFACT_IDS)[number]) {
   const artifact = certifiedHostedWorkerArtifact(artifactId)
   return renderWorkerWranglerConfig({
@@ -65,14 +71,14 @@ describe("certified core resource ownership", () => {
     for (const artifactId of CERTIFIED_HOSTED_WORKER_ARTIFACT_IDS) {
       const artifact = certifiedHostedWorkerArtifact(artifactId)
       const source = await readFile(path.join(packageRoot, artifact.entrypointFromPackageRoot), "utf8")
-      expect(source).toMatch(/export default handler/)
-      expect(source).toMatch(
-        artifact.agentPlugins
-          ? /export \{ LiveSyncRoom, PluginOutbound, PluginPlatform, PluginSupervisor \}/
-          : /export \{ LiveSyncRoom \}/,
+      expect(source, artifactId).toMatch(/^export default [\w.]+$/m)
+      expect(exportedNames(source), artifactId).toEqual(
+        [
+          "LiveSyncRoom",
+          ...(artifact.agentPlugins ? ["PluginOutbound", "PluginPlatform", "PluginSupervisor"] : []),
+          ...(artifact.sandboxPosture === "full-hosted" ? ["SandboxProvisioner"] : []),
+        ].toSorted(),
       )
-      if (artifact.sandboxPosture === "full-hosted") expect(source).toMatch(/export class SandboxProvisioner extends sandboxProvisionerClass\(/)
-      else expect(source).not.toMatch(/SandboxProvisioner/)
       expect(artifact.entrypointFromPackageRoot).not.toBe("src/deployments/hosted-workerd/core-worker.cf.ts")
     }
   })
