@@ -55,7 +55,11 @@ export class HostConnectDecisionError extends Error {
   }
 }
 
-const DECISION_STATUSES = new Set([400, 401, 403, 404, 409, 410])
+/**
+ * Answers a retry cannot change. 405 is what an origin with no such route
+ * answers, such as a control plane other than the one that minted the token.
+ */
+export const DECISION_STATUSES: ReadonlySet<number> = new Set([400, 401, 403, 404, 405, 409, 410])
 
 /** Wrap a control-plane refusal as a decision; anything else is the caller's to retry. */
 export function asDecision(error: unknown): HostConnectDecisionError | undefined {

@@ -1,7 +1,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { createHostConnector, type AssignmentDescription, type HostEndpoints } from "@claxedo/host-connector/connector"
-import { DECISION_EXIT_CODE, HostConnectDecisionError } from "@claxedo/host-connector/bootstrap"
+import { DECISION_EXIT_CODE, DECISION_STATUSES, HostConnectDecisionError } from "@claxedo/host-connector/bootstrap"
 import { hostKeyPairFromJwk } from "@claxedo/host-connector/host-identity"
 import {
   canonicalRelayUrl,
@@ -106,8 +106,6 @@ export const BEAT_INTERVAL_MS = Math.min(LEASE_TTL_MS / 3, 20_000)
 export const BOOTSTRAP_RETRY_BUDGET_MS = 5 * 60_000
 export const MIN_ATTEMPT_BUDGET_MS = 1_000
 const RETRY_CAP_MS = 30_000
-
-const DECISION_STATUSES = new Set([400, 401, 403, 404, 409, 410])
 
 /** Whether a failure describes the connection rather than a decision, so a later attempt may outlive it. */
 export function transientBootstrapFailure(error: unknown) {

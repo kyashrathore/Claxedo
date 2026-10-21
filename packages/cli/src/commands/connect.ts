@@ -13,7 +13,7 @@ import { connectUsage, parseConnectArgs, type ConnectArgs } from "../connect/arg
 import { defaultHostDeps, runHost, withBootstrapRetry, type HostDeps } from "../connect/host"
 import { desktopDaemonDiscoveryFiles, desktopDaemonState, type DesktopDaemonState } from "../connect/desktop-daemon"
 import { connectPaths, connectStateStore } from "../connect/paths"
-import { defaultServiceDeps, startService, uninstallService, writeServiceUnit, type ServiceDeps } from "../connect/service"
+import { defaultServiceDeps, serviceKind, startService, uninstallService, writeServiceUnit, type ServiceDeps } from "../connect/service"
 
 export type ConnectDeps = {
   host: HostDeps
@@ -217,6 +217,8 @@ export async function connect(argv: string[], deps: ConnectDeps = defaultConnect
       }
       return 0
     }
+    // Before the redeem: an invitation spent on a platform with no service to install is lost.
+    if (args.installService) serviceKind(deps.service().platform)
 
     if (!args.alongsideDesktop) {
       const daemon = await deps.desktopDaemon()

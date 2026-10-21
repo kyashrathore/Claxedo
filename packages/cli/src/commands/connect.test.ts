@@ -898,6 +898,38 @@ describe("claxedo connect", () => {
     expect(await connect(["--token-file", again.file], h.deps)).toBe(78)
     expect(h.lines.at(-1)).toContain("already enrolled")
   })
+
+  test("a redeem answered 405 by an origin without the route exits 78 after one request and keeps the token file", async () => {
+    const { file, invitation } = await invitationFile(h, [h.root])
+    const requests: string[] = []
+    h.deps.host = {
+      ...h.deps.host,
+      fetch: async (input) => {
+        requests.push(new URL(String(input)).pathname)
+        return new Response("", { status: 405 })
+      },
+    }
+
+    expect(await connect(["--token-file", file], h.deps)).toBe(78)
+
+    expect(requests).toEqual(["/api/claxedo/host/enrollments/redeem"])
+    expect(h.lines.some((line) => line.includes("retrying"))).toBe(false)
+    expect(h.lines.at(-1)).toBe("HTTP 405")
+    expect((await fs.readFile(file, "utf8")).trim()).toBe(invitation.token)
+  })
+
+  test("--install-service where no user service manager exists refuses before redeeming, so the invitation is not spent", async () => {
+    const { file, invitation } = await invitationFile(h, [h.root])
+    h.deps.service = () => ({ ...serviceDeps(h.home, h.serviceCalls), platform: "win32" })
+
+    expect(await connect(["--token-file", file, "--install-service"], h.deps)).toBe(1)
+
+    expect(h.lines.at(-1)).toBe("--install-service supports Linux (systemd --user) and macOS (launchd); this is win32")
+    expect(h.cp.log).toEqual([])
+    expect(h.serviceCalls).toEqual([])
+    expect(await h.deps.store.load()).toBeUndefined()
+    expect((await fs.readFile(file, "utf8")).trim()).toBe(invitation.token)
+  })
 })
 
 describe("desktop daemon discovery", () => {
@@ -1033,6 +1065,7 @@ describe("exit-code mapping and bootstrap retry", () => {
   test("decisions are final; 5xx, rate limits and socket errors are transient", () => {
     expect(transientBootstrapFailure(new HostConnectDecisionError("no", {}))).toBe(false)
     expect(transientBootstrapFailure(new HostedHttpError(409, {}))).toBe(false)
+    expect(transientBootstrapFailure(new HostedHttpError(405, {}))).toBe(false)
     expect(transientBootstrapFailure(new HostedHttpError(503, {}))).toBe(true)
     expect(transientBootstrapFailure(new HostedHttpError(429, {}))).toBe(true)
     expect(transientBootstrapFailure(new TypeError("fetch failed"))).toBe(true)
