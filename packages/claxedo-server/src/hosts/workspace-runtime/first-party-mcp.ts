@@ -5,6 +5,7 @@ import {
   mcpAuditRecord,
   type McpServiceGrant,
   type McpToolGroup,
+  type PluginToolGroups,
   type VerifyRuntimeCredential,
 } from "@claxedo/mcp"
 import { createClaxedoMcpClient } from "@claxedo/mcp/client"
@@ -40,6 +41,8 @@ export function firstPartyMcpRuntimeContribution(input: {
   /** The groups this mount serves: the core groups and those of the plugins the root is composed with. */
   registerTools: readonly McpToolGroup[]
   services?: () => Readonly<Record<string, McpServiceGrant>>
+  /** The app plugin proxy groups a session is served, read from the client's own service grants. */
+  pluginToolGroups?: PluginToolGroups
   ownerGrant?: () => string | undefined
   /** The owner grant's actor; a session is owner-driven only while every turn in its lineage is this actor's. */
   ownerActorId?: () => string | undefined
@@ -74,6 +77,7 @@ export function firstPartyMcpRuntimeContribution(input: {
         },
         registerTools: input.registerTools,
         enabledToolGroups: () => input.enabledToolGroups,
+        ...(input.pluginToolGroups ? { pluginToolGroups: input.pluginToolGroups } : {}),
         audit: (event) => log.info("mcp.audit", mcpAuditRecord(event)),
       })
       return { path: CLAXEDO_MCP_PATH, routes: mount.routes, dispose: mount.dispose }
