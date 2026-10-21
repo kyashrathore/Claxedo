@@ -169,8 +169,11 @@ bun run deploy:user-cloudflare:claim-owner --email <your GitHub email>
 
 ### Edge reads
 
-Staging alone reads at the edge: the `control-plane` job sets
-`CLAXEDO_D1_EDGE_READS=on`, and every other deployment keeps the default, off.
+Edge reads are off on staging as on every deployment: the first deploy with
+`CLAXEDO_D1_EDGE_READS=on` (run 39586699512) stopped at its secrets check
+because the new edge Worker lacks the writer's generated secrets, which
+Cloudflare never returns and this workflow does not hold. Staging is the only
+deployment meant to turn it on once the edge Worker can be given them.
 D1 read replication, which edge reads stand on, is a public beta
 ([release notes, 2025-04-10](https://developers.cloudflare.com/d1/platform/release-notes/)),
 and Cloudflare recommends trying it on a non-production database first

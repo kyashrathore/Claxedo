@@ -98,7 +98,7 @@ The local stack has one D1 database per binding, so a replica, its lag and every
    ```
 
    Until both report `auto` the `control-plane` job refuses before it deploys either Worker or moves a route, with an error naming this call for each database still off (`requireReadReplication`, `scripts/deploy/d1-databases.ts`).
-2. `deploy-staging.yml` sets `CLAXEDO_D1_EDGE_READS: "on"` in the `control-plane` job's environment, staging's only change of setting. Keep `CLAXEDO_STAGING_WORKER_PLACEMENT_REGION=aws:us-east-1`: it pins the writer.
+2. Set `CLAXEDO_D1_EDGE_READS: "on"` in `deploy-staging.yml`'s `control-plane` job environment, staging's only change of setting, once the edge Worker can be given the writer's secrets: the first attempt (run 39586699512) stopped at the secrets check because the generated secrets live only on the writer, Cloudflare never returns a secret's value, and the workflow does not hold them. Keep `CLAXEDO_STAGING_WORKER_PLACEMENT_REGION=aws:us-east-1`: it pins the writer.
 3. Check the deploy token can list zones and list and delete the zone's Worker routes (Zone Read, Workers Routes Edit), the access `wrangler deploy` already uses to attach routes; the first deploy moves the routes with it.
 4. Merge to `staging`. The `control-plane` job deploys the writer `claxedo-user-deployed-locked-staging`, moves the seven control-plane routes off it, and deploys `claxedo-user-deployed-locked-staging-edge` with the same secrets. No new secret, DNS record or custom domain.
 
