@@ -300,7 +300,7 @@ describe("VercelSandboxDriver", () => {
     )).toEqual({ allow: { "api.a.test": [] } })
   })
 
-  test("ensureHost creates a sandbox from snapshot and starts workspace-runtime as a detached command", async () => {
+  test("ensureHost creates a sandbox from snapshot and starts workspace-runtime as a detached command of the sandbox's non-root user", async () => {
     const created = sandbox()
     const vercel = factory({ create: vi.fn(async () => created) })
     const driver = createVercelSandboxDriver({
@@ -354,6 +354,7 @@ describe("VercelSandboxDriver", () => {
         env: expect.objectContaining({ WORKSPACE_RUNTIME_HOST_ID: "vercel-host-ws_1" }),
       }),
     )
+    expect((created.runCommand as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]).not.toHaveProperty("sudo")
     expect(result).toMatchObject({
       sandboxId: "vercel-sb-1",
       hostId: "vercel-host-ws_1",

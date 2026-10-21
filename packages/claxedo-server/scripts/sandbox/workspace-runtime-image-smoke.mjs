@@ -9,6 +9,7 @@ import { createServer as createHttpServer } from "node:http"
 import path from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
 import { IMAGE_SMOKE_PLACEHOLDER, imageSmokeRuntimeSnapshot } from "./workspace-runtime-image-smoke-snapshot.ts"
+import { assertTerminalAgentsStart } from "./image-smoke-terminal-agents.ts"
 
 const directory = await mkdtemp(path.join(tmpdir(), "workspace-runtime-image-"))
 const marker = "claxedo-image-native-turn"
@@ -144,6 +145,7 @@ try {
   }
   await json(`/session/${id}`, { method: "DELETE" })
   assert(!(await json("/session")).some((session) => session.id === id))
+  await assertTerminalAgentsStart(`http://127.0.0.1:${port}`)
 } finally {
   if (runtime.pid && runtime.exitCode === null) {
     const exited = once(runtime, "exit")

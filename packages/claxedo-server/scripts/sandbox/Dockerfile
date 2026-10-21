@@ -67,7 +67,8 @@ RUN cd /opt/workspace-runtime && \
     test "$(workspace-runtime --version)" = "$(cat /opt/workspace-runtime/workspace-runtime-version)"
 
 # Exercise the canonical session lifecycle and one embedded OpenCode turn
-# against a loopback stand-in provider, the turn path a cloud VM serves.
+# against a loopback stand-in provider, the turn path a cloud VM serves, then
+# start Claude Code and Codex in workspace terminals as this image's user.
 RUN node /opt/workspace-runtime/workspace-runtime-image-smoke.mjs
 
 WORKDIR /workspace

@@ -10,6 +10,7 @@ on:
       - packages/process-ownership/**
       - packages/sandbox-manager/**
       - packages/claxedo-server/scripts/sandbox/build-sandbox-image.ts
+      - packages/claxedo-server/scripts/sandbox/*image-smoke*
       - packages/claxedo-server/src/hosts/workspace-runtime/**
       - packages/workspace-runtime/**
       - .github/actions/setup-bun/action.yml
