@@ -1,6 +1,7 @@
+import { useI18n } from "@/i18n"
 import { lazyView } from "@/lib/lazy-view"
 import type { SettingsSection } from "@/shell"
-import { useAccountsText } from "./i18n"
+import type { AccountsKey } from "./i18n"
 
 export { harnesses } from "./model"
 export { useAccounts } from "./store"
@@ -12,9 +13,14 @@ export const InlineSandboxKeyForm = lazyView(() => import("./view/sandbox-key-fo
 export const AgentHarnessAccounts = lazyView(() => import("./view/harness-accounts").then((module) => module.AgentHarnessAccounts))
 export const HarnessProvidersSection = lazyView(() => import("./view/harness-providers").then((module) => module.HarnessProvidersSection))
 
+export const loadAccountsTranslations = () => import("./i18n").then((module) => module.accountsDictionary)
+
+const title = (key: AccountsKey) => () => useI18n().t(key)
+
 export const modelsSettingsSection: SettingsSection = {
   id: "models",
-  title: () => useAccountsText()("settings.models.title"),
+  title: title("settings.models.title"),
+  translations: loadAccountsTranslations,
   group: "account",
   order: 35,
   view: lazyView(() => import("./view/models-section").then((module) => module.ModelsSection)),
@@ -22,9 +28,9 @@ export const modelsSettingsSection: SettingsSection = {
 
 export const sandboxSettingsSection: SettingsSection = {
   id: "sandbox",
-  title: () => useAccountsText()("settings.sandbox.title"),
+  title: title("settings.sandbox.title"),
+  translations: loadAccountsTranslations,
   group: "account",
   order: 47,
   view: lazyView(() => import("./view/sandbox-section").then((module) => module.SandboxSection)),
 }
-export { accountsDictionary } from "./i18n"

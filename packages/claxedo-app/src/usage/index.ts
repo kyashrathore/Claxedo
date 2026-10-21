@@ -1,7 +1,7 @@
 import type { SettingsSection } from "@/shell"
-import { useTranslator } from "@/i18n"
+import { useI18n } from "@/i18n"
 import { useServer } from "@/server"
-import { usageDictionary, type UsageKey } from "./i18n"
+import type { UsageKey } from "./i18n"
 import { lazyView } from "@/lib/lazy-view"
 
 export type { QuotaWindow } from "./model"
@@ -9,9 +9,12 @@ export { useWindowName } from "./view/quota-windows"
 
 export const USAGE_LIMITS_SECTION = "usage-limits"
 
+export const loadUsageTranslations = () => import("./i18n").then((module) => module.usageDictionary)
+
 const usageSection = (id: string, title: UsageKey, order: number, view: SettingsSection["view"]): SettingsSection => ({
   id,
-  title: () => useTranslator(usageDictionary)(title),
+  title: () => useI18n().t(title),
+  translations: loadUsageTranslations,
   group: "account",
   order,
   view,
@@ -27,4 +30,3 @@ export const sandboxUsageSettingsSection: SettingsSection = {
   ...usageSection("sandbox-usage", "usage.sandbox.title", 22, lazyView(() => import("./view/sandbox-usage-section").then((module) => module.SandboxUsageSection))),
   available: () => useServer().capabilities()?.hostedAccount === true,
 }
-export { usageDictionary } from "./i18n"

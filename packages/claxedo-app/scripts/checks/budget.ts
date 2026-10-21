@@ -14,14 +14,14 @@ const parts: readonly Part[] = [
   { name: "Composer", budget: 14424, folders: ["src/composer"] },
   { name: "Rail and workbench", budget: 8300, folders: ["src/rail", "src/workbench"] },
   { name: "Browser tabs", budget: 1542, folders: ["src/browser"] },
-  { name: "Shell and platform", budget: 8780, folders: ["src/shell", "src/auth", "src/i18n", "src/lib", "src/*"], except: ["src/lib/machine.ts"] },
+  { name: "Shell and platform", budget: 8838, folders: ["src/shell", "src/auth", "src/i18n", "src/lib", "src/*"], except: ["src/lib/machine.ts"] },
   { name: "Terminal", budget: 4362, folders: ["src/terminal"] },
-  { name: "Settings and accounts", budget: 5366, folders: ["src/settings", "src/accounts"] },
+  { name: "Settings and accounts", budget: 5382, folders: ["src/settings", "src/accounts"] },
   { name: "Access", budget: 1000, folders: ["src/access"] },
   { name: "Review and files", budget: 4400, folders: ["src/review", "src/files"] },
   { name: "Projects and cloud", budget: 3466, folders: ["src/projects", "src/cloud"] },
-  { name: "Onboarding and usage", budget: 3382, folders: ["src/onboarding", "src/usage"] },
-  { name: "Plugin host", budget: 3115, folders: ["src/plugins"] },
+  { name: "Onboarding and usage", budget: 3388, folders: ["src/onboarding", "src/usage"] },
+  { name: "Plugin host", budget: 3163, folders: ["src/plugins"] },
   { name: "Web plugin frame", budget: 1626, folders: ["src/plugins/frame"] },
   { name: "MCP App host", budget: 1792, folders: ["src/mcp-apps"] },
   { name: "Surface renderer", budget: 4037, folders: ["src/surface"] },
@@ -31,7 +31,7 @@ const parts: readonly Part[] = [
   { name: "State-machine helper", budget: 100, folders: ["src/lib/machine.ts"] },
   { name: "UI kit and transcript renderers", budget: 20000, folders: ["src/ui", "src/transcript"] },
 ]
-const totalBudget = 114902
+const totalBudget = 114999
 
 function main(): never {
   const appFiles = listFiles(packageRoot, ["src"], codeExtensions).filter((file) => !isTranslationFile(packageRoot, file))

@@ -3,6 +3,7 @@ import { createContext, createEffect, createMemo, getOwner, on, onCleanup, useCo
 import type { PluginCapability, PluginPlatform } from "@claxedo/plugin-api"
 import { useI18n } from "@/i18n"
 import { desktopBridge } from "@/lib/desktop-bridge"
+import { prefetchWhenSettled } from "@/lib/prefetch"
 import { useServer } from "@/server"
 import { useSessionStores } from "@/session"
 import { useCommands, useShellRegistries, useShellRoute } from "@/shell"
@@ -10,7 +11,7 @@ import { useDialog } from "@/ui"
 import { useWorkbench } from "@/workbench"
 import { activatePlugin, type Activation } from "./activation"
 import { pluginServerCalls } from "./api"
-import { createApiFactory, createClaims, createOverlayTracker, type HostServices } from "./bindings"
+import { createApiFactory, createClaims, createOverlayTracker, loadToolCardIntake, type HostServices } from "./bindings"
 import { createPluginHost, type PluginHost } from "./host"
 import { pluginsDictionary, usePluginsText } from "./i18n"
 import { createFrameRuntimeSource, type FrameRuntime } from "./frame/runtime-source"
@@ -22,6 +23,7 @@ import { loadFrameBuild, loadLiveBuild, type LiveRow } from "./live/load"
 import { liveOriginOf, type PluginBuild } from "./model"
 import { createPluginPreferences, safeModeRequested } from "./preferences"
 import { approvalLetsRun } from "./approval"
+import { loadPluginSurfaceViews } from "./surface-page/view-lazy"
 import { requestApproval } from "./view/approval-request"
 
 export type PluginsContext = PluginHost & {
@@ -68,7 +70,10 @@ function useHostServices(): HostServices {
 
 function createActivate(services: HostServices) {
   const buildApi = createApiFactory(services)
-  return (build: PluginBuild, onCrash: (reason: string) => void): Promise<Activation> => activatePlugin({ build, buildApi, onCrash, owner: services.owner })
+  return async (build: PluginBuild, onCrash: (reason: string) => void): Promise<Activation> => {
+    const toolCards = await loadToolCardIntake(build.origin)
+    return activatePlugin({ build, buildApi: (current, scope) => buildApi(current, scope, toolCards), onCrash, owner: services.owner })
+  }
 }
 
 function useBundledPlugins(host: PluginHost, services: HostServices, runtime: FrameRuntime): void {
@@ -122,6 +127,7 @@ export function PluginHostProvider(props: { readonly scope: string; readonly chi
   onCleanup(host.dispose)
   const runtime = createFrameRuntimeSource()
   useBundledPlugins(host, services, runtime)
+  prefetchWhenSettled(loadPluginSurfaceViews, "The plugin surface pages could not be fetched ahead; they load when first opened")
   const value: PluginsContext = {
     ...host,
     platform: services.platform,

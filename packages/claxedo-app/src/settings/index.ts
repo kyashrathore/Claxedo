@@ -1,15 +1,17 @@
 import type { SettingsSection } from "@/shell"
-import { useTranslator } from "@/i18n"
+import { useI18n } from "@/i18n"
 import { organizationSettingsSection } from "@/access"
 import { aiUsageSettingsSection, sandboxUsageSettingsSection, usageLimitsSettingsSection } from "@/usage"
-import { settingsDictionary, type SettingsKey } from "./i18n"
+import type { SettingsKey } from "./i18n"
+import { loadSettingsTranslations } from "./translations"
 import { lazyView } from "@/lib/lazy-view"
 
-const title = (key: SettingsKey) => () => useTranslator(settingsDictionary)(key)
+const title = (key: SettingsKey) => () => useI18n().t(key)
 
 const section = (id: string, key: SettingsKey, group: SettingsSection["group"], order: number, view: SettingsSection["view"]): SettingsSection => ({
   id,
   title: title(key),
+  translations: loadSettingsTranslations,
   group,
   order,
   view,
@@ -18,7 +20,7 @@ const section = (id: string, key: SettingsKey, group: SettingsSection["group"], 
 export type { Preferences } from "./preferences"
 export { terminalFontFamily } from "./fonts"
 export { PreferencesProvider, usePreferences } from "./preferences"
-export { MachineConnectSteps, useConnectMachine } from "./view/machine-connect"
+export { useConnectMachine } from "./connect-machine"
 export { SettingsEmpty, SettingsGroup, SettingsIntro, SettingsList, SettingsListSkeleton, SettingsNote, SettingsRow } from "./view/section"
 
 export const settingsSections: readonly SettingsSection[] = [
@@ -34,4 +36,3 @@ export const settingsSections: readonly SettingsSection[] = [
   section("sounds", "settings.section.sounds", "app", 64, lazyView(() => import("./view/alerts").then((module) => module.SoundsSection))),
   section("keybindings", "settings.section.keybindings", "app", 70, lazyView(() => import("./view/keybindings").then((module) => module.KeybindingsSection))),
 ]
-export { settingsDictionary } from "./i18n"

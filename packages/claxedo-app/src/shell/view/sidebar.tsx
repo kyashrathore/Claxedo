@@ -1,4 +1,5 @@
-import { Show, type JSX } from "solid-js"
+import { Show, type Component, type JSX } from "solid-js"
+import { Dynamic } from "solid-js/web"
 import { useTranslator } from "@/i18n"
 import { shellDictionary } from "../i18n"
 import { useShellLayout } from "../layout"
@@ -11,7 +12,7 @@ import { ClaxedoIcon as Icon, ClaxedoIconButton as IconButton, Tooltip } from "@
 export type SidebarProps = {
   readonly mode: "main" | "settings"
   readonly main: JSX.Element
-  readonly settings: JSX.Element
+  readonly settings: Component
 }
 
 function SidebarHeader(): JSX.Element {
@@ -64,7 +65,7 @@ export function SidebarContent(
       <SidebarHeader />
       <Region name="sidebar">
         <Show when={props.mode === "settings"} fallback={props.main}>
-          {props.settings}
+          <Dynamic component={props.settings} />
         </Show>
       </Region>
     </nav>

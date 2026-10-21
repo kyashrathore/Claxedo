@@ -47,11 +47,10 @@ export type FrameBoot = {
   readonly type: typeof FRAME_BOOT
   readonly runtime: string
   readonly code: string
-  readonly css: string
   readonly theme: { readonly id: string | undefined; readonly colorScheme: string | undefined }
   readonly context: FrameContext
   readonly mirror: FrameMirror
-  readonly target?: RenderTarget
+  readonly slot?: { readonly target: RenderTarget; readonly css: string }
 }
 
 export type Registration =

@@ -98,3 +98,14 @@ test("a locale whose strings fail to load is logged, keeps showing English, and 
   expect([files.text(), warn.mock.calls.length, attempts]).toEqual(["Fichiers", 1, 2])
   dispose()
 })
+
+test("including domains resolves once the current locale's strings for them are in, so a door drawn after it shows no English", async () => {
+  const lazy = { en: { "panel.files": "Files" }, fr: async () => ({ default: { "panel.files": "Fichiers" } }) } satisfies Translations
+  const { i18n, dispose } = mount("fr")
+  await i18n.include([lazy, rail])
+  const files = runs(i18n, "panel.files")
+  expect([files.text(), files.count(), i18n.pending("fr")]).toEqual(["Fichiers", 1, false])
+  await i18n.include([lazy])
+  expect(files.count()).toBe(1)
+  dispose()
+})

@@ -3,6 +3,7 @@ import { useAuth } from "@/auth"
 import { Dynamic } from "solid-js/web"
 import { ComposerStoreProvider } from "@/composer"
 import { preferenceKey } from "@/lib/persisted"
+import { prefetchWhenSettled } from "@/lib/prefetch"
 import { PluginHostProvider } from "@/plugins"
 import { useServer } from "@/server"
 import { Toast } from "@/ui"
@@ -24,7 +25,7 @@ import { ShellFrame, type CenterContent } from "./frame"
 import { RegisteredAppearance } from "./registered-appearance"
 import { Overlays } from "./overlays"
 import { RouteSync } from "./route-sync"
-import { SettingsSidebar } from "./settings-sidebar"
+import { settingsTranslations, SettingsSidebar } from "./settings-sidebar"
 import { ShellCommands } from "./shell-commands"
 import { ShellStartup } from "./startup"
 
@@ -66,11 +67,12 @@ function ScopedShell(props: AppShellProps & { readonly scope: string }): JSX.Ele
 }
 
 function ShellBody(props: AppShellProps & { readonly route: ShellRoute }): JSX.Element {
+  const registries = useShellRegistries()
+  prefetchWhenSettled(() => settingsTranslations(registries.settingsSections.list()), "The settings pages' words could not be fetched ahead; they load when Settings opens")
   const main = props.mainSidebar
-  const settings = <SettingsSidebar />
   return (
     <ShellFrame
-      sidebar={{ mode: sidebarModeOf(props.route), main, settings }}
+      sidebar={{ mode: sidebarModeOf(props.route), main, settings: SettingsSidebar }}
       center={centerOf(props.route)}
       compactTabs={props.compactTabs}
     />

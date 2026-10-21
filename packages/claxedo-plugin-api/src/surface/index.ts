@@ -4,7 +4,6 @@ export {
   SURFACE_FILE_ACCEPT_PATTERN,
   SURFACE_FILE_EVENT_MAX_BYTES,
   SURFACE_FILE_MAX_BYTES,
-  SURFACE_ICON_NAMES,
   SURFACE_IMAGE_FITS,
   SURFACE_IMAGE_VARIANTS,
   dataBindingSchema,
@@ -12,6 +11,7 @@ export {
   surfaceAgentConfigurationSchema,
   surfaceComponentSchema,
 } from "./catalog"
+export { SURFACE_ICON_NAMES } from "./icon-names"
 export type {
   SurfaceActionDefinition,
   SurfaceAgentConfiguration,

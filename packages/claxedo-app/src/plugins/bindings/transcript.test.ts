@@ -11,6 +11,8 @@ await mock.module("@/shell", () => ({
   fillPattern: (pattern: string, params: Readonly<Record<string, string>>) => pattern.replace(":taskId?", params.taskId ?? ""),
 }))
 const { transcriptBinding } = await import("./transcript")
+const { loadToolCardIntake } = await import("./tool-card-intake")
+const checkToolCards = await loadToolCardIntake({ kind: "live", hash: "h1", directory: "/plugins/tasks" })
 
 function registry<Entry>(initial: readonly Entry[] = []): Registry<Entry> {
   const [entries, setEntries] = createSignal(initial)
@@ -27,7 +29,7 @@ function page(id: string, path: string): PageEntry {
   return { id, path, title: () => id, icon: "grid-plus", sidebar: "main", view: () => undefined }
 }
 
-function fixture(pages: readonly PageEntry[] = []) {
+function fixture(pages: readonly PageEntry[] = [], intake = checkToolCards) {
   const toolCards = registry<ToolCardEntry>()
   const sink = createRegistrationSink("claxedo-tasks")
   const scope = {
@@ -35,7 +37,7 @@ function fixture(pages: readonly PageEntry[] = []) {
     sink,
     services: { registries: { toolCards, pages: registry(pages) } },
   } as unknown as BindingScope
-  return { api: transcriptBinding(scope), toolCards, sink }
+  return { api: transcriptBinding(scope, intake), toolCards, sink }
 }
 
 const card: ToolCardTemplate = { tool: "task_get", title: "Read task" }
@@ -73,5 +75,20 @@ describe("transcript.toolCards", () => {
     api.toolCards([card])
     sink.disposeAll()
     expect(toolCards.list()).toEqual([])
+  })
+})
+
+describe("the tool card intake", () => {
+  test("a bundled build's templates are the host's own code and register as given, which its package's tests check", async () => {
+    const { api, toolCards } = fixture([], await loadToolCardIntake({ kind: "bundled", hash: "h1" }))
+    api.toolCards([card])
+    expect(toolCards.list()[0]?.template).toBe(card)
+  })
+
+  test("a live build's templates are parsed before they register", () => {
+    const { api, toolCards } = fixture()
+    api.toolCards([card])
+    expect(toolCards.list()[0]?.template).toEqual(card)
+    expect(toolCards.list()[0]?.template).not.toBe(card)
   })
 })

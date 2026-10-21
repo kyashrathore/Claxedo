@@ -63,7 +63,7 @@ A plugin is a package whose `package.json` carries a `claxedo` block:
 
 ## Surfaces
 
-`@claxedo/plugin-api/surface` is the A2UI v0.9 contract an agent's `ui_show` reply and a plugin's surface page share: the catalog (`catalog.ts`), the messages (`messages.ts`), the spec check (`spec.ts`), and `SURFACE_DESIGN_GUIDE` (`design-guide.ts`), the design guidance the `ui_guide` MCP tool serves. Every recipe in the guide is a complete spec that `design-guide.test.ts` checks.
+`@claxedo/plugin-api/surface` is the A2UI v0.9 contract an agent's `ui_show` reply and a plugin's surface page share: the catalog (`catalog.ts`, whose zod schemas are built when the module loads), its icon vocabulary (`icon-names.ts`, `SURFACE_ICON_NAMES`, a module with no imports so a host that only draws icons reads it without the schemas), the messages (`messages.ts`), the spec check (`spec.ts`), and `SURFACE_DESIGN_GUIDE` (`design-guide.ts`), the design guidance the `ui_guide` MCP tool serves. Every recipe in the guide is a complete spec that `design-guide.test.ts` checks.
 
 ## CLI commands
 

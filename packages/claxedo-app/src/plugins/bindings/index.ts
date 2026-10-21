@@ -9,15 +9,17 @@ import { regionBindings } from "./regions"
 import { serverBinding } from "./server"
 import type { BindingScope, HostServices } from "./services"
 import { transcriptBinding } from "./transcript"
+import type { ToolCardIntake } from "./tool-card-intake"
 import { presentationBindings } from "./ui"
 import { workspacesBinding } from "./workspaces"
 
 export { createClaims } from "./claims"
 export { createOverlayTracker } from "./overlays"
 export type { HostServices } from "./services"
+export { loadToolCardIntake, type ToolCardIntake } from "./tool-card-intake"
 
-export function createApiFactory(services: HostServices): (build: PluginBuild, activation: ActivationScope) => PluginApi {
-  return (build, activation) => {
+export function createApiFactory(services: HostServices): (build: PluginBuild, activation: ActivationScope, toolCards: ToolCardIntake) => PluginApi {
+  return (build, activation, toolCards) => {
     const scope: BindingScope = { manifest: build.manifest, sink: activation.sink, signal: activation.signal, services }
     if (build.dictionary) activation.sink.track(services.i18n.add(build.dictionary))
     return {
@@ -28,7 +30,7 @@ export function createApiFactory(services: HostServices): (build: PluginBuild, a
       ...dataBindings(scope),
       server: serverBinding(scope),
       workspaces: workspacesBinding(scope),
-      transcript: transcriptBinding(scope),
+      transcript: transcriptBinding(scope, toolCards),
       ...presentationBindings(scope),
     }
   }

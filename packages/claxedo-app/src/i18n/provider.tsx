@@ -12,6 +12,7 @@ export type I18n = {
   readonly ready: Accessor<boolean>
   readonly t: Translate
   readonly add: (domain: Translations) => () => void
+  readonly include: (domains: readonly Translations[]) => Promise<void>
 }
 
 const I18nContext = createContext<I18n>()
@@ -52,6 +53,7 @@ export function I18nProvider(props: I18nProviderProps): JSX.Element {
     ready,
     t: translations.t,
     add: translations.add,
+    include: translations.include,
   }
   return <I18nContext.Provider value={value}>{props.children}</I18nContext.Provider>
 }

@@ -1,5 +1,4 @@
 import stripAnsi from "strip-ansi"
-import { animate } from "motion"
 import { createMemo, createSignal, onMount, Show } from "solid-js"
 import { Icon, IconButton, TextShimmer, Tooltip } from "@/ui"
 import { copyText } from "@/lib/clipboard"
@@ -10,21 +9,26 @@ import type { ToolProps } from "./message-part"
 import { ScrollableOutput } from "./scrollable-output"
 import { shellDescription, stripShellWrapper } from "./shell-label"
 import { handleTranscriptLinkClick } from "./transcript-link"
+import { loadToolMotion, type Animate } from "./tool-motion"
 
 function ShellSubmessage(props: { text: string; animate?: boolean }) {
   let widthRef: HTMLSpanElement | undefined
   let valueRef: HTMLSpanElement | undefined
 
-  onMount(() => {
-    if (!props.animate) return
+  const reveal = (animate: Animate) =>
     requestAnimationFrame(() => {
-      if (widthRef) {
-        animate(widthRef, { width: "auto" }, { type: "spring", visualDuration: 0.25, bounce: 0 })
-      }
-      if (valueRef) {
-        animate(valueRef, { opacity: 1, filter: "blur(0px)" }, { duration: 0.32, ease: [0.16, 1, 0.3, 1] })
-      }
+      if (widthRef) animate(widthRef, { width: "auto" }, { type: "spring", visualDuration: 0.25, bounce: 0 })
+      if (valueRef) animate(valueRef, { opacity: 1, filter: "blur(0px)" }, { duration: 0.32, ease: [0.16, 1, 0.3, 1] })
     })
+  const showAtRest = (error: unknown) => {
+    console.warn("The shell command's entrance animation could not be loaded; the command shows without it", { error })
+    widthRef?.style.removeProperty("width")
+    valueRef?.style.removeProperty("opacity")
+    valueRef?.style.removeProperty("filter")
+  }
+
+  onMount(() => {
+    if (props.animate) void loadToolMotion().then(reveal, showAtRest)
   })
 
   return (

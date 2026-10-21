@@ -5,7 +5,7 @@ import { FailureNotice } from "@/lib/failure"
 import { useServer, type Machine } from "@/server"
 import { Button } from "@/ui"
 import { settingsDictionary, type SettingsKey } from "../i18n"
-import { useConnectMachine } from "./machine-connect"
+import { useConnectMachine } from "../connect-machine"
 import { SettingsEmpty, SettingsGroup, SettingsIntro, SettingsList, SettingsListSkeleton, SettingsRow } from "./section"
 
 function machineStatus(machine: Machine): SettingsKey {
