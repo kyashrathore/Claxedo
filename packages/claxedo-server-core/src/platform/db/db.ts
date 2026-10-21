@@ -61,9 +61,11 @@ const require = createRequire(import.meta.url)
  * shared surface.
  */
 type BunStatement = ReturnType<CompatibleSqlite["prepare"]> & { finalize(): void }
-type BunSqliteDatabase = CompatibleSqlite & {
-  prepare(sql: string, ...options: unknown[]): BunStatement
-  close(...options: unknown[]): unknown
+type BunSqliteDatabase = {
+  exec(sql: string): unknown
+  prepare(sql: string): BunStatement
+  transaction<Result>(fn: () => Result): () => Result
+  close(): unknown
 }
 type BunSqliteModule = {
   Database: new (file: string) => BunSqliteDatabase
@@ -132,34 +134,63 @@ export function textColumns(rows: Record<string, unknown>[], name: string): stri
 }
 
 /**
+ * The most statements one bun:sqlite connection keeps prepared. The local
+ * server, Tasks and Documents suites issued 236 distinct SQL texts across 307
+ * connections, at most 69 on one, and 33 of the 236 differ only in the length
+ * of an IN list; 256 holds every text they issued.
+ */
+export const BUN_STATEMENT_LIMIT = 256
+
+/**
  * bun:sqlite closes with `sqlite3_close_v2`, which leaves a connection that
  * still has unfinalized statements open as a zombie until the last one is
- * finalized (https://www.sqlite.org/c3ref/close.html). Drizzle's bun-sqlite
- * session prepares a fresh statement for every query and never finalizes it,
- * so a closed database kept its file open until the garbage collector reached
- * those statements; on Windows an open file cannot be deleted, so neither could
- * its data directory (EBUSY). better-sqlite3 finalizes its own statements on
- * close. Statements are held weakly so a long-lived connection does not retain
- * every query it has run.
+ * finalized (https://www.sqlite.org/c3ref/close.html), and drizzle's bun-sqlite
+ * session prepares a statement for every query without finalizing it. Left to
+ * the collector, whose sweep finalizes a statement some time after it became
+ * unreachable, a closed database keeps its file open for as long as that takes,
+ * and on Windows an open file cannot be deleted (EBUSY).
+ *
+ * So the connection callers reach owns every statement they prepare, one per
+ * SQL text, keeps at most `BUN_STATEMENT_LIMIT` by finalizing the one prepared
+ * least recently to make room, and finalizes the rest at close. bun:sqlite runs a
+ * statement to completion within the call that executes it, and every caller
+ * executes what it prepares before preparing anything else, so an evicted
+ * statement is never in use; one held across other prepares (or iterated) would
+ * be. bun:sqlite's own transaction statements are prepared on the inner
+ * database, which keeps and finalizes them itself.
  */
-function finalizingOnClose(BunDatabase: BunSqliteModule["Database"]): BunSqliteModule["Database"] {
-  return class extends BunDatabase {
-    readonly #open = new Set<WeakRef<BunStatement>>()
-    readonly #collected = new FinalizationRegistry<WeakRef<BunStatement>>((ref) => this.#open.delete(ref))
-
-    override prepare(sql: string, ...options: unknown[]) {
-      const statement = super.prepare(sql, ...options)
-      const ref = new WeakRef(statement)
-      this.#open.add(ref)
-      this.#collected.register(statement, ref)
+function ownStatements(sqlite: BunSqliteDatabase): CompatibleSqlite {
+  const statements = new Map<string, { statement: BunStatement; used: number }>()
+  let clock = 0
+  return {
+    exec: (sql) => sqlite.exec(sql),
+    prepare(sql) {
+      const cached = statements.get(sql)
+      if (cached) {
+        cached.used = ++clock
+        return cached.statement
+      }
+      if (statements.size >= BUN_STATEMENT_LIMIT) {
+        let oldest: string | undefined
+        let oldestUse = Infinity
+        for (const [text, entry] of statements) {
+          if (entry.used < oldestUse) [oldest, oldestUse] = [text, entry.used]
+        }
+        if (oldest !== undefined) {
+          statements.get(oldest)?.statement.finalize()
+          statements.delete(oldest)
+        }
+      }
+      const statement = sqlite.prepare(sql)
+      statements.set(sql, { statement, used: ++clock })
       return statement
-    }
-
-    override close(...options: unknown[]) {
-      for (const ref of this.#open) ref.deref()?.finalize()
-      this.#open.clear()
-      return super.close(...options)
-    }
+    },
+    transaction: (fn) => sqlite.transaction(fn),
+    close() {
+      for (const { statement } of statements.values()) statement.finalize()
+      statements.clear()
+      return sqlite.close()
+    },
   }
 }
 
@@ -170,7 +201,7 @@ function openDatabase(file: string) {
     const bunDrizzle: unknown = require("drizzle-orm/bun-sqlite")
     if (!isBunSqliteModule(bun)) throw new Error("bun:sqlite does not export a Database constructor")
     if (!isBunDrizzleModule(bunDrizzle)) throw new Error("drizzle-orm/bun-sqlite does not export drizzle")
-    const sqlite = new (finalizingOnClose(bun.Database))(file)
+    const sqlite = ownStatements(new bun.Database(file))
     return { sqlite, db: bunDrizzle.drizzle({ client: sqlite }) }
   }
 

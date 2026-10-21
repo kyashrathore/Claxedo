@@ -258,29 +258,68 @@ describe("migrations", () => {
   })
 })
 
-describe("close", () => {
-  // The suite runs under Node, whose better-sqlite3 finalizes its statements on
-  // close; the products that run under Bun open bun:sqlite, which does not.
-  test("under Bun, closes the file even while a statement prepared on it is still reachable", () => {
-    const script = `
-      const { ClaxedoDB, configureClaxedoSchema } = await import(${JSON.stringify(fileURLToPath(new URL("./db.ts", import.meta.url)))})
-      configureClaxedoSchema({ journals: [${JSON.stringify(CLAXEDO_MIGRATION_JOURNAL)}] })
-      const kept = ClaxedoDB.raw().prepare("SELECT 1")
-      kept.get()
-      ClaxedoDB.close()
-      let ranAfterClose = true
-      try { kept.get() } catch { ranAfterClose = false }
-      require("node:fs").rmSync(process.env.CLAXEDO_DATA_DIR, { recursive: true })
-      console.log("close-result " + JSON.stringify({ ranAfterClose }))
-    `
-    const child = spawnSync("bun", ["--eval", script], {
+/** Runs `script` in a Bun child against this module and returns what it printed after `result `. */
+function underBun(script: string): unknown {
+  const child = spawnSync(
+    "bun",
+    [
+      "--eval",
+      `const db = await import(${JSON.stringify(fileURLToPath(new URL("./db.ts", import.meta.url)))})
+      db.configureClaxedoSchema({ journals: [${JSON.stringify(CLAXEDO_MIGRATION_JOURNAL)}] })
+      ${script}`,
+    ],
+    {
       cwd: fileURLToPath(new URL(".", import.meta.url)),
       env: { ...process.env, CLAXEDO_DATA_DIR: path.join(root, "bun-data") },
       encoding: "utf8",
-    })
+    },
+  )
+  expect(child.status, child.stderr).toBe(0)
+  const result = child.stdout.split("\n").find((line) => line.startsWith("result "))
+  return JSON.parse(result?.slice("result ".length) ?? "null")
+}
 
-    expect(child.status, child.stderr).toBe(0)
-    const result = child.stdout.split("\n").find((line) => line.startsWith("close-result "))
-    expect(JSON.parse(result?.slice("close-result ".length) ?? "null")).toEqual({ ranAfterClose: false })
+// The suite runs under Node, whose better-sqlite3 finalizes its statements on
+// close; the products that run under Bun open bun:sqlite, which does not.
+describe("under Bun", () => {
+  test("close closes the file even while a statement prepared on it is still reachable", () => {
+    const result = underBun(`
+      const kept = db.ClaxedoDB.raw().prepare("SELECT 1")
+      kept.get()
+      db.ClaxedoDB.close()
+      let ranAfterClose = true
+      try { kept.get() } catch { ranAfterClose = false }
+      require("node:fs").rmSync(process.env.CLAXEDO_DATA_DIR, { recursive: true })
+      console.log("result " + JSON.stringify({ ranAfterClose }))
+    `)
+
+    expect(result).toEqual({ ranAfterClose: false })
+  })
+
+  test("a connection keeps at most its statement limit prepared however many distinct texts it runs", () => {
+    const result = underBun(`
+      const sqlite = db.ClaxedoDB.raw()
+      const limit = db.BUN_STATEMENT_LIMIT
+      const runs = (statement) => { try { statement.get(); return true } catch { return false } }
+      const prepared = Array.from({ length: limit * 4 }, (_, n) => {
+        const statement = sqlite.prepare("SELECT " + n + " AS n")
+        statement.get()
+        return statement
+      })
+      const live = prepared.filter(runs).length
+      const newestLive = prepared.slice(-limit).every(runs)
+      const evictedTextRunsAgain = sqlite.prepare("SELECT 0 AS n").get().n === 0
+      prepared.length = 0
+      const rss = []
+      for (let round = 0; round < 6; round++) {
+        for (let n = 0; n < limit * 20; n++) sqlite.prepare("SELECT " + (round * 1e6 + n) + " AS n").get()
+        Bun.gc(true)
+        rss.push(process.memoryUsage().rss)
+      }
+      console.log("result " + JSON.stringify({ limit, live, newestLive, evictedTextRunsAgain, growthMB: (rss[5] - rss[1]) / 1e6 }))
+    `)
+
+    expect(result).toMatchObject({ live: 256, newestLive: true, evictedTextRunsAgain: true })
+    expect((result as { growthMB: number }).growthMB).toBeLessThan(8)
   })
 })
