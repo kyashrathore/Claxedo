@@ -1,6 +1,7 @@
 import { createRequireText } from "@claxedo/helpers"
 import { publicApiErrorShape } from "@claxedo/helpers/api-error"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
+import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceVisibility } from "@claxedo/server-core/platform/auth/authority"
 import { asRecord } from "@claxedo/server-core/platform/json/index"
 import type { PrivateSessionRuntimePrincipal, ReservePrivateSessionInput } from "@claxedo/server-core/platform/auth/private-session-authority"
@@ -183,4 +184,12 @@ export function requireSameRegistration(
     row.session_host_root !== intent.sessionHostRoot
   )
     throw new D1SessionAuthorityError("resource_conflict", "Reservation retry changed immutable intent")
+}
+
+export function denied(message = "Session authorization was denied") {
+  return new ControlPlaneAuthError(403, "workspace_authorization_denied", message)
+}
+
+export function isDenied(error: unknown) {
+  return error instanceof ControlPlaneAuthError && error.status === 403
 }
