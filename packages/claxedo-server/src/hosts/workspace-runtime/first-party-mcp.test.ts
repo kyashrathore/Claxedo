@@ -173,9 +173,15 @@ describe("the cloud runtime's first-party MCP contribution", () => {
       return Response.json({ content: [{ type: "text", text: "listed" }] })
     }
     const timers: Array<() => void> = []
+    let settled: (() => void) | undefined
+    const renewalSettles = () => new Promise<void>((resolve) => { settled = resolve })
     const grant = workspaceRuntimePluginToolsGrant(
       { WORKSPACE_RUNTIME_PLUGIN_TOOLS_GRANT: grantToken(1), [WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL]: "https://plane.test/api/claxedo/session-authority" },
-      { fetch: controlPlane as typeof fetch, timers: { setTimeout: (run) => timers.push(run), clearTimeout: () => undefined }, log: { info: () => undefined, warn: () => undefined } },
+      {
+        fetch: controlPlane as typeof fetch,
+        timers: { setTimeout: (run) => { settled?.(); return timers.push(run) }, clearTimeout: () => undefined },
+        log: { info: () => undefined, warn: (message) => { if (message === "plugin_tools.grant.withdrawn") settled?.() } },
+      },
     )
     expect(grant).toBeDefined()
     grant!.start()
@@ -187,13 +193,15 @@ describe("the cloud runtime's first-party MCP contribution", () => {
       expect(calls).toContain(`POST /api/plugins/notes/_tools/note_list Bearer ${grantToken(1)}`)
       expect(await toolNames(unconsented.app, unconsented.issuer.current("ses_1"))).not.toContain("note_list")
 
+      const renewed = renewalSettles()
       timers.shift()?.()
-      await new Promise((resolve) => setTimeout(resolve, 10))
+      await renewed
       expect(calls).toContain(`POST /api/claxedo/app-plugins/tools/grant Bearer ${grantToken(1)}`)
       expect(grant!.current()).toBeDefined()
       refuse = true
+      const refused = renewalSettles()
       timers.shift()?.()
-      await new Promise((resolve) => setTimeout(resolve, 10))
+      await refused
       expect(grant!.current()).toBeUndefined()
       expect(await toolNames(consented.app, consented.issuer.current("ses_1"))).not.toContain("note_list")
     } finally {
