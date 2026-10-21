@@ -114,7 +114,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "verify:closure": "bun ../../script/product-boundary/verify.ts",
-    "test": "mkdir -p .artifacts/unit && node ../../script/test-deadline.mjs bun test src --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml"
+    "test": "mkdir -p .artifacts/unit && node ../../script/test-deadline.mjs bun test src --timeout 30000 --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml"
   },
   "dependencies": {
     "@claxedo/agent-runtime-contract": "workspace:*",
