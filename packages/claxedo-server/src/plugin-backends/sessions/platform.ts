@@ -36,7 +36,7 @@ import { sessionHarnessQuery } from "@claxedo/server-core/workspace/http/session
 import { may } from "../../authority/adapters/d1/authorization"
 import type { HostedSessionPorts } from "./compose"
 import { createHostedSessionHost } from "./host"
-import { pluginSessionOrigins, type RecordedPluginSession } from "./origins"
+import { pluginSessionOrigins } from "./origins"
 
 export type PluginSessionCall = Extract<PluginHostCall, { name: `sessions.${string}` }>
 
@@ -100,7 +100,6 @@ type StartCall = Extract<PluginSessionCall, { name: "sessions.preview" | "sessio
 /** What a preview resolved, and what a start with its digest then runs. */
 type ResolvedStart = {
   origin: SessionOrigin
-  recorded: RecordedPluginSession | undefined
   target: SessionRuntimeTarget | null
   root: CloudRoot<PluginSessionActor> | null
   blockers: SessionStartBlocker[]
@@ -204,7 +203,7 @@ export function hostedPluginSessions(input: HostedPluginSessionsInput) {
     const digest = await sha256Hex(
       canonicalJsonText({ configurationDigest, projectId: call.projectId, workspaceId: target?.workspace.id ?? null, instructions, continuedFrom: continued?.session ?? null }),
     )
-    return { origin, recorded, target, root, blockers, instructions, continued, configurationDigest, digest }
+    return { origin, target, root, blockers, instructions, continued, configurationDigest, digest }
   }
 
   /** A member-driven session's agent delegates through `subagent_spawn`; only the owner's own session may start one detached. */
