@@ -53,7 +53,7 @@ function agentOf(ctx: McpToolContext): PluginToolAgent {
 }
 
 /** The body, or undefined once it holds more than `limit` bytes; the rest is not read. */
-async function boundedText(response: Response, limit: number): Promise<string | undefined> {
+async function responseTextWithin(response: Response, limit: number): Promise<string | undefined> {
   if (!response.body) return ""
   const reader = response.body.getReader()
   const chunks: Uint8Array[] = []
@@ -87,7 +87,7 @@ function jsonOf(text: string): unknown {
 
 /** A backend's answer to one tool call, as the agent receives it: a tool result of at most 256 KiB, or a refusal saying why not. */
 export async function pluginToolResult(tool: string, response: Response): Promise<McpToolResult> {
-  const text = await boundedText(response, PLUGIN_TOOL_RESULT_MAX_BYTES)
+  const text = await responseTextWithin(response, PLUGIN_TOOL_RESULT_MAX_BYTES)
   if (text === undefined) return mcpToolRefusal(`${tool} answered more than ${PLUGIN_TOOL_RESULT_MAX_BYTES / 1024} KiB`)
   const body = jsonOf(text)
   if (!response.ok) return mcpToolRefusal(decodeApiError(response.status, body)?.message || `${tool} failed`)
