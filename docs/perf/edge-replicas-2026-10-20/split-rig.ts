@@ -63,15 +63,16 @@ const shared = {
   ratelimits: { CLAXEDO_REQUEST_LIMITER: { namespace_id: "1001", simple: { limit: 100_000, period: 60 } } },
   bindings: vars,
 }
+const split = { ...shared, bindings: { ...vars, CLAXEDO_D1_EDGE_READS: "on" } }
 const mf = new Miniflare({
   workers: [
     {
-      ...shared,
+      ...split,
       name: "edge",
       serviceBindings: { CONTROL_PLANE_WRITER: "writer" },
       durableObjects: { LIVE_SYNC_ROOM: { className: "LiveSyncRoom", scriptName: "writer" } },
     },
-    { ...shared, name: "writer", durableObjects: { LIVE_SYNC_ROOM: { className: "LiveSyncRoom", useSQLite: true } } },
+    { ...split, name: "writer", durableObjects: { LIVE_SYNC_ROOM: { className: "LiveSyncRoom", useSQLite: true } } },
   ],
 })
 const alone = new Miniflare({ ...shared, durableObjects: { LIVE_SYNC_ROOM: { className: "LiveSyncRoom", useSQLite: true } } })
@@ -107,7 +108,7 @@ const write = () => ({
 const cases: Array<[string, () => Promise<Response>]> = [
   ["bookmarked read at the edge (GET /p/:token)", () => mf.dispatchFetch(`${API}/p/missing-token`, read)],
   ["write through the edge (POST sign-in/social)", () => mf.dispatchFetch(`${API}/api/auth/sign-in/social`, write())],
-  ["the same write on one Worker, no edge", () => alone.dispatchFetch(`${API}/api/auth/sign-in/social`, write())],
+  ["the same write on one Worker, edge reads off", () => alone.dispatchFetch(`${API}/api/auth/sign-in/social`, write())],
 ]
 for (const [, send] of cases) for (let warm = 0; warm < 5; warm++) await measure(send)
 const results = new Map<string, Sample[]>(cases.map(([label]) => [label, []]))
