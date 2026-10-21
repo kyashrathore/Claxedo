@@ -3,7 +3,17 @@
   "globalEnv": ["CI", "CLAXEDO_REAL_CLI_SUITES"],
   "globalPassThroughEnv": ["CI"],
   "tasks": {
-    "typecheck": {},
+    // A package's typecheck reads its dependencies' sources, which are not its
+    // own inputs. Depending on the transit task folds every dependency's file
+    // hash into the cache key, so a changed export re-checks its callers
+    // instead of replaying their last pass; no package defines `transit`, so
+    // it runs nothing and the checks still run in parallel.
+    "transit": {
+      "dependsOn": ["^transit"]
+    },
+    "typecheck": {
+      "dependsOn": ["transit"]
+    },
     "build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**"]
