@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url"
 import { daemonDirs } from "../../../harness/e2e/harness/daemon-dirs"
 import { waitForHealth } from "../../../harness/e2e/harness/health"
 import { isolatedEnv } from "../../../harness/e2e/harness/isolated-env"
+import { pinnedAgentEnv } from "../../../harness/e2e/harness/pinned-agent-env"
 import { REPO_ROOT, TSX_LOADER } from "../../../harness/e2e/harness/node-loader"
 import { writeScriptedModelCatalog } from "../../../harness/e2e/harness/model-catalog"
 import { captureOutput, stopProcess, type OwnedProcess } from "../../../harness/e2e/harness/process"
@@ -42,7 +43,7 @@ export type DaemonInput = {
 
 async function daemonEnv(input: DaemonInput): Promise<NodeJS.ProcessEnv> {
   return {
-    ...(await isolatedEnv(input.dataDir, input.guardUrl)),
+    ...(await isolatedEnv(input.dataDir, input.guardUrl, pinnedAgentEnv())),
     CLAXEDO_OPENCODE_CATALOG_CACHE: await writeScriptedModelCatalog(input.dataDir),
     CLAXEDO_DATA_DIR: input.dataDir,
     CLAXEDO_SERVER_PORT: String(input.port),

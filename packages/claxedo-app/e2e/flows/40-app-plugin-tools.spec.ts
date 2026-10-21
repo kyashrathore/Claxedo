@@ -69,8 +69,7 @@ test("40 a session makes an app plugin with the Claxedo MCP tools: create, a red
   const directory = path.join(await fs.realpath(workspace.directory), ".claxedo", "plugins", "standup-notes")
   expect(created).toContain(`Created the app plugin Standup notes (standup-notes) at ${directory}: package.json, src/app.tsx.`)
   expect(created).toContain("## Only when the person asked")
-  const offered = stack.scripted.requests.flatMap((request) => request.tools.map((tool) => tool.name))
-  for (const tool of ["app_plugin_create", "app_plugin_check", "app_plugin_add", "app_plugin_guide"]) expect(offered).toContain(`${TOOL_PREFIX}${tool}`)
+  expect(await callTool(turn, "app_plugin_guide", {}, "GUIDED")).toContain("## Only when the person asked")
 
   const entry = path.join(directory, "src", "app.tsx")
   const scaffold = await fs.readFile(entry, "utf8")

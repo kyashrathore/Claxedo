@@ -1,5 +1,7 @@
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
+import { ensurePinnedClaude, PINNED_CLAUDE } from "../../../harness/e2e/harness/pinned-claude"
+import { ensurePinnedCodex, PINNED_CODEX } from "../../../harness/e2e/harness/pinned-codex"
 
 const execFileAsync = promisify(execFile)
 
@@ -9,20 +11,19 @@ export type CliAvailability =
   | { available: true; path: string; version: string }
   | { available: false; reason: string }
 
-const CLI_OVERRIDE_ENV: Record<CliName, string> = {
-  claude: "CLAXEDO_E2E_CLAUDE_BIN",
-  codex: "CLAXEDO_E2E_CODEX_BIN",
+export const PINNED_CLIS: Record<CliName, { path: string; ensure: () => Promise<{ installed: boolean; version: string }> }> = {
+  claude: { path: PINNED_CLAUDE, ensure: ensurePinnedClaude },
+  codex: { path: PINNED_CODEX, ensure: ensurePinnedCodex },
 }
 
 export async function installedCli(name: CliName): Promise<CliAvailability> {
-  const binary = process.env[CLI_OVERRIDE_ENV[name]]?.trim() || name
+  const pinned = PINNED_CLIS[name]
   try {
-    const resolved = binary.includes("/") ? binary : (await execFileAsync("which", [binary])).stdout.trim()
-    if (!resolved) return { available: false, reason: `${name} is not on PATH` }
-    const version = (await execFileAsync(resolved, ["--version"], { timeout: 10_000 })).stdout.trim()
-    return { available: true, path: resolved, version }
+    await pinned.ensure()
+    const version = (await execFileAsync(pinned.path, ["--version"], { timeout: 10_000 })).stdout.trim()
+    return { available: true, path: pinned.path, version }
   } catch (error) {
     const detail = error instanceof Error ? error.message.split("\n")[0] : String(error)
-    return { available: false, reason: `${name} is not installed or does not run (${detail})` }
+    return { available: false, reason: `the pinned ${name} could not be installed or does not run (${detail})` }
   }
 }
