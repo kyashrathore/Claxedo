@@ -84,6 +84,17 @@ await test("cross-platform process runtime changes retain the Windows unit leg",
   assert.equal(result.windows, true)
 })
 
+await test("the packages whose suites failed only on Windows retain the Windows unit leg", () => {
+  for (const file of [
+    "packages/claxedo-documents/src/host/repository/index.ts",
+    "packages/claxedo-tasks/src/storage/sqlite/index.ts",
+    "packages/claxedo-helpers/src/windows-private-file-runner.ts",
+  ]) {
+    const result = classifyChangedFiles([file])
+    assert.equal(result.windows, true, file)
+  }
+})
+
 await test("onboarding changes select no lane of their own", () => {
   const result = classifyChangedFiles(["packages/claxedo-app/src/onboarding/wizard.ts"])
   assert.equal(result.unit, true)

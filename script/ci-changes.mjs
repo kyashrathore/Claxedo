@@ -33,13 +33,19 @@ const DOC_PREFIXES = [
   "public-docs/",
 ]
 
+// Documents and Tasks remove SQLite data directories and directory symlinks,
+// which Windows refuses while a handle is open; helpers owns the PowerShell and
+// private-file runners.
 const WINDOWS_PREFIXES = [
   "packages/claxedo-desktop/",
+  "packages/claxedo-documents/",
+  "packages/claxedo-helpers/",
   "packages/claxedo-host-connector/",
   "packages/claxedo-host-serving/",
   "packages/claxedo-local-server/",
   "packages/claxedo-server/",
   "packages/claxedo-server-core/",
+  "packages/claxedo-tasks/",
   "packages/cli/",
   "packages/harness/",
   "packages/process-ownership/",
