@@ -63,7 +63,7 @@ describe("definePluginBackend", () => {
       { PLATFORM: platform },
     )
     const result = (await response.json()) as { content: { text: string }[] }
-    expect(JSON.parse(result.content[0]!.text)).toEqual({ name: "note_list", args: { limit: 2 }, caller: { orgId: "org_1", origin: "agent", userId: "usr_1", sessionId: "ses_1" } })
+    expect(JSON.parse(result.content[0].text)).toEqual({ name: "note_list", args: { limit: 2 }, caller: { orgId: "org_1", origin: "agent", userId: "usr_1", sessionId: "ses_1" } })
     expect(calls).toEqual([{ call: { name: "identity.caller" }, handle: "h2" }])
   })
 

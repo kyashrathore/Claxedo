@@ -44,12 +44,12 @@ describe("an App plugin's agent tools switch", () => {
 
   test("is offered only for a plugin that declares tools, while the organization has it on and the member turned it on", () => {
     const shown = (state: Partial<Pick<AppPluginInstall, "active" | "enabledForMe">>, declared = true) =>
-      appPluginTools(appPluginEntries([{ ...install("notes", "1.0.0", state), ...(declared ? { tools } : {}) }], catalog)[0]!)
+      appPluginTools(appPluginEntries([{ ...install("notes", "1.0.0", state), ...(declared ? { tools } : {}) }], catalog)[0])
     expect(shown({ enabledForMe: true })).toEqual(tools)
     expect(shown({ enabledForMe: false })).toBeUndefined()
     expect(shown({ enabledForMe: true, active: false })).toBeUndefined()
     expect(shown({ enabledForMe: true }, false)).toBeUndefined()
-    expect(appPluginTools(appPluginEntries([], catalog)[0]!)).toBeUndefined()
+    expect(appPluginTools(appPluginEntries([], catalog)[0])).toBeUndefined()
   })
 })
 

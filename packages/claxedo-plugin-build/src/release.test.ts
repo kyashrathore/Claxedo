@@ -4,7 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { sha256Hex } from "@claxedo/helpers/crypto"
 import { verifyPluginIndex } from "@claxedo/plugin-api/registry-index"
-import { verifyPluginRelease } from "@claxedo/plugin-api/release"
+import { verifyPluginRelease, type PluginToolDeclaration } from "@claxedo/plugin-api/release"
 import { buildPluginRelease, indexWithRelease, PluginBuildError, signPluginIndex, signPluginRelease } from "./index"
 
 let root: string
@@ -74,7 +74,7 @@ describe("buildPluginRelease", () => {
     return dir
   }
 
-  const NOTE_LIST = { name: "note_list", title: "List notes", description: "Lists the project's notes", inputSchema: { type: "object", properties: { limit: { type: "number" } } }, access: "read" }
+  const NOTE_LIST: PluginToolDeclaration = { name: "note_list", title: "List notes", description: "Lists the project's notes", inputSchema: { type: "object", properties: { limit: { type: "number" } } }, access: "read" }
 
   test("copies the tool declarations the definitions module exports into the release, and the release verifies", async () => {
     const dir = await withTools("with-tools", `const limit = { type: "number" }\nexport default [{ name: "note_list", title: "List notes", description: "Lists the project's notes", inputSchema: { type: "object", properties: { limit } }, access: "read" }]\n`)

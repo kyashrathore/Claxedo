@@ -186,7 +186,7 @@ describe("an app plugin's agent tools on the hosted MCP endpoint", () => {
     expect(listed.find((tool) => tool.name === "note_add")?.inputSchema).toMatchObject({ type: "object", properties: { text: { type: "string" } }, required: ["text"] })
     expect(await client.callTool({ name: "note_add", arguments: { text: "hello" } })).toEqual({ content: [{ type: "text", text: JSON.stringify(["hello"]) }] })
     const answer = (await client.callTool({ name: "note_list", arguments: {} })) as ToolText
-    expect(JSON.parse(answer.content[0]!.text)).toEqual({ notes: ["hello"], caller: { orgId: carol.orgId, origin: "agent", userId: carol.userId } })
+    expect(JSON.parse(answer.content[0].text)).toEqual({ notes: ["hello"], caller: { orgId: carol.orgId, origin: "agent", userId: carol.userId } })
     expect(await appPlugins(carol, "GET", "/tools")).toEqual({ status: 200, body: [{ pluginId: "notes", label: "Notes", tools: notes.release.tools }] })
   })
 
@@ -216,13 +216,13 @@ describe("an app plugin's agent tools on the hosted MCP endpoint", () => {
 
 describe("tool names", () => {
   test("an install whose tool another installed plugin or Claxedo itself serves is refused, naming the owner", async () => {
-    await publish("clash", [{ ...notes.release.tools![1]! }])
+    await publish("clash", [{ ...notes.release.tools![1] }])
     const clash = await appPlugins(alice, "POST", "", { id: "clash", version: "0.1.0" })
     expect(clash).toEqual(refusal(409, "app_plugin_tool_name_taken"))
     expect(JSON.stringify(clash.body)).toContain("notes")
-    await publish("shadow", [{ ...notes.release.tools![1]!, name: "sessions_list" }])
+    await publish("shadow", [{ ...notes.release.tools![1], name: "sessions_list" }])
     expect(await appPlugins(alice, "POST", "", { id: "shadow", version: "0.1.0" })).toEqual(refusal(409, "app_plugin_tool_name_taken"))
-    await publish("fresh", [{ ...notes.release.tools![1]!, name: "fresh_list" }])
+    await publish("fresh", [{ ...notes.release.tools![1], name: "fresh_list" }])
     expect((await appPlugins(alice, "POST", "", { id: "fresh", version: "0.1.0" })).status).toBe(201)
     expect((await appPlugins(alice, "DELETE", "/fresh")).status).toBe(204)
   })
@@ -235,7 +235,7 @@ describe("a cloud root's plugin tools grant", () => {
     expect(await appPlugins(token, "GET", "/tools")).toEqual({ status: 200, body: [expect.objectContaining({ pluginId: "notes" })] })
     const answer = await toolCall(token, "note_list", {})
     expect(answer.status).toBe(200)
-    expect(JSON.parse((answer.body as unknown as ToolText).content[0]!.text).caller).toEqual({
+    expect(JSON.parse((answer.body as unknown as ToolText).content[0].text).caller).toEqual({
       orgId: root.orgId,
       origin: "agent",
       userId: root.userId,

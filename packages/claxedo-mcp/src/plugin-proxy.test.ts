@@ -31,7 +31,7 @@ function grantOver(listings: readonly PluginToolsListing[], answer: (call: Call)
     operations: ["call"],
     fetch: async (path, init) => {
       if (path === "/api/claxedo/app-plugins/tools") return Response.json(listings)
-      const call = { path, agent: JSON.parse(new Headers(init?.headers).get("x-claxedo-agent") ?? "null"), body: JSON.parse(String(init?.body)) }
+      const call = { path, agent: JSON.parse(new Headers(init?.headers).get("x-claxedo-agent") ?? "null"), body: JSON.parse(typeof init?.body === "string" ? init.body : "null") }
       calls.push(call)
       return answer(call)
     },
