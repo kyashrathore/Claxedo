@@ -12,9 +12,11 @@ import { createFrameLink, type FrameLink } from "./link"
 import { createFrameSurfaces } from "./surfaces"
 
 function applyDocument(boot: FrameBoot): void {
-  const style = document.createElement("style")
-  style.textContent = boot.css
-  document.head.append(style)
+  if (boot.slot) {
+    const style = document.createElement("style")
+    style.textContent = boot.slot.css
+    document.head.append(style)
+  }
   const html = document.documentElement
   if (boot.theme.id) html.dataset.theme = boot.theme.id
   if (!boot.theme.colorScheme) return
@@ -66,18 +68,18 @@ export async function startFrame(port: MessagePort, boot: FrameBoot): Promise<vo
   const name = boot.context.pluginId
   try {
     const { definition, dictionary } = await importPlugin(boot.code)
-    const api = createFrameApi({ link, context: boot.context, entries, dictionary, forward: !boot.target, signal: new AbortController().signal })
+    const api = createFrameApi({ link, context: boot.context, entries, dictionary, forward: !boot.slot, signal: new AbortController().signal })
     await definition.activate(api)
-    if (!boot.target) {
+    if (!boot.slot) {
       const surfaces = createFrameSurfaces(entries, link.send)
       link.onInvoke((invoke) => answerInvoke(entries, surfaces, invoke))
       link.send({ type: "activated" })
       return
     }
-    const view = targetView(boot.target, entries, link)
+    const view = targetView(boot.slot.target, entries, link)
     render(() => <ErrorBoundary fallback={(error) => <FrameFailure name={name} error={error} />}>{view()}</ErrorBoundary>, document.body)
   } catch (error) {
     link.send({ type: "failed", reason: failureReason(error) })
-    if (boot.target) render(() => <FrameFailure name={name} error={error} />, document.body)
+    if (boot.slot) render(() => <FrameFailure name={name} error={error} />, document.body)
   }
 }

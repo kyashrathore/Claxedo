@@ -28,11 +28,10 @@ export async function openFrame(frame: HTMLIFrameElement, api: PluginApi, source
     type: FRAME_BOOT,
     runtime,
     code: source.code,
-    css: appStylesheetText(),
     theme: appTheme(),
     context: { pluginId: api.context.pluginId, pluginVersion: api.context.pluginVersion, platform: "web" },
     mirror: frameMirror(api, source.services),
-    ...(target ? { target } : {}),
+    ...(target ? { slot: { target, css: appStylesheetText() } } : {}),
   }
   window.postMessage(boot, "*", [channel.port2])
   return link
