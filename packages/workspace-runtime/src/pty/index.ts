@@ -461,12 +461,18 @@ export namespace Pty {
     return session.buffer.slice(-cap)
   }
 
-  export async function create(input: CreateInput, ownership: LaunchOwnershipStore, agentHookAccess?: AgentHookAccessBinding, options: { platform?: NodeJS.Platform } = {}) {
+  export async function create(
+    input: CreateInput,
+    ownership: LaunchOwnershipStore,
+    agentHookAccess?: AgentHookAccessBinding,
+    options: { platform?: NodeJS.Platform; sandboxEnv?: Record<string, string> } = {},
+  ) {
     let pinned = true
     creating++
     activityChanged()
     try {
       return await startTerminal(input, ownership, agentHookAccess, options.platform ?? process.platform, {
+        sandboxEnv: options.sandboxEnv ?? {},
         bufferLimit: BUFFER_LIMIT,
         highWatermark: QUEUE_HIGH_WATERMARK,
         lowWatermark: QUEUE_LOW_WATERMARK,

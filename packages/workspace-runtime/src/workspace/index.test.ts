@@ -1,7 +1,7 @@
 import { testSessionCore } from "@claxedo/session-core/testing"
 import os from "node:os"
 import path from "node:path"
-import { describe, expect, test } from "bun:test"
+import { describe, expect, spyOn, test } from "bun:test"
 import { Hono } from "hono"
 import { createRuntimeEventHub, type SessionAccessPolicy, sessionIdle, withDir } from "@claxedo/session-core"
 import {
@@ -340,3 +340,45 @@ test("a direct host mount reads files from its declared workspace root", async (
     await fs.rm(directory, { recursive: true, force: true })
   }
 })
+
+for (const mounted of ["core", "pty"] as const) {
+  test(`a cloud host's terminals, mounted with ${mounted}, are told they run in Claxedo's sandbox and a person's machine's are not`, async () => {
+    const fs = await import("node:fs/promises")
+    const { Pty } = await import("../pty/index")
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), "sandbox-terminal-env-"))
+    const create = spyOn(Pty, "create").mockImplementation(async (input) => ({
+      id: `pty_${mounted}`, title: "Terminal", command: "/bin/sh", args: [], cwd: input.cwd ?? directory, status: "running", pid: 123,
+    }))
+    const commit = spyOn(Pty, "commit").mockImplementation(() => undefined)
+    const sandboxEnvs: Array<Record<string, string> | undefined> = []
+    try {
+      for (const placement of ["cloud", "desktop"] as const) {
+        const host = createWorkspaceHost({
+          target: { workspaceId: "ws_sandbox_env", directory },
+          placement: { ...loopbackMachineLoginPolicy(), placement },
+          sessionIdWorkspace: () => undefined,
+          storeRoot: path.join(directory, `state-${placement}`),
+        })
+        try {
+          const app = new Hono()
+          const upgradeWebSocket = (() => () => ({})) as never
+          host.mount(app, { exposure: loopbackExposure, ...(mounted === "core" ? { core: { upgradeWebSocket } } : { pty: { upgradeWebSocket } }) })
+          const response = await app.request("http://localhost/api/wr/pty", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: "{}",
+          })
+          expect(response.status).toBe(200)
+          sandboxEnvs.push(create.mock.calls.at(-1)?.[3]?.sandboxEnv)
+        } finally {
+          await host.dispose()
+        }
+      }
+      expect(sandboxEnvs).toEqual([{ IS_SANDBOX: "1" }, {}])
+    } finally {
+      create.mockRestore()
+      commit.mockRestore()
+      await fs.rm(directory, { recursive: true, force: true })
+    }
+  })
+}

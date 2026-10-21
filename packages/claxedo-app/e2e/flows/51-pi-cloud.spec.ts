@@ -204,7 +204,7 @@ test("51 a Pi draft on a cloud workspace without an account says Pi is not set u
   await expect(page.getByRole("status", { name: /Pi is not set up/ })).toBeVisible()
 })
 
-test("51 a terminal on a cloud workspace beside a cloud Pi session, which another host serves, runs a typed command through the relay", async ({ signedCloud, page, isMobile }, testInfo) => {
+test("51 a terminal on a cloud workspace beside a cloud Pi session, which another host serves, runs a typed command through the relay in a shell that declares Claxedo's sandbox to agent CLIs", async ({ signedCloud, page, isMobile }, testInfo) => {
   test.setTimeout(240_000)
   const workspace = await runningCloudWorkspace(signedCloud)
   await signedCloud.signIn(page, signedCloud.owner)
@@ -218,10 +218,10 @@ test("51 a terminal on a cloud workspace beside a cloud Pi session, which anothe
   await expect(pane).toHaveAttribute("data-terminal-connected", "true")
   await expect(page.getByText(/sign-in expired/)).toHaveCount(0)
   await page.getByRole("textbox", { name: "Terminal input" }).focus()
-  await page.keyboard.type("echo cloud-terminal-$((6*7))")
+  await page.keyboard.type("echo cloud-terminal-$((6*7))-sandbox-${IS_SANDBOX:-unset}")
   await page.keyboard.press("Enter")
-  if (isMobile) await expect(pane.getByText("cloud-terminal-42", { exact: true })).toBeVisible()
-  expect(await relayedTerminalOutput(signedCloud, workspace, terminalId, "cloud-terminal-42")).toContain("cloud-terminal-42")
+  if (isMobile) await expect(pane.getByText("cloud-terminal-42-sandbox-1", { exact: true })).toBeVisible()
+  expect(await relayedTerminalOutput(signedCloud, workspace, terminalId, "cloud-terminal-42-sandbox-1")).toContain("cloud-terminal-42-sandbox-1")
   const listed = new URL("/api/wr/pty", signedCloud.hosted.workerUrl)
   listed.searchParams.set("directory", `workspace:${workspace.id}`)
   const rows = JSON.parse((await signedCloud.runtime(workspace.id)({ method: "GET", url: listed.toString(), headers: {} })).body) as Array<{ id: string; sessionId?: string }>

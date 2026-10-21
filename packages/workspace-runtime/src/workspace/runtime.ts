@@ -47,6 +47,7 @@ import { createHarnessServices } from "../harness-services"
 import { createSpawnService } from "../spawn-service"
 import { defaultHarnessStateRoot, harnessCompositionOptions, harnessesToPrepare, sweepIdleHarnessHomes } from "../host/composition"
 import { createElicitationPatternEvaluator } from "../host/pattern-evaluator"
+import { sandboxAgentEnv } from "../host/sandbox-agent-env"
 import { Log } from "../log"
 import {
   normalizeRuntimeSnapshot,
@@ -443,13 +444,14 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
   }
 
   function mountEvents(app: Hono, mount: WorkspaceHostMountOptions, sessionAccessPolicy: SessionAccessPolicy): MountedWorkspaceEvents {
+    const sandboxEnv = sandboxAgentEnv(options.placement.placement)
     const directory = options.target.directory
     const id = options.target.workspaceId
     if (mount.core) {
       return mountWorkspaceCore(app, mount.core.upgradeWebSocket, {
         core, directory, workspaceId: id, exposure: mount.exposure, sessionAccessPolicy,
         sessionStarts,
-        sessionParents: options.sessionParents ?? sessionParents, launchOwnership,
+        sessionParents: options.sessionParents ?? sessionParents, launchOwnership, sandboxEnv,
         ...(mount.renewalIntervalMs !== undefined ? { renewalIntervalMs: mount.renewalIntervalMs } : {}),
       })
     }
@@ -458,7 +460,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
       sessionParents: options.sessionParents ?? sessionParents,
       ...(mount.renewalIntervalMs !== undefined ? { renewalIntervalMs: mount.renewalIntervalMs } : {}),
     })
-    if (mount.pty) mountWorkspacePty(app, mount.pty.upgradeWebSocket, sessionAccessPolicy, { ownership: launchOwnership })
+    if (mount.pty) mountWorkspacePty(app, mount.pty.upgradeWebSocket, sessionAccessPolicy, { ownership: launchOwnership, sandboxEnv })
     if (mount.agentHooks) mountWorkspaceAgentHooks(app, core, sessionAccessPolicy)
     return events
   }

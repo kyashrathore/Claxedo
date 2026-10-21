@@ -41,6 +41,7 @@ import type { ActiveSession, CreateInput, AgentHookAccessBinding } from "./sessi
 
 const log = Log.create({ service: "pty" })
 type StartContext = {
+  sandboxEnv: Record<string, string>
   bufferLimit: number
   highWatermark: number
   lowWatermark: number
@@ -168,6 +169,8 @@ export async function startTerminal(
     // Caller-supplied PTY env: explicit, so not subject to the ambient
     // CLAXEDO_ allowlist (see SafeEnvSource).
     ...buildSafeEnv(inputEnv, { customPrefix: "CLAXEDO", source: "explicit" }),
+    // After the filter, which drops `IS_SANDBOX` from the inherited and the client's env alike.
+    ...context.sandboxEnv,
     TERM: "xterm-256color",
     // Describe OUR terminal, not whatever launched the desktop app. These
     // come after the allowlist spread so they override the inherited values

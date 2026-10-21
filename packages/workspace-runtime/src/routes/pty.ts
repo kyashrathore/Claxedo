@@ -82,6 +82,8 @@ type PtyRouteVariables = RelayHostAuthContext & { ptyStreamAdmission?: TerminalA
  */
 export type PtyRouteOptions = {
   ownership?: () => LaunchOwnershipStore
+  /** What every terminal on this host is told about the sandbox it runs in (`sandboxAgentEnv`). */
+  sandboxEnv?: Record<string, string>
 }
 
 export function PtyRoutes(
@@ -163,6 +165,7 @@ export function PtyRoutes(
         // rather than defaulted inside the PTY owner.
         options.ownership?.() ?? volatileLaunchOwnership(),
         agentHookAccess,
+        options.sandboxEnv ? { sandboxEnv: options.sandboxEnv } : {},
       )
       const actorId = caller.actor?.actorId
       if (actorId && !Pty.bindAccessOwner(info.id, actorId)) {

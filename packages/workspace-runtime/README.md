@@ -82,8 +82,9 @@ product domains), generic `connectionProviders` (custom harness providers the
 plus a strict v4 runtime snapshot (operator-owned process/remote descriptors
 and secret references), `placement` (where the runtime runs and whose machine
 it is, which every transport's own-login decision reads; a `cloud` runtime also
-gives Claude Code `IS_SANDBOX=1`, because the sandbox images run it as root and
-Claude Code otherwise exits when root may skip permissions), `harnessStateRoot`
+gives `IS_SANDBOX=1` to its Claude Code harness and to every terminal's shell
+(`sandboxAgentEnv`), because the sandbox images run it as root and Claude Code
+otherwise exits when root may skip permissions), `harnessStateRoot`
 and `env` (where Claxedo-owned harness homes live and the environment harness
 processes inherit), and `startServer`'s third argument `{ signals: true }` (process
 signal/exit handling; kit default makes no process-global claims). Claxedo

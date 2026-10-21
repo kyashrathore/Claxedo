@@ -96,12 +96,15 @@ export function mountWorkspaceCore(
     sessionAccessPolicy?: SessionAccessPolicy
     /** Resolved per launch, not captured: one process serves many workspaces. */
     launchOwnership?: () => LaunchOwnershipStore
+    sandboxEnv?: Record<string, string>
     renewalIntervalMs?: number
   },
 ): MountedWorkspaceEvents {
   assertWorkspaceRuntimeExposure({ exposure: options.exposure, env: process.env })
-  const ownership = options.launchOwnership ? { ownership: options.launchOwnership } : {}
-  mountWorkspacePty(app, upgradeWebSocket, options.sessionAccessPolicy, ownership)
+  mountWorkspacePty(app, upgradeWebSocket, options.sessionAccessPolicy, {
+    ...(options.launchOwnership ? { ownership: options.launchOwnership } : {}),
+    ...(options.sandboxEnv ? { sandboxEnv: options.sandboxEnv } : {}),
+  })
   mountWorkspaceAgentHooks(app, options.core, options.sessionAccessPolicy)
   const events = mountWorkspaceEvents(app, options)
   mountWorkspaceFiles(app, options.sessionAccessPolicy)

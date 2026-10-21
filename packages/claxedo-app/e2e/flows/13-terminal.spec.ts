@@ -69,7 +69,7 @@ async function newShell(app: Page): Promise<string> {
 
 test.skip(({ isMobile }) => isMobile, "flow 13 runs at desktop width")
 
-test("13 terminal: run a command, its output replays from the server, reload reattaches, closing leaves the draft", async ({ stack, app }) => {
+test("13 terminal: run a command in a shell that declares no sandbox, its output replays from the server, reload reattaches, closing leaves the draft", async ({ stack, app }) => {
   const workspace = await stack.daemon.makeWorkspace("terminal", "Terminal")
 
   await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
@@ -77,9 +77,9 @@ test("13 terminal: run a command, its output replays from the server, reload rea
   await expect(terminalPane(app, terminalId)).toHaveAttribute("data-terminal-connected", "true")
 
   await app.getByRole("textbox", { name: "Terminal input" }).focus()
-  await app.keyboard.type("echo tools-e2e-$((6*7))")
+  await app.keyboard.type("echo tools-e2e-$((6*7))-sandbox-${IS_SANDBOX:-unset}")
   await app.keyboard.press("Enter")
-  expect(await ptyReplay(app, workspace.directory, terminalId, "tools-e2e-42")).toContain("tools-e2e-42")
+  expect(await ptyReplay(app, workspace.directory, terminalId, "tools-e2e-42-sandbox-unset")).toContain("tools-e2e-42-sandbox-unset")
 
   await app.reload()
   await expect(app).toHaveURL(TERMINAL_URL)

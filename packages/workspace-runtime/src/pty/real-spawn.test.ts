@@ -187,6 +187,20 @@ setInterval(() => {}, 1000);
     }
   })
 
+  void test("a terminal's process sees the host's sandbox declaration, and never one the client asks for", { timeout: 30_000 }, async () => {
+    const { Pty } = await import("./index")
+    const printer = path.join(tmpDir, "print-sandbox.cjs")
+    await fs.writeFile(printer, "process.stdout.write('IS_SANDBOX=[' + (process.env.IS_SANDBOX ?? 'unset') + ']\\n'); setInterval(() => {}, 1000)\n")
+    const launch = (sandboxEnv: Record<string, string>) => withSessionCore(testSessionCore(tmpDir), () =>
+      Pty.create({ command: process.execPath, args: [printer], cwd: tmpDir, env: { IS_SANDBOX: "client" } }, ownership, undefined, { sandboxEnv }))
+    const declared = socket()
+    assert.ok(Pty.connect((await launch({ IS_SANDBOX: "1" })).id, declared.ws))
+    await waitFor(() => declared.text().includes("IS_SANDBOX=[1]"))
+    const undeclared = socket()
+    assert.ok(Pty.connect((await launch({})).id, undeclared.ws))
+    await waitFor(() => undeclared.text().includes("IS_SANDBOX=[unset]"))
+  })
+
   // The typed `stty size`, `printf` and `$(( ))` are POSIX shell; cmd.exe has no geometry query to round-trip.
   void test("spawns /bin/sh, echoes a command, resizes, and exits cleanly", { timeout: 30_000, skip: windows }, async () => {
     const { Pty } = await import("./index")
