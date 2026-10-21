@@ -50,3 +50,9 @@ export function readPackageJson(file: string): PackageJson {
     ...(devs ? { devDependencies: devs } : {}),
   }
 }
+
+/** The root manifest's `workspaces.catalog`: what a `catalog:` specifier in a workspace package resolves to. */
+export function readWorkspaceCatalog(file: string): Record<string, string> {
+  const catalog = asRecord(asRecord(asRecord(parseJson(fs.readFileSync(file, "utf8")))?.workspaces)?.catalog)
+  return stringMap(catalog) ?? {}
+}

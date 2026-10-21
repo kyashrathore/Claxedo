@@ -1,5 +1,5 @@
 /**
- * The one publisher for the 8 public `@claxedo/*` packages.
+ * The one publisher for the public `@claxedo/*` packages.
  *
  * Policy this script encodes:
  *
@@ -18,26 +18,35 @@
  *   4. **A published version is immutable.** `check-published-versions.ts`
  *      fails the run when a package's directory changed after its version was
  *      last set and that version is already on npm — the bump is missing.
+ *   5. **A tarball is self-contained.** The packed manifest drops every
+ *      unpublished sibling and the package's npm build inlines it; every
+ *      package the packed JavaScript imports must be a dependency the packed
+ *      manifest declares, at the version any bundled sibling declares it. A
+ *      package whose repo build differs from its npm build names the npm one
+ *      `build:publish`.
  *
  * Every package is built (with its `@claxedo/*` dependencies first), packed,
  * and the packed tarball inspected — README.md and LICENSE present, no
- * `workspace:`/`catalog:` specifier in any consumer-facing section — before
- * anything is published. A version already on the registry is skipped.
+ * `workspace:`/`catalog:` specifier in any consumer-facing section, no import
+ * the manifest leaves undeclared — before anything is published. A version
+ * already on the registry is skipped.
  */
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { readPackageJson, type PackageJson } from "./package-json"
+import { readPackageJson, readWorkspaceCatalog, type PackageJson } from "./package-json"
 import { fileURLToPath } from "node:url"
 import { isRecordArray, parseJsonRecords, stringField } from "@claxedo/server-core/platform/json/index"
 import {
+  bundledSiblingDirs,
   defaultCommandRunner,
   publishedVersionDrift,
   type CommandRunner,
   type PublishedVersionPackage,
 } from "./check-published-versions"
+import { bundledDependencyDisagreements, packageImports, scriptFiles, undeclaredImports } from "./packed-imports"
 
-export type PackageTrack = "helpers" | "runtime" | "apps"
+export type PackageTrack = "helpers" | "runtime" | "apps" | "cli"
 
 export type ClaxedoPackage = {
   readonly name: string
@@ -51,7 +60,7 @@ export type ClaxedoPackage = {
 }
 
 /**
- * All 8 public packages, in dependency order (`@claxedo/*` edges only).
+ * All 10 public packages, in dependency order (`@claxedo/*` edges only).
  * Tier 0 has no `@claxedo/*` dependencies; each later tier depends only on
  * earlier ones. Publishing out of this order can leave a package on npm whose
  * exact `@claxedo/*` pin does not resolve yet.
@@ -68,6 +77,9 @@ export const claxedoPackages: readonly ClaxedoPackage[] = [
   { name: "@claxedo/workspace-relay", dir: "packages/workspace-relay", track: "runtime" },
   // Tier 2
   { name: "@claxedo/sandbox-manager", dir: "packages/sandbox-manager", track: "runtime" },
+  { name: "@claxedo/workspace-runtime", dir: "packages/workspace-runtime", track: "runtime" },
+  // Tier 3
+  { name: "@claxedo/cli", dir: "packages/cli", track: "cli" },
 ]
 
 export type PackageSelector = "all" | PackageTrack
@@ -123,26 +135,14 @@ export function crossPinViolations(pkg: PackageJson, publicNames: ReadonlySet<st
 }
 
 /**
- * Every `workspace:` reference, in a section consumers install, to a package
- * that is not public: a published manifest has no version to pin it to.
- */
-export function unpublishedWorkspaceReferences(pkg: PackageJson, versions: ReadonlyMap<string, string>) {
-  return CONSUMER_SECTIONS.flatMap((section) => Object.entries(pkg[section] ?? {})
-    .filter(([dep, spec]) => typeof spec === "string" && spec.startsWith("workspace:") && !versions.has(dep))
-    .map(([dep, spec]) => `${section}.${dep}=${spec} references a package that is not published`))
-}
-
-/**
  * The manifest npm sees: every `workspace:` specifier replaced by the exact
- * in-repo version of that package. An unpublished reference in a section
- * consumers install is an error, not a silent pass. In `devDependencies` —
- * which npm never installs from a published package — an unpublished sibling
- * is dropped instead: it is a build-time input (`sandbox-manager` bundles
- * `egress-broker` into its `dist`) that has no registry version to pin.
+ * in-repo version of that package, and every unpublished sibling dropped. An
+ * unpublished sibling has no registry version to pin, so the package's npm
+ * build inlines it (`sandbox-manager` bundles `egress-broker`,
+ * `workspace-runtime` bundles `harness`); a tarball that still imports one
+ * fails the import check in `packAndInspect`.
  */
 export function materializeWorkspacePins(pkg: PackageJson, versions: ReadonlyMap<string, string>): PackageJson {
-  const unpublished = unpublishedWorkspaceReferences(pkg, versions)
-  if (unpublished.length > 0) throw new Error(`${pkg.name ?? "package"}: ${unpublished.join("; ")}`)
   const next: PackageJson = { ...pkg }
   for (const section of ALL_SECTIONS) {
     const deps = pkg[section]
@@ -174,6 +174,11 @@ export function repoVersions(root: string, packages: readonly ClaxedoPackage[] =
   return versions
 }
 
+/** The build whose dist npm receives. */
+export function publishBuildScript(pkg: PackageJson) {
+  return pkg.scripts?.["build:publish"] ? "build:publish" : "build"
+}
+
 function claxedoDependencies(pkg: PackageJson, packagesByName: ReadonlyMap<string, ClaxedoPackage>) {
   return CONSUMER_SECTIONS.flatMap((section) => Object.keys(pkg[section] ?? {}))
     .filter((name) => packagesByName.has(name))
@@ -192,7 +197,7 @@ function buildWithDependencies(
     const dependency = packagesByName.get(dependencyName)
     if (dependency) buildWithDependencies(dependency, root, run, packagesByName, built)
   }
-  run("npm", ["run", "build", "--workspace", item.name], root)
+  run("npm", ["run", publishBuildScript(pkg), "--workspace", item.name], root)
   built.add(item.name)
 }
 
@@ -264,16 +269,11 @@ export function npmVersionPublished(name: string, version: string, run: CommandR
 }
 
 /**
- * Run `fn` with the package's manifest rewritten to its published shape, and
- * put the original bytes back whether or not `fn` throws. The repo never
- * carries materialized pins; only the tarball does.
- */
-/**
  * True when npm's tarball for `name@version` has the integrity a pack of this
- * directory produces with its pins materialized. `npm pack` is deterministic
- * (fixed mtimes, sorted entries), so equal integrity means equal bytes; an
- * unbuilt or otherwise differing directory compares unequal and stays a
- * violation.
+ * tree produces: built as it would be published, pins materialized. `npm pack`
+ * is deterministic (fixed mtimes, sorted entries), so equal integrity means
+ * equal bytes; a tree that fails to build or packs differently compares
+ * unequal and stays a violation.
  */
 function publishedTarballMatchesTree(
   root: string,
@@ -281,6 +281,7 @@ function publishedTarballMatchesTree(
   version: string,
   versions: ReadonlyMap<string, string>,
   run: CommandRunner,
+  buildForPublish: (name: string) => void,
 ) {
   let published: string
   try {
@@ -289,6 +290,11 @@ function publishedTarballMatchesTree(
     return false
   }
   if (!published) return false
+  try {
+    buildForPublish(item.name)
+  } catch {
+    return false
+  }
   const file = path.join(root, item.dir, "package.json")
   const pkg = readPackageJson(file)
   return withMaterializedManifest(file, materializeWorkspacePins(pkg, versions), () => {
@@ -314,6 +320,9 @@ function packAndInspect(
   run: CommandRunner,
   log: (message: string) => void,
 ) {
+  const publishedNames = new Set(claxedoPackages.map((entry) => entry.name))
+  const siblings = bundledSiblingDirs(root, item.dir, publishedNames)
+    .map((dir) => readPackageJson(path.join(root, dir, "package.json")))
   fs.mkdirSync(packDir, { recursive: true })
   let packed: ReturnType<typeof parsePackJson>[number]
   try {
@@ -328,8 +337,9 @@ function packAndInspect(
   // The archive name stays relative to the cwd: an absolute Windows path in
   // tar's -f argument reads as host:file (GNU tar's remote syntax) and dies
   // with "Cannot connect". -C is not parsed that way and may stay absolute.
-  run("tar", ["-xzf", packed.filename, "-C", extractDir, "package/package.json"], packDir)
-  const packedPkg = readPackageJson(path.join(extractDir, "package", "package.json"))
+  run("tar", ["-xzf", packed.filename, "-C", extractDir], packDir)
+  const packageRoot = path.join(extractDir, "package")
+  const packedPkg = readPackageJson(path.join(packageRoot, "package.json"))
 
   const problems: string[] = []
   const specifiers = protocolSpecifiers(packedPkg)
@@ -344,9 +354,26 @@ function packAndInspect(
   else log("    README.md/LICENSE in tarball ok")
 
   if (packedPkg.version !== version) problems.push(`packed version ${packedPkg.version} != repo version ${version}`)
+
+  let imports: ReturnType<typeof packageImports>
+  try {
+    imports = packageImports(packageRoot, scriptFiles(packageRoot))
+  } catch (error) {
+    return [...problems, `reading the tarball's imports failed: ${error instanceof Error ? error.message : String(error)}`]
+  }
+  const undeclared = undeclaredImports(imports, packedPkg)
+  const disagreements = bundledDependencyDisagreements(packedPkg, siblings, readWorkspaceCatalog(path.join(root, "package.json")))
+  if (undeclared.length > 0) problems.push(`tarball imports packages its manifest does not declare: ${undeclared.join(", ")}`)
+  if (disagreements.length > 0) problems.push(`dependency versions differ from the bundled siblings': ${disagreements.join(", ")}`)
+  if (undeclared.length === 0 && disagreements.length === 0) log(`    imports declared             ok (${imports.size} package(s))`)
   return problems
 }
 
+/**
+ * Run `fn` with the package's manifest rewritten to its published shape, and
+ * put the original bytes back whether or not `fn` throws. The repo never
+ * carries materialized pins; only the tarball does.
+ */
 function withMaterializedManifest<T>(file: string, materialized: PackageJson, fn: () => T): T {
   const original = fs.readFileSync(file, "utf8")
   fs.writeFileSync(file, `${JSON.stringify(materialized, null, 2)}\n`)
@@ -394,8 +421,14 @@ export async function publishClaxedoPackages(options: PublishOptions): Promise<P
   // public set is releasable.
   const versions = repoVersions(root)
   const publicNames = new Set(versions.keys())
+  const packagesByName = new Map(claxedoPackages.map((item) => [item.name, item]))
+  const built = new Set<string>()
+  const buildForPublish = (name: string) => {
+    const item = packagesByName.get(name)
+    if (item) buildWithDependencies(item, root, run, packagesByName, built)
+  }
   const drift = publishedVersionDrift(root, claxedoPackages, run, (item, version) =>
-    publishedTarballMatchesTree(root, item, version, versions, run))
+    publishedTarballMatchesTree(root, item, version, versions, run, buildForPublish))
   if (drift.length > 0) {
     throw new Error(`published versions with unreleased changes (bump the version):\n${drift.map((line) => `  - ${line}`).join("\n")}`)
   }
@@ -404,8 +437,6 @@ export async function publishClaxedoPackages(options: PublishOptions): Promise<P
   const cleanup = options.workDir === undefined
   const failures: string[] = []
   const outcomes: PublishOutcome[] = []
-  const packagesByName = new Map(claxedoPackages.map((item) => [item.name, item]))
-  const built = new Set<string>()
 
   try {
     for (const item of selected) {
@@ -421,9 +452,7 @@ export async function publishClaxedoPackages(options: PublishOptions): Promise<P
       const pins = crossPinViolations(pkg, publicNames)
       if (pins.length > 0) problems.push(`sibling dependency is not ${WORKSPACE_PIN}: ${pins.join(", ")}`)
 
-      const unpublished = unpublishedWorkspaceReferences(pkg, versions)
-      problems.push(...unpublished)
-      const materialized = unpublished.length === 0 ? materializeWorkspacePins(pkg, versions) : undefined
+      const materialized = materializeWorkspacePins(pkg, versions)
 
       let builtOk = false
       try {
@@ -443,7 +472,7 @@ export async function publishClaxedoPackages(options: PublishOptions): Promise<P
         }
       }
 
-      if (!builtOk || !materialized) {
+      if (!builtOk) {
         failures.push(...problems.map((problem) => `${item.name}: ${problem}`))
         continue
       }
@@ -503,7 +532,7 @@ function argValue(argv: readonly string[], name: string) {
   return argv[index + 1]
 }
 
-const SELECTORS: readonly PackageSelector[] = ["all", "helpers", "runtime", "apps"]
+const SELECTORS: readonly PackageSelector[] = ["all", "helpers", "runtime", "apps", "cli"]
 
 export function parseArgs(argv: readonly string[]) {
   const selectorArg = argValue(argv, "--track")

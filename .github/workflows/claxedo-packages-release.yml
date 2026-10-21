@@ -18,28 +18,56 @@ on:
     branches:
       - dev
     paths:
+      - "packages/account-contract/**"
       - "packages/agent-runtime-contract/**"
       - "packages/claxedo-channels/**"
       - "packages/claxedo-connections/**"
+      - "packages/claxedo-documents/**"
       - "packages/claxedo-helpers/**"
+      - "packages/claxedo-host-connector/**"
+      - "packages/claxedo-host-serving/**"
+      - "packages/claxedo-mcp/**"
+      - "packages/claxedo-plugin-api/**"
+      - "packages/claxedo-server-core/**"
+      - "packages/claxedo-status-hooks/**"
+      - "packages/cli/**"
       - "packages/egress-broker/**"
+      - "packages/harness/**"
+      - "packages/process-ownership/**"
       - "packages/sandbox-contract/**"
       - "packages/sandbox-manager/**"
+      - "packages/session-core/**"
+      - "packages/usage-contract/**"
       - "packages/workspace-relay-protocol/**"
       - "packages/workspace-relay/**"
+      - "packages/workspace-runtime/**"
       - "packages/claxedo-server/scripts/release/**"
       - ".github/workflows/claxedo-packages-release.yml"
   pull_request:
     paths:
+      - "packages/account-contract/**"
       - "packages/agent-runtime-contract/**"
       - "packages/claxedo-channels/**"
       - "packages/claxedo-connections/**"
+      - "packages/claxedo-documents/**"
       - "packages/claxedo-helpers/**"
+      - "packages/claxedo-host-connector/**"
+      - "packages/claxedo-host-serving/**"
+      - "packages/claxedo-mcp/**"
+      - "packages/claxedo-plugin-api/**"
+      - "packages/claxedo-server-core/**"
+      - "packages/claxedo-status-hooks/**"
+      - "packages/cli/**"
       - "packages/egress-broker/**"
+      - "packages/harness/**"
+      - "packages/process-ownership/**"
       - "packages/sandbox-contract/**"
       - "packages/sandbox-manager/**"
+      - "packages/session-core/**"
+      - "packages/usage-contract/**"
       - "packages/workspace-relay-protocol/**"
       - "packages/workspace-relay/**"
+      - "packages/workspace-runtime/**"
       - "packages/claxedo-server/scripts/release/**"
       - ".github/workflows/claxedo-packages-release.yml"
   workflow_dispatch:
@@ -52,8 +80,9 @@ on:
         options:
           - all # every public @claxedo/* package
           - helpers # helpers
-          - runtime # agent-runtime-contract, workspace-relay-protocol, sandbox-contract, sandbox-manager, workspace-relay
+          - runtime # agent-runtime-contract, workspace-relay-protocol, sandbox-contract, sandbox-manager, workspace-relay, workspace-runtime
           - apps # channels, connections
+          - cli # cli
       npm_tag:
         description: "npm dist-tag"
         required: false
@@ -85,6 +114,11 @@ jobs:
           fetch-depth: 0
 
       - uses: ./.github/actions/setup-bun
+
+      # workspace-runtime's and the cli's verify:publish run their bins under Node 24.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
 
       # sandbox-manager bundles the unpublished @claxedo/egress-broker, which the
       # publisher never builds, and esbuild resolves it through dist/.

@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { defaultCommandRunner } from "../check-published-versions"
+import { bundledSiblingDirs, defaultCommandRunner } from "../check-published-versions"
 import {
   claxedoPackages,
   crossPinViolations,
@@ -11,6 +11,7 @@ import {
   parseArgs,
   parsePackJson,
   protocolSpecifiers,
+  publishBuildScript,
   publishClaxedoPackages,
   repoVersions,
   selectPackages,
@@ -26,6 +27,7 @@ const repoRoot = path.resolve(import.meta.dirname, "../../../../..")
  */
 function fixtureRepo(version: string, extra: (name: string) => Record<string, unknown> = () => ({})) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-publish-test-"))
+  fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ name: "fixture", private: true, workspaces: { packages: ["packages/*"], catalog: {} } }))
   for (const item of claxedoPackages) {
     const dir = path.join(root, item.dir)
     fs.mkdirSync(dir, { recursive: true })
@@ -43,8 +45,8 @@ function fixtureRepo(version: string, extra: (name: string) => Record<string, un
 }
 
 describe("publish-claxedo-packages", () => {
-  test("covers the 8 public packages, on three version tracks", () => {
-    expect(claxedoPackages).toHaveLength(8)
+  test("covers the 10 public packages, on four version tracks", () => {
+    expect(claxedoPackages).toHaveLength(10)
     expect(selectPackages("all")).toEqual(claxedoPackages)
     expect(selectPackages("helpers").map((item) => item.name)).toEqual(["@claxedo/helpers"])
     expect(selectPackages("runtime").map((item) => item.name).sort()).toEqual([
@@ -53,15 +55,18 @@ describe("publish-claxedo-packages", () => {
       "@claxedo/sandbox-manager",
       "@claxedo/workspace-relay",
       "@claxedo/workspace-relay-protocol",
+      "@claxedo/workspace-runtime",
     ])
     expect(selectPackages("apps").map((item) => item.name).sort()).toEqual([
       "@claxedo/channels",
       "@claxedo/connections",
     ])
+    expect(selectPackages("cli").map((item) => item.name)).toEqual(["@claxedo/cli"])
   })
 
   test("requires --track to name a selector the publisher knows", () => {
     expect(parseArgs(["--track", "all", "--dry-run"])).toMatchObject({ selector: "all", dryRun: true })
+    expect(parseArgs(["--track", "cli"])).toMatchObject({ selector: "cli", dryRun: false })
     expect(() => parseArgs(["--dry-run"])).toThrow("(got none)")
     expect(() => parseArgs(["--track", "wakes"])).toThrow("(got wakes)")
   })
@@ -78,6 +83,16 @@ describe("publish-claxedo-packages", () => {
       }
       seen.add(item.name)
     }
+  })
+
+  test("the release workflow's dry run runs on a change to every public package and every sibling one bundles", () => {
+    const workflow = fs.readFileSync(path.join(repoRoot, ".github/workflows/claxedo-packages-release.yml"), "utf8")
+    const published = new Set(claxedoPackages.map((item) => item.name))
+    const dirs = new Set(claxedoPackages.flatMap((item) => [item.dir, ...bundledSiblingDirs(repoRoot, item.dir, published)]))
+    for (const dir of dirs) {
+      expect(workflow.split(`- "${dir}/**"`).length - 1, `${dir} in both the push and pull_request paths`).toBe(2)
+    }
+    for (const track of ["helpers", "runtime", "apps", "cli"]) expect(workflow).toMatch(new RegExp(`^ +- ${track} #`, "m"))
   })
 
   test("every public package depends on its siblings through workspace:*", () => {
@@ -112,23 +127,38 @@ describe("publish-claxedo-packages", () => {
       dependencies: { "@claxedo/helpers": "0.4.0", hono: "4.12.32" },
       devDependencies: { typescript: "catalog:" },
     })
-    expect(() => materializeWorkspacePins({
-      name: "@claxedo/connections",
-      dependencies: { "@claxedo/server": "workspace:*" },
-    }, versions)).toThrow(/not published/)
   })
 
-  test("drops an unpublished sibling from devDependencies, which npm never installs, and pins a public one", () => {
+  test("drops an unpublished sibling, which the npm build inlines, from every section and pins a public one", () => {
     const versions = new Map([["@claxedo/helpers", "0.4.0"]])
     expect(materializeWorkspacePins({
-      name: "@claxedo/sandbox-manager",
-      dependencies: { "@claxedo/helpers": "workspace:*" },
+      name: "@claxedo/workspace-runtime",
+      dependencies: { "@claxedo/helpers": "workspace:*", "@claxedo/harness": "workspace:*", hono: "4.12.34" },
       devDependencies: { "@claxedo/helpers": "workspace:*", "@claxedo/egress-broker": "workspace:*", esbuild: "0.25.12" },
     }, versions)).toEqual({
-      name: "@claxedo/sandbox-manager",
-      dependencies: { "@claxedo/helpers": "0.4.0" },
+      name: "@claxedo/workspace-runtime",
+      dependencies: { "@claxedo/helpers": "0.4.0", hono: "4.12.34" },
       devDependencies: { "@claxedo/helpers": "0.4.0", esbuild: "0.25.12" },
     })
+  })
+
+  test("builds the npm variant a package names, and its one build otherwise", () => {
+    expect(publishBuildScript({ scripts: { build: "tsx scripts/build.ts", "build:publish": "tsx scripts/build.ts --publish" } })).toBe("build:publish")
+    expect(publishBuildScript({ scripts: { build: "bun scripts/build.ts" } })).toBe("build")
+  })
+
+  test("the packed cli and workspace-runtime manifests name no unpublished sibling", () => {
+    const versions = repoVersions(repoRoot)
+    for (const name of ["@claxedo/workspace-runtime", "@claxedo/cli"]) {
+      const item = claxedoPackages.find((candidate) => candidate.name === name)!
+      const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, item.dir, "package.json"), "utf8"))
+      const packed = materializeWorkspacePins(pkg, versions)
+      for (const section of ["dependencies", "peerDependencies", "optionalDependencies", "devDependencies"] as const) {
+        for (const dep of Object.keys(packed[section] ?? {})) {
+          if (dep.startsWith("@claxedo/")) expect(versions.has(dep), `${name} ${section}.${dep}`).toBe(true)
+        }
+      }
+    }
   })
 
   test("separates breaking protocol specifiers from cosmetic devDependency ones", () => {
@@ -210,6 +240,81 @@ describe("publish-claxedo-packages", () => {
     expect(fs.readFileSync(connectionsManifest, "utf8")).toBe(originalConnections)
   })
 
+  test("builds a package's npm variant and refuses a tarball that imports a package its manifest does not declare", async () => {
+    const root = fixtureRepo("9.9.9", (name) =>
+      name === "@claxedo/connections"
+        ? { dependencies: { hono: "4.12.34" }, scripts: { build: "echo build", "build:publish": "echo publish" } }
+        : {})
+    const calls: string[][] = []
+    const failure = await publishClaxedoPackages({
+      root,
+      only: ["@claxedo/connections"],
+      dryRun: true,
+      run: (cmd, args, cwd) => {
+        calls.push([cmd, ...args])
+        if (cmd === "git" || cmd === "cat" || cmd === "tar") return defaultCommandRunner(cmd, args, cwd)
+        if (cmd === "npm" && args[0] === "run") return ""
+        if (cmd === "npm" && args[0] === "pack") {
+          const dest = args[args.indexOf("--pack-destination") + 1]
+          const stage = path.join(dest, "stage", "package")
+          fs.mkdirSync(path.join(stage, "dist"), { recursive: true })
+          fs.copyFileSync(path.join(cwd!, "package.json"), path.join(stage, "package.json"))
+          fs.writeFileSync(path.join(stage, "dist/index.mjs"), `import { Hono } from "hono"\nimport { inner } from "@claxedo/harness/compose"\nexport { Hono, inner }\n`)
+          defaultCommandRunner("tar", ["-czf", "fixture.tgz", "-C", path.join(dest, "stage"), "package"], dest)
+          return JSON.stringify([{ filename: "fixture.tgz", files: [{ path: "package.json" }, { path: "README.md" }, { path: "LICENSE" }, { path: "dist/index.mjs" }] }])
+        }
+        throw new Error("E404")
+      },
+      log: () => {},
+    }).then(() => undefined, (error: unknown) => (error instanceof Error ? error.message : String(error)))
+
+    expect(calls).toContainEqual(["npm", "run", "build:publish", "--workspace", "@claxedo/connections"])
+    expect(calls).not.toContainEqual(["npm", "run", "build", "--workspace", "@claxedo/connections"])
+    expect(failure).toContain(
+      "  - @claxedo/connections: tarball imports packages its manifest does not declare: @claxedo/harness (imported by dist/index.mjs)",
+    )
+  })
+
+  test("clears a published version whose tree changed when the tree, built for npm, packs to the published bytes", async () => {
+    const root = fixtureRepo("9.9.9", (name) =>
+      name === "@claxedo/helpers" ? { scripts: { build: "echo build", "build:publish": "echo publish" } } : {})
+    fs.writeFileSync(path.join(root, "packages/claxedo-helpers/README.md"), "changed after the version was set\n")
+    const publishWith = (integrity: string) => {
+      const calls: string[][] = []
+      const outcome = publishClaxedoPackages({
+        root,
+        only: ["@claxedo/helpers"],
+        dryRun: true,
+        run: (cmd, args, cwd) => {
+          calls.push([cmd, ...args])
+          if (cmd === "git" || cmd === "cat" || cmd === "tar") return defaultCommandRunner(cmd, args, cwd)
+          if (cmd === "npm" && args[0] === "view" && args[1] === "@claxedo/helpers@9.9.9") return args[2] === "dist.integrity" ? "sha512-published" : "9.9.9"
+          if (cmd === "npm" && args[0] === "run") return ""
+          if (cmd === "npm" && args[0] === "pack" && args.includes("--dry-run")) return JSON.stringify([{ filename: "x.tgz", integrity, files: [] }])
+          if (cmd === "npm" && args[0] === "pack") {
+            const dest = args[args.indexOf("--pack-destination") + 1]
+            fs.mkdirSync(path.join(dest, "stage", "package"), { recursive: true })
+            fs.copyFileSync(path.join(cwd!, "package.json"), path.join(dest, "stage", "package", "package.json"))
+            defaultCommandRunner("tar", ["-czf", "fixture.tgz", "-C", path.join(dest, "stage"), "package"], dest)
+            return JSON.stringify([{ filename: "fixture.tgz", files: [{ path: "package.json" }, { path: "README.md" }, { path: "LICENSE" }] }])
+          }
+          throw new Error("E404")
+        },
+        log: () => {},
+      })
+      return { calls, outcome }
+    }
+
+    const matching = publishWith("sha512-published")
+    expect(await matching.outcome).toEqual([{ name: "@claxedo/helpers", version: "9.9.9", action: "skipped-already-published" }])
+    const builds = matching.calls.filter((call) => call[1] === "run")
+    const packs = matching.calls.findIndex((call) => call[1] === "pack")
+    expect(builds).toEqual([["npm", "run", "build:publish", "--workspace", "@claxedo/helpers"]])
+    expect(matching.calls.findIndex((call) => call[1] === "run")).toBeLessThan(packs)
+
+    await expect(publishWith("sha512-other").outcome).rejects.toThrow(/@claxedo\/helpers@9\.9\.9 is already on npm but packages\/claxedo-helpers changed/)
+  })
+
   test("refuses to publish when a sibling pin is not workspace:*", async () => {
     const root = fixtureRepo("9.9.9", (name) =>
       name === "@claxedo/connections" ? { dependencies: { "@claxedo/helpers": "0.3.0" } } : {})
@@ -272,6 +377,10 @@ describe("publish-claxedo-packages", () => {
           fs.mkdirSync(stage, { recursive: true })
           const manifest = JSON.parse(fs.readFileSync(path.join(cwd!, "package.json"), "utf8"))
           fs.writeFileSync(path.join(stage, "package.json"), JSON.stringify({ ...manifest, version: "0.0.1" }))
+          if (manifest.name === "@claxedo/connections") {
+            fs.mkdirSync(path.join(stage, "dist"), { recursive: true })
+            fs.writeFileSync(path.join(stage, "dist/index.mjs"), `export { server } from "@claxedo/server"\n`)
+          }
           defaultCommandRunner("tar", ["-czf", "fixture.tgz", "-C", path.join(dest, "stage"), "package"], dest)
           return JSON.stringify([{ filename: "fixture.tgz", files: [{ path: "package.json" }, { path: "README.md" }] }])
         }
@@ -283,8 +392,7 @@ describe("publish-claxedo-packages", () => {
     expect(failure).toBeDefined()
     const lines = failure!.split("\n")
     expect(lines).toContain("  - @claxedo/connections: sibling dependency is not workspace:*: dependencies.@claxedo/helpers=0.3.0 (expected workspace:*)")
-    expect(lines).toContain("  - @claxedo/connections: dependencies.@claxedo/server=workspace:* references a package that is not published")
-    expect(lines).toContain("  - @claxedo/connections: dependencies.@claxedo/documents=workspace:* references a package that is not published")
+    expect(lines).toContain("  - @claxedo/connections: tarball imports packages its manifest does not declare: @claxedo/server (imported by dist/index.mjs)")
     expect(lines).toContain("  - @claxedo/connections: verify:publish failed:")
     expect(lines).toContain("      - README.md public surface table is missing @claxedo/connections/extra")
     expect(failure).not.toContain("npm error")

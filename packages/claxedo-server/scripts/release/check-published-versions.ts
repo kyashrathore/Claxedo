@@ -87,9 +87,10 @@ function unpublishedWorkspaceDependencies(deps: PackageJson["dependencies"], pub
 
 /**
  * Directories of the unpublished workspace siblings `dir`'s tarball carries
- * inside its dist: its `workspace:` devDependencies that are not published
- * (a published package cannot name them at runtime, so its build inlines
- * them), and, transitively, their own unpublished runtime dependencies.
+ * inside its dist: its `workspace:` dependencies and devDependencies that are
+ * not published (a published package cannot name them at runtime, so its npm
+ * build inlines them), and, transitively, their own unpublished runtime
+ * dependencies.
  */
 export function bundledSiblingDirs(root: string, dir: string, published: ReadonlySet<string>) {
   const dirs = workspaceDirs(root)
@@ -102,7 +103,11 @@ export function bundledSiblingDirs(root: string, dir: string, published: Readonl
       visit(unpublishedWorkspaceDependencies(readPackageJson(path.join(root, siblingDir, "package.json")).dependencies, published))
     }
   }
-  visit(unpublishedWorkspaceDependencies(readPackageJson(path.join(root, dir, "package.json")).devDependencies, published))
+  const pkg = readPackageJson(path.join(root, dir, "package.json"))
+  visit([
+    ...unpublishedWorkspaceDependencies(pkg.dependencies, published),
+    ...unpublishedWorkspaceDependencies(pkg.devDependencies, published),
+  ])
   return [...found].sort()
 }
 

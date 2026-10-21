@@ -32,14 +32,21 @@ function repoWithDrift() {
 const thing = [{ name: "@claxedo/thing", dir: "packages/thing" }]
 
 /**
- * `thing` (published) bundles the unpublished `inner`, which depends on the
- * unpublished `deeper`; `other` is published, so `thing` pins it rather than
- * bundling it. Every version is set in one commit.
+ * `thing` (published) bundles the unpublished `inner`, a build input, and the
+ * unpublished `runtime`, a runtime dependency of the repo build; `inner`
+ * depends on the unpublished `deeper`. `other` is published, so `thing` pins it
+ * rather than bundling it. Every version is set in one commit.
  */
 function repoWithBundledSiblings() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-version-bundled-"))
   const manifests: Record<string, Record<string, unknown>> = {
-    thing: { name: "@claxedo/thing", version: "1.2.3", devDependencies: { "@claxedo/inner": "workspace:*", "@claxedo/other": "workspace:*", esbuild: "0.25.12" } },
+    thing: {
+      name: "@claxedo/thing",
+      version: "1.2.3",
+      dependencies: { "@claxedo/runtime": "workspace:*" },
+      devDependencies: { "@claxedo/inner": "workspace:*", "@claxedo/other": "workspace:*", esbuild: "0.25.12" },
+    },
+    runtime: { name: "@claxedo/runtime", version: "0.1.0" },
     inner: { name: "@claxedo/inner", version: "0.1.0", dependencies: { "@claxedo/deeper": "workspace:*", "@claxedo/other": "workspace:*" } },
     deeper: { name: "@claxedo/deeper", version: "0.1.0" },
     other: { name: "@claxedo/other", version: "2.0.0" },
@@ -130,7 +137,7 @@ describe("check-published-versions", () => {
   test("an unpublished sibling the package bundles, and what that sibling bundles, are covered by the package's version", () => {
     const { root } = repoWithBundledSiblings()
     expect(bundledSiblingDirs(root, "packages/thing", new Set(["@claxedo/thing", "@claxedo/other"])))
-      .toEqual(["packages/deeper", "packages/inner"])
+      .toEqual(["packages/deeper", "packages/inner", "packages/runtime"])
   })
 
   test("a change only in a bundled sibling flags the missing bump; a change in a published or unrelated sibling does not", () => {
@@ -151,7 +158,7 @@ describe("check-published-versions", () => {
     git(root, "add", ".")
     git(root, "commit", "-q", "-m", "change only the transitively bundled sibling")
     expect(publishedVersionDrift(root, thingAndOther, npmSaysPublished)).toContain(
-      `@claxedo/thing@1.2.3 is already on npm but packages/thing or packages/deeper or packages/inner changed after ${setCommit.slice(0, 10)} set that version`,
+      `@claxedo/thing@1.2.3 is already on npm but packages/thing or packages/deeper or packages/inner or packages/runtime changed after ${setCommit.slice(0, 10)} set that version`,
     )
   })
 })
