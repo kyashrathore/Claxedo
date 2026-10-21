@@ -7,7 +7,7 @@ import { brotliDecompressSync } from "node:zlib"
 import { describe, expect, test } from "vitest"
 
 import { browserArtifactBuildId, prepareBrowserArtifactsForWorkers } from "./browser-app"
-import { d1DatabaseIdByName, d1RegionReport, d1RunningRegion, nativeClientVerificationSql, verifyNativeClientProvisioning } from "./d1-databases"
+import { d1DatabaseIdByName, d1Placement, d1PlacementReport, requireReadReplication, nativeClientVerificationSql, verifyNativeClientProvisioning } from "./d1-databases"
 import {
   appPlan,
   deployPlan,
@@ -84,7 +84,16 @@ describe("deploy-user-cloudflare", () => {
     const plan = deployPlan(deployment, workerVariables(deployment, "sha256:config"), {
       BETTER_AUTH_SECRET: "super-secret-value-that-must-not-print",
     })
-    expect(plan).toContain("Worker              claxedo (user-deployed-better-auth-d1; routes app.example.com/api/* app.example.com/internal/* app.example.com/.well-known/* app.example.com/bindings/* app.example.com/health* app.example.com/global/health* app.example.com/path*)")
+    const routes = "app.example.com/api/* app.example.com/internal/* app.example.com/.well-known/* app.example.com/bindings/* app.example.com/health* app.example.com/global/health* app.example.com/path*"
+    expect(plan).toContain(`Worker              claxedo (user-deployed-better-auth-d1; placement smart; D1 edge reads off; routes ${routes})`)
+    expect(plan).not.toContain("Edge Worker")
+    expect(plan).not.toContain("CLAXEDO_D1_EDGE_READS")
+    const edge = userCloudflareDeployment({ ...env, CLAXEDO_D1_EDGE_READS: "on" }, { agentPlugins: false })
+    const edgePlan = deployPlan(edge, workerVariables(edge, "sha256:config"), {})
+    expect(edgePlan).toContain("Writer Worker       claxedo (user-deployed-better-auth-d1; placement smart; every request that may write)")
+    expect(edgePlan).toContain(`Edge Worker         claxedo-edge (the same bundle where requests arrive; D1 edge reads on; routes ${routes})`)
+    expect(edgePlan).toContain("  CLAXEDO_D1_EDGE_READS = on")
+    expect(edgePlan).toContain("refuse unless both have read replication")
     expect(plan).toContain("Relay Worker        claxedo-relay (already deployed; bound by the app Worker as RELAY)")
     expect(plan).toContain("App Worker          claxedo-app (the app and /relay; binds the relay as RELAY)")
     expect(plan).toContain("Public origin       https://app.example.com  (custom domain app.example.com: the app and /relay, with the control plane's routes on it)")
@@ -191,21 +200,52 @@ describe("D1 provisioning", () => {
     expect(() => d1DatabaseIdByName(JSON.stringify({}), "claxedo-auth")).toThrow(/array of databases/)
   })
 
-  test("reads where a database runs and reports a database the deployment would have placed elsewhere", () => {
-    expect(d1RunningRegion(JSON.stringify({ uuid: "1", running_in_region: "ENAM" }), "claxedo-control-plane")).toBe("ENAM")
-    expect(() => d1RunningRegion(JSON.stringify({ uuid: "1" }), "claxedo-control-plane")).toThrow(/running_in_region/)
-    expect(d1RegionReport("claxedo-control-plane", "ENAM", undefined)).toBe("claxedo-control-plane runs in ENAM")
-    expect(d1RegionReport("claxedo-control-plane", "APAC", "apac")).toBe("claxedo-control-plane runs in APAC")
-    expect(d1RegionReport("claxedo-control-plane", "ENAM", "apac")).toMatch(/runs in ENAM; CLAXEDO_D1_LOCATION asks for APAC.*recreate it/)
+  test("reads where a database runs and whether it has read replicas, and reports a database placed elsewhere or without replicas", () => {
+    const info = { uuid: "1", running_in_region: "ENAM", read_replication: { mode: "auto" } }
+    expect(d1Placement(JSON.stringify(info), "claxedo-control-plane")).toEqual({ region: "ENAM", replication: "auto" })
+    expect(() => d1Placement(JSON.stringify({ uuid: "1", read_replication: { mode: "auto" } }), "claxedo-control-plane")).toThrow(/running_in_region/)
+    expect(() => d1Placement(JSON.stringify({ uuid: "1", running_in_region: "ENAM" }), "claxedo-control-plane")).toThrow(/read_replication/)
+    const replicated = { region: "ENAM", replication: "auto" }
+    expect(d1PlacementReport("claxedo-control-plane", replicated, undefined)).toBe("claxedo-control-plane runs in ENAM, read replication auto")
+    expect(d1PlacementReport("claxedo-control-plane", { region: "APAC", replication: "auto" }, "apac")).toBe("claxedo-control-plane runs in APAC, read replication auto")
+    expect(d1PlacementReport("claxedo-control-plane", replicated, "apac")).toMatch(/runs in ENAM, read replication auto; CLAXEDO_D1_LOCATION asks for APAC.*recreate it to move it$/)
+    expect(d1PlacementReport("claxedo-control-plane", { region: "ENAM", replication: "disabled" }, undefined)).toBe("claxedo-control-plane runs in ENAM, read replication disabled")
   })
 
-  test("takes a D1 location and a Worker placement region only in the forms Wrangler accepts", () => {
+  test("refuses a control plane whose databases have no read replicas, naming the call that turns them on for each", () => {
+    expect(() => requireReadReplication([
+      { name: "claxedo-auth", id: "11111111-1111-4111-8111-111111111111", replication: "auto" },
+      { name: "claxedo-control-plane", id: "22222222-2222-4222-8222-222222222222", replication: "auto" },
+    ])).not.toThrow()
+    let refusal = ""
+    try {
+      requireReadReplication([
+        { name: "claxedo-auth", id: "11111111-1111-4111-8111-111111111111", replication: "disabled" },
+        { name: "claxedo-control-plane", id: "22222222-2222-4222-8222-222222222222", replication: "auto" },
+      ])
+    } catch (error) {
+      refusal = error instanceof Error ? error.message : String(error)
+    }
+    expect(refusal).toMatch(/^read replication is off on claxedo-auth; the edge Worker needs it, so enable it and deploy again: curl /)
+    expect(refusal).toContain('d1/database/11111111-1111-4111-8111-111111111111" ')
+    expect(refusal).toContain(`--data '{"read_replication":{"mode":"auto"}}'`)
+    expect(refusal).not.toContain("22222222-2222-4222-8222-222222222222")
+  })
+
+  test("takes a D1 location and the writer's placement region only in the forms Wrangler accepts, and gives the edge Worker a name of its own", () => {
     expect(userCloudflareDeployment(env, { agentPlugins: false })).not.toHaveProperty("d1Location")
     const placed = userCloudflareDeployment({ ...env, CLAXEDO_D1_LOCATION: "APAC", CLAXEDO_WORKER_PLACEMENT_REGION: "aws:ap-southeast-1" }, { agentPlugins: false })
     expect(placed.d1Location).toBe("apac")
     expect(placed.workerPlacementRegion).toBe("aws:ap-southeast-1")
-    expect(() => userCloudflareDeployment({ ...env, CLAXEDO_D1_LOCATION: "asia" }, { agentPlugins: false })).toThrow(/CLAXEDO_D1_LOCATION must be one of/)
     expect(() => userCloudflareDeployment({ ...env, CLAXEDO_WORKER_PLACEMENT_REGION: "us-east-1" }, { agentPlugins: false })).toThrow(/CLAXEDO_WORKER_PLACEMENT_REGION/)
+    expect(placed.edgeWorkerName).toBe(`${placed.workerName}-edge`)
+    expect(userCloudflareDeployment({ ...env, CLAXEDO_EDGE_WORKER_NAME: "claxedo-reads" }, { agentPlugins: false }).edgeWorkerName).toBe("claxedo-reads")
+    expect(userCloudflareDeployment(env, { agentPlugins: false }).edgeReads).toBe(false)
+    expect(userCloudflareDeployment({ ...env, CLAXEDO_D1_EDGE_READS: "off" }, { agentPlugins: false }).edgeReads).toBe(false)
+    expect(userCloudflareDeployment({ ...env, CLAXEDO_D1_EDGE_READS: "ON" }, { agentPlugins: false }).edgeReads).toBe(true)
+    expect(() => userCloudflareDeployment({ ...env, CLAXEDO_D1_EDGE_READS: "yes" }, { agentPlugins: false })).toThrow(/CLAXEDO_D1_EDGE_READS must be on or off/)
+    expect(() => userCloudflareDeployment({ ...env, CLAXEDO_EDGE_WORKER_NAME: placed.workerName }, { agentPlugins: false })).toThrow(/edge Worker needs a name of its own/)
+    expect(() => userCloudflareDeployment({ ...env, CLAXEDO_D1_LOCATION: "asia" }, { agentPlugins: false })).toThrow(/CLAXEDO_D1_LOCATION must be one of/)
   })
 
   test("verifies the three native OAuth clients and their resource links", () => {

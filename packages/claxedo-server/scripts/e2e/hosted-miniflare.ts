@@ -10,7 +10,10 @@ import { userDeployedOwnerBootstrapClaimHash, userDeployedOwnerIdentityHash } fr
 import { recordedEmailOutbox } from "../../src/test-support/recorded-email"
 
 type Input = {
+  /** The writer's Wrangler config: the Durable Objects, the databases' migrations and the bundle's entry. */
   config: string
+  /** With edge reads on, the edge's: the same bundle, which answers the stack's port and hands writes to the writer. */
+  edgeConfig: string | undefined
   root: string
   port: number
   certificate: string
@@ -89,20 +92,51 @@ async function main(input: Input) {
     methods: input.emailPassword ? ["github", "email-password"] : ["github"], origin, githubClientId: env.GITHUB_CLIENT_ID,
   })
   const outbox = recordedEmailOutbox({ stdout: process.stdout, stderr: process.stderr })
-  const declared: Record<string, RateLimitBinding> = (converted.workerOptions as { ratelimits?: Record<string, RateLimitBinding> }).ratelimits ?? {}
   const limit = input.requestLimit
-  const ratelimits = limit === undefined ? declared : Object.fromEntries(Object.entries(declared).map(([name, binding]) => [name, { ...binding, simple: { ...binding.simple, limit } }]))
+  const contents = readFileSync(bundle, "utf8")
+  const outboundService = async (request: Request) => {
+    if (new URL(request.url).hostname === HOSTED_E2E_ANALYTICS_HOST) {
+      const batch = ((await request.json()) as { batch: unknown[] }).batch
+      appendFileSync(path.join(input.root, HOSTED_E2E_TELEMETRY_FILE), batch.map((event) => `${JSON.stringify(event)}\n`).join(""))
+      return Response.json({ status: 1 })
+    }
+    const headers = new Headers(request.headers)
+    headers.delete("host")
+    headers.delete("content-length")
+    headers.set("x-claxedo-e2e-target-url", request.url)
+    return fetch(`${input.sandboxOrigin}/__outbound`, {
+      method: request.method,
+      headers,
+      body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer(),
+    })
+  }
+  const worker = (config: string, options: ReturnType<typeof unstable_getMiniflareWorkerOptions>["workerOptions"]) => {
+    const name = /^name = "([^"]+)"$/m.exec(readFileSync(config, "utf8"))?.[1]
+    if (!name) throw new Error(`${config} names no Worker`)
+    const declared: Record<string, RateLimitBinding> = (options as { ratelimits?: Record<string, RateLimitBinding> }).ratelimits ?? {}
+    const ratelimits = limit === undefined ? declared : Object.fromEntries(Object.entries(declared).map(([name, binding]) => [name, { ...binding, simple: { ...binding.simple, limit } }]))
+    return {
+      ...options,
+      name,
+      ratelimits,
+      versionMetadata: undefined,
+      bindings: {
+        ...options.bindings,
+        ...env,
+        ...input.workerEnv,
+        CF_VERSION_METADATA: { id: "11111111-1111-4111-8111-111111111111", tag: "hosted-e2e-release" },
+      },
+      modules: [{ type: "ESModule" as const, path: "worker.js", contents }],
+      outboundService,
+    }
+  }
+  // The first Worker answers the stack's port: the edge when there is one,
+  // which reaches the writer by the names the deploy's configs give them.
   const mf = new Miniflare({
-    ...converted.workerOptions,
-    ratelimits,
-    versionMetadata: undefined,
-    bindings: {
-      ...converted.workerOptions.bindings,
-      ...env,
-      ...input.workerEnv,
-      CF_VERSION_METADATA: { id: "11111111-1111-4111-8111-111111111111", tag: "hosted-e2e-release" },
-    },
-    modules: [{ type: "ESModule", path: "worker.js", contents: readFileSync(bundle, "utf8") }],
+    workers: [
+      ...(input.edgeConfig ? [worker(input.edgeConfig, unstable_getMiniflareWorkerOptions(input.edgeConfig).workerOptions)] : []),
+      worker(input.config, converted.workerOptions),
+    ],
     d1Persist: path.join(persistence, "v3", "d1"),
     durableObjectsPersist: path.join(input.root, "hosted-do"),
     r2Persist: path.join(input.root, "hosted-r2"),
@@ -112,22 +146,6 @@ async function main(input: Input) {
     handleRuntimeStdio: outbox.handleRuntimeStdio,
     httpsKey: readFileSync(input.key, "utf8"),
     httpsCert: readFileSync(input.certificate, "utf8"),
-    outboundService: async (request: Request) => {
-      if (new URL(request.url).hostname === HOSTED_E2E_ANALYTICS_HOST) {
-        const batch = ((await request.json()) as { batch: unknown[] }).batch
-        appendFileSync(path.join(input.root, HOSTED_E2E_TELEMETRY_FILE), batch.map((event) => `${JSON.stringify(event)}\n`).join(""))
-        return Response.json({ status: 1 })
-      }
-      const headers = new Headers(request.headers)
-      headers.delete("host")
-      headers.delete("content-length")
-      headers.set("x-claxedo-e2e-target-url", request.url)
-      return fetch(`${input.sandboxOrigin}/__outbound`, {
-        method: request.method,
-        headers,
-        body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer(),
-      })
-    },
   })
   try {
     const auth = await mf.getD1Database("AUTH_DB")
@@ -204,6 +222,7 @@ if (import.meta.main) {
   if (typeof port !== "number" || !Number.isInteger(port)) throw new Error("hosted Miniflare port is invalid")
   await main({
     config: required("config"),
+    edgeConfig: typeof field("edgeConfig") === "string" ? required("edgeConfig") : undefined,
     root: required("root"),
     port,
     certificate: required("certificate"),

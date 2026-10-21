@@ -58,3 +58,28 @@ test("the composed plane's ready sandbox is handed a pass for its lease epoch ov
   expect(decodeJwt(token)).toMatchObject({ workspace_id: "ws_cloud", user_id: "usr_owner", lease_epoch: String(lease.epoch) })
   await expect(composed.extra.sessionRowsPasses.admit(token, "host_cloud")).resolves.toMatchObject({ workspaceIds: ["ws_cloud"], lease: { epoch: lease.epoch } })
 })
+
+test("each workspace's provisioner is created beside the control-plane database's primary, which it writes on every step", async () => {
+  const backing = await miniflareControlPlaneDatabase()
+  cleanup.push(() => backing.dispose())
+  const asked: Array<{ name: unknown; options: unknown }> = []
+  const answer = { status: "provisioning" as const, retryAfterMs: 1_000, epoch: 1, homeRegion: "us-east" }
+  const provisioner = {
+    idFromName: (name: string) => name,
+    get: (name: unknown, options?: { locationHint?: string }) => {
+      asked.push({ name, options })
+      return { start: async () => answer, refresh: async () => answer, redeliver: async () => undefined, inFlight: async () => undefined }
+    },
+  }
+  const room = { idFromName: (name: string) => name, get: () => ({ fetch: async () => Response.json({ delivered: 0, held: 0 }) }) } as never
+  const compose = (primaryLocation?: string) => composeWithCloudSandbox(
+    { database: backing.database, signingEnv: {}, provisioner, ...(primaryLocation ? { primaryLocation } : {}), keyDrivers: { drivers: [], create: () => undefined }, room },
+    (extra) => ({ plane: { services: {} as ControlPlaneServices }, extra }),
+  )
+  await compose("enam").extra.sandbox.start("ws_cloud", {})
+  await compose().extra.sandbox.start("ws_other", {})
+  expect(asked).toEqual([
+    { name: "workspace:ws_cloud", options: { locationHint: "enam" } },
+    { name: "workspace:ws_other", options: undefined },
+  ])
+})

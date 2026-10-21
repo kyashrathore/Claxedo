@@ -274,8 +274,14 @@ export const serverWorkerd: Policy = {
   // deferred turn grants (`authority/adapters/d1/session-turn-leases.ts`),
   // split from `session-authority.ts` when a refused renewal began ending the
   // lease it named. It adds no package edge.
-  // 179/23, no headroom.
-  ceilings: { modules: 179, packages: 23 },
+  // +1 module (owner: the D1 access layer): each request's statements run in
+  // one D1 session per database, at the primary or the nearest read replica
+  // as the request's class says, with the bookmarks handed on in cookies, a
+  // header and live-sync notices (`platform/db/d1-sessions.ts`). It adds no
+  // package edge: `@claxedo/agent-runtime-contract`, which holds the bookmark
+  // wire format, was already in the Worker.
+  // 180/23, no headroom.
+  ceilings: { modules: 180, packages: 23 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

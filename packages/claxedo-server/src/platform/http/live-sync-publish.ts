@@ -1,5 +1,6 @@
 import type { ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import { numberField, readJsonRecord } from "@claxedo/server-core/platform/json/index"
+import { currentD1Bookmark } from "../db/d1-sessions"
 
 /**
  * The PUBLISHER half of live-sync: naming a room and nudging it.
@@ -57,20 +58,31 @@ function assertLiveSyncRoomName(roomName: string): void {
   }
 }
 
-/** POST a nudge, one event or a batch, to the room that owns `roomName`, fanning it to held clients. */
+function isBatch(event: ControlPlaneEvent | readonly ControlPlaneEvent[]): event is readonly ControlPlaneEvent[] {
+  return Array.isArray(event)
+}
+
+/**
+ * POST a nudge, one event or a batch, to the room that owns `roomName`,
+ * fanning it to held clients. Each event carries the control-plane database's
+ * bookmark as the publisher's D1 session has reached it, past the write it
+ * announces, so a reader's re-read starts from a replica that holds it.
+ */
 export async function nudgeLiveSyncRoom(
   namespace: LiveSyncRoomNamespace,
   roomName: string,
   event: ControlPlaneEvent | readonly ControlPlaneEvent[],
 ): Promise<{ delivered: number; held: number }> {
   assertLiveSyncRoomName(roomName)
+  const d1Bookmark = currentD1Bookmark("control")
+  const announced = (one: ControlPlaneEvent) => (d1Bookmark ? { ...one, d1Bookmark } : one)
   const response = await namespace
     .get(namespace.idFromName(roomName))
     .fetch(
       new Request("https://live-sync-room.internal/nudge", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(event),
+        body: JSON.stringify(isBatch(event) ? event.map(announced) : announced(event)),
       }),
     )
   if (!response.ok) {

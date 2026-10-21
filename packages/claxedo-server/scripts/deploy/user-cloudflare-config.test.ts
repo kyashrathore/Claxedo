@@ -98,6 +98,7 @@ describe("user-deployed Cloudflare configuration", () => {
     })
     expect(target).toEqual({
       workerName: "claxedo-user-deployed-locked-staging",
+      edgeWorkerName: "claxedo-user-deployed-locked-staging-edge",
       appWorkerName: "claxedo-user-deployed-app-staging",
       sessionHostWorkerName: "claxedo-user-deployed-session-host-staging",
       relayWorkerName: "claxedo-user-deployed-locked-staging-relay",

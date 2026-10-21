@@ -197,10 +197,16 @@ jobs:
       CLAXEDO_RELAY_WORKER_NAME: ${{ vars.CLAXEDO_STAGING_RELAY_WORKER_NAME }}
       CLAXEDO_AUTH_D1_DATABASE_NAME: ${{ vars.CLAXEDO_STAGING_AUTH_D1_DATABASE_NAME }}
       CLAXEDO_CONTROL_PLANE_D1_DATABASE_NAME: ${{ vars.CLAXEDO_STAGING_CONTROL_PLANE_D1_DATABASE_NAME }}
-      # Where a recreated database lands, and the region the Worker is pinned
-      # beside it; unset, Cloudflare places the database and the Worker.
+      # Where a recreated database lands, and the region the control-plane
+      # Worker (the writer) is pinned to beside it; unset, Cloudflare places
+      # the database and the Worker.
       CLAXEDO_D1_LOCATION: ${{ vars.CLAXEDO_STAGING_D1_LOCATION }}
       CLAXEDO_WORKER_PLACEMENT_REGION: ${{ vars.CLAXEDO_STAGING_WORKER_PLACEMENT_REGION }}
+      # Staging alone reads at the edge: an edge Worker,
+      # `<CLAXEDO_WORKER_NAME>-edge`, answers signed reads from D1 read
+      # replicas and hands writes to the writer. D1 read replication is in
+      # beta, so every other deployment keeps the default, off.
+      CLAXEDO_D1_EDGE_READS: "on"
       # Optional: unset, the control plane refuses every idle-stop post, and only
       # a Cloudflare sandbox Worker configured with the same secret can send one.
       CLOUDFLARE_SANDBOX_IDLE_STOP_TOKEN: ${{ secrets.CLAXEDO_SANDBOX_IDLE_STOP_TOKEN }}

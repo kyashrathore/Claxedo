@@ -13,6 +13,8 @@ import {
   type LiveSyncSubscriber,
 } from "./live-sync-room.cf"
 import type { ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
+import type { D1Database } from "@cloudflare/workers-types"
+import { inD1Scope, requestSessionD1 } from "../../platform/db/d1-sessions"
 import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 
 // A faithful in-memory emulation of the Cloudflare DO namespace contract:
@@ -449,6 +451,28 @@ describe("LiveSyncRoom — fan-out core", () => {
 
     await expect(nudgeLiveSyncRoom(namespace, room, { ...provisionStep("alice", "ready"), step: "cloning" } as unknown as ControlPlaneEvent)).rejects.toThrow()
     await expect(nudgeLiveSyncRoom(namespace, room, { ...provisionStep("", "ready") })).rejects.toThrow()
+  })
+
+  test("a notice carries the bookmark its publisher's D1 session reached, live and on replay; a sender's own value that is no bookmark is dropped", async () => {
+    const bookmark = "00000a1b-00000002-00000003-0123456789abcdef0123456789abcdef"
+    const database = requestSessionD1({
+      withSession: () => ({ prepare: () => ({ run: async () => ({ success: true }) }), getBookmark: () => bookmark }),
+    } as unknown as D1Database, "control")
+    const namespace = createFakeNamespace()
+    const room = liveSyncRoomNameForPrincipal({ orgId: "org_internal_acme" })
+    const aliceReader = (await connectLiveSyncRoom(namespace, subscriber("alice", "org_internal_acme"), 60_000)).body!.getReader()
+    expect(await readFrame(aliceReader)).toEqual({ type: "heartbeat" })
+
+    await inD1Scope("primary", async () => {
+      await database.prepare("update sandbox_leases set state = 'ready'").run()
+      await nudgeLiveSyncRoom(namespace, room, provisionStep("alice", "ready"))
+    })
+    expect(await readFrame(aliceReader)).toEqual({ ...provisionStep("alice", "ready"), d1Bookmark: bookmark })
+    await nudgeLiveSyncRoom(namespace, room, { ...provisionStep("alice", "starting"), d1Bookmark: "latest" } as unknown as ControlPlaneEvent)
+    expect(await readFrame(aliceReader)).toEqual(provisionStep("alice", "starting"))
+
+    const replayed = await openRoom(namespace.instances.get(room)!, { subject: "alice", org: "org_internal_acme", lastEventId: "0" })
+    expect(replayed.frames.map((frame) => frame.data)).toContainEqual({ ...provisionStep("alice", "ready"), d1Bookmark: bookmark })
   })
 
   test("cancelling the client stream drops the held connection", async () => {

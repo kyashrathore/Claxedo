@@ -23,12 +23,15 @@ export function composeWithCloudSandbox<Composed extends { plane: { services: Co
     database: D1Database
     signingEnv: Record<string, string | undefined>
     provisioner: SandboxProvisionerNamespace
+    /** Where the control-plane database's primary runs, as a location hint; absent, the platform places each provisioner. */
+    primaryLocation?: string
     keyDrivers: Omit<HostedSandboxKeys, "chosenDriver">
     room: LiveSyncRoomNamespace
   },
   compose: (extra: { sandbox: HostedSandboxBinding; sessionRowsPasses: SessionRowsPasses }) => Composed,
 ): Composed {
   const leaseStore = createD1SandboxLeaseStore({ database: input.database })
+  const provisioner = (workspaceId: string) => sandboxProvisioner(input.provisioner, workspaceId, input.primaryLocation)
   let composed: Composed | undefined
   const services = () => {
     if (!composed) throw new Error("the control plane is not composed yet")
@@ -44,10 +47,10 @@ export function composeWithCloudSandbox<Composed extends { plane: { services: Co
   composed = compose({
     sandbox: {
       leaseStore,
-      start: (workspaceId, request) => sandboxProvisioner(input.provisioner, workspaceId).start(workspaceId, request),
-      refresh: (workspaceId) => sandboxProvisioner(input.provisioner, workspaceId).refresh(workspaceId),
-      redeliver: (workspaceId) => sandboxProvisioner(input.provisioner, workspaceId).redeliver(workspaceId),
-      inFlight: (workspaceId) => sandboxProvisioner(input.provisioner, workspaceId).inFlight(),
+      start: (workspaceId, request) => provisioner(workspaceId).start(workspaceId, request),
+      refresh: (workspaceId) => provisioner(workspaceId).refresh(workspaceId),
+      redeliver: (workspaceId) => provisioner(workspaceId).redeliver(workspaceId),
+      inFlight: (workspaceId) => provisioner(workspaceId).inFlight(),
       deliverSessionRowsPass: sessionRowsPasses.deliver,
       runtimeLost: d1RuntimeLost({ database: input.database, room: input.room }),
       announce: liveSyncMachineNotice({ room: input.room, owner: async (workspaceId) => await services().authority?.resolveWorkspaceOwner?.(workspaceId) }),

@@ -18,8 +18,10 @@ export type WorkerWranglerConfigInput = Readonly<{
   requestLimiterNamespaceId: string
   documentsBucket: string
   agentPluginsBucket?: string
-  /** A cloud region in Wrangler's `placement.region` form; absent, placement is smart. */
+  /** The control-plane Worker's cloud region in Wrangler's `placement.region` form; absent, its placement is smart. */
   placementRegion?: string
+  /** The edge Worker that holds the control plane's routes when the deployment reads at the edge; absent, this Worker holds them. */
+  edgeWorkerName?: string
   /** The public origin's hostname, the app Worker's custom domain, on which the control plane's paths become its routes. */
   publicOriginHost: string
   variables: Readonly<Record<string, string>>
@@ -41,8 +43,23 @@ function positiveNamespaceId(value: string) {
   return value
 }
 
-/** The one Wrangler config every user-deployed Worker publish, dry run and local harness renders. */
-export function renderWorkerWranglerConfig(input: WorkerWranglerConfigInput) {
+type DurableObjectBinding = { name: string; className: string; tag: string }
+
+/** The Durable Object classes the artifact defines, each with the append-only migration tag that introduced it. */
+function durableObjects(artifact: CertifiedHostedWorkerArtifact): DurableObjectBinding[] {
+  // Durable Object migrations are append-only per Worker name: once a Worker
+  // has applied v2 it cannot deploy the base artifact, which lacks the class,
+  // without a `deleted_classes` migration written for that purpose; v3 holds
+  // a full-hosted Worker to the full-hosted artifact the same way.
+  return [
+    { name: "LIVE_SYNC_ROOM", className: "LiveSyncRoom", tag: "v1" },
+    ...(artifact.agentPlugins ? [{ name: "PLUGIN_SUPERVISOR", className: "PluginSupervisor", tag: "v2" }] : []),
+    ...(artifact.sandboxPosture === "full-hosted" ? [{ name: "SANDBOX_PROVISIONER", className: "SandboxProvisioner", tag: "v3" }] : []),
+  ]
+}
+
+/** Everything both control-plane Workers bind the same way: version metadata, variables, databases, buckets, email and the shared limiter. */
+function sharedWorkerConfig(input: WorkerWranglerConfigInput) {
   if (input.artifact.agentPlugins !== Boolean(input.agentPluginsBucket)) {
     throw new Error("the Agent Plugins artifacts, and only they, bind the plugin artifact bucket")
   }
@@ -60,71 +77,11 @@ bucket_name = ${quote(input.agentPluginsBucket)}
 binding = "PLUGIN_LOADER"
 `
     : ""
-  // Durable Object migrations are append-only per Worker name: once a Worker
-  // has applied v2 it cannot deploy the base artifact, which lacks the class,
-  // without a `deleted_classes` migration written for that purpose; v3 holds
-  // a full-hosted Worker to the full-hosted artifact the same way.
-  const pluginSupervisor = input.artifact.agentPlugins
-    ? {
-        binding: `
-[[durable_objects.bindings]]
-name = "PLUGIN_SUPERVISOR"
-class_name = "PluginSupervisor"
-`,
-        migration: `
-[[migrations]]
-tag = "v2"
-new_sqlite_classes = ["PluginSupervisor"]
-`,
-      }
-    : { binding: "", migration: "" }
-  const sandboxProvisioner = input.artifact.sandboxPosture === "full-hosted"
-    ? {
-        binding: `
-[[durable_objects.bindings]]
-name = "SANDBOX_PROVISIONER"
-class_name = "SandboxProvisioner"
-`,
-        migration: `
-[[migrations]]
-tag = "v3"
-new_sqlite_classes = ["SandboxProvisioner"]
-`,
-      }
-    : { binding: "", migration: "" }
-  // Simple routes: Wrangler resolves each pattern's zone from its hostname
-  // with the same zone access `wrangler deploy --domain` already uses for the
-  // app Worker, so a deployment names no zone of its own. The bundle contract
-  // below ends in the `[alias]` table, so these top-level keys come first.
-  const routes = controlPlaneRoutePatterns(input.publicOriginHost).map(quote).join(", ")
-  return `name = ${quote(input.workerName)}
-main = ${quote(fromConfig(input.configDirectory, input.artifact.entrypointFromPackageRoot))}
-# The control plane answers its paths on the app's own host through Worker
-# routes, which "take precedence if configured on the same hostname" as the
-# app Worker's custom domain (developers.cloudflare.com/workers/configuration/
-# routing/routes/), so a request on them runs one Worker, not the app Worker
-# and a service binding. Measured against a custom domain of this Worker in a
-# simultaneous A/B on staging, a route is the same path: the same cold rate
-# (24 against 22 of 80) and the same answer times
-# (docs/perf/worker-cold-starts-2026-10-19).
-routes = [${routes}]
-${HOSTED_WORKER_BUNDLE_CONTRACT}
-
-[version_metadata]
+  return `[version_metadata]
 binding = "CF_VERSION_METADATA"
 
 [observability]
 enabled = true
-
-# Run beside the data. Every signed request performs several sequential D1
-# reads (session, evidence, identity, then the route's own), and each one is
-# a cross-region round trip when the isolate runs away from the database:
-# staging answered with cf-placement remote-LHR against databases in ENAM, and
-# a signed request from India measured 1.5–3 s with under 40 ms of CPU. Smart
-# placement weighs fetch subrequests from enough traffic, not D1, so a
-# deployment may pin the Worker to the databases' region instead.
-[placement]
-${input.placementRegion ? `region = ${quote(input.placementRegion)}` : 'mode = "smart"'}
 
 [vars]
 ${variables}
@@ -154,15 +111,83 @@ namespace_id = ${quote(positiveNamespaceId(input.requestLimiterNamespaceId))}
 [ratelimits.simple]
 limit = 600
 period = 60
+${agentPluginsBucket}`
+}
 
+/** The control plane's paths on the public origin's host, as one Worker's routes. */
+function controlPlaneRoutes(publicOriginHost: string) {
+  // Simple routes: Wrangler resolves each pattern's zone from its hostname
+  // with the same zone access `wrangler deploy --domain` already uses for the
+  // app Worker, so a deployment names no zone of its own. The bundle contract
+  // follows and ends in the `[alias]` table, so this top-level key comes first.
+  return `# The control plane answers its paths on the app's own host through Worker
+# routes, which "take precedence if configured on the same hostname" as the
+# app Worker's custom domain (developers.cloudflare.com/workers/configuration/
+# routing/routes/), so a request on them runs one Worker, not the app Worker
+# and a service binding.
+routes = [${controlPlaneRoutePatterns(publicOriginHost).map(quote).join(", ")}]
+`
+}
+
+/**
+ * The control-plane Worker under `workerName`, pinned beside the databases'
+ * primary and the definer of the Durable Object classes, so it keeps the name
+ * their namespaces and the session host's binding were created under. It
+ * holds the control plane's routes, unless the deployment reads at the edge
+ * (`edgeWorkerName`): then it is the writer, with no route, and the edge
+ * Worker and the session host reach it over service bindings.
+ */
+export function renderWorkerWranglerConfig(input: WorkerWranglerConfigInput) {
+  const objects = durableObjects(input.artifact)
+  return `name = ${quote(input.workerName)}
+main = ${quote(fromConfig(input.configDirectory, input.artifact.entrypointFromPackageRoot))}
+${input.edgeWorkerName ? "" : controlPlaneRoutes(input.publicOriginHost)}${HOSTED_WORKER_BUNDLE_CONTRACT}
+
+# A signed request performs several sequential D1 rounds, each a cross-region
+# round trip when the isolate runs away from the primary: from Singapore one
+# round costs ~230 ms against ~40 ms beside it. Placement "only affects the
+# execution of fetch event handlers" (developers.cloudflare.com/workers/
+# configuration/placement/), which is how requests, the edge Worker's service
+# binding and the session host's reach this Worker. Smart placement weighs
+# fetch subrequests from enough traffic, not D1, so a deployment pins the region.
+[placement]
+${input.placementRegion ? `region = ${quote(input.placementRegion)}` : 'mode = "smart"'}
+
+${sharedWorkerConfig(input)}${objects.map((object) => `
 [[durable_objects.bindings]]
-name = "LIVE_SYNC_ROOM"
-class_name = "LiveSyncRoom"
-${pluginSupervisor.binding}${sandboxProvisioner.binding}
+name = ${quote(object.name)}
+class_name = ${quote(object.className)}
+`).join("")}${objects.map((object) => `
 [[migrations]]
-tag = "v1"
-new_sqlite_classes = ["LiveSyncRoom"]
-${pluginSupervisor.migration}${sandboxProvisioner.migration}${agentPluginsBucket}`
+tag = ${quote(object.tag)}
+new_sqlite_classes = [${quote(object.className)}]
+`).join("")}`
+}
+
+/**
+ * The control plane's edge: the same bundle with no placement, so it runs
+ * "in a data center closest to where the request was received"
+ * (developers.cloudflare.com/workers/configuration/placement/). It holds the
+ * control plane's routes on the public origin's host, answers the reads a
+ * client carries D1 bookmarks for from the nearest read replica, and hands
+ * every other request to the writer over `CONTROL_PLANE_WRITER`. It reaches
+ * the writer's Durable Objects by script name and defines none.
+ */
+export function renderEdgeWorkerWranglerConfig(input: WorkerWranglerConfigInput & { edgeWorkerName: string }) {
+  return `name = ${quote(input.edgeWorkerName)}
+main = ${quote(fromConfig(input.configDirectory, input.artifact.entrypointFromPackageRoot))}
+${controlPlaneRoutes(input.publicOriginHost)}${HOSTED_WORKER_BUNDLE_CONTRACT}
+
+${sharedWorkerConfig(input)}
+[[services]]
+binding = "CONTROL_PLANE_WRITER"
+service = ${quote(input.workerName)}
+${durableObjects(input.artifact).map((object) => `
+[[durable_objects.bindings]]
+name = ${quote(object.name)}
+class_name = ${quote(object.className)}
+script_name = ${quote(input.workerName)}
+`).join("")}`
 }
 
 /**
@@ -174,8 +199,6 @@ export function renderSessionHostWranglerConfig(input: Readonly<{
   workerName: string
   controlPlaneWorkerName: string
   configDirectory: string
-  /** The control-plane Worker's pinned region, so a session's host and the plane it calls over the service binding share one. */
-  placementRegion?: string
   variables: Readonly<Record<string, string>>
 }>) {
   const main = path.relative(input.configDirectory, path.resolve(SERVER_ROOT, "../session-host/src/worker.ts")).split(path.sep).join("/")
@@ -192,10 +215,7 @@ preview_urls = false
 
 [observability]
 enabled = true
-${input.placementRegion ? `
-[placement]
-region = ${quote(input.placementRegion)}
-` : ""}
+
 [vars]
 ${variables}
 

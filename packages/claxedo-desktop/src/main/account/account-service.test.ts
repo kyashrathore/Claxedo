@@ -105,7 +105,7 @@ function harness(
   input: {
     store?: ReturnType<typeof memoryStore>
     auth?: ReturnType<typeof authHarness>
-    now?: number
+    now?: number | (() => number)
     fetch?: Parameters<typeof createAccountService>[0]["fetch"]
     onStateChange?: Parameters<typeof createAccountService>[0]["onStateChange"]
     scheduleRevalidation?: Parameters<typeof createAccountService>[0]["scheduleRevalidation"]
@@ -118,7 +118,7 @@ function harness(
   const service = createAccountService({
     auth: selectedAuth.auth,
     store,
-    now: () => input.now ?? 1_000,
+    now: () => (typeof input.now === "function" ? input.now() : input.now ?? 1_000),
     ...(input.onStateChange ? { onStateChange: input.onStateChange } : {}),
     ...(input.scheduleRevalidation ? { scheduleRevalidation: input.scheduleRevalidation } : {}),
     ...(input.cliCredentialFile ? { cliCredentialFile: input.cliCredentialFile } : {}),
@@ -921,6 +921,49 @@ describe("bound desktop account lifecycle", () => {
     })
     expect(chunks.join("")).toBe("event: ready\n\n")
     await expect(h.service.run("controlPlane.events")).rejects.toThrow("is a stream")
+  })
+
+  test("echoes the newest D1 bookmarks the core handed out, on answers and on an event stream's notices, until they lapse", async () => {
+    let now = 1_000
+    const first = "00000001-00000002-00000003-00000000000000000000000000000000"
+    const written = "00000001-00000005-00000000-00000000000000000000000000000000"
+    const announced = "00000001-00000007-00000000-00000000000000000000000000000000"
+    const sent: Array<Record<string, string>> = []
+    const h = harness({
+      store: memoryStore(CREDENTIAL),
+      now: () => now,
+      fetch: async (url, init) => {
+        sent.push(init.headers)
+        if (url.endsWith("/api/cp/events")) {
+          const frames = [`data: {"type":"provision","workspaceId":"ws_1","step":"ready","d1Bookmark":"${announced.slice(0, 20)}`, `${announced.slice(20)}"}\n\n`]
+          return new Response(new ReadableStream({
+            start(controller) {
+              for (const frame of frames) controller.enqueue(new TextEncoder().encode(frame))
+              controller.close()
+            },
+          }), { headers: { "content-type": "text/event-stream" } })
+        }
+        const bookmark = sent.length === 1 ? `auth=${first}, control=${written}` : `control=${first}`
+        return Response.json({ ok: true }, { headers: { "x-claxedo-d1-bookmarks": bookmark } })
+      },
+    })
+    await h.service.restore()
+
+    await h.service.run("account.mode")
+    await h.service.run("account.mode")
+    expect(sent[0]).not.toHaveProperty("x-claxedo-d1-bookmarks")
+    expect(sent[1]?.["x-claxedo-d1-bookmarks"]).toBe(`auth=${first}, control=${written}`)
+    await h.service.openStream({ name: "controlPlane.events", onChunk: () => {} })
+    expect(sent[2]?.["x-claxedo-d1-bookmarks"]).toBe(`auth=${first}, control=${written}`)
+    await h.service.run("account.mode")
+    expect(sent[3]?.["x-claxedo-d1-bookmarks"]).toBe(`auth=${first}, control=${announced}`)
+
+    now += 299
+    await h.service.run("account.mode")
+    expect(sent[4]?.["x-claxedo-d1-bookmarks"]).toBe(`auth=${first}, control=${announced}`)
+    now += 1
+    await h.service.run("account.mode")
+    expect(sent[5]).not.toHaveProperty("x-claxedo-d1-bookmarks")
   })
 
   test("stream opens renew a rejected token once before delivering chunks", async () => {

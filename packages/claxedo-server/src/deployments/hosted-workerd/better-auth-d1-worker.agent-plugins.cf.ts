@@ -4,6 +4,7 @@ import type { AgentPluginR2Bucket } from "../../agent-plugins/artifacts/r2-artif
 import {
   betterAuthD1CompositionInput,
   createBetterAuthD1Worker,
+  workerDatabases,
   type BetterAuthD1WorkerEnv,
 } from "./better-auth-d1-worker.cf"
 import { hostedMcpToolGroups, LiveSyncRoom } from "./core-worker.cf"
@@ -19,7 +20,7 @@ import { HostedWorkerCompositionError } from "../../authority/composition-error"
 import { pluginBackendRouteContribution } from "../../plugin-backends/routes"
 import { PluginSupervisor, type PluginSupervisorNamespace } from "../../plugin-backends/supervisor.cf"
 import { PluginOutbound, PluginPlatform } from "../../plugin-backends/entrypoints.cf"
-import { timedAuthentication, timedD1, timedFetch } from "../../platform/http/server-timing"
+import { timedAuthentication, timedFetch } from "../../platform/http/server-timing"
 
 export { LiveSyncRoom, PluginOutbound, PluginPlatform, PluginSupervisor }
 
@@ -57,7 +58,7 @@ export function composeBetterAuthD1AgentPlugins(
     ...input,
   })
   const signingEnv = stringEnvironment(env)
-  const database = timedD1(env.CONTROL_PLANE_DB)
+  const database = workerDatabases(env).controlPlane
   const authentication = timedAuthentication(base.options.authentication)
   const passes = createD1SandboxPassRegister({ database })
   const authority = requireAuthority(base.plane.services)

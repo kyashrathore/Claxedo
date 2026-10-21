@@ -83,6 +83,13 @@ export type DocumentChangedEvent = {
 // *recipient* subject, NOT the granter — which is the whole reason this event
 // is owner-scoped rather than org-scoped: Bob receives Alice's grant without
 // Alice seeing Bob's doorbell. `eventVisibleTo` enforces that per connection.
+/**
+ * The hosted control-plane database's D1 bookmark once the change an event
+ * announces was committed; a reader whose re-read starts from it sees the
+ * change on any replica. Only the hosted live-sync room sets it.
+ */
+export type D1Announced = { d1Bookmark?: string }
+
 export type SessionShareChangedEvent = {
   type: "session.share.changed"
   /** Recipient's auth subject — visibility matches session-share scoping. */
@@ -96,7 +103,7 @@ export type SessionShareChangedEvent = {
   /** A downgrade rings `granted` at the narrower level: the share still exists. */
   | { phase: "granted"; level: SessionShareLevel }
   | { phase: "revoked" }
-)
+) & D1Announced
 
 /**
  * A session's list status as the hosted registry holds it after a machine or
@@ -122,7 +129,7 @@ export type SessionStatusChangedEvent = {
   ts: number
   /** Set by the live-sync room on a notice it replays to a reconnecting reader: state the reader missed, which raises no alert. */
   replayed?: true
-}
+} & D1Announced
 
 /**
  * A workspace's session inventory gained or lost a row in the control plane's
@@ -152,7 +159,7 @@ export type SessionReaderChangedEvent = {
   seenAt?: number
   settledAt?: number
   ts: number
-}
+} & D1Announced
 
 /**
  * Figures for the Usage-limits view landed from one of their sources: a stored
@@ -198,7 +205,7 @@ export type ProvisionEvent = {
   orgId: string
   step: "starting" | "ready" | "stopped" | "error"
   ts: number
-}
+} & D1Announced
 
 /**
  * What the control plane tells its clients on `cp/events`: something changed

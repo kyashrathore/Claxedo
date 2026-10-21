@@ -73,12 +73,18 @@ export type SandboxProvisionerStub = {
 
 export interface SandboxProvisionerNamespace {
   idFromName(name: string): unknown
-  get(id: unknown): SandboxProvisionerStub
+  get(id: unknown, options?: { locationHint?: string }): SandboxProvisionerStub
 }
 
-/** The one provisioner a workspace's sandbox starts run under; its calls are the request's Durable Object time. */
-export function sandboxProvisioner(namespace: SandboxProvisionerNamespace, workspaceId: string): SandboxProvisionerStub {
-  const stub = namespace.get(namespace.idFromName(`workspace:${workspaceId}`))
+/**
+ * The one provisioner a workspace's sandbox starts run under; its calls are
+ * the request's Durable Object time. `primaryLocation` is where the
+ * control-plane database's primary runs: the provisioner writes it on every
+ * step, and an object is created near its first caller unless hinted, then
+ * never moves (developers.cloudflare.com/durable-objects/reference/data-location/).
+ */
+export function sandboxProvisioner(namespace: SandboxProvisionerNamespace, workspaceId: string, primaryLocation?: string): SandboxProvisionerStub {
+  const stub = namespace.get(namespace.idFromName(`workspace:${workspaceId}`), primaryLocation ? { locationHint: primaryLocation } : undefined)
   return {
     start: (id, request) => timed("do", () => stub.start(id, request)),
     refresh: (id) => timed("do", () => stub.refresh(id)),

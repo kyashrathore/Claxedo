@@ -237,8 +237,14 @@ export const desktopMainComposition: Policy = {
   // account bridge's operation table from the core table and
   // `@claxedo/documents/operations` (owner: the Documents plugin, whose
   // `documents.*` declarations left `@claxedo/account-contract`); the IPC
-  // channels it registers are unchanged. 89/26, no headroom.
-  ceilings: { modules: 89, packages: 26 },
+  // channels it registers are unchanged. 89/26.
+  // +1 module: `main/account/d1-bookmark-jar.ts`, through the account
+  // service this base composition reaches. Reviewed owner: the desktop's
+  // hosted account transport, which keeps the D1 bookmarks the control plane
+  // hands out and echoes them, since main's fetch has no cookie jar; the
+  // recovery contract package it reads the bookmark format from was already
+  // an edge. 90/26, no headroom.
+  ceilings: { modules: 90, packages: 26 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
@@ -304,8 +310,15 @@ export const desktopAccountComposition: Policy = {
   // applies to `plugin.request`, one zod-free module. The core operation table
   // is that package's own; `account/hosted-operations.ts` composes it with
   // `@claxedo/documents/operations` (owner: the Documents plugin's
-  // `documents.*` declarations): 17 modules, 9 packages, no headroom.
-  ceilings: { modules: 17, packages: 9 },
+  // `documents.*` declarations): 17 modules, 9 packages.
+  // +1 module / +1 package: `account/d1-bookmark-jar.ts` over
+  // `@claxedo/agent-runtime-contract`. Reviewed owner: the account service's
+  // hosted transport, which keeps the newest D1 bookmarks the control plane
+  // hands out on answers and live-sync notices and echoes them on every
+  // call, so the plane answers this app's reads from a replica that holds
+  // its own writes; the contract package owns the bookmark wire format the
+  // server and the browser share. It carries no credential. 18/10, no headroom.
+  ceilings: { modules: 18, packages: 10 },
   // The emitted list names the credential-bearing half only. `account-ipc.ts`
   // and the operation table are reached from the base entry through
   // `lazy-account.ts`, so Rollup places them in `index.js`, and
