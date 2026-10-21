@@ -1,29 +1,32 @@
 #!/usr/bin/env node
 
 /**
- * Build @claxedo/workspace-runtime for npm publishing.
+ * Build @claxedo/workspace-runtime's dist.
  *
- * Steps:
- *   1. esbuild: bundle public entrypoints from src/*.ts → dist/*.mjs
- *      - Workspace dependencies are bundled in
- *      - Native modules and npm dependencies are externalized
- *   2. tsc: emit declaration files → dist/
+ *   tsx scripts/build.ts            the repo build: one bundle per public entry,
+ *                                   unpublished @claxedo siblings left to the workspace
+ *   tsx scripts/build.ts --publish  the npm build: see `bundlePublishedJS`
  *
- * Usage: npx tsx scripts/build.ts
+ * Both emit the bundled declarations and the OpenCode Node patch installer.
  */
 
 import { execFileSync } from "child_process"
 import fs from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
+import { build, type BuildOptions, type Plugin } from "esbuild"
 import { rollup } from "rollup"
 import dts from "rollup-plugin-dts"
+import { z } from "zod"
+import { bundleCursorWorker } from "../../harness/scripts/cursor-worker"
 import { OPENCODE_SDK_EXTERNALS } from "./stage-opencode-sdk"
 import { stageOpenCodePatches } from "./stage-opencode-patches"
 
 const ROOT = path.resolve(import.meta.dirname, "..")
 const DIST = path.join(ROOT, "dist")
 const PUBLIC_ENTRIES = ["index", "relay", "client", "host", "exposure", "config", "routes", "execution-env", "route-contribution", "testing", "file-index", "file-content"] as const
+const NODE_ENTRIES = PUBLIC_ENTRIES.filter((entry) => entry !== "client")
+const PUBLISH = process.argv.includes("--publish")
 
 // Dependencies that stay external (consumers install them)
 const LIBRARY_EXTERNALS = [
@@ -77,6 +80,19 @@ const DECLARATION_EXTERNALS = [
   "zod",
 ]
 
+const REQUIRE_SHIM = "import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);"
+
+const NODE_OPTIONS: BuildOptions = {
+  bundle: true,
+  platform: "node",
+  format: "esm",
+  target: "node22",
+  mainFields: ["module", "main"],
+  loader: { ".sh": "text", ".txt": "text" },
+  banner: { js: REQUIRE_SHIM },
+  logLevel: "info",
+}
+
 function run(cmd: string, args: string[], opts?: { cwd?: string }) {
   console.log(`$ ${[cmd, ...args].join(" ")}`)
   execFileSync(cmd, args, { stdio: "inherit", cwd: opts?.cwd ?? ROOT })
@@ -89,47 +105,121 @@ function clean() {
   fs.mkdirSync(DIST, { recursive: true })
 }
 
-function bundleJS() {
-  const esbuild = path.join(ROOT, "node_modules/.bin/esbuild")
-  const libraryExternals = [...LIBRARY_EXTERNALS, ...EXTERNALS].flatMap((m) => [`--external:${m}`])
-  const cliExternals = [...LIBRARY_EXTERNALS, ...EXTERNALS].flatMap((m) => [`--external:${m}`])
-  const nodeShared = [
-    "--bundle",
-    "--platform=node",
-    "--format=esm",
-    "--target=node22",
-    "--main-fields=module,main",
-    "--loader:.sh=text",
-    "--loader:.txt=text",
-  ]
-  // Library entries
-  for (const entry of PUBLIC_ENTRIES) {
-    run(
-      esbuild,
-      [
-        `src/${entry}.ts`,
-        ...(entry === "client"
-          ? ["--bundle", "--platform=browser", "--format=esm", "--target=es2022"]
-          : nodeShared),
-        `--outfile=${path.join(DIST, `${entry}.mjs`)}`,
-        ...libraryExternals,
-        ...(entry === "client"
-          ? []
-          : ["--banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);"]),
-      ],
-    )
+async function bundleClient() {
+  await build({
+    entryPoints: [path.join(ROOT, "src/client.ts")],
+    outfile: path.join(DIST, "client.mjs"),
+    bundle: true,
+    platform: "browser",
+    format: "esm",
+    target: "es2022",
+    external: [...LIBRARY_EXTERNALS, ...EXTERNALS],
+    logLevel: "info",
+  })
+}
+
+async function bundleRepoJS() {
+  for (const entry of [...NODE_ENTRIES, "cli"]) {
+    await build({
+      ...NODE_OPTIONS,
+      entryPoints: [path.join(ROOT, `src/${entry}.ts`)],
+      outfile: path.join(DIST, `${entry}.mjs`),
+      external: [...LIBRARY_EXTERNALS, ...EXTERNALS],
+    })
   }
-  run(
-    esbuild,
-    [
-      "src/cli.ts",
-      ...nodeShared,
-      `--outfile=${path.join(DIST, "cli.mjs")}`,
-      ...cliExternals,
-      "--banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);",
-    ],
-  )
   fs.chmodSync(path.join(DIST, "cli.mjs"), 0o755)
+}
+
+const Manifest = z.object({
+  name: z.string().optional(),
+  exports: z.record(z.string(), z.unknown()).optional(),
+})
+
+function readManifest(dir: string) {
+  return Manifest.parse(JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8")))
+}
+
+/**
+ * The unpublished siblings the npm package carries in its dist. The publisher
+ * drops them from the packed manifest and refuses a tarball that still imports
+ * one, so a sibling missing here fails the release rather than the install.
+ */
+const INLINED_WHEN_PUBLISHED = [
+  "@claxedo/harness",
+  "@claxedo/plugin-api",
+  "@claxedo/process-ownership",
+  "@claxedo/session-core",
+  "@claxedo/status-hooks",
+]
+
+/** Node's lookup, self-reference included: a package imports its own subpaths by name. */
+function packageDir(name: string, from: string) {
+  for (let directory = from; ; directory = path.dirname(directory)) {
+    if (fs.existsSync(path.join(directory, "package.json")) && readManifest(directory).name === name) return directory
+    const candidate = path.join(directory, "node_modules", name)
+    if (fs.existsSync(path.join(candidate, "package.json"))) return fs.realpathSync(candidate)
+    if (path.dirname(directory) === directory) throw new Error(`${name} is not installed above ${from}`)
+  }
+}
+
+function sourceExport(name: string, specifier: string, from: string) {
+  const dir = packageDir(name, from)
+  const subpath = specifier === name ? "." : `.${specifier.slice(name.length)}`
+  const target = readManifest(dir).exports?.[subpath]
+  const source = typeof target === "string"
+    ? target
+    : typeof target === "object" && target !== null && "development" in target && typeof target.development === "string"
+      ? target.development
+      : undefined
+  if (!source) throw new Error(`${specifier}: ${name} exports no development source for ${subpath}`)
+  return path.join(dir, source)
+}
+
+/**
+ * Resolves an inlined sibling to its source export, the graph the workspace
+ * runs. Every other package, published siblings included, stays an import the
+ * published manifest has to declare.
+ */
+function inlineSiblings(names: readonly string[]): Plugin {
+  const inlined = new Set(names)
+  return {
+    name: "inline-unpublished-siblings",
+    setup(builder) {
+      builder.onResolve({ filter: /^@claxedo\// }, (args) => {
+        const name = args.path.split("/").slice(0, 2).join("/")
+        if (!inlined.has(name)) return undefined
+        return { path: sourceExport(name, args.path, args.resolveDir) }
+      })
+    },
+  }
+}
+
+/**
+ * The npm build. Every public entry, the `workspace-runtime` bin and the
+ * process-ownership launch gate child come out of one split build, so an
+ * inlined sibling's classes and module state exist once however many entries
+ * a consumer imports. Every npm import
+ * stays external for the published manifest's dependencies to satisfy. The
+ * Cursor SDK worker and the launch gate child are spawned by path, and each
+ * looks for its file beside the chunk that spawns it, so chunks and both files
+ * sit in dist/ itself.
+ */
+async function bundlePublishedJS() {
+  await build({
+    ...NODE_OPTIONS,
+    entryPoints: {
+      ...Object.fromEntries([...NODE_ENTRIES, "cli"].map((entry) => [entry, path.join(ROOT, `src/${entry}.ts`)])),
+      "launch-gate-child": sourceExport("@claxedo/process-ownership", "@claxedo/process-ownership/launch-gate-child", ROOT),
+    },
+    outdir: DIST,
+    outExtension: { ".js": ".mjs" },
+    splitting: true,
+    chunkNames: "[name]-[hash]",
+    packages: "external",
+    plugins: [inlineSiblings(INLINED_WHEN_PUBLISHED)],
+  })
+  fs.chmodSync(path.join(DIST, "cli.mjs"), 0o755)
+  await bundleCursorWorker(DIST)
 }
 
 function emitDeclarations() {
@@ -187,7 +277,8 @@ function pruneInternalDeclarations(dir = DIST) {
 
 async function main() {
   clean()
-  bundleJS()
+  await bundleClient()
+  await (PUBLISH ? bundlePublishedJS() : bundleRepoJS())
   emitDeclarations()
   await bundleDeclarations()
   const patchOutput = path.join(DIST, "opencode-node")
@@ -195,7 +286,7 @@ async function main() {
   fs.writeFileSync(path.join(patchOutput, "package.json"), JSON.stringify({
     private: true, type: "module", claxedoDependencyPatches: staged.patches,
   }, null, 2))
-  console.log("\nBuild complete: public dist/*.mjs entries + bundled declarations")
+  console.log(`\nBuild complete (${PUBLISH ? "npm" : "repo"}): public dist/*.mjs entries + bundled declarations`)
 }
 
 main().catch((err) => {

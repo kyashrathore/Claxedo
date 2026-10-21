@@ -144,7 +144,7 @@ Root runtime value exports:
 `loadWorkspaceRuntimeManagementVerificationKey`, `loopbackWorkspaceRuntimeExposure`,
 `normalizeRuntimeSnapshot`, `privateNetworkDevUnsafeWorkspaceRuntimeExposure`,
 `privateNetworkWorkspaceRuntimeExposure`, `relayWorkspaceRuntimeExposure`,
-`runtimeCredentialWorkspaceId`, `runtimeEnvText`, `startServer`, `startWorkspaceRuntime`,
+`runtimeCredentialWorkspaceId`, `runtimeEnvText`, `startEventLoopStallMonitor`, `startServer`, `startWorkspaceRuntime`,
 `waitForWorkspaceRuntimeServerPort`, `workspaceRuntimeListenHostname`, `workspaceRuntimeRoute`,
 `workspaceStorageRoot`, `WORKSPACE_RUNTIME_OWNER_GRANT_AUDIENCE`, `WORKSPACE_RUNTIME_OWNER_GRANT_ISSUER`,
 `ownerGrantIdentity`, `ownerGrantIdentityFromEnv`.
