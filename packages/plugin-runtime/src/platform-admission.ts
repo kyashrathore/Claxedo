@@ -1,9 +1,13 @@
-import { PLATFORM_CALL_PERMISSIONS, type PluginCaller, type PluginPlatformCall, type PluginPlatformRefusal } from "@claxedo/plugin-api/backend"
+import { platformCallPermissions, type PluginCaller, type PluginPlatformAnswer, type PluginPlatformCall, type PluginPlatformRefusal } from "@claxedo/plugin-api/backend"
 import { pluginPlatformCallSchema } from "@claxedo/plugin-api/backend-schema"
 import type { PluginBackendActivation } from "./host-port"
 
 export function refusedCall(status: number, code: string, message: string): PluginPlatformRefusal {
   return { ok: false, status, code, message }
+}
+
+export function answeredCall(value?: unknown): PluginPlatformAnswer {
+  return value === undefined ? { ok: true } : { ok: true, value }
 }
 
 /** A call that acts as a person: it reads or grants in the caller's name, so a link or a wake cannot make it. */
@@ -12,6 +16,12 @@ function actsAsPerson(call: PluginPlatformCall): boolean {
     case "projects.list":
     case "projects.authorize":
     case "links.create":
+    case "sessions.harnesses":
+    case "sessions.preview":
+    case "sessions.start":
+    case "sessions.handoff":
+    case "sessions.abandon":
+    case "sessions.authorizeOpen":
       return true
     case "events.publish":
       return call.audience !== "org"
@@ -25,7 +35,7 @@ export type AdmittedCall = Readonly<{ ok: true; call: PluginPlatformCall; caller
 /**
  * Admits a call a loaded backend made, in this order: its epoch is the
  * current activation (409 `plugin_backend_replaced`), its fields parse (400
- * `plugin_call_invalid`), the manifest declares its permission (403
+ * `plugin_call_invalid`), the manifest declares its permissions (403
  * `plugin_permission_not_declared`), and a call that needs a caller has a
  * live handle (401 `plugin_caller_invalid`) for a person (403
  * `plugin_caller_not_a_person`).
@@ -43,9 +53,10 @@ export function admitPlatformCall(input: {
     return refusedCall(400, "plugin_call_invalid", parsed.error.issues.map((issue) => `${issue.path.join(".") || "call"}: ${issue.message}`).join("; "))
   }
   const call = parsed.data
-  const permission = PLATFORM_CALL_PERMISSIONS[call.name]
-  if (permission && !(activation.manifest.permissions ?? []).includes(permission)) {
-    return refusedCall(403, "plugin_permission_not_declared", `${call.name} needs the ${permission} permission, which the manifest does not declare`)
+  const declared = activation.manifest.permissions ?? []
+  const missing = platformCallPermissions(call).find((permission) => !declared.includes(permission))
+  if (missing) {
+    return refusedCall(403, "plugin_permission_not_declared", `${call.name} needs the ${missing} permission, which the manifest does not declare`)
   }
   if ((call.name === "identity.caller" || actsAsPerson(call)) && !input.caller) {
     return refusedCall(401, "plugin_caller_invalid", `${call.name} needs the live caller handle of the request or wake it serves`)

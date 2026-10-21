@@ -133,11 +133,12 @@ describe("the hosted Worker Tasks closure", () => {
     expect(emitted.modules.filter((module) => module.endsWith("/agent-settings.ts"))).toEqual([])
     expect(emitted.imports).not.toContain("@claxedo/server-core/platform/auth/cross-machine-writes")
     // The plugin's own code is `@claxedo/tasks`; the host adds only its ports
-    // over this deployment's owners and the cloud roots it allocates.
+    // over this deployment's owners, and starts its sessions through the
+    // session host app plugins share.
     expect(emitted.modules.filter((module) => module.includes("/tasks-plugin/")).sort()).toEqual([
-      "src/deployments/hosted-workerd/tasks-plugin/cloud-roots.ts",
       "src/deployments/hosted-workerd/tasks-plugin/compose.ts",
     ])
+    expect(emitted.modules).toContain("src/plugin-backends/sessions/cloud-roots.ts")
     expect(emitted.modules.filter((module) => module.startsWith("src/tasks/"))).toEqual([])
     expect(emitted.modules).toContain("src/agent-plugins/runtime/grant-withdrawal.ts")
     expect(emitted.imports).toContain("@claxedo/tasks/hosted")

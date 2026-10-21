@@ -25,19 +25,21 @@ import {
   type StartCommand,
   type StartedSessionRuntime,
   type Task,
+  type TasksActor,
 } from "@claxedo/tasks"
 import { originCloudWorkspaceId } from "../../../workspace/origin-cloud-workspace"
 import { createCloudCreateAdmission, type CloudCreateAdmission, type CloudCreateUsage } from "../../../workspace/cloud-create-admission"
 import { createFixedWindowConnectionRateLimiter } from "../../../platform/auth/rate-limit"
-import { createHostedTasksSessionBridge, type HostedTasksSessionBridgeInput } from "@claxedo/tasks/hosted"
 import { composeProviderNeutralHostedControlPlane } from "../../../authority/provider-neutral-hosted-services"
 import type { ControlPlaneServices } from "../../../authority/services"
 import { unusedSandboxStarts } from "../../../test-support/inline-sandbox-start"
-import type { TasksHostReads } from "@claxedo/tasks/hosted"
 import { startedSession } from "@claxedo/tasks/test-support"
 import { hostedSandboxInput } from "../../../workspace/hosted-sandbox-input"
 import type { SandboxStart, SandboxStartRequest } from "../../../workspace/sandbox-start"
-import { hostedTasksBridgePorts } from "./compose"
+import type { HostedSessionHostInput } from "../../../plugin-backends/sessions/host"
+import type { SessionHostReads } from "../../../plugin-backends/sessions/reads"
+import { hostedSessionPorts } from "../../../plugin-backends/sessions/compose"
+import { hostedTasksSessionBridge } from "./compose"
 
 const mock = vi.hoisted(() => ({
   request: vi.fn(),
@@ -197,7 +199,7 @@ function services(
   }
   const registered = new Map<string, { workspaceID: string }>()
   mock.register = (workspaceId, sessionId) => registered.set(sessionId, { workspaceID: workspaceId })
-  const reads: TasksHostReads = {
+  const reads: SessionHostReads = {
     workspace: async (workspaceId) => created.get(workspaceId),
     projectWorkspaces: async () => [],
     projectSource: async (projectId) => (projectId === PROJECT ? { repoUrl: REPO, gitBranch: "main", repoName: "importer" } : undefined),
@@ -285,7 +287,7 @@ const OWNER_PRINCIPAL = { principalKind: "user", actorId: OWNER.actorId, actorKi
  * Start), the workspace owner a grant resolved to (a session's agent), or
  * nobody this host can name.
  */
-type Identity = Pick<HostedTasksSessionBridgeInput, "auth" | "owner">
+type Identity = Pick<HostedSessionHostInput<TasksActor>, "auth" | "owner">
 
 const signedPerson: Identity = {
   auth: () => ({ user: { subject: "owner" }, principal: { userId: OWNER.userId } }) as unknown as SignedControlPlaneAuth,
@@ -304,8 +306,8 @@ function bridge(composition: ReturnType<typeof services>, options: BridgeOptions
   const sandboxStart = options.sandboxStart === undefined
     ? sandboxManager && provisioner(sandboxManager).start
     : options.sandboxStart
-  return createHostedTasksSessionBridge({
-    ...hostedTasksBridgePorts({
+  return hostedTasksSessionBridge({
+    ...hostedSessionPorts({
       services: composition.value,
       reads: composition.reads,
       ...(sandboxStart ? { sandboxStart } : {}),

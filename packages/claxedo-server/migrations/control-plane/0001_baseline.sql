@@ -430,6 +430,20 @@ CREATE TABLE orgs (
   check ((kind = 'deployment') = (deployment_id is not null))
 );
 
+CREATE TABLE plugin_session_origins (
+  org_id text not null references orgs (org_id) deferrable initially deferred,
+  plugin_id text not null,
+  scope text not null,
+  key text not null,
+  session_id text not null,
+  workspace_id text not null,
+  placement text not null check (placement in ('local', 'cloud')),
+  configuration_digest text not null check (length(configuration_digest) = 64 and configuration_digest not glob '*[^0-9a-f]*'),
+  created_at integer not null,
+  primary key (org_id, plugin_id, scope, key),
+  foreign key (org_id, plugin_id) references app_plugin_installs (org_id, plugin_id) deferrable initially deferred
+);
+
 CREATE TABLE project_memberships (
   project_id text not null references projects (project_id) deferrable initially deferred,
   user_id text not null references users (user_id) deferrable initially deferred,
@@ -889,6 +903,8 @@ CREATE UNIQUE INDEX orgs_one_org_per_deployment
 
 CREATE UNIQUE INDEX orgs_one_personal_per_owner
   on orgs (owner_user_id) where kind = 'personal' and deleted_at is null;
+
+CREATE INDEX plugin_session_origins_cloud_roots on plugin_session_origins (workspace_id) where placement = 'cloud';
 
 CREATE INDEX project_memberships_by_user
   on project_memberships (user_id, revoked_at, project_id);

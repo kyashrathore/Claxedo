@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { PLUGIN_BLOB_LIMITS, PLUGIN_EVENT_LIMITS, PLUGIN_LINK_LIMITS, PLUGIN_WAKE_LIMITS, type PluginPlatformCall } from "./backend"
+import { PLUGIN_BLOB_LIMITS, PLUGIN_EVENT_LIMITS, PLUGIN_LINK_LIMITS, PLUGIN_SESSION_LIMITS, PLUGIN_WAKE_LIMITS, type PluginPlatformCall } from "./backend"
 
 const blobKey = z.string().regex(PLUGIN_BLOB_LIMITS.keyPattern).refine((key) => !key.split("/").some((part) => part === "" || part === "." || part === ".."), "a blob key has no empty, '.' or '..' segment")
 const blobPrefix = z.string().max(512).regex(/^[A-Za-z0-9._/-]*$/)
@@ -10,6 +10,37 @@ const linkPath = z
   .max(PLUGIN_LINK_LIMITS.pathMaxLength)
   .regex(/^\/(?:[A-Za-z0-9._~-]+(?:\/[A-Za-z0-9._~-]+)*)?$/)
   .refine((path) => !path.startsWith("/_") && !path.split("/").some((part) => part === "." || part === ".."), "a link's path is a public route of the backend")
+
+const textByteLength = (value: string) => new TextEncoder().encode(value).byteLength
+const boundedText = (bytes: number) => z.string().refine((value) => textByteLength(value) <= bytes, `at most ${bytes} bytes`)
+const identifier = z.string().min(1).max(256)
+const originPart = z.string().min(1).max(PLUGIN_SESSION_LIMITS.originPartMaxLength).regex(/^[\x21-\x7e]+$/)
+const sessionOrigin = z.object({ scope: originPart, key: originPart }).strict()
+const sessionRef = z.object({ sessionId: identifier, workspaceId: identifier }).strict()
+const placement = z.enum(["local", "cloud"])
+const sessionStart = {
+  origin: sessionOrigin,
+  projectId,
+  placement,
+  configuration: z
+    .object({
+      harness: z.object({ id: identifier, access: z.enum(["native", "connection"]) }).strict(),
+      model: z.object({ providerID: identifier, modelID: identifier }).strict(),
+      effort: z.string().min(1).max(64).nullable(),
+    })
+    .strict(),
+  instructions: boundedText(PLUGIN_SESSION_LIMITS.instructionsBytes).optional(),
+  selection: z
+    .object({
+      plugins: z.array(z.object({ sourceId: identifier, pluginName: identifier }).strict()).max(PLUGIN_SESSION_LIMITS.selectionReferences),
+      skills: z.array(z.object({ sourceId: identifier, skillName: identifier }).strict()).max(PLUGIN_SESSION_LIMITS.selectionReferences),
+    })
+    .strict()
+    .optional(),
+  continueFrom: sessionRef.optional(),
+  title: z.string().min(1).max(PLUGIN_SESSION_LIMITS.titleMaxLength).optional(),
+}
+const onlyCloudSelects = (call: { placement: string; selection?: unknown }) => call.placement === "cloud" || call.selection === undefined
 
 /**
  * The calls the runtime accepts from a loaded backend. Whatever crosses
@@ -40,6 +71,27 @@ export const pluginPlatformCallSchema: z.ZodType<PluginPlatformCall> = z.discrim
   z.object({ name: z.literal("schedule.list") }).strict(),
   z.object({ name: z.literal("links.create"), path: linkPath, expiresAt: z.number().int().positive().optional() }).strict(),
   z.object({ name: z.literal("links.revoke"), token: z.string().min(1).max(128) }).strict(),
+  z.object({ name: z.literal("sessions.harnesses"), projectId, placement }).strict(),
+  z.object({ name: z.literal("sessions.preview"), ...sessionStart }).strict().refine(onlyCloudSelects, "only a cloud session selects plugins and skills"),
+  z
+    .object({ name: z.literal("sessions.start"), ...sessionStart, digest: z.string().regex(/^[0-9a-f]{64}$/) })
+    .strict()
+    .refine(onlyCloudSelects, "only a cloud session selects plugins and skills"),
+  z
+    .object({
+      name: z.literal("sessions.handoff"),
+      origin: sessionOrigin,
+      session: sessionRef,
+      text: boundedText(PLUGIN_SESSION_LIMITS.textBytes),
+      attachments: z
+        .array(z.object({ key: blobKey, filename: z.string().min(1).max(255).optional() }).strict())
+        .max(PLUGIN_SESSION_LIMITS.attachments)
+        .optional(),
+    })
+    .strict(),
+  z.object({ name: z.literal("sessions.abandon"), origin: sessionOrigin, session: sessionRef }).strict(),
+  z.object({ name: z.literal("sessions.state"), origins: z.array(sessionOrigin).max(PLUGIN_SESSION_LIMITS.originsPerState) }).strict(),
+  z.object({ name: z.literal("sessions.authorizeOpen"), session: sessionRef }).strict(),
 ])
 
 /** The bytes `value` takes as JSON, for the limits on event data and wake payloads. */

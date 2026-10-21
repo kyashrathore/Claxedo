@@ -64,7 +64,7 @@ export async function toolCallerOrRefusal(request: Request, input: AppPluginTool
       if (error instanceof ControlPlaneAuthError) return pluginRefusal(403, "plugin_tools_grant_owner_changed", "This workspace no longer answers for the grant it carries")
       throw error
     }
-    return { agent: { orgId: root.orgId, origin: "agent", userId: root.userId, projectId: root.projectId, workspaceId: root.workspaceId }, installs, root }
+    return { agent: { orgId: root.orgId, origin: "agent", userId: root.userId, projectId: root.projectId }, installs, root }
   }
   const caller = await orgCallerOrRefusal(request, input)
   if (caller instanceof Response) return caller

@@ -10,12 +10,17 @@
  * only landed in 22.13, so the declared floor still permits a runtime without it.
  */
 export function base64UrlEncode(bytes: Uint8Array | ArrayBuffer): string {
+  return base64EncodeBytes(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+}
+
+/** Standard, padded base64, as a `data:` URL carries it. */
+export function base64EncodeBytes(bytes: Uint8Array | ArrayBuffer): string {
   const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
   let binary = ""
   // A for..of loop rather than a spread: a spread blows the argument count on
   // large inputs.
   for (const byte of view) binary += String.fromCharCode(byte)
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+  return btoa(binary)
 }
 
 /**

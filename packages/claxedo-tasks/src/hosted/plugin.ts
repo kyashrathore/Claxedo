@@ -2,15 +2,11 @@ import type { D1Database } from "@cloudflare/workers-types"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { SandboxPassRegister } from "@claxedo/server-core/platform/auth/sandbox-pass-register"
 import type { HostedServerPlugin } from "@claxedo/server-core/plugins/server-plugin"
-import type { WorkspaceRuntimeClientOptions } from "@claxedo/server-core/workspace/http/workspace-runtime-client"
 import { TASKS_MCP_TOOL_GROUP } from "../mcp"
 import { TASKS_CAPABILITY_AUDIENCE } from "./capability"
 import { createHostedTasksComposition, type HostedTasksCompositionInput } from "./composition"
-import type { TasksHostReads } from "./d1-host-reads"
 import { tasksCapabilityRenewalContribution, type TasksCapabilityRenewalInput } from "./grant-renewal"
 import { createTasksRootCapability, createTasksRootGrant, type TasksRootIdentity } from "./root-capability"
-import { createHostedTasksSessionBridge, type TasksCloudRoots } from "./session-bridge"
-import type { TasksSessionRegistrations } from "./session-reservation"
 
 /** The capabilities this deployment mints for its cloud roots, and what their renewal re-reads. */
 export type HostedTasksGrants = Readonly<{
@@ -26,11 +22,8 @@ export type HostedTasksPorts = Readonly<{
   authority: WorkspaceAuthority
   database: D1Database
   signed: HostedTasksCompositionInput["signed"]
-  reads: TasksHostReads
-  /** The dispatch options a Start reaches a workspace's runtime through, as the control plane's service actor. */
-  runtimeClient: WorkspaceRuntimeClientOptions
-  registrations: TasksSessionRegistrations
-  cloudRoots: TasksCloudRoots
+  /** The session bridge a request's actor starts through, over the deployment's own session host. */
+  bridge: HostedTasksCompositionInput["bridge"]
   cloudPlacement: boolean
   /** Whether a root's sandbox start projects the capability set a preset names. */
   cloudSelectedCapabilities: boolean
@@ -57,16 +50,7 @@ export function createHostedTasksPlugin(ports: HostedTasksPorts): HostedServerPl
     cloudPlacement: ports.cloudPlacement,
     cloudSelectedCapabilities: ports.cloudSelectedCapabilities,
     ...(grants ? { signingEnv: grants.signingEnv, passes: grants.passes } : {}),
-    bridge: (principal, auth, owner) =>
-      createHostedTasksSessionBridge({
-        runtimeClient: ports.runtimeClient,
-        reads: ports.reads,
-        registrations: ports.registrations,
-        cloudRoots: ports.cloudRoots,
-        principal,
-        auth,
-        owner,
-      }),
+    bridge: ports.bridge,
   })
   const owners = ports.authority.resolveWorkspaceOwner?.bind(ports.authority)
   return {

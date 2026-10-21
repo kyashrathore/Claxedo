@@ -18,7 +18,7 @@ const NOTES_PLUGIN = fileURLToPath(new URL("./fixtures/notes", import.meta.url))
 const ORIGIN = "https://api.test"
 const REGISTRY_HOST = "registry.test"
 const DEPLOYMENT_ID = "deployment-plugin-tools"
-const NOTE_TOOLS = ["note_add", "note_dump", "note_list"]
+const NOTE_TOOLS = ["note_add", "note_dump", "note_list", "note_spawn"]
 
 type Member = { token: string; userId: string; orgId: string }
 type Answer = { status: number; body: Record<string, unknown> }
@@ -174,7 +174,7 @@ describe("an app plugin's agent tools on the hosted MCP endpoint", () => {
     expect(await toolCall(carol, "note_list", {})).toEqual(refusal(404, "plugin_tools_not_enabled"))
     expect(await appPlugins(carol, "GET", "/installed")).toEqual({
       status: 200,
-      body: [expect.objectContaining({ id: "notes", enabledForMe: false, tools: { label: "Notes", names: ["note_add", "note_list", "note_dump"], on: true } })],
+      body: [expect.objectContaining({ id: "notes", enabledForMe: false, tools: { label: "Notes", names: ["note_add", "note_list", "note_spawn", "note_dump"], on: true } })],
     })
   })
 
@@ -235,15 +235,39 @@ describe("a cloud root's plugin tools grant", () => {
     expect(await appPlugins(token, "GET", "/tools")).toEqual({ status: 200, body: [expect.objectContaining({ pluginId: "notes" })] })
     const answer = await toolCall(token, "note_list", {})
     expect(answer.status).toBe(200)
-    expect(JSON.parse((answer.body as unknown as ToolText).content[0].text).caller).toEqual({
+    expect(JSON.parse((answer.body as unknown as ToolText).content[0].text).caller).toEqual({ orgId: root.orgId, origin: "agent", userId: root.userId, projectId: root.projectId })
+    const stated = await miniflare.dispatchFetch(`${ORIGIN}/api/plugins/notes/_tools/note_list`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json", "x-claxedo-agent": JSON.stringify({ sessionId: "ses_root", ownerDriven: true }) },
+      body: JSON.stringify({ arguments: {} }),
+    })
+    expect(JSON.parse(((await stated.json()) as ToolText).content[0].text).caller).toEqual({
       orgId: root.orgId,
       origin: "agent",
       userId: root.userId,
       projectId: root.projectId,
-      workspaceId: root.workspaceId,
+      session: { sessionId: "ses_root", workspaceId: root.workspaceId },
+      ownerDriven: true,
     })
     const renewed = await appPlugins(token, "POST", "/tools/grant")
     expect(renewed).toEqual({ status: 200, body: { token: expect.any(String), expiresAt: expect.any(Number) } })
+  })
+
+  test("an agent's tool call may start a session only from a session only the workspace's owner drove", async () => {
+    const { token } = (await hook("/__tools/grant", { ...root, plugins: ["notes"] })) as { token: string }
+    const spawn = async (agent: Record<string, unknown> | undefined) => {
+      const response = await miniflare.dispatchFetch(`${ORIGIN}/api/plugins/notes/_tools/note_spawn`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...(agent ? { "x-claxedo-agent": JSON.stringify(agent) } : {}) },
+        body: JSON.stringify({ arguments: { projectId: root.projectId } }),
+      })
+      const answer = (await response.json()) as ToolText
+      return JSON.parse(answer.content[0].text) as { refused?: string }
+    }
+    expect(await spawn({ sessionId: "ses_member", ownerDriven: false })).toEqual({ refused: "plugin_session_start_refused" })
+    expect(await spawn({ sessionId: "ses_unstated" })).toEqual({ refused: "plugin_session_start_refused" })
+    expect(await spawn(undefined)).toEqual({ refused: "plugin_session_start_refused" })
+    expect((await spawn({ sessionId: "ses_owner", ownerDriven: true })).refused).not.toBe("plugin_session_start_refused")
   })
 
   test("a call with a withdrawn grant is refused, and turning the plugin off withdraws the grant of a root with no tools left", async () => {

@@ -63,7 +63,13 @@ export function pluginToolCallHandler(input: AppPluginToolsAccess & Readonly<{ s
     const body = await context.req.raw.text()
     if (new TextEncoder().encode(body).byteLength > TOOL_CALL_MAX_BYTES) return pluginRefusal(413, "plugin_tool_call_too_large", `A tool call's arguments are at most ${TOOL_CALL_MAX_BYTES} bytes`)
     const stated = statedAgent(context.req.header(PLUGIN_TOOL_AGENT_HEADER))
-    const agent = { ...caller.agent, pluginId, ...stated }
+    const workspaceId = caller.root?.workspaceId
+    const agent = {
+      ...caller.agent,
+      pluginId,
+      ...(stated.sessionId && workspaceId ? { session: { sessionId: stated.sessionId, workspaceId } } : {}),
+      ...(stated.ownerDriven === undefined ? {} : { ownerDriven: stated.ownerDriven }),
+    }
     try {
       return pluginAnswer(await pluginSupervisor(input.supervisors, agent).tool(agent, name, body))
     } catch (error) {

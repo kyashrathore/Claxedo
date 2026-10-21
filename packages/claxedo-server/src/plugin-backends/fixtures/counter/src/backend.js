@@ -100,6 +100,16 @@ async function answer(request, platform) {
   }
   if (segments[0] === "links" && request.method === "POST") return Response.json(await platform.links.create(await json()))
   if (segments[0] === "links") return Response.json((await platform.links.revoke(segments[1])) ?? { revoked: true })
+  if (segments[0] === "sessions") {
+    const body = await json()
+    if (segments[1] === "harnesses") return Response.json(await platform.sessions.harnesses(body))
+    if (segments[1] === "preview") return Response.json(await platform.sessions.preview(body))
+    if (segments[1] === "start") return Response.json(await platform.sessions.start(body))
+    if (segments[1] === "handoff") return Response.json(await platform.sessions.handoff(body))
+    if (segments[1] === "abandon") return Response.json(await platform.sessions.abandon(body))
+    if (segments[1] === "state") return Response.json(await platform.sessions.state(body.origins))
+    if (segments[1] === "open") return Response.json({ allowed: await platform.sessions.authorizeOpen(body.session) })
+  }
   return platform.object(segments[1] ?? "", "main", request)
 }
 

@@ -45,7 +45,6 @@ const PLUGIN_IMPORTERS = [
   "packages/claxedo-server/scripts/control-plane-schema.ts",
   "packages/claxedo-server/src/authority/adapters/d1/document-authority.ts",
   "packages/claxedo-server/src/deployments/hosted-workerd/core-worker.cf.ts",
-  "packages/claxedo-server/src/deployments/hosted-workerd/tasks-plugin/cloud-roots.ts",
   "packages/claxedo-server/src/deployments/hosted-workerd/tasks-plugin/compose.ts",
   "packages/claxedo-server/src/documents/compose.ts",
   "packages/claxedo-server/src/documents/runtime-broker.ts",

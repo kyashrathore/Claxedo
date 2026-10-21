@@ -14,6 +14,13 @@ export default [
     access: "read",
   },
   {
+    name: "note_spawn",
+    title: "Start a note session",
+    description: "Starts an agent session for a note in the given project",
+    inputSchema: { type: "object", properties: { projectId: { type: "string" } }, required: ["projectId"] },
+    access: "write",
+  },
+  {
     name: "note_dump",
     title: "Dump notes",
     description: "Answers more than an agent may receive",

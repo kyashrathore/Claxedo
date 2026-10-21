@@ -8,7 +8,7 @@
     "name": "Notes",
     "version": "0.1.0",
     "app": "./src/app.js",
-    "permissions": ["tools"],
+    "permissions": ["tools", "sessions.start"],
     "backend": {
       "entry": "./src/backend.js",
       "objects": ["Notes"],
