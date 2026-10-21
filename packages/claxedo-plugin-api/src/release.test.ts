@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, test } from "bun:test"
-import { canonicalJsonText, PluginReleaseError, pluginReleaseSigningBytes, verifyPluginRelease } from "./release"
+import { canonicalJsonText, PluginReleaseError, pluginReleaseSigningBytes, verifyPluginRelease, type PluginToolDeclaration } from "./release"
 
 const SHA = "a".repeat(64)
 
@@ -78,5 +78,16 @@ describe("verifyPluginRelease", () => {
     expect(await refusal(await sign({ ...release, app: { sha256: SHA, size: 11 * 1024 * 1024 } }))).toBe("release_malformed")
     expect(await refusal(await sign({ ...release, extra: true }))).toBe("release_malformed")
     expect(await refusal({ release })).toBe("release_malformed")
+  })
+
+  test("carries the tools of a manifest that declares a tool group, each an MCP tool with an object input schema and its own name", async () => {
+    const tool: PluginToolDeclaration = { name: "count_read", title: "Read the count", description: "Reads the count", inputSchema: { type: "object", properties: {} }, access: "read" }
+    const tooled = { ...release, manifest: { ...release.manifest, backend: { ...release.manifest.backend, tools: { group: { id: "counter", label: "Counter" }, definitions: "./src/tools.js" } } } }
+    expect((await verifyPluginRelease(await sign({ ...tooled, tools: [tool] }), keys)).tools).toEqual([tool])
+    expect(await refusal(await sign(tooled))).toBe("release_malformed")
+    expect(await refusal(await sign({ ...release, tools: [tool] }))).toBe("release_malformed")
+    expect(await refusal(await sign({ ...tooled, tools: [tool, tool] }))).toBe("release_malformed")
+    expect(await refusal(await sign({ ...tooled, tools: [{ ...tool, name: "Count" }] }))).toBe("release_malformed")
+    expect(await refusal(await sign({ ...tooled, tools: [{ ...tool, inputSchema: { type: "string" } }] }))).toBe("release_malformed")
   })
 })

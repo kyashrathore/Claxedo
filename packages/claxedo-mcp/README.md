@@ -77,6 +77,17 @@ The guide is served by the tools themselves rather than as a skill, because the 
 
 A model can be talked into making a plugin by text it reads: a file, a page, a tool result. The guide tells it to act only on the person's request, but the gate is the app: a newly added plugin, or one whose manifest asks for more access, runs only after the person turns it on in a dialog that lists what it may reach.
 
+## App plugin tools
+
+An installed app plugin's backend can serve agent tools, which its release declares (`release.tools`, built from the manifest's `backend.tools`). `src/plugin-proxy.ts` serves them as proxy groups:
+
+- A mount takes `pluginToolGroups(credential, client)`, read once per MCP session after the client is built, and concatenates its groups after `registerTools`, filtered by the same `enabledToolGroups` answer. A tool whose name an earlier group registered is left out, so a plugin never replaces a tool.
+- `appPluginToolGroups` is the one implementation. It reads the caller's listing (`GET /api/claxedo/app-plugins/tools`) through the client's `app-plugin-tools` service grant (`APP_PLUGIN_TOOLS_SERVICE`); a client without the grant gets no plugin groups. A listing that cannot be read leaves the session with the mount's own groups, and is logged.
+- Each plugin is one group, `app-plugin:<pluginId>`, which is also the Marketplace activation subject a person turns its tools on and off with. Each tool registers with its declared description and JSON Schema input (converted with `z.fromJSONSchema`), as a `read` or `act` scope tool of both audiences that needs the service grant.
+- A call `POST`s `{ arguments }` to `/api/plugins/<id>/_tools/<name>` through the grant, with `x-claxedo-agent` stating the calling session and whether only the workspace's owner has driven it. The answer must be an MCP tool result of at most 256 KiB (`PLUGIN_TOOL_RESULT_MAX_BYTES`); anything else, and a refusal, comes back as an error result.
+
+Where it is wired: the hosted worker serves it to an account credential where a plugin supervisor runs (the Agent Plugins entries), through an in-process grant of the caller's own bearer; a cloud runtime serves it to its sessions through the root's `WORKSPACE_RUNTIME_PLUGIN_TOOLS_GRANT`. The desktop's local server and a session served by its own host get none.
+
 ## Sessions, elicitation, limits
 
 Sessions are stateful (`Mcp-Session-Id`) because a host's elicitation answer

@@ -1,5 +1,5 @@
 import { isRecord, isStringList } from "@claxedo/helpers/guards"
-import type { AppPluginCatalog, AppPluginInstall, AppPluginListing, EnabledAppPlugin } from "../app-plugin-types"
+import type { AppPluginCatalog, AppPluginInstall, AppPluginListing, AppPluginTools, EnabledAppPlugin } from "../app-plugin-types"
 import { contractMismatch } from "../errors"
 import { manifestReader, type ReadManifest } from "./plugin-manifest"
 
@@ -17,7 +17,13 @@ function installFrom(value: unknown, readManifest: ReadManifest): AppPluginInsta
   if (!isRecord(value) || typeof value.active !== "boolean" || typeof value.enabledForMe !== "boolean" || typeof value.orgDefault !== "boolean") {
     throw contractMismatch("app plugin install")
   }
-  return { ...plugin, active: value.active, enabledForMe: value.enabledForMe, orgDefault: value.orgDefault }
+  const tools = value.tools === undefined ? undefined : toolsFrom(value.tools)
+  return { ...plugin, active: value.active, enabledForMe: value.enabledForMe, orgDefault: value.orgDefault, ...(tools ? { tools } : {}) }
+}
+
+function toolsFrom(value: unknown): AppPluginTools {
+  if (!isRecord(value) || typeof value.label !== "string" || !isStringList(value.names) || typeof value.on !== "boolean") throw contractMismatch("app plugin tools")
+  return { label: value.label, names: value.names, on: value.on }
 }
 
 function listingFrom(value: unknown, readManifest: ReadManifest): AppPluginListing {

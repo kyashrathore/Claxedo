@@ -7,10 +7,19 @@ import { createRuntimeCredentialIssuer, createWorkspaceRuntimeApp } from "@claxe
 import { relayWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
 import type { OwnerGrantIdentity } from "@claxedo/workspace-runtime"
 import type { McpServiceGrant } from "@claxedo/mcp"
+import { APP_PLUGIN_TOOLS_SERVICE, appPluginToolGroups } from "@claxedo/mcp/plugin-proxy"
+import { WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL } from "@claxedo/session-core"
 import { firstPartyMcpRuntimeContribution } from "./first-party-mcp"
+import { workspaceRuntimePluginToolsGrant } from "./plugin-tools-grant"
 import { loopbackMachineLoginPolicy } from "@claxedo/workspace-runtime/testing"
 
 const relayAuth = { key: new Uint8Array([1]), workspaceId: "ws_1", hostId: "host_1" }
+
+/** A grant-shaped token the runtime reads its expiry from without verifying, as it reads the control plane's. */
+function grantToken(version: number) {
+  const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url")
+  return `${encode({ alg: "EdDSA" })}.${encode({ aud: "plugin-tools", v: version, exp: Math.floor(Date.now() / 1000) + 3600 })}.signature`
+}
 
 function runtime(options: {
   contribute?: boolean
@@ -18,6 +27,7 @@ function runtime(options: {
   groups?: readonly string[]
   ownerGrant?: () => string | undefined
   ownerGrantIdentity?: OwnerGrantIdentity
+  pluginTools?: () => McpServiceGrant | undefined
 } = {}) {
   const issuer = createRuntimeCredentialIssuer({ runtimeId: "rt_1", workspaceId: "ws_1" })
   const enabledToolGroups = options.groups ?? [...CLAXEDO_MCP_TOOL_GROUP_IDS, TASKS_MCP_TOOL_GROUP.id]
@@ -35,6 +45,12 @@ function runtime(options: {
           enabledToolGroups,
           registerTools: [...CLAXEDO_MCP_TOOL_GROUPS, TASKS_MCP_TOOL_GROUP],
           ...(options.tasks ? { services: (): Readonly<Record<string, McpServiceGrant>> => { const granted = options.tasks?.(); return granted ? { tasks: granted } : {} } } : {}),
+          ...(options.pluginTools
+            ? {
+                services: (): Readonly<Record<string, McpServiceGrant>> => { const granted = options.pluginTools?.(); return granted ? { [APP_PLUGIN_TOOLS_SERVICE.id]: granted } : {} },
+                pluginToolGroups: appPluginToolGroups,
+              }
+            : {}),
           ...(options.ownerGrant ? { ownerGrant: options.ownerGrant } : {}),
         })],
   })
@@ -139,6 +155,59 @@ describe("the cloud runtime's first-party MCP contribution", () => {
       expect((await initialize(app.app, "http://127.0.0.1", { authorization: `Bearer ${foreign.current()}` })).status).toBe(401)
     } finally {
       await app.host.dispose()
+    }
+  })
+
+  test("serves the app plugin tools its grant lists while the root consented to the plugin, and none once the control plane refuses the grant's renewal", async () => {
+    let refuse = false
+    const calls: string[] = []
+    const controlPlane = async (request: Request) => {
+      const { pathname } = new URL(request.url)
+      calls.push(`${request.method} ${pathname} ${request.headers.get("authorization")}`)
+      if (pathname === "/api/claxedo/app-plugins/tools/grant") {
+        return refuse ? Response.json({ error: { code: "app_plugin_disabled", message: "off" } }, { status: 403 }) : Response.json({ token: grantToken(2), expiresAt: 0 })
+      }
+      if (pathname === "/api/claxedo/app-plugins/tools") {
+        return Response.json([{ pluginId: "notes", label: "Notes", tools: [{ name: "note_list", title: "List", description: "Lists notes", inputSchema: { type: "object" }, access: "read" }] }])
+      }
+      return Response.json({ content: [{ type: "text", text: "listed" }] })
+    }
+    const timers: Array<() => void> = []
+    let settled: (() => void) | undefined
+    const renewalSettles = () => new Promise<void>((resolve) => { settled = resolve })
+    const grant = workspaceRuntimePluginToolsGrant(
+      { WORKSPACE_RUNTIME_PLUGIN_TOOLS_GRANT: grantToken(1), [WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL]: "https://plane.test/api/claxedo/session-authority" },
+      {
+        fetch: controlPlane as typeof fetch,
+        timers: { setTimeout: (run) => { settled?.(); return timers.push(run) }, clearTimeout: () => undefined },
+        log: { info: () => undefined, warn: (message) => { if (message === "plugin_tools.grant.withdrawn") settled?.() } },
+      },
+    )
+    expect(grant).toBeDefined()
+    grant!.start()
+    const consented = runtime({ groups: [...CLAXEDO_MCP_TOOL_GROUP_IDS, "app-plugin:notes"], pluginTools: () => grant!.current() })
+    const unconsented = runtime({ groups: [...CLAXEDO_MCP_TOOL_GROUP_IDS], pluginTools: () => grant!.current() })
+    try {
+      expect(await toolNames(consented.app, consented.issuer.current("ses_1"))).toContain("note_list")
+      expect(await callTool(consented.app, consented.issuer.current("ses_1"), "note_list")).toEqual({ isError: false, text: "listed" })
+      expect(calls).toContain(`POST /api/plugins/notes/_tools/note_list Bearer ${grantToken(1)}`)
+      expect(await toolNames(unconsented.app, unconsented.issuer.current("ses_1"))).not.toContain("note_list")
+
+      const renewed = renewalSettles()
+      timers.shift()?.()
+      await renewed
+      expect(calls).toContain(`POST /api/claxedo/app-plugins/tools/grant Bearer ${grantToken(1)}`)
+      expect(grant!.current()).toBeDefined()
+      refuse = true
+      const refused = renewalSettles()
+      timers.shift()?.()
+      await refused
+      expect(grant!.current()).toBeUndefined()
+      expect(await toolNames(consented.app, consented.issuer.current("ses_1"))).not.toContain("note_list")
+    } finally {
+      grant!.stop()
+      await consented.host.dispose()
+      await unconsented.host.dispose()
     }
   })
 

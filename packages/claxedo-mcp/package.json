@@ -32,6 +32,13 @@
       "import": "./src/context.ts",
       "default": "./src/context.ts"
     },
+    "./plugin-proxy": {
+      "types": "./src/plugin-proxy.ts",
+      "bun": "./src/plugin-proxy.ts",
+      "development": "./src/plugin-proxy.ts",
+      "import": "./src/plugin-proxy.ts",
+      "default": "./src/plugin-proxy.ts"
+    },
     "./tool-group": {
       "types": "./src/tool-group.ts",
       "bun": "./src/tool-group.ts",

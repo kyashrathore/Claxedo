@@ -163,4 +163,21 @@ describe("the first-party environment a cloud root boots with", () => {
     expect(environment).toEqual({ [WORKSPACE_RUNTIME_MCP_TOOL_GROUPS]: "" })
     expect(workspaceRuntimeMcpToolGroups(environment)).toEqual([])
   })
+
+  test("declares the root's app plugin tool groups after the built-in ones, and carries a grant whose group is among them", async () => {
+    const pluginTools = vi.fn(async () => ({ WORKSPACE_RUNTIME_PLUGIN_TOOLS_GRANT: "plugin-tools-token" }))
+    const launch = (extra: readonly string[]) => createCloudRootEnvironment({
+      activations: activations({ subagents: false }),
+      builtIn,
+      extraGroups: async () => extra,
+      grants: [...grants(), { group: "app-plugin-tools", mint: pluginTools }],
+    })(root)
+    const on = await launch(["app-plugin-tools", "app-plugin:notes"])
+    expect(workspaceRuntimeMcpToolGroups(on)?.slice(-2)).toEqual(["app-plugin-tools", "app-plugin:notes"])
+    expect(on.WORKSPACE_RUNTIME_PLUGIN_TOOLS_GRANT).toBe("plugin-tools-token")
+    const off = await launch([])
+    expect(workspaceRuntimeMcpToolGroups(off)).toEqual(RUNTIME_GROUPS.filter((group) => group !== "subagents"))
+    expect(off).not.toHaveProperty("WORKSPACE_RUNTIME_PLUGIN_TOOLS_GRANT")
+    expect(pluginTools).toHaveBeenCalledTimes(1)
+  })
 })

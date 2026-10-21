@@ -84,7 +84,7 @@ import {
   mountControlPlaneRouteContributions,
   type ControlPlaneRouteContribution,
 } from "@claxedo/server-core/platform/http/route-contribution"
-import type { FirstPartyMcpOptions } from "@claxedo/mcp"
+import type { FirstPartyMcpOptions, PluginToolGroups } from "@claxedo/mcp"
 import { firstPartyMcpContribution } from "../../mcp/first-party-mcp"
 import { sessionMcpCredentials, type SessionMcpCredentialsInput } from "../../mcp/session-mcp-credentials"
 import { readIntrospectedAccessToken, resolveOAuthMcpCredential } from "../../mcp/oauth-credential"
@@ -169,6 +169,8 @@ export type HostedCoreAppOptions = {
    * verifier. Absent means no endpoint, as with every other contribution.
    */
   firstPartyMcp?: FirstPartyMcpOptions
+  /** The app plugin proxy groups `firstPartyMcp` serves an account credential; absent where no plugin backend runs. */
+  pluginToolGroups?: PluginToolGroups
   /**
    * The register the entry mints sandbox passes into, so the session
    * authority refuses a revoked owner grant before its expiry. Absent on the
@@ -644,7 +646,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
     ? firstPartyMcpContribution({
         app,
         authority: services.authority,
-        options: options.firstPartyMcp,
+        options: options.pluginToolGroups ? { ...options.firstPartyMcp, pluginToolGroups: options.pluginToolGroups } : options.firstPartyMcp,
         services: plugins.flatMap((plugin) => (plugin.mcp?.service ? [plugin.mcp.service] : [])),
         signedAuth: async (request) => {
           const result = await signedOrError(request, { authentication: options.authentication, requireSigned: true }, services)

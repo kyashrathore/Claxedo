@@ -63,6 +63,11 @@
       "development": "./src/runtime.ts",
       "default": "./src/runtime.ts"
     },
+    "./tools": {
+      "types": "./src/tools.ts",
+      "development": "./src/tools.ts",
+      "default": "./src/tools.ts"
+    },
     "./surface": {
       "types": "./src/surface/index.ts",
       "development": "./src/surface/index.ts",

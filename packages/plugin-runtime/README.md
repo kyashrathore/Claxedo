@@ -39,11 +39,13 @@ The entry must export all three under those names, because the supervisor binds 
 - a bundle the host does not hold: 503 `plugin_bundle_unavailable`, read again on the next request;
 - otherwise the backend gets the request's method, path, query, body and `content-type`, and `x-claxedo-caller`, a caller handle; nothing else the caller sent reaches it.
 
+`tool(caller, name, body)` delivers an agent's tool call, which the host has already checked against the release's declared tools and the caller's consent, as `POST /_tools/<name>` with `body` (`{ arguments }`) and a handle for an `agent` caller `{ orgId, userId, sessionId?, projectId?, workspaceId?, ownerDriven? }`. It answers 404 `plugin_not_activated` with no activation and 404 `plugin_tools_not_declared` for a manifest without `backend.tools`; it is the only way a call reaches a path under `/_tools/`.
+
 The loaded Worker's environment is only `PLATFORM`, and its `globalOutbound` is `PluginOutbound`. Both are bound to the activation's epoch, which is why the epoch is part of the loader id `<orgId>/<pluginId>/<generation>/<epoch>`. The generation, the SHA-256 of the bundle hash and the manifest, names only the configuration the Worker Loader caches.
 
 ## Caller handles
 
-A backend never receives a user id it could replay. The supervisor mints a 128-bit handle for each request and each wake it delivers (`caller-handles.ts`), kept in memory under the epoch it was minted in, for a caller `{ orgId, origin, userId? }`: a `person` with their user id, a `link` or a `system` wake with none.
+A backend never receives a user id it could replay. The supervisor mints a 128-bit handle for each request, tool call and wake it delivers (`caller-handles.ts`), kept in memory under the epoch it was minted in, for a caller `{ orgId, origin, userId? }`: a `person` or an `agent` with their user id (an agent also with the session, project and workspace it calls from), a `link` or a `system` wake with none.
 
 - `identity.caller` answers it while the handle is live, and refuses otherwise;
 - a handle stays live while its request is open, and for `PLUGIN_CALLER_HANDLE_TTL_MS` (10 minutes) after it answered;

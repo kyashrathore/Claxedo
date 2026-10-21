@@ -94,6 +94,28 @@ describe("definePluginBackend", () => {
     expect(response.status).toBe(204)
     expect(woken).toEqual([{ name: "daily digest", payload: { n: 1 } }])
   })
+
+  test("a tool call reaches `tool` with its name, its arguments and the caller's platform, and its result is the answer", async () => {
+    const { platform, calls } = binding(() => ({ ok: true, value: { orgId: "org_1", origin: "agent", userId: "usr_1", sessionId: "ses_1" } }))
+    const backend = definePluginBackend({
+      fetch: () => new Response("fetch", { status: 500 }),
+      tool: async (name, args, bound) => ({ content: [{ type: "text", text: JSON.stringify({ name, args, caller: await bound.identity.caller() }) }] }),
+    })
+    const response = await backend.fetch(
+      new Request("https://plugin.test/_tools/note_list", { method: "POST", headers: { [PLUGIN_CALLER_HEADER]: "h2" }, body: JSON.stringify({ arguments: { limit: 2 } }) }),
+      { PLATFORM: platform },
+    )
+    const result = (await response.json()) as { content: { text: string }[] }
+    expect(JSON.parse(result.content[0].text)).toEqual({ name: "note_list", args: { limit: 2 }, caller: { orgId: "org_1", origin: "agent", userId: "usr_1", sessionId: "ses_1" } })
+    expect(calls).toEqual([{ call: { name: "identity.caller" }, handle: "h2" }])
+  })
+
+  test("a tool call to a backend that serves no tools is answered 404 and never reaches `fetch`", async () => {
+    const { platform } = binding()
+    const backend = definePluginBackend({ fetch: () => new Response("fetch", { status: 500 }) })
+    const response = await backend.fetch(new Request("https://plugin.test/_tools/x", { method: "POST", body: "{}" }), { PLATFORM: platform })
+    expect(response.status).toBe(404)
+  })
 })
 
 describe("a backend's permissions and tools in the manifest", () => {

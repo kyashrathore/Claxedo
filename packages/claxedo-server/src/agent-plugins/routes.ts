@@ -1,5 +1,7 @@
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { routeParam } from "@claxedo/helpers/route-param"
+import { appPluginIdOfToolGroup } from "@claxedo/plugin-api/tools"
+import { APP_PLUGIN_TOOLS_GRANT_GROUP } from "./app-plugin-tool-consent"
 import { Hono, type Context } from "hono"
 import { acquirePluginArtifact } from "@claxedo/server-core/agent-plugins/artifacts/acquire"
 import type { AgentPluginArtifactStore } from "@claxedo/server-core/agent-plugins/artifacts/types"
@@ -327,6 +329,18 @@ export function HostedAgentPluginRoutes(input: {
     },
   })
 
+  /**
+   * The consent group a tool group subject's change reaches: a built-in group
+   * its own, `unknown` for a built-in this server does not register, and any
+   * app plugin's the app plugin tools grant's. Undefined for a sourced plugin.
+   */
+  const toolGroupConsent = (pluginInstanceId: string): { groupId: string } | "unknown" | undefined => {
+    if (appPluginIdOfToolGroup(pluginInstanceId)) return { groupId: APP_PLUGIN_TOOLS_GRANT_GROUP }
+    if (!isBuiltinPluginInstanceId(pluginInstanceId)) return undefined
+    const groupId = builtinToolGroupId(pluginInstanceId)
+    return groupId !== undefined && input.builtIn.groups.some((group) => group.id === groupId) ? { groupId } : "unknown"
+  }
+
   const apply = async (revision: number, auth: SignedControlPlaneAuth, consent?: { groupId: string }) => {
     try {
       const applied = await input.reconcile.reconcile(revision, auth)
@@ -489,15 +503,13 @@ export function HostedAgentPluginRoutes(input: {
         "The first-party server is activated one tool group at a time; name claxedo:<group>",
       ), 400)
     }
-    if (isBuiltinPluginInstanceId(body.pluginInstanceId)) {
-      const groupId = builtinToolGroupId(body.pluginInstanceId)
-      if (groupId === undefined || !input.builtIn.groups.some((group) => group.id === groupId)) {
-        return c.json(error("agent_plugins_unknown_tool_group", "The first-party server has no such tool group"), 404)
-      }
-      // The built-in comes from no source: there is nothing to fetch, hash or
-      // retain, so a choice about one of its groups is only ever the row.
+    const consent = toolGroupConsent(body.pluginInstanceId)
+    if (consent === "unknown") return c.json(error("agent_plugins_unknown_tool_group", "The first-party server has no such tool group"), 404)
+    if (consent) {
+      // A tool group comes from no source: there is nothing to fetch, hash or
+      // retain, so a choice about one is only ever the row.
       const committed = await input.activations.mutateUser(auth, body)
-      const applied = await apply(committed, auth, { groupId })
+      const applied = await apply(committed, auth, consent)
       return c.json({ revision: committed, reconciliation: applied }, applied.state === "failed" ? 202 : 200)
     }
     const known = (await input.activations.listKnown(auth)).find((item) => item.pluginInstanceId === body.pluginInstanceId)
@@ -531,13 +543,11 @@ export function HostedAgentPluginRoutes(input: {
         "The first-party server is activated one tool group at a time; name claxedo:<group>",
       ), 400)
     }
-    if (isBuiltinPluginInstanceId(body.pluginInstanceId)) {
-      const groupId = builtinToolGroupId(body.pluginInstanceId)
-      if (groupId === undefined || !input.builtIn.groups.some((group) => group.id === groupId)) {
-        return c.json(error("agent_plugins_unknown_tool_group", "The first-party server has no such tool group"), 404)
-      }
+    const consent = toolGroupConsent(body.pluginInstanceId)
+    if (consent === "unknown") return c.json(error("agent_plugins_unknown_tool_group", "The first-party server has no such tool group"), 404)
+    if (consent) {
       const committed = await input.activations.mutateOrganizationDefault(auth, body)
-      const applied = await apply(committed, auth, { groupId })
+      const applied = await apply(committed, auth, consent)
       return c.json({ revision: committed, reconciliation: applied }, applied.state === "failed" ? 202 : 200)
     }
     const known = (await input.activations.listKnown(auth)).find((item) => item.pluginInstanceId === body.pluginInstanceId)
@@ -568,7 +578,7 @@ export function HostedAgentPluginRoutes(input: {
     const auth = authResult.auth
     const body = updateMutation(await readJsonRecord(c.req))
     if (!body) return c.json(error("agent_plugins_invalid_body", "Invalid Agent Plugins update request"), 400)
-    if (isBuiltinFamilyName(body.pluginInstanceId) || isBuiltinPluginInstanceId(body.pluginInstanceId)) {
+    if (isBuiltinFamilyName(body.pluginInstanceId) || toolGroupConsent(body.pluginInstanceId)) {
       return c.json(error(
         "agent_plugins_builtin_not_updatable",
         "The first-party server ships with this deployment and has no artifact to update",

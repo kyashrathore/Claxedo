@@ -62,6 +62,21 @@ export function workspaceRuntimeOwnerGrantToken(env: Record<string, string | und
   return env[WORKSPACE_RUNTIME_OWNER_GRANT]?.trim() || undefined
 }
 
+export const WORKSPACE_RUNTIME_PLUGIN_TOOLS_GRANT = "WORKSPACE_RUNTIME_PLUGIN_TOOLS_GRANT"
+
+/**
+ * The grant a cloud root's first-party MCP presents to the control plane for
+ * its app plugins' tools. The runtime holds it, not the agent: the name is
+ * outside the harness allowlist, so no session's child process reads it.
+ */
+export function workspaceRuntimePluginToolsGrantEnv(input: { token: string }): Record<string, string> {
+  return { [WORKSPACE_RUNTIME_PLUGIN_TOOLS_GRANT]: input.token }
+}
+
+export function workspaceRuntimePluginToolsGrantToken(env: Record<string, string | undefined>): string | undefined {
+  return env[WORKSPACE_RUNTIME_PLUGIN_TOOLS_GRANT]?.trim() || undefined
+}
+
 /** Where a cloud runtime takes, and answers about, the pass it publishes its sessions' list rows with. */
 export const SESSION_ROWS_PASS_PATH = "/api/claxedo/session-rows/pass"
 

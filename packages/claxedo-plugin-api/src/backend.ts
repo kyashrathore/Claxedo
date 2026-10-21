@@ -14,6 +14,9 @@ export const PLUGIN_OBJECT_NAME_HEADER = "x-claxedo-object-name"
 /** Where the platform delivers a due wake: `POST /_wake/<name>`, with a system caller. No public request reaches a path under `/_`. */
 export const PLUGIN_WAKE_PATH_PREFIX = "/_wake/"
 
+/** Where the platform delivers an agent's tool call: `POST /_tools/<name>` with `{ arguments }`, as an `agent` caller. */
+export const PLUGIN_TOOL_PATH_PREFIX = "/_tools/"
+
 export const PLUGIN_BLOB_LIMITS = Object.freeze({
   keyPattern: /^[A-Za-z0-9._/-]{1,512}$/,
   objectBytes: 16 * 1024 * 1024,
@@ -45,9 +48,17 @@ export type PluginCallerOrigin = "person" | "agent" | "link" | "system"
 /**
  * An `agent` caller also names the session it acts from, and whether a person
  * other than that session's owner drives it: a member-driven session's agent
- * may not start a session of its own.
+ * may not start a session of its own. A cloud root's agent also names the
+ * project its grant is bound to.
  */
-export type PluginCaller = Readonly<{ orgId: string; origin: PluginCallerOrigin; userId?: string; session?: SessionRef; ownerDriven?: boolean }>
+export type PluginCaller = Readonly<{
+  orgId: string
+  origin: PluginCallerOrigin
+  userId?: string
+  session?: SessionRef
+  ownerDriven?: boolean
+  projectId?: string
+}>
 
 export type PluginProject = Readonly<{ id: string; repoKey: string }>
 
@@ -308,23 +319,42 @@ export function pluginPlatform(binding: PluginPlatformBinding, request?: Request
 
 export type PluginBackendEnv = { PLATFORM: PluginPlatformBinding }
 
+export type PluginToolContent =
+  | Readonly<{ type: "text"; text: string }>
+  | Readonly<{ type: "image"; mimeType: "image/png" | "image/jpeg"; data: string }>
+
+/** What a tool answers the agent: an MCP tool result, at most `PLUGIN_TOOL_RESULT_MAX_BYTES` of JSON. */
+export type PluginToolResult = Readonly<{ content: readonly PluginToolContent[]; isError?: boolean }>
+
 export type PluginBackendDefinition = Readonly<{
   /** Answers a request to one of the manifest's routes. */
   fetch(request: Request, platform: PluginBackendPlatform): Response | Promise<Response>
   /** Runs a wake `schedule.at` set, once, when it is due; its caller is `system`. */
   wake?(name: string, payload: unknown, platform: PluginBackendPlatform): void | Promise<void>
+  /** Answers one of the release's declared tools; its caller is `agent`. */
+  tool?(name: string, args: Readonly<Record<string, unknown>>, platform: PluginBackendPlatform): PluginToolResult | Promise<PluginToolResult>
 }>
+
+function toolArguments(body: unknown): Readonly<Record<string, unknown>> {
+  const args: unknown = body !== null && typeof body === "object" && "arguments" in body ? body.arguments : undefined
+  return args !== null && typeof args === "object" && !Array.isArray(args) ? { ...args } : {}
+}
 
 /**
  * A backend's default export. Requests reach `fetch` with the platform bound
  * to their caller; a due wake reaches `wake`, and a wake for a backend that
- * declares none is answered and dropped.
+ * declares none is answered and dropped; a tool call reaches `tool`.
  */
 export function definePluginBackend(definition: PluginBackendDefinition) {
   return {
     async fetch(request: Request, env: PluginBackendEnv): Promise<Response> {
       const platform = pluginPlatform(env.PLATFORM, request)
       const path = new URL(request.url).pathname
+      if (path.startsWith(PLUGIN_TOOL_PATH_PREFIX)) {
+        if (!definition.tool) return Response.json({ error: { code: "plugin_tool_not_served", message: "This backend serves no tools" } }, { status: 404 })
+        const body: unknown = await request.json().catch(() => undefined)
+        return Response.json(await definition.tool(decodeURIComponent(path.slice(PLUGIN_TOOL_PATH_PREFIX.length)), toolArguments(body), platform))
+      }
       if (!path.startsWith(PLUGIN_WAKE_PATH_PREFIX)) return definition.fetch(request, platform)
       const payload: unknown = await request.json().catch(() => undefined)
       await definition.wake?.(decodeURIComponent(path.slice(PLUGIN_WAKE_PATH_PREFIX.length)), payload, platform)

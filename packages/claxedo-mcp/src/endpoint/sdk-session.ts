@@ -12,7 +12,7 @@ import {
 import type { ClaxedoMcpClient } from "../client/contract"
 import type { McpAuditEvent, McpCredential, McpToolContext } from "../context"
 import type { McpToolGroup } from "../tools/index"
-import { createToolRegistry } from "../tools/registry"
+import { createToolRegistry, type ToolRegistrar } from "../tools/registry"
 
 export type McpSession = {
   transport: WebStandardStreamableHTTPServerTransport
@@ -25,6 +25,8 @@ export type McpSessionInput = Readonly<{
   client: ClaxedoMcpClient
   audit: (event: McpAuditEvent) => void | Promise<void>
   groups: ReadonlyArray<McpToolGroup>
+  /** Registered after `groups`; a tool whose name is already registered is left out, so a plugin can never replace a tool. */
+  pluginGroups?: ReadonlyArray<McpToolGroup>
   /** Absent, each request is its own exchange answered as JSON; present, the transport keeps a session under the id it mints. */
   stateful?: Readonly<{
     onInitialized: (id: string, session: McpSession) => void
@@ -52,6 +54,12 @@ export async function startMcpSession(input: McpSessionInput): Promise<McpSessio
   }
   const registry = createToolRegistry(server, ctx)
   for (const group of input.groups) group.register(registry)
+  const unclaimed: ToolRegistrar = {
+    tool: (name, definition, handler) => {
+      if (!registry.declared.has(name)) registry.tool(name, definition, handler)
+    },
+  }
+  for (const group of input.pluginGroups ?? []) group.register(unclaimed)
   if (registry.listed.length === 0) {
     server.server.registerCapabilities({ tools: {} })
     server.server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: [] }))

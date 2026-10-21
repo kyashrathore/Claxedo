@@ -1,0 +1,19 @@
+{
+  "name": "claxedo-plugin-notes",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Keeps notes per organization through agent tools, for tests of app plugin tools",
+  "claxedo": {
+    "id": "notes",
+    "name": "Notes",
+    "version": "0.1.0",
+    "app": "./src/app.js",
+    "permissions": ["tools", "sessions.start"],
+    "backend": {
+      "entry": "./src/backend.js",
+      "objects": ["Notes"],
+      "routes": ["GET /notes"],
+      "tools": { "group": { "id": "notes", "label": "Notes" }, "definitions": "./src/tools.js" }
+    }
+  }
+}

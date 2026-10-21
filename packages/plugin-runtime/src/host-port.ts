@@ -10,6 +10,10 @@ export type PluginRunScope = PluginScope & Readonly<{ epoch: number }>
 /** Who a request the host forwards is for: a person the host authenticated, or anyone holding one of the plugin's public links. */
 export type PluginRequestCaller = PluginScope & (Readonly<{ origin: "person"; userId: string }> | Readonly<{ origin: "link" }>)
 
+/** Who a tool call is for: an agent acting for a user the host authenticated, from the session and project its credential names. */
+export type PluginAgentCaller = PluginScope &
+  Readonly<{ origin: "agent"; userId: string; session?: PluginCaller["session"]; ownerDriven?: boolean; projectId?: string }>
+
 export type PluginBackendActivation = Readonly<{
   /** Rises on every change to the plugin's install and is never reused; every capability is fenced by it. */
   epoch: number

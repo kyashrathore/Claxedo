@@ -19,7 +19,9 @@ import { HostedWorkerCompositionError } from "../../authority/composition-error"
 import { PLUGIN_REGISTRY_KEYS } from "@claxedo/plugin-api/release"
 import type { PluginSupervisorNamespace } from "@claxedo/plugin-runtime"
 import { hostedOrgAdministers } from "../../credentials/worker/org-administers"
-import { hostedAppPluginRoutes } from "../../plugin-backends/compose"
+import { hostedAppPluginsServerPlugin } from "../../plugin-backends/compose"
+import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
+import { appPluginToolGroups } from "@claxedo/mcp/plugin-proxy"
 import { DEFAULT_APP_PLUGIN_REGISTRY_URL } from "../../plugin-backends/registry"
 import { PluginOutbound, PluginPlatform } from "@claxedo/plugin-runtime/entrypoints"
 import { hostedPluginSupervisorClass, type HostedPluginBackendEnv } from "../../plugin-backends/supervisor.cf"
@@ -78,20 +80,6 @@ export function composeBetterAuthD1AgentPlugins(
   if (!env.CLAXEDO_AGENT_PLUGINS) {
     throw new HostedWorkerCompositionError("hosted_dependency_missing", "The Agent Plugins Worker requires the CLAXEDO_AGENT_PLUGINS bucket")
   }
-  const appPlugins = hostedAppPluginRoutes({
-    authentication,
-    authority,
-    services: base.plane.services,
-    database,
-    bucket: env.CLAXEDO_AGENT_PLUGINS,
-    supervisors: env.PLUGIN_SUPERVISOR,
-    administers: hostedOrgAdministers(database),
-    registry: {
-      url: signingEnv.CLAXEDO_APP_PLUGIN_REGISTRY_URL?.trim() || DEFAULT_APP_PLUGIN_REGISTRY_URL,
-      keys: registryKeys ? registryKeys(env) : PLUGIN_REGISTRY_KEYS,
-      fetch: timedFetch(),
-    },
-  })
   const sandboxStart = base.options.productWorkspace?.sandboxStart
   const sessions = composeHostedSessionPorts({
     services: base.plane.services,
@@ -136,8 +124,9 @@ export function composeBetterAuthD1AgentPlugins(
     },
   })
   const plugins = [tasks]
+  const toolGroups = hostedMcpToolGroups(plugins)
   const feature = createHostedAgentPluginsComposition({
-    toolGroups: hostedMcpToolGroups(plugins),
+    toolGroups,
     env,
     plane: base.plane,
     database,
@@ -149,6 +138,22 @@ export function composeBetterAuthD1AgentPlugins(
     ...(base.runtimeDelivery ? { pluginsChanged: base.runtimeDelivery.pluginsChanged } : {}),
     ...(base.egressBroker ? { egressBroker: base.egressBroker } : {}),
     ...(base.options.productWorkspace?.sandboxInFlight ? { sandboxInFlight: base.options.productWorkspace.sandboxInFlight } : {}),
+  })
+  const appPlugins = hostedAppPluginsServerPlugin({
+    authentication,
+    authority,
+    services: base.plane.services,
+    database,
+    bucket: env.CLAXEDO_AGENT_PLUGINS,
+    supervisors: env.PLUGIN_SUPERVISOR,
+    administers: hostedOrgAdministers(database),
+    registry: {
+      url: signingEnv.CLAXEDO_APP_PLUGIN_REGISTRY_URL?.trim() || DEFAULT_APP_PLUGIN_REGISTRY_URL,
+      keys: registryKeys ? registryKeys(env) : PLUGIN_REGISTRY_KEYS,
+      fetch: timedFetch(),
+    },
+    reservedToolNames: new Set(claxedoMcpToolGroupInventory(toolGroups).flatMap((group) => group.tools)),
+    tools: { consent: feature.appPluginTools, grants: { signingEnv, passes }, withdraw: feature.withdrawAppPluginTools },
   })
   const prepareRuntime = async (context: WorkspaceRuntimeContext) => {
     const [basePreparation, featurePreparation] = await Promise.all([
@@ -169,8 +174,9 @@ export function composeBetterAuthD1AgentPlugins(
       ...base.options,
       sandboxPasses: passes,
       ...(sessionRowsPasses ? { sessionRowsPasses } : {}),
-      routeContributions: [...feature.routeContributions, ...appPlugins],
-      plugins,
+      routeContributions: feature.routeContributions,
+      plugins: [...plugins, appPlugins],
+      pluginToolGroups: appPluginToolGroups,
       integrationRoutes: feature.integrationRoutes,
       sessionHostPlugins: feature.sessionHostPlugins,
       sessionHostToolGroups: feature.sessionHostToolGroups,

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { PluginManifest } from "@claxedo/plugin-api"
 import type { AppPluginCatalog, AppPluginInstall, AppPluginListing } from "@/server"
-import { appPluginAccess, appPluginEntries, appPluginMainAction, appPluginStatus, appPluginUpdate } from "./model"
+import { appPluginAccess, appPluginEntries, appPluginMainAction, appPluginStatus, appPluginTools, appPluginUpdate } from "./model"
 
 function manifest(id: string, version: string, extra: Partial<PluginManifest> = {}): PluginManifest {
   return { id, name: id.charAt(0).toUpperCase() + id.slice(1), version, app: "./src/app.js", requires: [], server: { routes: [], operations: [] }, ...extra }
@@ -36,6 +36,20 @@ describe("the App plugins directory", () => {
     expect(appPluginMainAction(enabled, false)).toBe("turnOff")
     const [off] = appPluginEntries([install("counter", "0.2.0", { active: false })], catalog)
     expect([appPluginMainAction(off, true), appPluginMainAction(off, false)]).toEqual(["turnOnForOrganization", undefined])
+  })
+})
+
+describe("an App plugin's agent tools switch", () => {
+  const tools = { label: "Notes", names: ["note_list"], on: true }
+
+  test("is offered only for a plugin that declares tools, while the organization has it on and the member turned it on", () => {
+    const shown = (state: Partial<Pick<AppPluginInstall, "active" | "enabledForMe">>, declared = true) =>
+      appPluginTools(appPluginEntries([{ ...install("notes", "1.0.0", state), ...(declared ? { tools } : {}) }], catalog)[0])
+    expect(shown({ enabledForMe: true })).toEqual(tools)
+    expect(shown({ enabledForMe: false })).toBeUndefined()
+    expect(shown({ enabledForMe: true, active: false })).toBeUndefined()
+    expect(shown({ enabledForMe: true }, false)).toBeUndefined()
+    expect(appPluginTools(appPluginEntries([], catalog)[0])).toBeUndefined()
   })
 })
 

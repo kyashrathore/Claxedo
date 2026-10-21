@@ -74,8 +74,17 @@ export type FirstPartyMcpOptions = Readonly<{
   createClient: (input: McpClientInputs) => ClaxedoMcpClient | Promise<ClaxedoMcpClient>
   registerTools?: ReadonlyArray<McpToolGroup>
   enabledToolGroups?: (credential: McpCredential) => readonly string[] | Promise<readonly string[]>
+  /** See `ClaxedoMcpMountOptions.pluginToolGroups`. */
+  pluginToolGroups?: PluginToolGroups
   crossMachineWrites?: (claims: RuntimeCredentialClaims) => boolean
 }>
+
+/**
+ * The app plugin tool groups one caller is served, read for each new MCP
+ * session from the client built for it, because the plugins a caller has
+ * installed, enabled and consented to change while the mount runs.
+ */
+export type PluginToolGroups = (credential: McpCredential, client: ClaxedoMcpClient) => Promise<readonly McpToolGroup[]>
 
 /** A loopback mount admits nothing but the runtime credential, so the verifier is not optional there. */
 export type LoopbackFirstPartyMcpOptions = FirstPartyMcpOptions & Readonly<{ verifyRuntimeCredential: VerifyRuntimeCredential }>
@@ -100,9 +109,15 @@ export type ClaxedoMcpMountOptions = Readonly<{
    * and unknown to `tools/call`: consent decides the surface, and a tool asked
    * for by name outside it is refused by not existing. Absent means this mount
    * gates nothing, which a loopback mount — the one a session reaches — is not
-   * allowed to be.
+   * allowed to be; an answer of undefined gates nothing for that credential.
    */
-  enabledToolGroups?: (credential: McpCredential) => readonly string[] | Promise<readonly string[]>
+  enabledToolGroups?: (credential: McpCredential) => readonly string[] | undefined | Promise<readonly string[] | undefined>
+  /**
+   * Served after `registerTools`, under the same consent: a plugin's group is
+   * registered only while its id is enabled. A tool whose name a group before
+   * it registers is left out.
+   */
+  pluginToolGroups?: PluginToolGroups
   audit: (event: McpAuditEvent) => void | Promise<void>
   crossMachineWrites?: (claims: RuntimeCredentialClaims) => boolean
   maxInFlightPerCredential?: number
@@ -228,9 +243,9 @@ export function createClaxedoMcpRoutes(options: ClaxedoMcpMountOptions): Claxedo
     stateless: boolean,
   ): Promise<McpSession> => {
     const client = await options.createClient(credential, request)
-    const groups = enabled
-      ? options.registerTools.filter((group) => enabled.includes(group.id))
-      : options.registerTools
+    const consented = (group: McpToolGroup) => !enabled || enabled.includes(group.id)
+    const groups = options.registerTools.filter(consented)
+    const pluginGroups = (await options.pluginToolGroups?.(credential, client) ?? []).filter(consented)
     // The MCP SDK builds its protocol schemas at module scope; loading it with
     // the first MCP request keeps that work out of every Worker isolate's
     // startup, which most isolates finish without serving one.
@@ -241,6 +256,7 @@ export function createClaxedoMcpRoutes(options: ClaxedoMcpMountOptions): Claxedo
       client,
       audit: options.audit,
       groups,
+      pluginGroups,
       ...(stateless
         ? {}
         : {

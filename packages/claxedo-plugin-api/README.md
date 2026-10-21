@@ -68,10 +68,13 @@ A plugin is a package whose `package.json` carries a `claxedo` block:
 
 ## Backends
 
-`@claxedo/plugin-api/backend` is what a backend is written against. `definePluginBackend({ fetch(request, platform), wake?(name, payload, platform) })` is its default export:
+`@claxedo/plugin-api/backend` is what a backend is written against. `definePluginBackend({ fetch(request, platform), wake?(name, payload, platform), tool?(name, args, platform) })` is its default export:
 
 - a request to one of the manifest's routes reaches `fetch`, with the platform bound to that request's caller handle;
-- a due wake reaches `wake`, once, with a `system` caller.
+- a due wake reaches `wake`, once, with a `system` caller;
+- an agent's call of one of the release's tools reaches `tool` with the call's arguments, as an `agent` caller, and its `PluginToolResult` (an MCP tool result: text and PNG or JPEG image blocks, `isError` optional) is the answer; a backend without `tool` answers 404 `plugin_tool_not_served`.
+
+**Agent tools.** The manifest's `backend.tools` names a `group` (`id`, `label`) and the `definitions` module, whose default export is the array of `PluginToolDeclaration`s: `name` (`PLUGIN_TOOL_NAME_PATTERN`, `^[a-z][a-z0-9_]{1,47}$`), `title`, `description`, `inputSchema` (a JSON Schema object) and `access` (`read` or `write`). The release build evaluates that module once and carries the declarations as `release.tools`, so no host runs plugin code to learn its tools. `@claxedo/plugin-api/tools` holds the contract the platform's MCP proxy and the host share: the tool group id `app-plugin:<pluginId>` (`appPluginToolGroupId`), which is also the Marketplace activation subject of the plugin's tool switch; the listing route `PLUGIN_TOOLS_ROUTE` and its `PluginToolsListing`; the call path `pluginToolCallPath`; the `x-claxedo-agent` header (`PluginToolAgent`); and `PLUGIN_TOOL_RESULT_MAX_BYTES` (256 KiB). A tool call's `agent` caller names its `session` and `ownerDriven` as the MCP mount serving the session states them, and a cloud root's agent its grant's `projectId`; the session's workspace is the grant's, so a signed account's call names no session.
 
 `pluginPlatform(env.PLATFORM, request)` is the same typed platform for a backend that routes for itself. A refused call throws `PluginPlatformError` with the platform's `status` and `code`.
 
@@ -79,8 +82,8 @@ A plugin is a package whose `package.json` carries a `claxedo` block:
 | --- | --- | --- |
 | `object(className, name, request)` | none | One of the plugin's own Durable Objects. Every object shares one `ctx.id`, so an object reads its own name from `x-claxedo-object-name`, never from `ctx.id`. |
 | `active()` | none | Whether this backend is still the plugin's current activation. |
-| `identity.caller()` | none | `{ orgId, origin, userId?, session?, ownerDriven? }`: a `person` or an `agent` with their user id, an `agent` also with the session it acts from and whether that session's owner drives it; a `link` or a `system` wake without a user. |
-| `projects.list()`, `projects.authorize(projectId, "read" \| "write")` | `projects.read` | As the caller, who must be a person. |
+| `identity.caller()` | none | `{ orgId, origin, userId?, session?, ownerDriven?, projectId? }`: a `person` or an `agent` with their user id, an `agent` also with the session it acts from and whether that session's owner drives it, and a cloud root's agent with its grant's project; a `link` or a `system` wake without a user. |
+| `projects.list()`, `projects.authorize(projectId, "read" \| "write")` | `projects.read` | As the caller, who must carry a user: a person or their agent. |
 | `blobs.put(key, bytes, { contentType })`, `get`, `head`, `delete`, `list({ prefix, cursor })` | `blobs` | The plugin's own files in its organization. Keys match `PLUGIN_BLOB_LIMITS.keyPattern` with no empty, `.` or `..` segment. A blob is at most 16 MiB, and a plugin holds 1 GiB per organization by default. |
 | `events.publish({ audience, projectId?, topic, data? })` | `events` | Tells the frontend of every member in the audience who has the plugin enabled: `caller`, a `project`'s readers, or the `org`. Data is at most 8 KiB of JSON, 10 events a second. |
 | `schedule.at(name, at, payload?)`, `cancel(name)`, `list()` | `schedule` | Wakes at least 30 s ahead, at most 100, payload at most 4 KiB. Use these, not a Durable Object alarm. |

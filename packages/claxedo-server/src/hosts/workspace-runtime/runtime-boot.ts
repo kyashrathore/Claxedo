@@ -29,6 +29,8 @@ import { runtimeStartPhases } from "./runtime-start-phases"
 import { repositoryHistory } from "./repository-history"
 import { workspaceRuntimeOwnerGrant } from "./owner-grant"
 import { CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
+import { APP_PLUGIN_TOOLS_SERVICE, appPluginToolGroups } from "@claxedo/mcp/plugin-proxy"
+import { workspaceRuntimePluginToolsGrant } from "./plugin-tools-grant"
 import { DOCUMENTS_MCP_TOOL_GROUP } from "@claxedo/documents/mcp"
 import { createDocumentHydration, documentHydrationContribution } from "@claxedo/documents/runtime"
 import type { RuntimeHostPlugin } from "@claxedo/server-core/plugins/runtime-host"
@@ -202,6 +204,8 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
   // grant renewal at; its timers hold nothing open.
   const plugins = input.plugins ?? []
   const started = plugins.flatMap((plugin) => plugin.start(env, ownerGrant ? { ownerGrant } : {}) ?? [])
+  const pluginTools = workspaceRuntimePluginToolsGrant(env)
+  pluginTools?.start()
   // A relay-exposed runtime answers to the control plane's session authority,
   // which is also where its turns' usage and its sessions' list rows are reported.
   const authorityUrl = text(env, WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL)
@@ -256,10 +260,11 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
           },
         }
       : {}),
-    ...(usage || sessionRows || history || started.length
+    ...(usage || sessionRows || history || started.length || pluginTools
       ? {
           onDrain: async () => {
             for (const plugin of started) plugin.dispose()
+            pluginTools?.stop()
             sessionRows?.stop()
             await history?.stop()
             await usage?.drain()
@@ -287,7 +292,11 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
         verifyRuntimeCredential: firstPartyMcp.verify,
         enabledToolGroups,
         registerTools: [...CLAXEDO_MCP_TOOL_GROUPS, DOCUMENTS_MCP_TOOL_GROUP, ...plugins.flatMap((plugin) => plugin.mcp?.groups ?? [])],
-        services: () => Object.assign({}, ...started.map((plugin) => plugin.mcpServices())),
+        services: () => {
+          const tools = pluginTools?.current()
+          return Object.assign({}, ...started.map((plugin) => plugin.mcpServices()), tools ? { [APP_PLUGIN_TOOLS_SERVICE.id]: tools } : {})
+        },
+        pluginToolGroups: appPluginToolGroups,
         ...(ownerGrant ? { ownerGrant: () => ownerGrant.current(), ownerActorId: () => ownerGrant.actorId } : {}),
       }),
     ],

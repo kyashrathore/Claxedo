@@ -21,6 +21,8 @@ export type CloudRootEnvironmentInput = Readonly<{
     }): Promise<SignedActivationSnapshot>
   }
   builtIn: Readonly<{ groups: readonly BuiltinToolGroup[]; deployment: BuiltinDeployment }>
+  /** Groups on for the root beyond the built-in ones: its app plugins' tool groups, which no built-in activation reads. */
+  extraGroups?: (root: CloudRootIdentity) => Promise<readonly string[]>
   /** Each credential a root launches with while its project has that grant's group on. */
   grants: readonly Pick<CloudRootGrantContribution, "group" | "mint">[]
 }>
@@ -52,12 +54,13 @@ export function createCloudRootEnvironment(input: CloudRootEnvironmentInput) {
 }
 
 /** The first-party tool groups one cloud root's project has on, which its runtime and its session hosts' sessions are offered alike. */
-export function createCloudRootToolGroups(input: Pick<CloudRootEnvironmentInput, "activations" | "builtIn">) {
+export function createCloudRootToolGroups(input: Pick<CloudRootEnvironmentInput, "activations" | "builtIn" | "extraGroups">) {
   return async (root: CloudRootIdentity): Promise<string[]> => {
-    const enabled = await Promise.all(input.builtIn.groups.map(async (group) =>
-      (await groupEnabled(input, root, group)) ? group.id : undefined,
-    ))
-    return enabled.filter((group): group is string => group !== undefined)
+    const [enabled, extra] = await Promise.all([
+      Promise.all(input.builtIn.groups.map(async (group) => ((await groupEnabled(input, root, group)) ? group.id : undefined))),
+      input.extraGroups?.(root) ?? [],
+    ])
+    return [...enabled.filter((group): group is string => group !== undefined), ...extra]
   }
 }
 

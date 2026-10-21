@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "vitest"
 import { Miniflare } from "miniflare"
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import { AgentPluginActivationStoreError } from "@claxedo/server-core/agent-plugins/activation/store"
-import type { AgentPluginArtifactPin } from "@claxedo/server-core/agent-plugins/activation/store"
+import type { AgentPluginArtifactPin, MutateSignedUserActivation } from "@claxedo/server-core/agent-plugins/activation/store"
 import type { ArtifactDigest } from "@claxedo/server-core/agent-plugins/activation/types"
 import { SUPPORTED_AGENT_PLUGIN_HARNESSES, type AgentPluginHarnessId } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import { claxedoMcpToolGroupInventory, CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
@@ -21,6 +21,7 @@ import {
 import { applyControlPlaneBaseline } from "../../test-support/control-plane-migrations"
 import { desiredAgentPluginSelections } from "../runtime/provision"
 import { createCloudRootToolGroups } from "../runtime/cloud-root-environment"
+import { appPluginToolConsent } from "../app-plugin-tool-consent"
 
 
 const PLUGIN = "claxedo/review"
@@ -642,6 +643,34 @@ describe("D1 signed Agent Plugins activation store", () => {
     const after = await toolGroups(root)
     expect(after).not.toContain("tasks")
     expect(after).not.toContain("sessions")
+    expect(desiredAgentPluginSelections(await store.runtimeSnapshot(cloud.workspace_id))).toEqual([])
+  })
+
+  test("an app plugin's tool switch is on until its user turns it off, for them and for their roots, and never enters artifact selection", async () => {
+    const { authority, store } = await setup()
+    const auth = await signed(authority, identity("alice"))
+    const { userId, orgId } = await principalOf(authority, auth)
+    const cloud = await workspace({ authority, auth, orgId, workspaceId: "ws-cloud", backing: "cloud-vm" })
+    const root = { userId, orgId, projectId: cloud.project_id, workspaceId: cloud.workspace_id }
+    const consent = appPluginToolConsent(store)
+    const toggle = async (choice: boolean, target: MutateSignedUserActivation["target"] = { scope: "all-projects" }) => await store.mutateUser(auth, {
+      pluginInstanceId: "app-plugin:notes",
+      harnessIds: [...SUPPORTED_AGENT_PLUGIN_HARNESSES],
+      choice,
+      target,
+      expectedRevision: await store.revision(auth),
+    })
+    expect([...(await consent.forCaller(auth, ["notes", "other"]))]).toEqual(["notes", "other"])
+    expect([...(await consent.forRoot(root, ["notes"]))]).toEqual(["notes"])
+
+    await toggle(false)
+    expect([...(await consent.forCaller(auth, ["notes", "other"]))]).toEqual(["other"])
+    expect([...(await consent.forRoot(root, ["notes"]))]).toEqual([])
+    await toggle(true, { scope: "projects", projectIds: [cloud.project_id] })
+    expect([...(await consent.forRoot(root, ["notes"]))]).toEqual(["notes"])
+    expect([...(await consent.forCaller(auth, ["notes"]))]).toEqual([])
+
+    expect(await store.listKnown(auth)).toEqual([])
     expect(desiredAgentPluginSelections(await store.runtimeSnapshot(cloud.workspace_id))).toEqual([])
   })
 
