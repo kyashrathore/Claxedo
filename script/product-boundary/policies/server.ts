@@ -270,8 +270,12 @@ export const serverWorkerd: Policy = {
   // cookie produced in the last 60 s, carried in a signed cookie, so it pays
   // no verification round. It adds no package edge: the helpers and the
   // server core were already in the Worker.
-  // 178/23, no headroom.
-  ceilings: { modules: 178, packages: 23 },
+  // +1 module (owner: the D1 session authority): a session's turn lease and
+  // deferred turn grants (`authority/adapters/d1/session-turn-leases.ts`),
+  // split from `session-authority.ts` when a refused renewal began ending the
+  // lease it named. It adds no package edge.
+  // 179/23, no headroom.
+  ceilings: { modules: 179, packages: 23 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

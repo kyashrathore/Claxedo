@@ -952,6 +952,36 @@ describe("D1 private multiplayer session authority", () => {
     expect(await input.sessions.resolveCloudTurnUsageOwner({ sessionId: "ses_usage", turnId: "msg_bob" })).toBeUndefined()
   })
 
+  test("a renewal refused because the sender lost the share ends that lease: the owner's next turn is admitted at once and the list reads the turn interrupted", async () => {
+    const input = await setup()
+    const { alice, reader } = await sharedWorkspace(input)
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_refused", sessionId: "ses_refused" })
+    const share = { sessionId: "ses_refused", workspaceId: "ws_main", grantedToUserId: reader.principal!.userId }
+    await input.sessions.grantSessionShare(alice, { ...share, level: "send" })
+    const readerPrincipal = { principalKind: "user" as const, actorId: reader.principal!.actorId, actorKind: "human" as const }
+    const alicePrincipal = { principalKind: "user" as const, actorId: alice.principal!.actorId, actorKind: "human" as const }
+    const turn = { sessionId: "ses_refused", workspaceId: "ws_main" }
+    const held = await input.sessions.acquireSessionTurn({ ...readerPrincipal, ...turn, turnId: "msg_reader" })
+    const owned = { ...readerPrincipal, ...turn, turnId: "msg_reader", leaseId: held.leaseId, fencingToken: held.fencingToken }
+    await expect(input.sessions.acquireSessionTurn({ ...alicePrincipal, ...turn, turnId: "msg_alice" }))
+      .rejects.toMatchObject({ code: "session_turn_in_progress" })
+    const page = { workspaceId: "ws_main", sort: "human_turn_desc" as const, archived: "active" as const, settled: "all" as const, limit: 5 }
+    const status = async () => {
+      const row = (await input.sessions.listSessionPage(alice, page)).find((entry) => entry.session_id === "ses_refused")
+      return row && "status" in row ? row.status : undefined
+    }
+    expect(await status()).toBe("busy")
+
+    await input.sessions.grantSessionShare(alice, { ...share, level: "follow" })
+    await expect(input.sessions.renewSessionTurn(owned)).rejects.toMatchObject({ status: 403 })
+
+    expect(await status()).toBe("interrupted")
+    await expect(input.sessions.renewSessionTurn(owned)).rejects.toMatchObject({ status: 403 })
+    const next = await input.sessions.acquireSessionTurn({ ...alicePrincipal, ...turn, turnId: "msg_alice" })
+    expect(next.fencingToken).toBe(held.fencingToken + 1)
+    expect(await input.sessions.releaseSessionTurn(owned)).toMatchObject({ released: false })
+  })
+
   test("syncs only registered writable sessions and projects verified message attribution", async () => {
     const input = await setup()
     const { alice, bob } = await sharedWorkspace(input)
