@@ -6,10 +6,31 @@ the assigned folders to your Claxedo sessions.
 
 ## Install
 
-`@claxedo/cli` is not published from this repository yet
-([`script/PUBLISH-ORDER.md`](../../script/PUBLISH-ORDER.md) says why), and the
-`0.1.0` on npm predates this code. Run it from a checkout, with Bun and Node 24
-or newer:
+With Node 24 or newer:
+
+```sh
+npm install -g @claxedo/cli
+claxedo --version
+```
+
+It installs `@claxedo/workspace-runtime` beside it, which brings the embedded
+OpenCode engine and its native modules. On Windows the install needs Git on
+`PATH` (the runtime's postinstall applies its OpenCode patches with it) and a
+C++ toolchain with Python for the one OpenCode dependency that has no prebuilt
+binary — the Visual Studio Build Tools that Node's installer offers to add.
+
+`install.sh` is the one-line installer for Linux and macOS: it uses the `node`
+on your PATH when it is 24 or newer, otherwise downloads the current Node 24
+release from nodejs.org (linux/darwin, x64/arm64, sha256 checked) into
+`~/.claxedo/node`; installs under `~/.claxedo/npm` when the global prefix is
+not writable, printing the `PATH` line to add; and checks `claxedo --help`.
+Knobs: `CLAXEDO_CLI_VERSION` pins the version, `CLAXEDO_INSTALL_DIR` moves
+`~/.claxedo`, and `CLAXEDO_CLI_TARBALL` installs one or more local packs
+(space-separated) instead of the registry. Such an install still lands in the
+real global prefix when that prefix is writable — point `npm_config_prefix` at
+a scratch directory to keep it out.
+
+From a checkout, with Bun and Node 24:
 
 ```sh
 bun install
@@ -19,18 +40,8 @@ node packages/cli/dist/index.mjs --help
 ```
 
 `bun run --cwd packages/cli dev -- --help` runs the source under Bun instead.
-
-`install.sh` is the one-line installer for once the package is published: it
-installs `@claxedo/cli` from npm, so until then it installs only the stale
-release. It uses the `node` on your PATH when it is 24 or newer, otherwise
-downloads the current Node 24 release from nodejs.org (linux/darwin, x64/arm64,
-sha256 checked) into `~/.claxedo/node`; installs under `~/.claxedo/npm` when the
-global prefix is not writable, printing the `PATH` line to add; and checks
-`claxedo --help`. Knobs: `CLAXEDO_CLI_VERSION` pins the version,
-`CLAXEDO_INSTALL_DIR` moves `~/.claxedo`, and `CLAXEDO_CLI_TARBALL` installs one
-or more local packs (space-separated) instead of the registry. Such an install
-still lands in the real global prefix when that prefix is writable — point
-`npm_config_prefix` at a scratch directory to keep it out.
+[`script/PUBLISH-ORDER.md`](../../script/PUBLISH-ORDER.md) describes how the
+package is published.
 
 ## Connect a machine
 
@@ -87,5 +98,7 @@ bun run typecheck
 ```
 
 `dist/index.mjs` bundles everything except `@claxedo/workspace-runtime`, which
-ships the embedded OpenCode host and a native lock binding and stays the
-package's one runtime dependency.
+ships the embedded OpenCode host and a native lock binding, and
+`better-sqlite3`, a native module; they are the package's two runtime
+dependencies. `bun run verify:publish` runs the built bin under the `node` on
+`PATH`.

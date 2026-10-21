@@ -7,6 +7,7 @@ import { status } from "./commands/status"
 import { helpText } from "./help"
 import { errorMessage } from "./json"
 import { cliCommandContext, pluginCommand } from "./plugin-commands"
+import { cliVersion } from "./version"
 
 function help() {
   console.log(helpText())
@@ -16,6 +17,10 @@ async function main(argv: string[]) {
   const [command, ...args] = argv
   if (!command || command === "help" || command === "--help" || command === "-h") {
     help()
+    return
+  }
+  if (command === "--version" || command === "-v") {
+    console.log(cliVersion())
     return
   }
   if (command === "login") return login()

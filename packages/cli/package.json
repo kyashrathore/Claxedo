@@ -35,6 +35,7 @@
   },
   "scripts": {
     "build": "bun scripts/build.ts",
+    "verify:publish": "bun scripts/verify-publish.ts",
     "dev": "bun run src/index.ts",
     "test": "mkdir -p .artifacts/unit && node ../../script/test-deadline.mjs bun test src --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
     "typecheck": "tsgo --noEmit"

@@ -10,6 +10,7 @@ ${hostUsage}
 claxedo status
 claxedo whoami
 ${PLUGIN_COMMANDS.map((command) => command.usage).join("\n")}
+claxedo --version
 
 \`claxedo connect --help\` and \`claxedo host --help\` describe the machine and owner sides of remote access.`
 }

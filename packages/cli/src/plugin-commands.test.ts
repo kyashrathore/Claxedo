@@ -39,6 +39,7 @@ claxedo status
 claxedo whoami
 claxedo documents list [--project <id> | --directory <path>]
 claxedo documents open <claxedo://document/id | id | name> [--session <id>] [--project <id> | --directory <path>]
+claxedo --version
 
 \`claxedo connect --help\` and \`claxedo host --help\` describe the machine and owner sides of remote access.`)
 })
