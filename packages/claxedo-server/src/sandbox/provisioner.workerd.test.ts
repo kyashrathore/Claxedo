@@ -26,8 +26,8 @@ afterAll(async () => {
   await miniflare?.dispose()
 })
 
-async function start(workspaceId: string, request: { retry?: true } = {}): Promise<SandboxStartAnswer> {
-  const response = await miniflare.dispatchFetch(`${ORIGIN}/start?ws=${workspaceId}${request.retry ? "&retry=1" : ""}`, { method: "POST" })
+async function start(workspaceId: string, request: { retry?: true; updateImage?: true } = {}): Promise<SandboxStartAnswer> {
+  const response = await miniflare.dispatchFetch(`${ORIGIN}/start?ws=${workspaceId}${request.retry ? "&retry=1" : ""}${request.updateImage ? "&update=1" : ""}`, { method: "POST" })
   expect(response.status).toBe(200)
   return (await response.json()) as SandboxStartAnswer
 }
@@ -113,6 +113,36 @@ describe("a sandbox start on workerd", () => {
     expect(await start("ws_slow_1")).toMatchObject({ status: "ready", epoch: 1 })
     expect(await start("ws_slow_1")).toMatchObject({ status: "ready", epoch: 1 })
     expect(await driverCalls("ws_slow_1")).toBe(1)
+  })
+
+  test("a person's Restart to update runs a driver step for the deployment's image over a runtime that answers, and later starts answer at once again", async () => {
+    await start("ws_slow_1_update")
+    await until(() => start("ws_slow_1_update"), (answer) => answer.status === "ready")
+
+    expect(await start("ws_slow_1_update", { retry: true, updateImage: true })).toMatchObject({ status: "provisioning", epoch: 1 })
+    expect(await until(() => start("ws_slow_1_update"), (answer) => answer.status === "ready")).toMatchObject({ status: "ready", epoch: 1 })
+    expect(await start("ws_slow_1_update")).toMatchObject({ status: "ready", epoch: 1 })
+    expect((await rootSteps("ws_slow_1_update")).map((row) => row.step)).toEqual(["provision", "provision for the deployment's image"])
+  })
+
+  test("a Restart to update whose step fails answers the start with its reason, while the workspace keeps serving its image", async () => {
+    await start("ws_slow_1_cutoff_update")
+    await until(() => start("ws_slow_1_cutoff_update"), (answer) => answer.status === "ready")
+
+    expect(await start("ws_slow_1_cutoff_update", { retry: true, updateImage: true })).toMatchObject({ status: "provisioning", epoch: 1 })
+    expect(await until(() => start("ws_slow_1_cutoff_update"), (answer) => answer.status !== "provisioning")).toMatchObject({ status: "unavailable", error: expect.stringContaining("the image pull was cut off") })
+    expect(await target("ws_slow_1_cutoff_update")).toMatchObject({ status: "ready", imageOutdated: true })
+    expect(await start("ws_slow_1_cutoff_update", { retry: true })).toMatchObject({ status: "ready", epoch: 1 })
+  })
+
+  test("a Restart to update of a workspace already serving the deployment's image answers its ready target with no driver step", async () => {
+    await start("ws_slow_1_twice_update")
+    await until(() => start("ws_slow_1_twice_update"), (answer) => answer.status === "ready")
+    await start("ws_slow_1_twice_update", { retry: true, updateImage: true })
+    await until(() => start("ws_slow_1_twice_update"), (answer) => answer.status === "ready")
+
+    expect(await start("ws_slow_1_twice_update", { retry: true, updateImage: true })).toMatchObject({ status: "ready", epoch: 1 })
+    expect((await rootSteps("ws_slow_1_twice_update")).map((row) => row.step)).toEqual(["provision", "provision for the deployment's image"])
   })
 
   test("a start on a ready lease whose runtime does not answer resumes it on the same epoch, a held ready outcome notwithstanding", async () => {

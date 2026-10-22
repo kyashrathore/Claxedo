@@ -152,9 +152,35 @@ the container leaves `running`/`paused`. A sandbox still archiving from a stop,
 which Boat offers no wait for, is read again after 250 ms, doubling to 2 s.
 
 A wake that pulled (before the stub) took 57–77 s, and failed when ghcr reset
-the connection. An image update re-seeds:
-the new image is pulled and seeded as above, its stub replaces the old one, and
-the old image's trees are removed.
+the connection. A wake whose machine holds only an older image keeps serving
+that image: its trees, stub and env are there, and the runtime in them is no
+older than `MINIMUM_SERVED_WORKSPACE_RUNTIME_VERSION`. The wake answers
+with that image's label, so the workspace reads as outdated, instead of waiting
+60–100 s on the new image's pull and seed (staging, 2026-10-21). The update
+runs only when a start asks for it with `updateImage` (a person's Restart to
+update): the new image is pulled and seeded as above, its stub replaces the
+old one, and the old image's trees are removed. That step is a start of its
+own on the serving lease's epoch, whose phases are timed from the update. An
+update whose step fails leaves the lease serving its image and answers the
+start with the driver's reason, which the manager logs, and a start asking for
+the update of a workspace already serving the deployment's image answers it as
+it is. A cold start, and a wake whose older runtime is
+below the floor, takes the new image at once. On staging (2026-10-22, 0.10.1
+to 0.10.2) the wake that kept the image answered in 22 s and the update's step
+ran 92.7 s.
+
+`MINIMUM_SERVED_WORKSPACE_RUNTIME_VERSION` (`src/runtime-version.ts`) is the one
+floor for every driver: the oldest runtime this control plane and relay serve,
+whether a Cloudflare restore brings it back or a Boat wake keeps it. Below it a
+workspace updates and keeps its files on every driver: a Boat wake takes the
+new image over the same `/workspace` and homes, and a Cloudflare restore
+carries the repository and HOME into the current image. A runtime
+security fix, or a control-plane or relay contract an older runtime cannot
+speak, raises the floor and the workspace-runtime version together, in the
+commit that makes the change; a test keeps the floor at or below the runtime
+version the tree builds. Each connection names the image it serves
+(`runtimeImage`), and every mint of an outdated one is the
+`sandbox.runtime_outdated_served` event.
 
 A start runs as two commands: the preparation (daemon, login, seed, stub)
 changes nothing a running container serves from, so its failure leaves a

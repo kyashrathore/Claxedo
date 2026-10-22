@@ -1,5 +1,5 @@
 import type { D1Database } from "@cloudflare/workers-types"
-import { createSandboxManager, liftSandboxRetryWait, SandboxProviderKeyRefusedError, SandboxProviderRateLimitedError, SandboxRuntimeBootError, type SandboxDriver, type SandboxDriverEnsureInput } from "@claxedo/sandbox-manager"
+import { createSandboxManager, liftSandboxRetryWait, SANDBOX_IMAGE_LABEL, SandboxProviderKeyRefusedError, SandboxProviderRateLimitedError, SandboxRuntimeBootError, type SandboxDriver, type SandboxDriverEnsureInput } from "@claxedo/sandbox-manager"
 import { createD1SandboxLeaseStore } from "../stores/d1"
 import { sandboxProvisionerClass } from "../provisioner.cf"
 import { FIXTURE_OUTCOME_HELD_MS } from "./provisioner-outcome-held"
@@ -50,15 +50,22 @@ async function fixKey(database: D1Database, workspaceId: string) {
  * `ws_day_limited_<n>` is refused at its provider's daily start limit n times,
  * `ws_hour_limited` at its hourly one every time, `ws_step_throws` throws out of the start step once the lease is ready (its
  * runtime is not provisioned until a second step), `ws_stopped_under` has its
- * lease stopped while the driver runs its first boot, and a workspace named
- * `asleep` has a runtime that never answers a ready lease.
+ * lease stopped while the driver runs its first boot, a workspace named
+ * `asleep` has a runtime that never answers a ready lease, one ending
+ * `_update` serves the previous image until a step asks for the deployment's,
+ * and one also naming `_cutoff` fails every step that does.
  */
+const DEPLOYED_IMAGE = "ghcr.io/test/sandbox:deployed"
+const PREVIOUS_IMAGE = "ghcr.io/test/sandbox:previous"
+
 function scriptedDriver(database: D1Database): SandboxDriver {
   const ready = (input: SandboxDriverEnsureInput) => ({
     sandboxId: `sandbox_${input.workspaceId}`,
     url: `https://runtime.test/${input.workspaceId}`,
     hostId: `host_${input.workspaceId}`,
-    labels: input.labels,
+    labels: input.workspaceId.endsWith("_update")
+      ? { ...input.labels, [SANDBOX_IMAGE_LABEL]: input.updateImage ? DEPLOYED_IMAGE : PREVIOUS_IMAGE }
+      : input.labels,
   })
   const ensureHost = async (input: SandboxDriverEnsureInput) => {
     const calls = await recordCall(database, input.workspaceId)
@@ -72,6 +79,7 @@ function scriptedDriver(database: D1Database): SandboxDriver {
       return { provisioning: true as const, retryAfterMs: 0 }
     }
     if (input.workspaceId.startsWith("ws_boot_fail")) throw new SandboxRuntimeBootError("the image has no runtime")
+    if (input.updateImage && input.workspaceId.includes("_cutoff")) throw new Error("the image pull was cut off")
     if (input.workspaceId.startsWith("ws_key_refused") && !(await keyFixed(database, input.workspaceId))) {
       throw new SandboxProviderKeyRefusedError("the key was rejected (unauthorized)")
     }
@@ -87,6 +95,7 @@ function scriptedDriver(database: D1Database): SandboxDriver {
   }
   return {
     id: "scripted",
+    image: DEPLOYED_IMAGE,
     ensureHost,
     resumeHost: (input) => ensureHost(input.ensure),
     metadata: {
@@ -215,8 +224,9 @@ function drive(env: Env): SandboxStartDrive {
       }
       return sandboxes.acquire(workspaceId, input)
     },
-    provision: async (workspaceId, epoch, capabilities) => {
-      const answer = await sandboxes.provision(workspaceId, epoch, input)
+    provision: async (workspaceId, epoch, capabilities, updateImage) => {
+      const answer = await sandboxes.provision(workspaceId, epoch, { ...input, ...(updateImage ? { updateImage } : {}) })
+      if (workspaceId.endsWith("_update")) await recordRootStep(env.CONTROL_PLANE_DB, workspaceId, updateImage ? "provision for the deployment's image" : "provision", undefined)
       if (taskRoot(workspaceId)) {
         await recordRootStep(env.CONTROL_PLANE_DB, workspaceId, "provision", capabilities)
         return answer.status === "ready" ? { ...answer, renewAt: Date.now() + RENEWAL_DUE_MS } : answer
@@ -278,6 +288,7 @@ export default {
       const plugin = url.searchParams.get("plugin")
       return Response.json(await sandboxProvisioner(env.SANDBOX_PROVISIONER, workspaceId).start(workspaceId, {
         ...(url.searchParams.has("retry") ? { retry: true } : {}),
+        ...(url.searchParams.has("update") ? { updateImage: true } : {}),
         ...(plugin ? { capabilities: { plugins: [{ sourceId: "src", pluginName: plugin }], skills: [] } } : {}),
       }))
     }

@@ -331,8 +331,8 @@ export function createHostedRuntimeDelivery(input: {
         input.sandboxManager.acquire(workspaceId, { ...sandboxInput, onLeaseOpened: () => { opened = true } }))
       return answer.status === "provisioning" && opened ? { ...answer, opened: true } : answer
     },
-    provision: (workspaceId, epoch, capabilities) =>
-      step(runtimeContext(workspaceId, capabilities), (sandboxInput) => input.sandboxManager.provision(workspaceId, epoch, sandboxInput)),
+    provision: (workspaceId, epoch, capabilities, updateImage) =>
+      step(runtimeContext(workspaceId, capabilities), (sandboxInput) => input.sandboxManager.provision(workspaceId, epoch, { ...sandboxInput, ...(updateImage ? { updateImage } : {}) })),
     target: (workspaceId) => input.sandboxManager.target(workspaceId),
     live,
     // A renewal re-delivers the settings of a sandbox that is serving, with

@@ -46,6 +46,10 @@ test("a workspace connection mint is a person's retry only when the caller says 
   expect(CORE.resolve("workspace.connection.mint", { id: "ws_1" })).toEqual({ method: "POST", path: "/api/workspace/ws_1/connection", body: {} })
 })
 
+test("a workspace connection mint asks for the deployment's image only when the person asked to update", () => {
+  expect(CORE.resolve("workspace.connection.mint", { id: "ws_1", retry: true, updateImage: true })).toEqual({ method: "POST", path: "/api/workspace/ws_1/connection", body: { retry: true, updateImage: true } })
+})
+
 test("a session reservation carries the harness it will run", () => {
   const harness = { id: "pi", access: "native" }
   expect(CORE.resolve("session.reserve", { workspaceId: "ws_1", sessionId: "ses_1", operationId: "op_1", harness })).toMatchObject({

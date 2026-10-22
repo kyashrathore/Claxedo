@@ -89,7 +89,7 @@ export function createCloudApi(
       following()
       await wakes.follow(id)
       const runtime = wakes.runtime(id)
-      if (runtime.kind === "live") return { kind: "running" }
+      if (runtime.kind === "live" || runtime.kind === "outdated") return { kind: "running" }
       return runtime.kind === "wakeFailed" ? { kind: "notRunning", error: runtime.error } : { kind: "notRunning" }
     },
     runtime: wakes.runtime,

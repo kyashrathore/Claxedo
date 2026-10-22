@@ -1,11 +1,10 @@
 import type { RuntimeBuild } from "./runtime-integrity"
 
-export type CheckpointUnusableCause = "expired" | "runtime_outdated" | "runtime_modified" | "not_restorable"
+export type CheckpointUnusableCause = "expired" | "runtime_modified" | "not_restorable"
 
 /** The one line a person reads for each; the app keys its Start fresh control off the cause, never the text. */
 export const CHECKPOINT_UNUSABLE: Readonly<Record<CheckpointUnusableCause, string>> = {
   expired: "This workspace's saved files expired after 30 days unused; choose Start fresh.",
-  runtime_outdated: "This workspace was saved by a runtime that has since had a security fix; choose Start fresh.",
   runtime_modified: "This workspace's saved runtime was changed inside the machine; choose Start fresh.",
   not_restorable: "This workspace's saved files can't be restored here; choose Start fresh.",
 }

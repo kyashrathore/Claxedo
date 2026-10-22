@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest"
 import { createCloudflareSandboxDriver } from "./cloudflare"
-import { MINIMUM_RESTORABLE_WORKSPACE_RUNTIME_VERSION } from "../runtime-version"
+import { MINIMUM_SERVED_WORKSPACE_RUNTIME_VERSION } from "../runtime-version"
 import { createSandboxManager, isSandboxProviderKeyRefused } from ".."
 import { createMemoryLeaseStore, sandboxLease } from "../stores/memory"
 
@@ -394,8 +394,8 @@ describe("CloudflareSandboxDriver", () => {
 
     expect(calls.find((call) => call.url.endsWith("/snapshot"))).toEqual({ url: "https://sbx.example.com/sandbox/claxedo-ws_1/snapshot", method: "POST", body: {} })
     expect(calls.find((call) => call.url.endsWith("/ensure-runtime"))?.body.restore).toEqual({ snapshotId: "snap-1" })
-    expect(MINIMUM_RESTORABLE_WORKSPACE_RUNTIME_VERSION).toMatch(/^\d+\.\d+\.\d+$/)
-    expect(calls.find((call) => call.url.endsWith("/ensure-runtime"))?.body.minimumRuntimeVersion).toBe(MINIMUM_RESTORABLE_WORKSPACE_RUNTIME_VERSION)
+    expect(MINIMUM_SERVED_WORKSPACE_RUNTIME_VERSION).toMatch(/^\d+\.\d+\.\d+$/)
+    expect(calls.find((call) => call.url.endsWith("/ensure-runtime"))?.body.minimumRuntimeVersion).toBe(MINIMUM_SERVED_WORKSPACE_RUNTIME_VERSION)
   })
 
   test("a snapshot the Worker could not take throws instead of naming a checkpoint", async () => {
@@ -405,7 +405,7 @@ describe("CloudflareSandboxDriver", () => {
       .rejects.toThrow("Cloudflare snapshot failed (500): The workspace container is not running")
   })
 
-  test.each(["expired", "runtime_outdated", "runtime_modified", "not_restorable"] as const)("a checkpoint the Worker cannot restore (%s) refuses the start in its one line with its cause, and is never polled as provisioning", async (cause) => {
+  test.each(["expired", "runtime_modified", "not_restorable"] as const)("a checkpoint the Worker cannot restore (%s) refuses the start in its one line with its cause, and is never polled as provisioning", async (cause) => {
     const refusal = "This workspace's saved files cannot be restored; choose Start fresh."
     const { calls, fetch } = harness(() => ({ status: 410, json: { ready: false, checkpointUnusable: cause, error: refusal } }))
     const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })

@@ -20,11 +20,26 @@ export function workspaceRuntimeVersion() {
 }
 
 /**
- * The oldest workspace-runtime version a driver may restore a workspace's
- * snapshot into running again. A filesystem snapshot carries the runtime it
- * was taken with, so a fix to the runtime reaches a workspace that keeps
- * waking only when this rises. Raise it, together with the runtime version,
- * for a security-relevant runtime change alone: every snapshot below it is
- * refused and its person must start the workspace fresh.
+ * The oldest workspace-runtime version this control plane and relay serve, for
+ * every driver: a workspace's snapshot restored, or the older image a Boat wake
+ * keeps serving instead of waiting on the deployment's. A filesystem snapshot
+ * carries the runtime it was taken with, and a kept image the runtime it
+ * shipped, so a fix to the runtime reaches a workspace that keeps waking only
+ * when this rises. Below it a Cloudflare restore is refused and its person
+ * must start the workspace fresh, and a Boat wake boots the deployment's image.
+ *
+ * Raise it, and the workspace-runtime version with it in the same commit, for
+ * a runtime security fix or for a control-plane or relay contract an older
+ * runtime cannot speak, and name the first cloud image published at the new
+ * version: the version-skew suite (`bun run --cwd packages/harness flows:skew`)
+ * runs the current control plane and relay against exactly that image.
+ * Bumping the version with it keeps the comparison honest: every image below
+ * the new version was built before the change. What it does not cover: the
+ * images built after the floor's at the same version are trusted, not tested.
  */
-export const MINIMUM_RESTORABLE_WORKSPACE_RUNTIME_VERSION = "0.5.2"
+export const SERVED_WORKSPACE_RUNTIME_FLOOR = {
+  version: "0.10.1",
+  image: "ghcr.io/kyashrathore/claxedo-sandbox:workspace-runtime-0-10-1-40706b7356-agent-plugins-v8",
+} as const
+
+export const MINIMUM_SERVED_WORKSPACE_RUNTIME_VERSION = SERVED_WORKSPACE_RUNTIME_FLOOR.version

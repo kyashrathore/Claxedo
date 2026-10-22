@@ -30,6 +30,16 @@ describe("readyCloudWorkspaces", () => {
     expect(leases.asked.sort()).toEqual(["ws_running", "ws_stopped", "ws_unplaced"])
   })
 
+  test("a running workspace booted from an older image reads ready and says so, so the catalog shows it outdated without a connection read", async () => {
+    const ready = { status: "ready" as const, routingId: "routing_test", url: "http://sandbox.test", epoch: 1, homeRegion: "us-east" }
+    const targets: Record<string, SandboxTargetResult> = {
+      ws_kept: { ...ready, sandboxId: "ws_kept", hostId: "ws_kept", imageOutdated: true },
+      ws_current: { ...ready, sandboxId: "ws_current", hostId: "ws_current" },
+    }
+    const lifecycles = await cloudWorkspaceLifecycles({ target: async (id) => targets[id] }, Object.keys(targets).map((workspace_id) => ({ workspace_id, backing: "cloud-vm" })))
+    expect(Object.fromEntries(lifecycles)).toEqual({ ws_kept: { status: "ready", imageOutdated: true }, ws_current: { status: "ready" } })
+  })
+
   test("a deployment with no sandbox manager runs no cloud workspace", async () => {
     expect(await readyCloudWorkspaces(undefined, [{ workspace_id: "ws_cloud", backing: "cloud-vm" }])).toEqual(new Set())
   })

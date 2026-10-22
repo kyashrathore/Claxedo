@@ -151,6 +151,31 @@ describe("sandbox start telemetry", () => {
     expect(events).toEqual([])
   })
 
+  test("a person's update over a serving lease is a start of its own, on the lease while it runs and timed from the update", async () => {
+    const time = clock()
+    let midway: Awaited<ReturnType<ReturnType<typeof compose>["manager"]["target"]>> | undefined
+    const resumeHost: SandboxDriver["resumeHost"] = async ({ ensure }) => {
+      time.advance(2_000)
+      await ensure.onMachineReady?.()
+      midway = await manager.target("ws_1")
+      time.advance(90_000)
+      await ensure.onImageReady?.()
+      time.advance(3_000)
+      return target(ensure)
+    }
+    const { manager, events } = compose(scriptedDriver([async (ensure) => target(ensure)], resumeHost), time)
+    await manager.ensure("ws_1", input)
+    time.advance(60_000)
+    const updateAt = time.now()
+    events.length = 0
+
+    expect((await manager.ensure("ws_1", { ...input, updateImage: true })).status).toBe("ready")
+
+    expect(midway).toMatchObject({ start: { requestedAt: updateAt, phases: ["lease_decision", "machine_ready"] } })
+    expect(timeline(events)).toEqual([["lease_decision", 0], ["machine_ready", 2_000], ["image_ready", 90_000], ["runtime_ready", 3_000]])
+    expect(events.at(-1)).toMatchObject({ bootMode: "resume", sinceStartMs: 95_000 })
+  })
+
   test("runtime-timed phases join the epoch's start once, and a report for another epoch is dropped", async () => {
     const time = clock()
     const { manager, events } = compose(scriptedDriver([async (ensure) => target(ensure)]), time)

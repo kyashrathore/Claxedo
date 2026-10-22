@@ -85,10 +85,10 @@ runtime build and image environment of the container it came from. When that
 capture ends the lease, the control plane commits it and calls `stop`, and the
 object destroys its container. The next wake's `ensure-runtime` carries
 `restore: { snapshotId }` and `minimumRuntimeVersion`, and the object starts the
-container from that snapshot, never from the image, passing the recorded image
-environment to the container's main process and running the main process
-the snapshot's container ran; a snapshot recorded without one is refused as
-`not_restorable`. A restore over a container running
+container from that snapshot, passing the recorded image environment to the
+container's main process and running the main process the snapshot's container
+ran; a snapshot recorded without one is refused as `not_restorable`. A snapshot
+whose runtime is below the minimum is carried into the image instead (below). A restore over a container running
 from anything but that snapshot replaces it; polls of the same restore keep it.
 
 A snapshot keeps every file of the root filesystem: the repository and its
@@ -142,19 +142,37 @@ recorded build for one from a snapshot. A mismatch destroys the container
 unlaunched. The check runs with the container's own `find` and `sha256sum`, so
 a root process that replaced those tools can still answer for a changed
 runtime; it catches a changed bundle or entry point, not a compromised system.
-A restore that must not trust the snapshot's executables at all would restore
-only `/workspace` and HOME into the current image (`snapshotDirectory` and
-`start({ image, directorySnapshots })`), giving up the system packages a
-snapshot keeps.
 
 A snapshot is bound to the image it was taken from, so a restored workspace
-keeps the runtime build it was captured with until it starts fresh, as the
-Modal and Vercel drivers' filesystem snapshots do. A restore whose recorded
-runtime version is below the control plane's
-`MINIMUM_RESTORABLE_WORKSPACE_RUNTIME_VERSION` (`sandbox-manager`
-`runtime-version.ts`) is refused as `runtime_outdated`. Raise that minimum,
-together with the runtime version, for a security-relevant runtime change
-alone: every workspace saved below it must start fresh.
+keeps the runtime build it was captured with, as the Modal and Vercel drivers'
+filesystem snapshots do, while that runtime is at or above the control plane's
+`MINIMUM_SERVED_WORKSPACE_RUNTIME_VERSION` (`sandbox-manager`
+`runtime-version.ts`). **A snapshot below it is carried**: the object starts
+the snapshot's container with no internet and nothing launched, takes a
+`snapshotDirectory` of the boot env's `WORKSPACE_RUNTIME_DIRECTORY` and `HOME`,
+destroys it, starts this Worker's image with those directory snapshots mounted
+under `/run/claxedo-carried/`, and copies each into its directory (`cp -a`),
+since a mount is not in the root filesystem the next checkpoint saves. The
+workspace keeps its repository, the runtime store and the harness homes, owners
+and modes included, and runs the current runtime; what it had installed
+elsewhere (`npm i -g`, `apt install`) comes from the new image, as a Boat
+image update replaces those trees. Nothing of the snapshot runs, so a carried
+snapshot is not checked for a changed runtime. A carry that fails (a copy that
+runs out of disk) fails that start with its reason and leaves the checkpoint
+untouched, so the next start carries it again. Raising the minimum therefore
+costs no workspace its files.
+
+`carry-local/run.mts` drives the object in local workerd against local Docker
+(`node --import tsx carry-local/run.mts`, 17 s once its two stand-in images are
+built): a workspace saved under a 0.5.2 stand-in image is restored whole at a
+0.5.2 minimum and carried at 0.6.0, and the carried workspace's own checkpoint
+restores with its files. Local workerd lacks the `images` record and the
+privilege to mount the launch directory's tmpfs, so the rig names its image and
+stands a directory in for that mount. What only the platform can show: that it
+takes a directory snapshot of a container started from a container snapshot and
+mounts it into a container from another image, as local workerd does; how long
+the snapshot and the copy take for a large repository; and whether mounted
+directory snapshots count against standard-1's 8 GB disk beside the copy.
 
 **Unusable checkpoints.** Each refusal is a 410
 `{ ready: false, checkpointUnusable, error }`, where `checkpointUnusable` is
@@ -164,7 +182,6 @@ person reads:
 | `checkpointUnusable` | When | Line |
 | --- | --- | --- |
 | `expired` | the platform no longer holds the snapshot (30 days after it was taken or last restored; there is no deletion or listing, so persistence is `retention: "provider-managed"`) | This workspace's saved files expired after 30 days unused; choose Start fresh. |
-| `runtime_outdated` | the recorded runtime version is below the minimum | This workspace was saved by a runtime that has since had a security fix; choose Start fresh. |
 | `runtime_modified` | the runtime files are not the build they must be | This workspace's saved runtime was changed inside the machine; choose Start fresh. |
 | `not_restorable` | the id is not one this sandbox recorded, or the sandbox was destroyed | This workspace's saved files can't be restored here; choose Start fresh. |
 

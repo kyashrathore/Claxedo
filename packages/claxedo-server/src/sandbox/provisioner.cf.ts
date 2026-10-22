@@ -8,9 +8,10 @@ import type { SandboxFollowUps, SandboxStartAnswer, SandboxStartDrive, SandboxSt
  * again, set when the run begins: a driver whose step is itself a wait asks for
  * its next step at once, which is no time for a poller to come back.
  * `failure` is the error of the last step that failed and is being retried; a
- * step that succeeds or ends the run clears it.
+ * step that succeeds or ends the run clears it. `updateImage` is a person's
+ * Restart to update, which every step of the run boots the deployment's image for.
  */
-type Run = { workspaceId: string; epoch: number; homeRegion: string; startedAt: number; retryAfterMs: number; failure?: string }
+type Run = { workspaceId: string; epoch: number; homeRegion: string; startedAt: number; retryAfterMs: number; failure?: string; updateImage?: true }
 type Outcome = { epoch: number; answer: SandboxStartAnswer; settledAt: number }
 /** A step the alarm owes a serving sandbox: when it is next due, and how many steps in a row threw before it. */
 type FollowUp = { workspaceId: string; at: number; failures: number }
@@ -114,13 +115,13 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
     start(workspaceId: string, request: SandboxStartRequest = {}): Promise<SandboxStartAnswer> {
       return this.#flushed(async () => {
         if (request.capabilities) await this.ctx.storage.put("capabilities", request.capabilities)
-        const joined = await this.#inFlight()
+        const joined = await this.#inFlight(request.updateImage)
         if (joined) return joined
         const failed = await this.#heldFailure(request)
         if (failed) return failed
         const live = await drive(this.env).live(workspaceId)
-        if (live) return live
-        return this.#begin(workspaceId)
+        if (live && !(request.updateImage && live.imageOutdated)) return live
+        return this.#begin(workspaceId, request.updateImage)
       })
     }
 
@@ -181,10 +182,11 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
       return undefined
     }
 
-    async #inFlight(): Promise<SandboxStartAnswer | undefined> {
+    async #inFlight(updateImage?: true): Promise<SandboxStartAnswer | undefined> {
       const storage = this.ctx.storage
       const run = await storage.get<Run>("run")
       if (!run) return undefined
+      if (updateImage && !run.updateImage) await storage.put("run", { ...run, updateImage } satisfies Run)
       const alarm = await storage.getAlarm()
       if (!this.#driving && alarm === null) await storage.setAlarm(Date.now())
       // A failed step's retry is the alarm's, so a poll that joins is told the time left until it.
@@ -192,7 +194,7 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
       return { status: "provisioning", retryAfterMs, epoch: run.epoch, homeRegion: run.homeRegion, joined: true, ...(run.failure ? { failure: run.failure } : {}) }
     }
 
-    async #begin(workspaceId: string): Promise<SandboxStartAnswer> {
+    async #begin(workspaceId: string, updateImage?: true): Promise<SandboxStartAnswer> {
       const admitted = await drive(this.env).acquire(workspaceId, await this.#capabilities())
       if (admitted.status !== "provisioning") {
         await this.#settled(workspaceId, admitted)
@@ -204,6 +206,7 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
         homeRegion: admitted.homeRegion,
         startedAt: Date.now(),
         retryAfterMs: admitted.retryAfterMs,
+        ...(updateImage ? { updateImage } : {}),
       }
       await this.ctx.storage.put("run", begun)
       await this.ctx.storage.setAlarm(Date.now())
@@ -278,13 +281,13 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
               epoch: run.epoch,
               homeRegion: run.homeRegion,
             }
-          : await drive(this.env).provision(run.workspaceId, run.epoch, await this.#capabilities()).catch((cause: unknown) => stepThrew(run, cause))
+          : await drive(this.env).provision(run.workspaceId, run.epoch, await this.#capabilities(), run.updateImage).catch((cause: unknown) => stepThrew(run, cause))
         const retryAfterMs = nextStepAfter(answer)
         if (retryAfterMs !== undefined) {
           // A failed step's retry runs on the fresh epoch its answer names.
           const epoch = "epoch" in answer && answer.epoch !== undefined ? answer.epoch : run.epoch
           const failure = answer.status === "unavailable" ? answer.error : undefined
-          const continuing: Run = { workspaceId: run.workspaceId, homeRegion: run.homeRegion, startedAt: run.startedAt, epoch, retryAfterMs: run.retryAfterMs, ...(failure ? { failure } : {}) }
+          const continuing: Run = { workspaceId: run.workspaceId, homeRegion: run.homeRegion, startedAt: run.startedAt, epoch, retryAfterMs: run.retryAfterMs, ...(failure ? { failure } : {}), ...(run.updateImage ? { updateImage: run.updateImage } : {}) }
           await storage.put("run", continuing)
           await storage.setAlarm(Date.now() + retryAfterMs)
           return

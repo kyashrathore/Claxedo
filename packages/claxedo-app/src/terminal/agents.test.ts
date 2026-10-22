@@ -9,10 +9,11 @@ const t: DomainTranslate<TerminalKey> = (key, params) => [key, ...Object.values(
 const settled = { isError: false, isPending: false }
 const facts = (agents = settled, wakeProgress?: string) => ({ name: "main", wakeProgress, agents })
 
-test("the terminal creator says why a workspace's agents are missing: asleep, waking, outdated, or a failed wake with its reason", () => {
+test("the terminal creator says why a workspace's agents are missing: asleep, waking, or a failed wake with its reason; a workspace on an older image serves its agents", () => {
   const refusal = new ServerError({ class: "conflict", message: "No capacity" })
   expect(agentsNote(t, { kind: "asleep" }, facts())).toBe("terminal.creator.agentsAsleep main")
-  expect(agentsNote(t, { kind: "outdated" }, facts())).toBe("terminal.creator.agentsOutdated main")
+  expect(agentsNote(t, { kind: "outdated" }, facts())).toBeUndefined()
+  expect(agentsNote(t, { kind: "outdated" }, facts({ isError: false, isPending: true }))).toBe("terminal.creator.agentsLoading")
   expect(agentsNote(t, { kind: "wakeFailed", error: refusal }, facts())).toBe("terminal.creator.agentsWakeFailed main No capacity")
   expect(agentsNote(t, { kind: "waking" }, facts())).toBe("terminal.creator.waking main")
   expect(agentsNote(t, { kind: "waking", bootMode: "resume" }, facts(settled, "Resuming the machine · 12s"))).toBe("terminal.creator.wakingProgress main Resuming the machine · 12s")

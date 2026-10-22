@@ -21,7 +21,7 @@ import {
 } from "../workspace/runtime-token-guards"
 import type { RuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import { cloudRuntimeLifecycle } from "@claxedo/server-core/workspace/cloud-runtime-readiness"
-import { sandboxCheckpointUnusable, sandboxLeaseEndedUnderStart, sandboxRuntimeBootFailure, sandboxStartFailureReason, type SandboxManager, type SandboxTargetResult } from "@claxedo/sandbox-manager"
+import { SANDBOX_IMAGE_LABEL, sandboxCheckpointUnusable, sandboxLeaseEndedUnderStart, sandboxRuntimeBootFailure, sandboxStartFailureReason, type SandboxManager, type SandboxTargetResult } from "@claxedo/sandbox-manager"
 import { sessionHostAdmits } from "../authority/session-hosts"
 import { workspaceRoleAllowsWrite } from "../authority/pulled-session"
 import { mintSessionHostConnection } from "./session-host-connection"
@@ -136,7 +136,7 @@ async function mintCloudConnection(
     workspaceId: string
     homeRegion: ClaxedoRegion
     relayUrl: string
-    target: { hostId: string; epoch: number; routingId?: string; driverResourceId?: string }
+    target: { hostId: string; epoch: number; routingId?: string; driverResourceId?: string; labels?: Record<string, string>; imageOutdated?: true }
     actor: RuntimeActor
     previousJti?: string
   },
@@ -195,6 +195,17 @@ async function mintCloudConnection(
     orgId,
     properties: { backing: "cloud-vm", role, homeRegion, leaseEpoch: target.epoch },
   })
+  const runtimeImage = target.labels?.[SANDBOX_IMAGE_LABEL]
+  if (target.imageOutdated) {
+    captureWorkspaceTelemetry({
+      services,
+      auth,
+      event: "sandbox.runtime_outdated_served",
+      workspaceId,
+      orgId,
+      properties: { homeRegion, leaseEpoch: target.epoch, ...(runtimeImage ? { runtimeImage } : {}) },
+    })
+  }
   if (previousJti) {
     await authority.revokeRuntimeAccessToken(auth, { jti: previousJti, workspaceId })
   }
@@ -213,6 +224,8 @@ async function mintCloudConnection(
       tokenExpiresAt: token.tokenExpiresAt,
       role,
       hostId: target.hostId,
+      ...(runtimeImage ? { runtimeImage } : {}),
+      ...(target.imageOutdated ? { imageOutdated: true as const } : {}),
     },
   } as const
 }
@@ -231,9 +244,9 @@ export async function hostedConnectionInfo(
   auth: SignedControlPlaneAuth,
   workspaceId: string,
   lease: FirstLease,
-  connect: { previousJti?: string; retry?: true } = {},
+  connect: { previousJti?: string; retry?: true; updateImage?: true } = {},
 ) {
-  const { previousJti, retry } = connect
+  const { previousJti, retry, updateImage } = connect
   const ingress = await cloudConnectionIngress(services, options, auth, workspaceId)
   if ("error" in ingress) return ingress
   if ("tunnel" in ingress) {
@@ -244,7 +257,7 @@ export async function hostedConnectionInfo(
     return { error: apiError("sandbox_unavailable", "Cloud sandbox is not configured"), status: 503 } as const
   }
 
-  const started = await startCloudWorkspace(services, options.sandboxStart, lease, { kind: "signed", auth }, { workspaceId, orgId: workspaceOrgId(result.workspace), homeRegion, current, ...(retry ? { request: { retry } } : {}) })
+  const started = await startCloudWorkspace(services, options.sandboxStart, lease, { kind: "signed", auth }, { workspaceId, orgId: workspaceOrgId(result.workspace), homeRegion, current, ...(retry || updateImage ? { request: { ...(retry ? { retry } : {}), ...(updateImage ? { updateImage } : {}) } } : {}) })
   if ("denied" in started) return started.denied
   if (started.status === "provisioning") {
     return {
@@ -255,6 +268,7 @@ export async function hostedConnectionInfo(
         retryAfterMs: started.retryAfterMs,
         ...(started.bootMode ? { bootMode: started.bootMode } : {}),
         ...(started.failure ? { failure: sandboxStartFailureReason(started.failure) } : {}),
+        ...(updateImage ? { update: true as const } : {}),
       }, current),
     } as const
   }
@@ -405,10 +419,6 @@ export async function hostedConnectionStatus(
         ...(target.retryAfterMs !== undefined ? { retryAfterMs: target.retryAfterMs } : {}),
       },
     } as const
-  }
-  // A start re-ensures the sandbox, which boots the deployment's image and keeps the workspace's files.
-  if (target.imageOutdated) {
-    return { error: apiError("cloud_runtime_image_outdated", "This cloud workspace runs an older version. Restart it to update."), status: 409 } as const
   }
   try {
     if (options.runtimeProvisioned && !(await options.runtimeProvisioned(workspaceId, target))) {

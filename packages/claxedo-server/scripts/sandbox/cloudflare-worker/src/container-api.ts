@@ -14,13 +14,15 @@ export type ContainerExecOptions = {
 
 export type ContainerSnapshot = { id: string; size: number; name?: string }
 
+export type ContainerDirectorySnapshot = { id: string; size: number; dir: string; name?: string }
+
 export type ContainerStart = {
   enableInternet: boolean
   entrypoint: readonly string[]
   instance: string
   /** The main process's environment. A snapshot start passes the image environment recorded when its source started, since a snapshot names no image to take it from. */
   env?: Record<string, string>
-} & ({ image: string } | { containerSnapshot: { id: string } })
+} & ({ image: string; directorySnapshots?: Array<{ snapshot: ContainerDirectorySnapshot; mountPoint: string }> } | { containerSnapshot: { id: string } })
 
 /**
  * The part of `ctx.container` this Worker drives, under the `durable_object`
@@ -38,6 +40,7 @@ export interface WorkspaceContainer {
   setInactivityTimeout(durationMs: number): Promise<void>
   interceptOutboundHttps(host: string, binding: unknown): Promise<void>
   snapshotContainer(options: { name?: string }): Promise<ContainerSnapshot>
+  snapshotDirectory(options: { dir: string; name?: string }): Promise<ContainerDirectorySnapshot>
 }
 
 function durableObjectContainer(container: object): container is WorkspaceContainer {

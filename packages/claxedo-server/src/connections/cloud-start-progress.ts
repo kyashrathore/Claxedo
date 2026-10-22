@@ -13,6 +13,8 @@ type ProvisioningFacts = {
   failure?: string
   /** The lease epoch the answering start runs on; the lease's recorded start is reported only when it is that epoch's. */
   epoch?: number
+  /** An update's first answer, given before its step records the update's start: the lease's start is still the one that brought it up. */
+  update?: true
 }
 
 function startOf(target: SandboxTargetResult, epoch: number | undefined) {
@@ -36,7 +38,7 @@ export function startElapsedMs(target: SandboxTargetResult, epoch: number, now =
  * recorded yet answers no progress rather than an empty one.
  */
 export function provisioningConnection(facts: ProvisioningFacts, target: SandboxTargetResult) {
-  const start = startOf(target, facts.epoch)
+  const start = facts.update ? undefined : startOf(target, facts.epoch)
   const bootMode = facts.bootMode ?? start?.bootMode
   const now = Date.now()
   return {
