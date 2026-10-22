@@ -8,7 +8,7 @@ import * as identityModule from "./identity"
 import { readCreationIdentity, verifyCreationIdentity } from "./identity"
 import { GATE_EXIT, launchOwnedProcess, resolveLaunchGateChild, spawnLaunchGate } from "./launch-gate"
 import { LaunchRefusedError, reconcileLaunch, type LaunchOwnershipStore } from "./ownership-store"
-import { retire } from "./retirement"
+import { retire, retirementSettled } from "./retirement"
 import { volatileLaunchOwnership } from "./volatile-ownership"
 
 const posix = process.platform !== "win32"
@@ -91,6 +91,11 @@ function sleeper(seconds: number) {
  */
 function ignoresTerm(marker: string) {
   return { command: "/bin/sh", args: ["-c", `trap '' TERM; echo ready > ${marker}; while true; do sleep 0.05; done`] }
+}
+
+/** An interactive shell's signal handling: SIGTERM is ignored and only the hangup, which a PTY's close sends its foreground group, ends it. */
+function endsAtHangup(marker: string) {
+  return { command: "/bin/sh", args: ["-c", `trap '' TERM; trap 'exit 0' HUP; echo ready > ${marker}; while true; do sleep 0.05; done`] }
 }
 
 async function waitForFile(file: string, timeoutMs = 5000) {
@@ -452,7 +457,31 @@ test.skipIf(!posix)("a second retirement of a settled launch is idempotent", asy
   expect(await ownership.listUnresolved({ kind: "standalone" })).toEqual([])
 })
 
-test.skipIf(!posix)("closeNative runs between TERM and KILL", async () => {
+test.skipIf(!posix)("a shell that ignores SIGTERM ends at its hangup without waiting out the TERM grace", async () => {
+  const directory = await workspace()
+  const ownership = volatileLaunchOwnership()
+  const owned = await launch({
+    ownership,
+    role: "terminal",
+    scope: { directory },
+    payload: endsAtHangup(path.join(directory, "ready")),
+    cwd: directory,
+    env: process.env,
+  })
+  await waitForFile(path.join(directory, "ready"))
+  const started = performance.now()
+  const result = await retire({
+    identity: owned.identity,
+    closeNative: () => { process.kill(-owned.identity.processGroupId, "SIGHUP") },
+  }, { termGraceMs: 3_000, killVerifyMs: 500 })
+
+  expect(performance.now() - started).toBeLessThan(1_000)
+  expect(result.leader).toBe("exited")
+  expect(result.signals.map((item) => item.signal)).toEqual(["SIGTERM"])
+  expect(retirementSettled(result)).toBe(true)
+})
+
+test.skipIf(!posix)("a terminal that outlives its hangup and SIGTERM is killed", async () => {
   const directory = await workspace()
   const ownership = volatileLaunchOwnership()
   const owned = await launch({
@@ -464,13 +493,14 @@ test.skipIf(!posix)("closeNative runs between TERM and KILL", async () => {
     env: process.env,
   })
   await waitForFile(path.join(directory, "ready"))
-  let closedAfterTerm: boolean | undefined
+  let closed = false
   const result = await retire({
     identity: owned.identity,
-    closeNative: () => { closedAfterTerm = true },
+    closeNative: () => { closed = true },
   }, budgets)
 
-  expect(closedAfterTerm).toBe(true)
+  expect(closed).toBe(true)
+  expect(result.leader).toBe("exited")
   expect(result.signals.map((item) => item.signal)).toEqual(["SIGTERM", "SIGKILL"])
 })
 

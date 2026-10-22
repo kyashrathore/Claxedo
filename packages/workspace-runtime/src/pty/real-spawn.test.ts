@@ -238,4 +238,23 @@ setInterval(() => {}, 1000);
     Pty.write(info.id, "exit\n")
     await waitFor(() => Pty.get(info.id)?.status === "exited")
   })
+
+  // An interactive shell ignores SIGTERM, so a removal that waited out the TERM grace (3 s) before its hangup took 3.2 s on every terminal close.
+  void test("removing an interactive login shell ends it at its hangup, well inside the TERM grace", { timeout: 30_000, skip: windows }, async () => {
+    const { Pty } = await import("./index")
+    const info = await withSessionCore(testSessionCore(tmpDir), () => Pty.create({ command: "/bin/bash", cwd: tmpDir, title: "login" }, ownership))
+    const client = socket()
+    assert.ok(Pty.connect(info.id, client.ws))
+    Pty.write(info.id, "echo login-$((40 + 2))\n")
+    await waitFor(() => client.text().includes("login-42"))
+
+    const started = performance.now()
+    const result = await Pty.remove(info.id)
+    const elapsedMs = performance.now() - started
+
+    assert.equal(result?.leader, "exited")
+    assert.ok(!result?.signals.some((outcome) => outcome.signal === "SIGKILL"), JSON.stringify(result?.signals))
+    assert.ok(elapsedMs < 1_500, `removal took ${Math.round(elapsedMs)} ms`)
+    assert.equal(Pty.get(info.id), undefined)
+  })
 })

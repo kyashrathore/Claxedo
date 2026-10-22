@@ -37,7 +37,7 @@ export type RetirementBudgets = Pick<RecoveryBudgets, "termGraceMs" | "killVerif
 export type RetirementTarget = {
   identity: CreationIdentity
   /**
-   * Released between TERM and KILL. A PTY's native handle is not reachable
+   * Released right after SIGTERM. A PTY's native handle is not reachable
    * through a signal, and the program on the other end may only notice the
    * hangup.
    */
@@ -113,11 +113,14 @@ async function retireOwned(target: RetirementTarget, budgets: RetirementBudgets)
   // above: nothing in this process ever verified that group, so it reports
   // what it can still see of it and signals nothing.
   signals.push(await signalOwnedGroup(identity, "SIGTERM"))
+  // A terminal is hung up beside its SIGTERM, as closing one does: an
+  // interactive shell ignores SIGTERM and ends only at the hangup, so the
+  // hangup cannot wait for the grace. It comes after the signal because it can
+  // empty the group at once: macOS refuses a signal to a group of zombies with
+  // EPERM, and signalling a group id nobody holds any more is how an unrelated
+  // process gets killed.
+  await closeNative(target)
   if (!(await awaitGroupEmpty(identity, budgets.termGraceMs))) {
-    await closeNative(target)
-    // Closing the native handle is a hangup the program may act on, so the
-    // group can empty during it. Signalling a group id nobody holds any more
-    // is how an unrelated process gets killed.
     if (await stillOwned(identity)) {
       signals.push(await signalOwnedGroup(identity, "SIGKILL"))
       await awaitGroupEmpty(identity, budgets.killVerifyMs)

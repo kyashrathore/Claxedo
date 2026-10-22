@@ -1013,8 +1013,8 @@ describe("the daemon lifecycle on its real work sources", () => {
       pty = await terminal(project)
       await sleep(heldMs)
 
-      // A terminal stops pinning when its removal begins; retiring its process
-      // group takes longer than the grace this test waits out.
+      // A terminal stops pinning when its removal begins, so grace counts from
+      // then however long retiring its process group takes.
       const removal = Pty.remove(pty.id)
       const endedAt = Date.now()
       await sleep(endedAt + graceMs - 500 - Date.now())
