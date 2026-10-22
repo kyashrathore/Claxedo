@@ -1,6 +1,6 @@
 {
   "name": "@claxedo/workspace-relay",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "type": "module",
   "description": "Relay/tunnel that routes authenticated traffic to workspace runtimes on Cloudflare: JWT workspace tokens and a header-stripping trust boundary",
   "license": "MIT",
