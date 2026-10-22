@@ -4,12 +4,15 @@ import { asText as text } from "@claxedo/agent-runtime-contract"
 import { own } from "../../../translate/value"
 import type { v2 } from "./protocol"
 
+/** The vendor's 401/403 text names its URL, headers and request id; the person needs the one thing to do. */
+const CREDENTIAL_REFUSED = "Codex isn't signed in here; run `codex login` on this machine or choose a Codex account in Settings → Models."
+
 const ERROR_INFO: Readonly<Record<string, readonly [classification: FirstTurnErrorClass, message?: string]>> = {
   usageLimitExceeded: ["usage_limit", "You've reached your Codex usage limit."],
   rateLimitExceeded: ["rate_limit", "Codex is rate limited. Try again shortly."],
   flexUnavailable: ["model", "Flex capacity is unavailable. Try another model or service tier."],
   serverOverloaded: ["model", "Codex is overloaded. Try again in a moment."],
-  unauthorized: ["credential", "Codex rejected the credential. Run `codex login` or sync a valid Codex credential, then retry."],
+  unauthorized: ["credential", CREDENTIAL_REFUSED],
   sandboxError: ["workspace"],
   threadRollbackFailed: ["session"],
   contextWindowExceeded: ["unknown", "This turn exceeded the Codex context window."],
@@ -58,6 +61,7 @@ export function turnErrorEvent(
 }
 
 export function turnErrorMessage(error: Record<string, unknown> | undefined, lastLimitedRateLimitMessage?: string) {
+  if (codexErrorInfoClass(error?.codexErrorInfo) === "credential") return CREDENTIAL_REFUSED
   const message = text(error?.message) ?? text(asRecord(error?.message)?.message)
   const details = text(error?.additionalDetails)
   const info = text(error?.codexErrorInfo)
