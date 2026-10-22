@@ -130,7 +130,7 @@ export async function selectedAgentPluginProjection(input: {
       candidate.pin.sourceId === reference.sourceId && candidate.pluginName === reference.pluginName)
     const match = one(
       matches,
-      `Plugin ${reference.pluginName} is not installed from ${reference.sourceId} for this project`,
+      `Plugin ${reference.pluginName} is not installed from ${reference.sourceId} for this project; turn it on in Settings → Plugins`,
       `Source ${reference.sourceId} supplies more than one plugin named ${reference.pluginName}`,
     )
     wholePlugins.set(match.pluginInstanceId, match)
@@ -142,7 +142,7 @@ export async function selectedAgentPluginProjection(input: {
       candidate.pin.sourceId === reference.sourceId && candidate.skills.includes(reference.skillName))
     const match = one(
       matches,
-      `Skill ${reference.skillName} is not installed from ${reference.sourceId} for this project`,
+      `Skill ${reference.skillName} is not installed from ${reference.sourceId} for this project; turn its plugin on in Settings → Plugins`,
       `Source ${reference.sourceId} supplies more than one skill named ${reference.skillName}`,
     )
     // The plugin already contributes every skill it bundles, so naming one of

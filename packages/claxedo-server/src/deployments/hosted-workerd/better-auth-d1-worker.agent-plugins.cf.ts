@@ -98,6 +98,8 @@ export function composeBetterAuthD1AgentPlugins(
     ...(base.options.productWorkspace?.sandboxUsage
       ? { sandboxUsage: base.options.productWorkspace.sandboxUsage }
       : {}),
+    // Asks the Agent Plugins composition below, built after this plugin.
+    selectionRefusal: (owner, selection) => feature.selectionRefusal(owner, selection),
     grants: {
       signingEnv,
       passes,

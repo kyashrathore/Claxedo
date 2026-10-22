@@ -190,6 +190,24 @@ describe("a sandbox start on workerd", () => {
     expect(await start("ws_renew_2")).toMatchObject({ status: "ready", epoch: 1 })
   })
 
+  test("a Task root refused for a capability set it cannot run starts on the set a later Start names, and keeps that set for a plain wake", async () => {
+    const workspaceId = "ws_task_recovered"
+    const refused = await miniflare.dispatchFetch(`${ORIGIN}/start?ws=${workspaceId}&retry=1&plugin=unretained`, { method: "POST" })
+    expect(await refused.json()).toMatchObject({ status: "failed", code: "runtime_prepare_failed" })
+    expect(await target(workspaceId)).not.toMatchObject({ status: "ready" })
+
+    const restarted = await miniflare.dispatchFetch(`${ORIGIN}/start?ws=${workspaceId}&retry=1&plugin=linear`, { method: "POST" })
+    expect(await restarted.json()).toMatchObject({ status: "provisioning" })
+    await until(() => target(workspaceId), (lease) => lease.status === "ready")
+    expect((await miniflare.dispatchFetch(`${ORIGIN}/stop?ws=${workspaceId}`, { method: "POST" })).status).toBe(200)
+    expect(await start(workspaceId)).toMatchObject({ status: "provisioning" })
+    await until(() => target(workspaceId), (lease) => lease.status === "ready")
+
+    const acquired = (await rootSteps(workspaceId)).filter((row) => row.step === "acquire").map((row) => row.capabilities)
+    const linear = { plugins: [{ sourceId: "src", pluginName: "linear" }], skills: [] }
+    expect(acquired).toEqual([{ plugins: [{ sourceId: "src", pluginName: "unretained" }], skills: [] }, linear, linear])
+  })
+
   test("a Task root's start names its capability set, answers at once, is announced, every later step of the root is prepared with that set, and a stopped root is renewed no more", async () => {
     const workspaceId = "ws_task_capabilities"
     const capabilities = { plugins: [{ sourceId: "src", pluginName: "linear" }], skills: [] }

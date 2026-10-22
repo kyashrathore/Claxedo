@@ -51,8 +51,16 @@ export type TasksCloudRootAllocation =
 
 /** The host's isolated workspaces, one per Tasks root, created, admitted and started the way its create route does. */
 export type TasksCloudRoots = Readonly<{
-  /** Why the host would refuse this root, read without filing a row or starting anything. */
-  refusal(root: TasksCloudRootRequest): Promise<StartBlocker | undefined>
+  /**
+   * Why the host would refuse this root, read without filing a row or
+   * starting anything: among others, a capability set its creator could
+   * never run, which would otherwise leave a root no start can prepare.
+   */
+  refusal(
+    root: TasksCloudRootRequest,
+    creator: TasksCloudRootCreator | undefined,
+    capabilities: TasksCloudOrigin["capabilities"],
+  ): Promise<StartBlocker | undefined>
   /**
    * The root's workspace once its sandbox serves, or that its start is under
    * way, so a Start never waits on a sandbox's boot. A creator nobody resolved
@@ -140,7 +148,7 @@ function createTasksCloudRoots(
     displayName: `${origin.task.title} (${origin.slot}, attempt ${origin.attempt})`,
   })
   return {
-    cloudRefusal: (origin) => input.cloudRoots.refusal(rootOf(origin)),
+    cloudRefusal: (origin) => input.cloudRoots.refusal(rootOf(origin), rootCreator(input, origin.actor), origin.capabilities),
     cloudTarget: async (origin): Promise<TasksCloudTargetChoice> => {
       const allocated = await input.cloudRoots.allocate(rootOf(origin), rootCreator(input, origin.actor), origin.capabilities)
       if (!("workspace" in allocated)) return allocated

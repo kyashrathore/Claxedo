@@ -420,6 +420,21 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
     })
   }
 
+  /**
+   * What a person is entitled to across their projects, for a check made
+   * before any workspace exists. An explicit selection resolves against pins,
+   * and no project scopes a pin.
+   */
+  async entitlementSnapshot(owner: { userId: string; orgId: string }): Promise<SignedAgentPluginRuntimeSnapshot> {
+    await this.requireMembership(owner.userId, owner.orgId)
+    return await this.world({ userId: owner.userId, orgId: owner.orgId }, {
+      userId: owner.userId,
+      organizationId: owner.orgId,
+      projectId: AGENT_PLUGIN_ALL_PROJECTS_SCOPE,
+      workspaceId: AGENT_PLUGIN_DESKTOP_WORKSPACE,
+    })
+  }
+
   private async updateArtifact(
     auth: SignedControlPlaneAuth,
     authority: "user" | "organization",

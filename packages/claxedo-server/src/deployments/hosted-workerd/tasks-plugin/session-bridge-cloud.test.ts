@@ -38,6 +38,7 @@ import { startedSession } from "@claxedo/tasks/test-support"
 import { hostedSandboxInput } from "../../../workspace/hosted-sandbox-input"
 import type { SandboxStart, SandboxStartRequest } from "../../../workspace/sandbox-start"
 import { hostedTasksBridgePorts } from "./compose"
+import type { HostedTasksCloudRootsInput } from "./cloud-roots"
 
 const mock = vi.hoisted(() => ({
   request: vi.fn(),
@@ -297,6 +298,7 @@ type BridgeOptions = {
   identity?: Identity
   admission?: CloudCreateAdmission
   sandboxUsage?: CloudCreateUsage
+  selectionRefusal?: HostedTasksCloudRootsInput["selectionRefusal"]
 }
 
 function bridge(composition: ReturnType<typeof services>, options: BridgeOptions = {}) {
@@ -311,6 +313,7 @@ function bridge(composition: ReturnType<typeof services>, options: BridgeOptions
       ...(sandboxStart ? { sandboxStart } : {}),
       ...(options.admission ? { cloudCreateAdmission: options.admission } : {}),
       ...(options.sandboxUsage ? { sandboxUsage: options.sandboxUsage } : {}),
+      ...(options.selectionRefusal ? { selectionRefusal: options.selectionRefusal } : {}),
     }),
     runtimeClient: {},
     principal: async () => ({ principalKind: "user", actorId: OWNER.actorId, actorKind: "human" }),
@@ -831,6 +834,33 @@ describe("hosted tasks cloud roots", () => {
     ])
     expect(ensured).toEqual([])
     expect(composition.authority.createCloudWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("refuses a preset whose plugins its starter has not turned on, as a start blocker, before a row, a lease or a sandbox exists", async () => {
+    runtime()
+    const { driver, ensured } = fakeDriver()
+    const composition = services(createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver }))
+    const capabilities = { mode: "selected" as const, plugins: [{ sourceId: "claxedo", pluginName: "composio" }], skills: [] }
+    const withComposio: Preset = { ...cloudPreset(), execution: { placement: "cloud", capabilities } }
+    const refusal = "Plugin composio is not installed from claxedo for this project; turn it on in Settings → Plugins"
+    const selectionRefusal = vi.fn(async () => refusal)
+    const kit = bridge(composition, { selectionRefusal })
+
+    const previewed = await kit.preview({ ...previewCommand("tsk_one"), preset: withComposio })
+    expect(previewed).toMatchObject({ ok: true })
+    if (!previewed.ok) return
+    expect(previewed.preview.blockers).toEqual([{ code: "capability_unavailable", detail: refusal }])
+    const started = await kit.start({
+      ...await startCommand("tsk_one", previewed.preview.digest),
+      preset: withComposio,
+      configurationDigest: await startConfigurationDigest({ preset: withComposio, slot }),
+    })
+
+    expect(started).toMatchObject({ ok: false, error: { message: refusal } })
+    expect(selectionRefusal).toHaveBeenCalledWith({ userId: OWNER.userId, orgId: "org" }, capabilities)
+    expect(ensured).toEqual([])
+    expect(composition.authority.createCloudWorkspace).not.toHaveBeenCalled()
+    expect(await rootOf("tsk_one")).toBeUndefined()
   })
 
   test("refuses a cloud root on a deployment with no sandbox start, before any row or sandbox exists", async () => {

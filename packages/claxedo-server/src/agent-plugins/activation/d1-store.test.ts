@@ -725,6 +725,27 @@ describe("D1 signed Agent Plugins activation store", () => {
     })).rejects.toThrow(/membership/)
   })
 
+  test("an owner's entitlement lists the plugins they retained, still after they switch one off, and refuses an outsider", async () => {
+    const { authority, store } = await setup()
+    const auth = await signed(authority, identity("alice"))
+    const me = await authority.usersMe(auth)
+    const orgId = me.org_id
+    if (!orgId) throw new Error("fixture user has no organization")
+    const owner = { userId: me.user_id, orgId }
+    expect((await store.entitlementSnapshot(owner)).plugins).toEqual([])
+
+    await store.mutateUser(auth, {
+      pluginInstanceId: PLUGIN, harnessIds: ["claude"], choice: true, target: { scope: "all-projects" }, artifact: artifact("a"), expectedRevision: 0,
+    })
+    await store.mutateUser(auth, {
+      pluginInstanceId: PLUGIN, harnessIds: ["claude"], choice: false, target: { scope: "all-projects" }, expectedRevision: 1,
+    })
+
+    expect((await store.entitlementSnapshot(owner)).plugins.map((plugin) => [plugin.pluginInstanceId, plugin.pins.user?.digest]))
+      .toEqual([[PLUGIN, digest("a")]])
+    await expect(store.entitlementSnapshot({ userId: "usr_nobody", orgId })).rejects.toThrow(/membership/)
+  })
+
   test("a project editor whose grant is revoked between admission and the batch writes no override on any project", async () => {
     const { database, authority, store, beforeNextBatch } = await setup()
     const owner = await signed(authority, identity("alice"))

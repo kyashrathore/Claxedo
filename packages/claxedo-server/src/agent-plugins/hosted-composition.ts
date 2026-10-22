@@ -1,5 +1,7 @@
 import { claxedoMcpToolGroupInventory, type McpToolGroup } from "@claxedo/mcp"
 import { createSessionHostPlugins, machineServing } from "./runtime/session-host-launch"
+import { AgentPluginSelectionError, selectedAgentPluginProjection } from "./runtime/selected-projection"
+import type { AgentPluginExecutionSelection } from "@claxedo/server-core/agent-plugins/runtime/execution-selection"
 import type { SandboxInFlight } from "../workspace/sandbox-start"
 import type { RuntimeConfigSnapshotPlugins } from "@claxedo/harness/contract"
 import type { D1Database } from "@cloudflare/workers-types"
@@ -109,6 +111,8 @@ export type HostedAgentPluginsComposition = {
    * environment reads it: what a grant's renewal asks before it renews.
    */
   groupEnabled: (group: string, root: CloudRootIdentity) => Promise<boolean>
+  /** Why `selection` cannot run for this person, read before any workspace exists; nothing when every reference resolves. */
+  selectionRefusal: (owner: { userId: string; orgId: string }, selection: AgentPluginExecutionSelection) => Promise<string | undefined>
 }
 
 function required(value: string | undefined, name: string) {
@@ -496,6 +500,15 @@ export function createHostedAgentPluginsComposition(input: {
     // A workspace that is gone takes every pass minted for it, whatever the audience.
     releaseRuntime: async ({ workspaceId }) => { await input.passes.revoke({ workspaceId, reason: "workspace_deleted" }) },
     groupEnabled,
+    selectionRefusal: async (owner, selection) => {
+      try {
+        await selectedAgentPluginProjection({ snapshot: await activations.entitlementSnapshot(owner), artifacts, selection })
+        return undefined
+      } catch (error) {
+        if (error instanceof AgentPluginSelectionError) return error.message
+        throw error
+      }
+    },
   }
 }
 

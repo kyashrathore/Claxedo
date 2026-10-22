@@ -198,6 +198,9 @@ async function notices(database: D1Database, workspaceId: string): Promise<strin
  */
 const WATCH_DUE_MS = 200
 
+/** A Task root naming this plugin is refused when it is prepared, as a selection its creator never retained is. */
+const UNRETAINED_PLUGIN = "unretained"
+
 function drive(env: Env): SandboxStartDrive {
   const sandboxes = manager(env)
   const input = { homeRegion: "us-east", labels: {} }
@@ -207,6 +210,9 @@ function drive(env: Env): SandboxStartDrive {
   return {
     acquire: async (workspaceId, capabilities) => {
       if (taskRoot(workspaceId)) await recordRootStep(env.CONTROL_PLANE_DB, workspaceId, "acquire", capabilities)
+      if (capabilities?.plugins.some((plugin) => plugin.pluginName === UNRETAINED_PLUGIN)) {
+        return { status: "failed", code: "runtime_prepare_failed", message: `Plugin ${UNRETAINED_PLUGIN} is not installed from src for this project` }
+      }
       return sandboxes.acquire(workspaceId, input)
     },
     provision: async (workspaceId, epoch, capabilities) => {

@@ -45,6 +45,7 @@ export type HostedTasksPluginInput = {
    */
   cloudCreateAdmission?: CloudCreateAdmissionPolicy
   grants?: HostedTasksGrants
+  selectionRefusal?: HostedTasksCloudRootsInput["selectionRefusal"]
 }
 
 /**
@@ -122,6 +123,7 @@ export function composeHostedTasksPlugin(input: HostedTasksPluginInput): HostedS
       ...(input.sandboxStart ? { sandboxStart: input.sandboxStart } : {}),
       ...(input.sandboxUsage ? { sandboxUsage: input.sandboxUsage } : {}),
       cloudCreateAdmission: createCloudCreateAdmission({ services, ...input.cloudCreateAdmission }),
+      ...(input.selectionRefusal ? { selectionRefusal: input.selectionRefusal } : {}),
     }),
     database: input.database,
     runtimeClient: hostedTasksRuntimeClient(services),

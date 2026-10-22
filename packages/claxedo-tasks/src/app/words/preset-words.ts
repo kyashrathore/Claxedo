@@ -47,6 +47,7 @@ export const PRESET_WORDS = {
   "claxedo-tasks.preset.catalogFailed": "Installed plugins and skills did not load",
   "claxedo-tasks.preset.bundledSkills": "Bundles {{skills}}",
   "claxedo-tasks.preset.unavailable": "Unavailable",
+  "claxedo-tasks.preset.turnOnFirst": "Turn it on in Plugins first",
   "claxedo-tasks.preset.cancel": "Cancel",
   "claxedo-tasks.preset.save": "Save preset",
   "claxedo-tasks.preset.create": "Create preset",

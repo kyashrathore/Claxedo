@@ -17,6 +17,7 @@ import {
   type OriginCloudWorkspaceRows,
 } from "../../../workspace/origin-cloud-workspace"
 import type { SandboxStart } from "../../../workspace/sandbox-start"
+import type { AgentPluginExecutionSelection } from "@claxedo/server-core/agent-plugins/runtime/execution-selection"
 
 export type HostedTasksCloudRootsInput = {
   services: ControlPlaneServices
@@ -48,6 +49,8 @@ export type HostedTasksCloudRootsInput = {
    * leaves it invisible to the cap.
    */
   sandboxUsage?: CloudCreateUsage
+  /** Why a capability set cannot run for its root's creator, from the Agent Plugins composition; absent, a set is resolved only when the root is prepared. */
+  selectionRefusal?: (owner: { userId: string; orgId: string }, selection: AgentPluginExecutionSelection) => Promise<string | undefined>
 }
 
 type RootWorkspaceArgs = {
@@ -95,16 +98,25 @@ function rootFiler(creator: TasksCloudRootCreator): RootFiler {
   }
 }
 
+function creatorOwner(creator: TasksCloudRootCreator, orgId: string): { userId: string; orgId: string } | undefined {
+  if (creator.kind === "owner") return { userId: creator.owner.userId, orgId: creator.owner.orgId }
+  const userId = creator.auth.principal?.userId
+  return userId ? { userId, orgId } : undefined
+}
+
 /** The Tasks plugin's cloud roots over this deployment's workspace authority, admission and sandbox start. */
 export function createHostedTasksCloudRoots(input: HostedTasksCloudRootsInput): TasksCloudRoots {
   const { services } = input
   const admission = input.cloudCreateAdmission ?? createCloudCreateAdmission({ services })
   const rootOf = (root: TasksCloudRootRequest): OriginCloudRootInput => ({ services, rows: input.rows, ...root })
   return {
-    refusal: async (root) => {
+    refusal: async (root, creator, capabilities) => {
       const existing = await originCloudRoot(rootOf(root))
       if (!("id" in existing)) return { code: existing.code, detail: existing.detail }
-      return input.sandboxStart ? undefined : UNSTARTABLE
+      if (!input.sandboxStart) return UNSTARTABLE
+      const owner = creator && creatorOwner(creator, root.orgId)
+      const refused = owner && input.selectionRefusal ? await input.selectionRefusal(owner, capabilities) : undefined
+      return refused ? { code: "capability_unavailable", detail: refused } : undefined
     },
     allocate: async (root, creator, capabilities) => {
       const start = input.sandboxStart

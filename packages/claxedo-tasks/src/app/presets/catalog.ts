@@ -3,11 +3,18 @@ import type { CapabilitySelection } from "./draft"
 
 export const PLUGIN_CATALOG_PATH = "/api/claxedo/plugins"
 
+/**
+ * `unretained`: the source offers it but nobody turned it on for this person,
+ * so no pin entitles a cloud root to it and every start of a preset naming it
+ * is refused.
+ */
+export type CapabilityAvailability = "ready" | "unretained" | "unavailable"
+
 export type CapabilityEntry = {
   readonly selection: CapabilitySelection
   readonly description?: string
   readonly bundledSkills: readonly string[]
-  readonly available: boolean
+  readonly availability: CapabilityAvailability
 }
 
 export type CapabilityCatalog = { readonly plugins: readonly CapabilityEntry[]; readonly skills: readonly CapabilityEntry[] }
@@ -30,17 +37,19 @@ function candidateEntries(value: unknown): CapabilityCatalog {
   const candidate = asRecord(value)
   const sourceId = nonEmptyString(candidate?.sourceId)
   if (!candidate || !sourceId) return { plugins: [], skills: [] }
-  const available = candidate.sourceAvailable === true && candidate.artifactAvailable !== false
+  const availability: CapabilityAvailability = candidate.sourceAvailable !== true || candidate.artifactAvailable === false
+    ? "unavailable"
+    : nonEmptyString(candidate.retainedDigest) ? "ready" : "unretained"
   const skills = skillsOf(candidate)
   const manifest = asRecord(candidate.manifest)
   const name = nonEmptyString(manifest?.name)
   const description = nonEmptyString(manifest?.description)
   const plugin: CapabilityEntry[] = name
-    ? [{ selection: { sourceId, name }, ...(description ? { description } : {}), bundledSkills: skills.map((skill) => skill.name), available }]
+    ? [{ selection: { sourceId, name }, ...(description ? { description } : {}), bundledSkills: skills.map((skill) => skill.name), availability }]
     : []
   return {
     plugins: plugin,
-    skills: skills.map((skill) => ({ selection: { sourceId, name: skill.name }, ...(skill.description ? { description: skill.description } : {}), bundledSkills: [], available })),
+    skills: skills.map((skill) => ({ selection: { sourceId, name: skill.name }, ...(skill.description ? { description: skill.description } : {}), bundledSkills: [], availability })),
   }
 }
 

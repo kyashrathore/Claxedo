@@ -92,9 +92,11 @@ function configurationsSection(t: Translate, editor: OpenEditor): SurfaceCompone
 
 function capabilityOptions(t: Translate, entries: readonly CapabilityEntry[], chosen: readonly string[]) {
   return entries
-    .filter((entry) => entry.available || chosen.includes(capabilityKey(entry.selection)))
+    .filter((entry) => entry.availability === "ready" || chosen.includes(capabilityKey(entry.selection)))
     .map((entry) => {
-      const description = entry.available ? (entry.bundledSkills.length > 0 ? t("claxedo-tasks.preset.bundledSkills", { skills: entry.bundledSkills.join(", ") }) : entry.description) : t("claxedo-tasks.preset.unavailable")
+      const description = entry.availability === "ready"
+        ? (entry.bundledSkills.length > 0 ? t("claxedo-tasks.preset.bundledSkills", { skills: entry.bundledSkills.join(", ") }) : entry.description)
+        : t(entry.availability === "unretained" ? "claxedo-tasks.preset.turnOnFirst" : "claxedo-tasks.preset.unavailable")
       return { label: entry.selection.name, value: capabilityKey(entry.selection), ...(description ? { description } : {}) }
     })
 }

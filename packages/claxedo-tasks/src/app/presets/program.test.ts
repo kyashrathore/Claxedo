@@ -11,8 +11,9 @@ const PI = { harness: { id: "pi", access: "native" }, model: { providerID: "open
 
 const CATALOG = {
   candidates: [
-    { sourceId: "github:acme/tools", sourceAvailable: true, manifest: { name: "deploy", description: "Ship builds" }, skills: [{ name: "release-notes", description: "Write release notes" }] },
+    { sourceId: "github:acme/tools", sourceAvailable: true, retainedDigest: "sha256:deploy", manifest: { name: "deploy", description: "Ship builds" }, skills: [{ name: "release-notes", description: "Write release notes" }] },
     { sourceId: "local", sourceAvailable: false, manifest: { name: "gone" }, skills: [] },
+    { sourceId: "claxedo", sourceAvailable: true, retainedDigest: null, manifest: { name: "composio", description: "Connect apps" }, skills: [] },
   ],
 }
 
@@ -112,6 +113,23 @@ describe("Settings → Presets as a surface", () => {
     expect(visibleTexts(surface)).toContain("runs in its own session host on a cloud workspace")
     expect(surface.component("slot-primary-picker")).toMatchObject({ placement: "cloud" })
     expect(surface.read("/options/plugins")).toEqual([{ label: "deploy", value: "github:acme/tools/deploy", description: "Bundles release-notes" }])
+  })
+
+  test("offers only plugins turned on for the person, and names the fix on one a preset already chose", async () => {
+    const { surface, fire } = open()
+    await actionsSettled()
+    await fire("createPreset")
+    surface.write("/draft/placement", ["cloud"])
+    await fire("presetPlacementChanged", { draft: surface.read("/draft"), value: ["cloud"] })
+    expect(surface.read("/options/plugins")).toEqual([{ label: "deploy", value: "github:acme/tools/deploy", description: "Bundles release-notes" }])
+
+    surface.write("/draft/plugins", ["claxedo/composio"])
+    await fire("presetCapabilitiesChanged", { draft: surface.read("/draft") })
+
+    expect(surface.read("/options/plugins")).toEqual([
+      { label: "deploy", value: "github:acme/tools/deploy", description: "Bundles release-notes" },
+      { label: "composio", value: "claxedo/composio", description: "Turn it on in Plugins first" },
+    ])
   })
 
   test("keeps the typed name when another control redraws the editor", async () => {

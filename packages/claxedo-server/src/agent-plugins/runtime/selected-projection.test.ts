@@ -144,11 +144,11 @@ describe("selectedAgentPluginProjection", () => {
     await expect(selectedAgentPluginProjection({
       ...single,
       selection: { plugins: [{ sourceId: "acme", pluginName: "absent" }], skills: [] },
-    })).rejects.toThrow("Plugin absent is not installed from acme")
+    })).rejects.toThrow("Plugin absent is not installed from acme for this project; turn it on in Settings → Plugins")
     await expect(selectedAgentPluginProjection({
       ...single,
       selection: { plugins: [], skills: [{ sourceId: "acme", skillName: "absent" }] },
-    })).rejects.toThrow("Skill absent is not installed from acme")
+    })).rejects.toThrow("Skill absent is not installed from acme for this project; turn its plugin on in Settings → Plugins")
 
     const doubled = world([library, twin])
     await expect(selectedAgentPluginProjection({
