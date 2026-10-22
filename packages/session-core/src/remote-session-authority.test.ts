@@ -554,6 +554,7 @@ describe("answers the authority lets a host reuse", () => {
     const bodies: unknown[] = []
     const policy = remoteWorkspaceSessionAccessPolicy({
       url: "https://control.test/api/runtime-authority/session-authorize",
+      grants: createAuthorityGrants(),
       fetch: async (_url, init) => {
         bodies.push(sentJson(init))
         return answer()
@@ -561,6 +562,23 @@ describe("answers the authority lets a host reuse", () => {
     })
     return { policy, bodies }
   }
+
+  test("a runtime nothing rings holds no answers and asks every time", async () => {
+    const bodies: unknown[] = []
+    const policy = remoteWorkspaceSessionAccessPolicy({
+      url: "https://control.test/api/runtime-authority/session-authorize",
+      fetch: async (_url, init) => {
+        bodies.push(sentJson(init))
+        return Response.json({ allowed: true, grantTtlMs: 60_000 })
+      },
+    })
+    await policy.authorize({ ...owned, operation: "message_read" })
+    await policy.authorize({ ...owned, operation: "message_read" })
+    await policy.authorizeHost!({ ...owned, operation: "agent_setup_read", hostAccess: "admin" })
+    await policy.authorizeHost!({ ...owned, operation: "agent_setup_read", hostAccess: "admin" })
+    expect(bodies).toHaveLength(4)
+    expect("onAuthorityChange" in policy).toBe(false)
+  })
 
   test("a read the authority granted for a while is answered again without asking, for the same token, session and action only", async () => {
     const { policy, bodies } = counted(() => Response.json({ allowed: true, grantTtlMs: 60_000 }))

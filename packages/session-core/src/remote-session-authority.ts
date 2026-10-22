@@ -1,7 +1,7 @@
 import { parseTurnDelivery } from "@claxedo/harness/contract"
 import { withDeadlineSignal } from "@claxedo/helpers/deadline"
 import { asBoolean, asNumber, asRecord, asString } from "@claxedo/helpers/guards"
-import { createAuthorityGrants, type AuthorityGrant, type AuthorityGrants } from "./authority-grants"
+import type { AuthorityGrant, AuthorityGrants } from "./authority-grants"
 import {
   managedWorkspaceSessionAccessPolicy,
   type SessionAccessDecision,
@@ -76,12 +76,17 @@ export function remoteWorkspaceSessionAccessPolicy(
     requireActor?: boolean
     adoptRefusedSession?: AdoptRefusedSession
     log?: AuthorityLog
-    /** Shared by every runtime one host serves, so one revocation ring forgets them all. */
+    /**
+     * Only a host the control plane rings when access narrows may reuse
+     * answers; without it every request is asked, since nothing would make the
+     * host forget a revoked answer before it lapses. Shared by every runtime
+     * one host serves, so one ring forgets them all.
+     */
     grants?: AuthorityGrants
   } = {},
 ) {
   const log = options.log ?? consoleAuthorityLog
-  const grants = options.grants ?? createAuthorityGrants()
+  const grants = options.grants
   const authorityUrl = () => (typeof options.url === "function" ? options.url() : options.url)?.trim()
   /**
    * The authority calls in flight, by endpoint, credential and body: a call
@@ -177,12 +182,12 @@ export function remoteWorkspaceSessionAccessPolicy(
     const writeClass = sessionAccessWriteClass(input)
     const action = writeClass ? "write" : "read"
     const classified = writeClass ? { writeClass } : undefined
-    const key = sessionGrantKey(input, action, writeClass)
-    if (key && grants.held(key)) return { allowed: true }
-    const askedAt = grants.generation()
+    const key = grants ? sessionGrantKey(input, action, writeClass) : undefined
+    if (key && grants?.held(key)) return { allowed: true }
+    const askedAt = grants?.generation()
     const decision = await adoptable(input, () => request(input, action, decodeGranted, classified))
     if (!decision.allowed) return decision
-    if (key && decision.grantTtlMs !== undefined) grants.hold(key, { allowed: true }, decision.grantTtlMs, askedAt)
+    if (key && askedAt !== undefined && decision.grantTtlMs !== undefined) grants?.hold(key, { allowed: true }, decision.grantTtlMs, askedAt)
     return { allowed: true }
   }
   const policy = managedWorkspaceSessionAccessPolicy({
@@ -223,10 +228,10 @@ export function remoteWorkspaceSessionAccessPolicy(
     const url = authorityUrl()
     if (!url || (!input.credential && !input.lease)) return denied(503, "session_authority_unavailable")
     const action: HostAuthorityAction = input.hostAccess === "admin" ? "host_admin" : "host_read"
-    const key = hostGrantKey(input, action)
-    const held = key && !input.lease ? grants.held(key) : undefined
+    const key = grants ? hostGrantKey(input, action) : undefined
+    const held = key && !input.lease ? grants?.held(key) : undefined
     if (held && hostGrantUsable(held, action)) return held
-    const generation = grants.generation()
+    const generation = grants?.generation()
     const askedAt = Date.now()
     try {
       return await withDeadlineSignal(options.timeoutMs ?? 5_000, async (signal) => {
@@ -245,7 +250,7 @@ export function remoteWorkspaceSessionAccessPolicy(
           const expiresAt = typeof body?.expiresAt === "number" ? body.expiresAt : undefined
           const grant: AuthorityGrant = lease && expiresAt !== undefined ? { allowed: true, lease, expiresAt } : { allowed: true }
           const ttlMs = hostGrantTtlMs(grant, asNumber(body?.grantTtlMs))
-          if (key && ttlMs !== undefined) grants.hold(key, grant, ttlMs, generation)
+          if (key && generation !== undefined && ttlMs !== undefined) grants?.hold(key, grant, ttlMs, generation)
           return grant
         }
         const error = asRecord((await jsonBody(response))?.error)
@@ -264,7 +269,7 @@ export function remoteWorkspaceSessionAccessPolicy(
       return denied(503, "session_authority_unavailable")
     }
   }
-  policy.onAuthorityChange = (listener) => grants.onForget(listener)
+  if (grants) policy.onAuthorityChange = (listener) => grants.onForget(listener)
   policy.reserveSession = (input) =>
     request(input, "reserve", decodeReservation, { parentSessionId: input.parentSessionId })
   policy.grantTurn = (input) =>
