@@ -134,6 +134,83 @@ The cold path on the signed e2e stack (cloudflare driver emulator, a Shell tile 
 
 On an awake workspace the pane attaches 0.16 s after the press. The emulator boots in about 2 s, so this shows the app's order of requests, not Boat's time.
 
+## On staging after the merge (22 October, deploys 39757717876 and 39768469284)
+
+### The layer cache
+
+Both deploys' `boat sandbox image` jobs import `claxedo-sandbox:buildcache`. The apt, npm-globals and agent-CLI steps read `CACHED`, and pushing layers takes 3.5–3.8 s.
+
+| image pair | layers kept | new layers |
+|---|---|---|
+| fe6d3b8210 → 5f3daab6e7 (both built with the cache) | 860.5 MB, the first ten | 259.2 MB, the four runtime layers |
+| c653c85c5e → fe6d3b8210 (the last pair without it) | 82.5 MB | 1,037.2 MB |
+
+No wake is faster for it yet. Waking `ws_mvfqicz4` onto 5f3daab6e7 took:
+
+| phase | time |
+|---|---|
+| `machine_ready` | 6.9 s |
+| `image_ready` | 88.6 s |
+| `runtime_ready` | 6.1 s |
+| the push | 3.5 s |
+
+From the first POST to `ready` was 111.7 s.
+
+### A cloud terminal, traced through the relay
+
+Four runs through `app.claxedo.dev/relay` (the app's own path) from India, on the woken workspace, with the relay's sampled spans forced. How to set that up is under Reproducing.
+
+| step | wall | inside |
+|---|---|---|
+| PTY create | 644–680 ms | gateway→room `do-fetch` 520–533 ms; room→Boat `upstream-fetch` 307–322 ms, of which `runtime-total` is 171–188 ms (the create itself is 3–17 ms, the rest is the runtime's per-request call to the session authority); `relay-auth` 0 cached, 116 ms cold |
+| WebSocket open and first frame | 1.5–2.2 s | the room's upstream open (room → Boat ingress → runtime admit), `wsUpstreamOpenMs` 598–1,523 ms; about 0.7–0.9 s for the client's fresh upgrade through the edge and the gateway |
+| PTY delete | about 0.6–0.7 s | `runtime-total` 205–327 ms, before 3.2–3.3 s |
+
+On a runtime just woken, the first create took 1,244 ms in the runtime and 2,083 ms wall.
+
+A ready workspace's `GET /api/workspace/<id>/connection` now names its runtime call. Five reads 12 s apart:
+
+| part | time |
+|---|---|
+| auth | 359–658 ms |
+| d1 | 486–829 ms |
+| do | 15–354 ms |
+| `upstream-host` (the Boat ingress) | either 133–146 ms or 975–1,091 ms |
+| total | 681–2,158 ms |
+| wall | 1.5–3.0 s |
+
+The read asks the runtime for its settings status on every call, in series before the token is minted. Whether a read still needs that after the start's push applied the settings is an open design question; it was left as it is.
+
+### Where the relay's time goes
+
+Requests went to a connected machine's workspace (host tunnel) and to the cloud workspace. Warm, through the app's origin:
+- The gateway hands to the room in about 55 ms.
+- The host tunnel's round trip (`tunnel-wait`: room → connector → runtime → back) is 179–205 ms. The runtime itself takes 0.4–1.7 ms of that.
+
+After more than 10 s idle, `relay-auth` adds 213–406 ms. The token-revocation lookup (`rat-active`, 200–300 ms) and the target lookup (`target-resolve`, 300–406 ms) run in parallel, each cached for 10 s. That cache stays as it is: authorization must stay live, and a longer cache or serving a stale answer would let a revoked token through for longer.
+
+The largest share is outside the code. From the owner's network in India, Cloudflare's anycast lands both `*.workers.dev` and `app.claxedo.dev` in Marseille or Paris, and only sometimes in Singapore:
+- A TCP connect is 0.24–0.44 s.
+- TLS adds 0.3–2.1 s on a fresh connection.
+- A request on a fresh connection takes 1.7–3.5 s wall, against 0.5–0.8 s inside the gateway.
+
+Changing where the account's traffic lands is a Cloudflare plan matter. The owner has parked the Business plan and Argo.
+
+### Option, not built: a `weur` room for Boat workspaces
+
+The cloud room is placed by the workspace's home region (us-east, IAD). This Boat sandbox's ingress is in Gravelines, France, and the owner's requests reach Cloudflare in France. Each relay request therefore crosses the Atlantic twice:
+- edge → room in IAD;
+- room → Boat in France;
+- and the same two legs back.
+
+A room placed in `weur` would keep both legs inside Europe.
+
+Trade-offs:
+- A room's place is fixed when it is first created and never moves. Existing workspaces keep their IAD rooms unless the room is renamed.
+- The lease does not record where Boat put a sandbox, so the hint would be a guess per driver, wrong for a person whose edge is elsewhere.
+- The room's lookups to the control plane (D1 in ENAM) would cross the Atlantic instead, though only once per 10 s cache.
+- The runtime's per-request session-authority call goes from the sandbox to the control plane either way.
+
 ## Not done, and why
 
 - **The image wait (60–100 s) is the owner's decision.** There are two ways:
@@ -141,7 +218,7 @@ On an awake workspace the pane attaches 0.16 s after the press. The emulator boo
   - **(B) Delta update.** With this branch's layer cache in place, the driver fetches only the layers the trees lack (about 260 MB today, against 1.1 GB) and applies them, with OCI whiteouts, onto a copy of the old trees. What a person installed into the trees would then survive an update, which it does not today.
 - **Unverified:**
   - The split of the 80–95 s between the pull and the tree copy on Boat. No Boat start was spent on a changed image; the two stopped workspaces in the owner's project refuse every start with 409 `runtime_prepare_failed` ("Plugin composio is not installed from claxedo for this project"), and the owner's live workspace was not stopped.
-  - The relay ordering fix and the connection read change are not yet measured on staging.
+  - The relay ordering fix on staging. The app's path after a wake was not traced; the connection read change was (above).
   - The hangup order on Windows, where the pseudoconsole now closes right after the job's tree is ended, with no grace between.
 - **Not traced:** the 13.4 s `runtime_ready` of some unchanged-image wakes, and the 9.8 s Durable Object read.
 
@@ -160,3 +237,19 @@ GROUP BY ws, epoch ORDER BY at
 ```
 
 To compare two images' layers, read their manifests from ghcr with an anonymous pull token (`https://ghcr.io/token?scope=repository:kyashrathore/claxedo-sandbox:pull`). The deploy job `boat sandbox image` logs the tag each staging deploy published.
+
+### Forcing the relay's spans on staging
+
+The relay already records spans:
+- the gateway: `relay-gateway-route` and `relay-gateway-do-fetch`;
+- the room: `relay-auth`, made of `rat-verify`, `target-resolve`, `rat-active`, `rht-mint` or `rht-cache`, and `audit`;
+- the forward: `upstream-fetch`, `tunnel-wait` or `session-host-fetch`.
+
+It emits them as `Server-Timing` only on a sampled request. For a measurement, sample on demand without changing what anyone else sees:
+
+1. Write a fresh random value to a file only you can read, for example `umask 077; openssl rand -hex 32 > secret`.
+2. From `packages/workspace-relay`, run `npx wrangler secret put CLAXEDO_RELAY_TRACE_FORCE_SECRET --name <relay worker> < secret`. The staging deploy's plain `wrangler deploy` keeps secrets.
+3. Send `x-claxedo-relay-trace: <value>` on relay HTTP requests. For a WebSocket, `x-claxedo-relay-ws-trace: 1` on the upgrade makes the room send one `relay.trace` frame carrying `wsUpstreamOpenMs`.
+4. When done, run `npx wrangler secret delete CLAXEDO_RELAY_TRACE_FORCE_SECRET --name <relay worker>` and check `wrangler secret list`.
+
+Without the secret no client can force sampling. Leave `CLAXEDO_RELAY_TRACE_SAMPLE_RATE` unset: a rate would put the timings on ordinary responses.
