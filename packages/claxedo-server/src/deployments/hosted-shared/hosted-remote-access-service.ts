@@ -27,6 +27,7 @@ export function hostedRemoteAccessService(
         lastSeenAt: device.last_seen_at,
         state: device.state,
         workspaceIds: device.workspace_ids,
+        servingWorkspaceIds: device.workspace_ids.filter((id) => device.acked_workspace_ids.includes(id)),
       }))
     },
     async revoke(auth, hostId) {

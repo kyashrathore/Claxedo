@@ -406,6 +406,39 @@ describe("claxedo host", () => {
     await expect(host(["revoke", "--machine", "build-box"], deps)).rejects.toThrow("No machine named build-box")
   })
 
+  test("pause and resume name exactly one machine, and the list says paused until it is resumed", async () => {
+    const machine = await enrolledMachine(cp, "build-box")
+    const other = await enrolledMachine(cp, "studio")
+    const { deps, lines } = owner(cp)
+
+    await host(["pause", "--machine", "build-box"], deps)
+    const paused = cp.log.filter((entry) => entry.path === "/api/claxedo/host/enrollments/pause")
+    expect(paused.map((entry) => [entry.method, entry.body])).toEqual([["POST", { hostId: machine.hostId, paused: true }]])
+    expect(cp.enrollments.get(machine.enrollmentId)?.paused_at).toBeDefined()
+    expect(cp.enrollments.get(other.enrollmentId)?.paused_at).toBeUndefined()
+    expect(lines.at(-1)).toBe("build-box paused: nothing reaches it until `claxedo host resume --machine build-box`")
+    const listedFrom = lines.length
+    await host(["list"], deps)
+    const listed = lines.slice(listedFrom)
+    expect(listed.find((line) => line.startsWith("build-box"))).toMatch(/\spaused\s/)
+    expect(listed.find((line) => line.startsWith("studio"))).toMatch(/\syes\s/)
+
+    await host(["resume", "--machine", machine.enrollmentId], deps)
+    expect(cp.log.filter((entry) => entry.path === "/api/claxedo/host/enrollments/pause").at(-1)?.body).toEqual({ hostId: machine.hostId, paused: false })
+    expect(cp.enrollments.get(machine.enrollmentId)?.paused_at).toBeUndefined()
+    expect(lines.at(-1)).toContain("build-box resumed: it serves again once it beats")
+  })
+
+  test("pause and resume refuse without a machine, and an unknown machine is never sent to the control plane", async () => {
+    await enrolledMachine(cp, "build-box")
+    const { deps } = owner(cp)
+    await expect(host(["pause"], deps)).rejects.toThrow("--machine <name|enrollment_id> is required")
+    await expect(host(["resume", "--machine", "missing"], deps)).rejects.toThrow("No machine named missing")
+    expect(cp.log.filter((entry) => entry.path === "/api/claxedo/host/enrollments/pause")).toEqual([])
+    await expect(host(["pause", "--machine", "build-box"], owner(cp, "stranger").deps)).rejects.toThrow()
+    expect(cp.log.filter((entry) => entry.path === "/api/claxedo/host/enrollments/pause")).toEqual([])
+  })
+
   test("push-config seals the file's providers for the machine's declared key; the output names providers and never the secret", async () => {
     const machine = await enrolledMachine(cp, "build-box")
     const sealing = await machine.declareSealingKey()

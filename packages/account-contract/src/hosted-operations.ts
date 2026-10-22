@@ -149,6 +149,28 @@ export const CORE_HOSTED_OPERATIONS = {
     output: withArrays("devices"), retry: "safe",
     exposure: { renderer: true, app: false },
   }),
+  // The route pauses every machine of the owner's when it is handed no
+  // `hostId`, so these two require one and fix `paused` in the body.
+  "machines.pause": defineOperation({
+    method: "POST", path: operationPath("/api/claxedo/host/enrollments/pause"),
+    input: operationInput({ hostId: requiredParameter }),
+    output: object, retry: "safe",
+    exposure: { renderer: true, app: false },
+    body: (input) => ({ hostId: input.hostId, paused: true }),
+  }),
+  "machines.resume": defineOperation({
+    method: "POST", path: operationPath("/api/claxedo/host/enrollments/pause"),
+    input: operationInput({ hostId: requiredParameter }),
+    output: object, retry: "safe",
+    exposure: { renderer: true, app: false },
+    body: (input) => ({ hostId: input.hostId, paused: false }),
+  }),
+  "machines.remove": defineOperation({
+    method: "DELETE", path: operationPath("/api/claxedo/remote-access/devices/:hostId"),
+    input: operationInput({ hostId: requiredParameter }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: false },
+  }),
   "workspace.list.provisioner": defineOperation({
     method: "GET", path: operationPath("/api/workspace?host=provisioner"),
     input: operationInput({}),

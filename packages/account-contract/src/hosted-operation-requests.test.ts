@@ -584,6 +584,27 @@ describe("resolve", () => {
     })
   })
 
+  test("pauses, resumes and removes exactly one named machine, never every machine of the owner's", () => {
+    expect(CORE.resolve("machines.pause", { hostId: "host_1", paused: false })).toEqual({
+      method: "POST",
+      path: "/api/claxedo/host/enrollments/pause",
+      body: { hostId: "host_1", paused: true },
+    })
+    expect(CORE.resolve("machines.resume", { hostId: "host_1", paused: true })).toEqual({
+      method: "POST",
+      path: "/api/claxedo/host/enrollments/pause",
+      body: { hostId: "host_1", paused: false },
+    })
+    expect(CORE.resolve("machines.remove", { hostId: "host/1" })).toEqual({
+      method: "DELETE",
+      path: "/api/claxedo/remote-access/devices/host%2F1",
+    })
+    for (const name of ["machines.pause", "machines.resume", "machines.remove"] as const) {
+      expect(() => CORE.resolve(name, {}), name).toThrow(MissingOperationParameter)
+      expect(() => CORE.resolve(name, { hostId: "" }), name).toThrow(MissingOperationParameter)
+    }
+  })
+
   test("omits a body entirely for operations that take none", () => {
     expect(CORE.resolve("account.mode")).toEqual({ method: "GET", path: "/api/claxedo/mode" })
   })

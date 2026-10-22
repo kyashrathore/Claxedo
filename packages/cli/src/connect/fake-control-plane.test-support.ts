@@ -61,6 +61,14 @@ export function createFakeConnectControlPlane(options: { now?: () => number; url
       return { invitation_id: minted.invitationId, token: minted.token, expires_at: minted.expiresAt }
     }
     if (method === "GET" && pathname === "/api/claxedo/host/enrollments") return { active: null, machines: machines() }
+    if (method === "POST" && pathname === "/api/claxedo/host/enrollments/pause") {
+      if (typeof body.paused !== "boolean") throw new FakeRefusal(400, "invalid_request")
+      const hostId = asString(body.hostId)
+      for (const enrollment of cp.enrollments.values()) {
+        if (enrollment.revoked_at === undefined && (hostId === undefined || enrollment.host_id === hostId)) cp.pause(enrollment.enrollment_id, body.paused)
+      }
+      return { paused: body.paused }
+    }
     const scopeMatch = /^\/api\/claxedo\/host\/enrollments\/([^/]+)\/scope$/.exec(pathname)
     if (method === "PATCH" && scopeMatch) {
       return cp.setScope(decodeURIComponent(scopeMatch[1]), { allowed_roots: stringsOf(body.allowed_roots) })
