@@ -25,23 +25,26 @@ export type PiShellHost = { sessionId: string; services: PiShellServices; env: R
 export const NO_SHELL_MESSAGE = "Shell commands need Git for Windows (git-scm.com) on this machine; install it and restart claxedo connect"
 
 /**
- * The bash the tool's script runs in. Git for Windows installs bash.exe under
- * Git\bin but adds only Git\cmd to PATH, so on Windows the bash is the one
- * beside the git on PATH or in the installer's default locations, never a PATH
- * lookup of `bash`: with the WSL feature on that lookup answers
- * System32\bash.exe, a launcher into a different operating system.
+ * The bash the tool's script runs in, resolved as pi-durable's own
+ * `NodeExecutionEnv` resolves it (`getShellConfig` in its env/node, which it
+ * does not export): on Windows, Git for Windows' bash.exe under ProgramFiles
+ * or ProgramFiles(x86), then a bash.exe on PATH; elsewhere /bin/bash, then
+ * bash on PATH. Two departures: a bash.exe on PATH is also looked for beside
+ * the git on PATH, since the installer puts only Git\cmd there and a person
+ * who installed Git elsewhere has git on PATH but not bash; and WSL's
+ * System32\bash.exe is never taken, because the tool's script passes the
+ * command as an argument, which that launcher does not accept.
  */
 export function piShell(input: { platform: NodeJS.Platform; env: Readonly<Record<string, string | undefined>>; exists: (file: string) => boolean }): string | undefined {
   if (input.platform !== "win32") return input.exists("/bin/bash") ? "/bin/bash" : "bash"
   const variable = (name: string) => Object.entries(input.env).find(([key]) => key.toUpperCase() === name)?.[1]
-  const gitRoots = (variable("PATH") ?? "").split(";").filter(Boolean)
-    .filter((dir) => input.exists(path.win32.join(dir, "git.exe")))
-    .map((dir) => path.win32.join(dir, ".."))
-  const installRoots = [
-    ...[variable("PROGRAMFILES"), variable("PROGRAMFILES(X86)"), variable("PROGRAMW6432")].flatMap((dir) => dir ? [path.win32.join(dir, "Git")] : []),
-    ...[variable("LOCALAPPDATA")].flatMap((dir) => dir ? [path.win32.join(dir, "Programs", "Git")] : []),
+  const pathDirs = (variable("PATH") ?? "").split(";").filter(Boolean)
+  const candidates = [
+    ...[variable("PROGRAMFILES"), variable("PROGRAMFILES(X86)")].flatMap((dir) => dir ? [path.win32.join(dir, "Git", "bin", "bash.exe")] : []),
+    ...pathDirs.filter((dir) => input.exists(path.win32.join(dir, "git.exe"))).map((dir) => path.win32.join(dir, "..", "bin", "bash.exe")),
+    ...pathDirs.map((dir) => path.win32.join(dir, "bash.exe")).filter((file) => !/^[a-z]:\\windows\\(?:system32|sysnative)\\bash\.exe$/i.test(file)),
   ]
-  return [...gitRoots, ...installRoots].map((root) => path.win32.join(root, "bin", "bash.exe")).find((file) => input.exists(file))
+  return candidates.find((file) => input.exists(file))
 }
 
 /** `piShell` for the process the tools run in. */

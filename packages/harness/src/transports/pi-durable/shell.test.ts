@@ -65,11 +65,14 @@ test("on Windows the command runs in Git for Windows' bash beside the git on PAT
   expect(result).toEqual({ ok: true, value: { exitCode: 0 } })
 })
 
-test("a Git install the PATH does not name is found at the installer's default locations, and bash on PATH alone is never taken", () => {
-  const exists = (file: string) => file === "C:\\Users\\me\\AppData\\Local\\Programs\\Git\\bin\\bash.exe" || file === "C:\\Windows\\System32\\bash.exe"
-  expect(piShell({ platform: "win32", env: { PATH: "C:\\Windows\\System32", LOCALAPPDATA: "C:\\Users\\me\\AppData\\Local" }, exists }))
-    .toBe("C:\\Users\\me\\AppData\\Local\\Programs\\Git\\bin\\bash.exe")
-  expect(piShell({ platform: "win32", env: { PATH: "C:\\Windows\\System32", ProgramFiles: "C:\\Program Files" }, exists })).toBeUndefined()
+test("the installer's default location comes first, then a bash.exe on PATH such as MSYS2, and WSL's launcher in System32 is never taken", () => {
+  const programFiles = "C:\\Program Files\\Git\\bin\\bash.exe"
+  const msys = "C:\\msys64\\usr\\bin\\bash.exe"
+  const wsl = "C:\\Windows\\System32\\bash.exe"
+  const env = { Path: "C:\\Windows\\System32;C:\\msys64\\usr\\bin", ProgramFiles: "C:\\Program Files" }
+  expect(piShell({ platform: "win32", env, exists: (file) => [programFiles, msys, wsl].includes(file) })).toBe(programFiles)
+  expect(piShell({ platform: "win32", env, exists: (file) => [msys, wsl].includes(file) })).toBe(msys)
+  expect(piShell({ platform: "win32", env, exists: (file) => file === wsl })).toBeUndefined()
   expect(piShell({ platform: "linux", env: {}, exists: (file) => file === "/bin/bash" })).toBe("/bin/bash")
   expect(piShell({ platform: "darwin", env: {}, exists: () => false })).toBe("bash")
 })
