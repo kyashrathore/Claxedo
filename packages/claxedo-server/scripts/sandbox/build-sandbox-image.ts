@@ -370,9 +370,20 @@ export async function bundleClaxedoWorkspaceRuntimeHost(
   }
 }
 
+/**
+ * The registry tag a pushed build keeps its layer cache under. Without it every
+ * CI runner built every step afresh, so each deploy's image carried new digests
+ * for 1.04 GB of unchanged layers (apt, the npm globals, the agent CLIs), and a
+ * Boat sandbox resuming onto it pulled all 1.1 GB again.
+ */
+export function sandboxImageCacheRef(imageTag: string) {
+  return `${imageTag.slice(0, imageTag.lastIndexOf(":"))}:buildcache`
+}
+
 export function sandboxImageBuildArgs(input: {
   tags: string[]
   push: boolean
+  cacheRef?: string
   dockerfile?: string
   context?: string
 }) {
@@ -383,6 +394,9 @@ export function sandboxImageBuildArgs(input: {
     "linux/amd64",
     ...input.tags.flatMap((tag) => ["-t", tag]),
     input.push ? "--push" : "--load",
+    ...(input.cacheRef
+      ? ["--cache-from", `type=registry,ref=${input.cacheRef}`, "--cache-to", `type=registry,ref=${input.cacheRef},mode=max,image-manifest=true,oci-mediatypes=true`]
+      : []),
     "-f",
     input.dockerfile ?? SANDBOX_DOCKERFILE,
     // The image consumes only the bundled host in .build/, so the build
@@ -487,7 +501,7 @@ async function main() {
   console.log(`building sandbox image for claxedo workspace-runtime host ${version}`)
   console.log(tags.map((tag) => `  ${tag}`).join("\n"))
 
-  await runDocker(sandboxImageBuildArgs({ tags, push: plan === "push" }))
+  await runDocker(sandboxImageBuildArgs({ tags, push: plan === "push", ...(plan === "push" ? { cacheRef: sandboxImageCacheRef(imageTag) } : {}) }))
 
   console.log(plan === "push" ? `sandbox image pushed: ${imageTag}` : `sandbox image build succeeded: ${imageTag}`)
 }

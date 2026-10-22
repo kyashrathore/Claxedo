@@ -15,6 +15,7 @@ import {
   hostBundleDependencies,
   hostBundlePackageRoots,
   sandboxImageBuildArgs,
+  sandboxImageCacheRef,
   validateBuildFlags,
   imagePublishPlan,
   writeWorkspaceRuntimeVersion,
@@ -48,6 +49,18 @@ describe("build-sandbox-image", () => {
       "-f",
       "/tmp/Dockerfile",
       "/tmp/context",
+    ])
+  })
+
+  test("a pushed build reads and writes the layer cache beside its repository, so unchanged steps keep their digests", () => {
+    const tag = "ghcr.io/example/claxedo-sandbox:workspace-runtime-0-5-1-v8"
+    expect(sandboxImageCacheRef(tag)).toBe("ghcr.io/example/claxedo-sandbox:buildcache")
+    const args = sandboxImageBuildArgs({ tags: [tag], push: true, cacheRef: sandboxImageCacheRef(tag) })
+    expect(args.slice(args.indexOf("--push") + 1, args.indexOf("-f"))).toEqual([
+      "--cache-from",
+      "type=registry,ref=ghcr.io/example/claxedo-sandbox:buildcache",
+      "--cache-to",
+      "type=registry,ref=ghcr.io/example/claxedo-sandbox:buildcache,mode=max,image-manifest=true,oci-mediatypes=true",
     ])
   })
 
