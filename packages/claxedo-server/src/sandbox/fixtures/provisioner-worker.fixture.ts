@@ -191,7 +191,8 @@ async function notices(database: D1Database, workspaceId: string): Promise<strin
 
 /**
  * `ws_watch_<n>`: its idleness is read 200 ms after it is ready and after every
- * read; the n-th read finds it idle and stops it. `ws_watchfail_<n>`: every
+ * read; the n-th read finds it idle and stops it, and a read after that, on a
+ * restarted sandbox, ends the watch with it ready. `ws_watchfail_<n>`: every
  * read throws until the provisioner has counted n failures, and that read
  * stops it as unreachable.
  */
@@ -245,6 +246,7 @@ function drive(env: Env): SandboxStartDrive {
         return undefined
       }
       if (count < limit) return Date.now() + WATCH_DUE_MS
+      if (count > limit) return undefined
       await sandboxes.stop(workspaceId, { expectedEpoch: target.epoch, idleBefore: Date.now() })
       return undefined
     },
