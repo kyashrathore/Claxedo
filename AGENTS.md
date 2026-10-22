@@ -14,7 +14,13 @@ A message a person reads (an error, refusal, notice, status line or toast) is on
 
 ## Validation cadence
 
-During implementation, run only targeted tests and checks for the behavior being changed. Once all requested implementation work is finished and ready for final verification, run the applicable broader suites, corpus, typechecks, and architecture checks once. Do not run broad validation after each edit or run fixed repetition loops. If final validation fails, investigate and rerun only the affected tests or checks after fixing the cause; repeat a broader suite only when evidence shows the fix affects it. This cadence applies to package-level validation requirements too.
+Prove a change live first; run the long suites once, at merge.
+
+While developing, keep the change building (typecheck and the touched package's build) and run only the fast tests for the code you changed. Skip the long suites in this phase: whole-package suites, `turbo --affected`, e2e flows, and the Linux and Windows CI matrix.
+
+As soon as it builds, run it through its real entrypoint against a real environment: the CLI or a connected machine against staging, the app on the signed stack or staging, the deployed Worker or runtime with its logs tailed. Exercise every case the change claims, including failure, refusal, recovery and isolation, and capture the errors the live logs show. Fix and rerun live until every case behaves as expected.
+
+Only then, at merge time, run the broader validation the change's risk calls for: the affected replay, the e2e flows that cover it, and the CI matrix when it touches platform-specific code. Do not run broad validation after each edit or in fixed repetition loops. If a final suite fails, fix the cause and rerun only what the fix affects.
 
 Benchmarks and performance measurement are not routine completion requirements, including during final verification. Run them only when the user requests benchmarking or performance measurement. Benchmark documentation and driver instructions are reference material for that work, not a requirement to run benchmarks for other changes.
 

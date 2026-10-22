@@ -14,6 +14,18 @@ Do not write a restatement of the identifier or the next statement, a section ba
 
 When changing code that carries a comment, rewrite the comment from the new code rather than editing the old sentence; editing preserves the old shape and is how history narration accumulates. Never explain what changed. Write the number, not the fact that you measured. A comment that contradicts the code is a defect to fix on sight, ahead of any cleanup, because it is the only kind that costs a debugging session.
 
+## Validation cadence
+
+Prove a change live first; run the long suites once, at merge.
+
+While developing, keep the change building (typecheck and the touched package's build) and run only the fast tests for the code you changed. Skip the long suites in this phase: whole-package suites, `turbo --affected`, e2e flows, and the Linux and Windows CI matrix.
+
+As soon as it builds, run it through its real entrypoint against a real environment: the CLI or a connected machine against staging, the app on the signed stack or staging, the deployed Worker or runtime with its logs tailed. Exercise every case the change claims, including failure, refusal, recovery and isolation, and capture the errors the live logs show. Fix and rerun live until every case behaves as expected.
+
+Only then, at merge time, run the broader validation the change's risk calls for: the affected replay, the e2e flows that cover it, and the CI matrix when it touches platform-specific code. Do not run broad validation after each edit or in fixed repetition loops. If a final suite fails, fix the cause and rerun only what the fix affects.
+
+Benchmarks and performance measurement are not routine completion requirements, including during final verification. Run them only when the user requests benchmarking or performance measurement. Benchmark documentation and driver instructions are reference material for that work, not a requirement to run benchmarks for other changes.
+
 ## Architecture ratchets
 
 Know these limits before writing code, not from a failing check:
