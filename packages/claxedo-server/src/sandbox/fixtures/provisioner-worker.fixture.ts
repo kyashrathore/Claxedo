@@ -51,8 +51,9 @@ async function fixKey(database: D1Database, workspaceId: string) {
  * `ws_hour_limited` at its hourly one every time, `ws_step_throws` throws out of the start step once the lease is ready (its
  * runtime is not provisioned until a second step), `ws_stopped_under` has its
  * lease stopped while the driver runs its first boot, a workspace named
- * `asleep` has a runtime that never answers a ready lease, and one ending
- * `_update` serves the previous image until a step asks for the deployment's.
+ * `asleep` has a runtime that never answers a ready lease, one ending
+ * `_update` serves the previous image until a step asks for the deployment's,
+ * and one also naming `_cutoff` fails every step that does.
  */
 const DEPLOYED_IMAGE = "ghcr.io/test/sandbox:deployed"
 const PREVIOUS_IMAGE = "ghcr.io/test/sandbox:previous"
@@ -78,6 +79,7 @@ function scriptedDriver(database: D1Database): SandboxDriver {
       return { provisioning: true as const, retryAfterMs: 0 }
     }
     if (input.workspaceId.startsWith("ws_boot_fail")) throw new SandboxRuntimeBootError("the image has no runtime")
+    if (input.updateImage && input.workspaceId.includes("_cutoff")) throw new Error("the image pull was cut off")
     if (input.workspaceId.startsWith("ws_key_refused") && !(await keyFixed(database, input.workspaceId))) {
       throw new SandboxProviderKeyRefusedError("the key was rejected (unauthorized)")
     }

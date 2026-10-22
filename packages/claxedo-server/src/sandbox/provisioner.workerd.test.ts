@@ -125,6 +125,16 @@ describe("a sandbox start on workerd", () => {
     expect((await rootSteps("ws_slow_1_update")).map((row) => row.step)).toEqual(["provision", "provision for the deployment's image"])
   })
 
+  test("a Restart to update whose step fails answers the start with its reason, while the workspace keeps serving its image", async () => {
+    await start("ws_slow_1_cutoff_update")
+    await until(() => start("ws_slow_1_cutoff_update"), (answer) => answer.status === "ready")
+
+    expect(await start("ws_slow_1_cutoff_update", { retry: true, updateImage: true })).toMatchObject({ status: "provisioning", epoch: 1 })
+    expect(await until(() => start("ws_slow_1_cutoff_update"), (answer) => answer.status !== "provisioning")).toMatchObject({ status: "unavailable", error: expect.stringContaining("the image pull was cut off") })
+    expect(await target("ws_slow_1_cutoff_update")).toMatchObject({ status: "ready", imageOutdated: true })
+    expect(await start("ws_slow_1_cutoff_update", { retry: true })).toMatchObject({ status: "ready", epoch: 1 })
+  })
+
   test("a Restart to update of a workspace already serving the deployment's image answers its ready target with no driver step", async () => {
     await start("ws_slow_1_twice_update")
     await until(() => start("ws_slow_1_twice_update"), (answer) => answer.status === "ready")

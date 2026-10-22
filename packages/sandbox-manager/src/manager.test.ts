@@ -743,6 +743,38 @@ describe("sandbox manager", () => {
     expect((await store.get("ws_1"))?.lastError).toBeUndefined()
   })
 
+  test("a person's update that fails over a serving lease answers its reason and logs it, and the lease keeps serving its image", async () => {
+    const store = createMemoryLeaseStore([
+      sandboxLease({
+        routingId: "routing_test",
+        workspaceId: "ws_1",
+        status: "ready",
+        epoch: 3,
+        retryCount: 0,
+        sandboxId: "sandbox_1",
+        url: "https://runtime.test/ws_1",
+        hostId: "host_1",
+      }),
+    ])
+    const driver = fakeDriver({
+      ensureHost: vi.fn(async () => {
+        throw new Error("the image pull was cut off")
+      }),
+    })
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const manager = createSandboxManager({ leaseStore: store, driver })
+
+    await expect(manager.ensure("ws_1", { homeRegion: "us-east", updateImage: true })).resolves.toEqual({
+      status: "unavailable",
+      error: "provider_failed:test-driver: the image pull was cut off",
+      epoch: 3,
+      homeRegion: "us-east",
+    })
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("update to the deployment's image failed"), expect.objectContaining({ workspaceId: "ws_1", error: "provider_failed:test-driver: the image pull was cut off" }))
+    await expect(manager.target("ws_1")).resolves.toMatchObject({ status: "ready", url: "https://runtime.test/ws_1", epoch: 3 })
+    warn.mockRestore()
+  })
+
   test("a runtime whose boot exited demotes a ready lease and keeps the boot's reason, since nothing is left serving", async () => {
     const now = 10_000
     const store = createMemoryLeaseStore([
