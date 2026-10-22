@@ -49,11 +49,11 @@ export async function startStack(input: StackInput): Promise<Stack> {
   if (!existsSync(path.join(distDir, "index.html"))) {
     throw new Error(`the app is not built at ${distDir}; run the suite through e2e/run.ts so global setup builds it`)
   }
-  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-e2e-${safeLabel(input.label)}-`))
   const fixed = fixedDaemonPort()
   const daemonPort = fixed !== undefined && !portIsLeased(fixed) ? await claimPort(fixed) : await reservePort()
   const modelPort = await reservePort()
   const guardPort = await reservePort()
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-e2e-${safeLabel(input.label)}-`))
   const keepData = process.env.CLAXEDO_E2E_KEEP_DATA === "1"
   const cleanup = async () => {
     releasePort(guardPort)
