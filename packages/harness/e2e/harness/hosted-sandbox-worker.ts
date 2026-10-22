@@ -221,14 +221,29 @@ async function startGatewayForwarder(controlPlaneUrl: string) {
 
 const LOCALHOST_RESOLVER = pathToFileURL(path.join(import.meta.dirname, "localhost-resolver.mjs")).href
 
+/**
+ * `CLAXEDO_E2E_RUNTIME_IMAGE` names a published sandbox image whose own
+ * runtime serves every sandbox instead of this tree's: the version-skew suite
+ * runs the current control plane and relay against the oldest image they
+ * serve. The repository and the flow runner's Bun are mounted where they are,
+ * since the scripted agents the runtime launches run from them.
+ */
+function runtimeContainer() {
+  const image = process.env.CLAXEDO_E2E_RUNTIME_IMAGE?.trim()
+  const bun = process.env.CLAXEDO_E2E_BUN
+  return image ? { image, command: "/usr/local/bin/workspace-runtime", mounts: [REPO_ROOT, ...(bun ? [bun] : [])] } : undefined
+}
+
 export async function startHostedSandboxWorker(input: HostedSandboxWorkerInput) {
   const textImports = pathToFileURL(path.join(REPO_ROOT, "packages/workspace-runtime/src/text-imports.mjs")).href
   const gateway = await startGatewayForwarder(input.controlPlaneUrl)
+  const container = runtimeContainer()
   const driver = createLocalBrokeringSandboxDriver({
     root: input.root,
     executable: process.env.CLAXEDO_E2E_NODE ?? process.execPath,
     // The VM image's own entry: the Claxedo runtime composition with the Agent Plugins apply route mounted.
     args: ["--conditions=development", "--import", textImports, "--import", LOCALHOST_RESOLVER, "--import", TSX_LOADER, claxedoAgentPluginsWorkspaceRuntimeEntry()],
+    ...(container ? { container } : {}),
     allowedOrigins: [input.controlPlaneUrl, input.relayUrl, new URL(input.gitUrl).origin],
     directOrigins: [input.controlPlaneUrl, input.relayUrl, new URL(input.gitUrl).origin],
     upstreams: { "https://api.openai.com": input.modelUrl, "https://api.anthropic.com": input.modelUrl, [HOSTED_MCP_GATEWAY_ORIGIN]: gateway.url },

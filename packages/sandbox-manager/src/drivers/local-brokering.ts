@@ -13,10 +13,19 @@ import { localBrokeringTestDriverCatalogEntry } from "../driver-catalog"
 import { workspaceRuntimeBootEnv } from "../runtime-env"
 import { withDeadlineSignal } from "@claxedo/helpers/deadline"
 
+/**
+ * A published runtime image to run instead of `executable`: Docker on the host
+ * network, with the paths the runtime reads mounted where they are, and no
+ * sandbox-exec network policy, so it runs on Linux. The version-skew suite
+ * runs the control plane against the oldest image it still serves this way.
+ */
+export type LocalBrokeringContainer = { image: string; command: string; mounts: readonly string[] }
+
 export type LocalBrokeringDriverOptions = {
   root: string
   executable: string
   args: string[]
+  container?: LocalBrokeringContainer
   allowedOrigins: readonly string[]
   directOrigins: readonly string[]
   upstreams?: Readonly<Record<string, string>>
@@ -25,6 +34,7 @@ export type LocalBrokeringDriverOptions = {
 
 type Host = {
   child: ChildProcess | undefined
+  container?: string
   proxy: Server
   directory: string
   target: SandboxTarget
@@ -101,6 +111,7 @@ async function waitForLocalRuntimeHealth(url: string, child: ChildProcess, logFi
 
 async function closeHost(host: Host) {
   const child = host.child
+  if (host.container) execFileSync("docker", ["rm", "-f", host.container], { stdio: "ignore" })
   if (child && child.exitCode === null) {
     child.kill("SIGTERM")
     await new Promise<void>((resolve) => child.once("exit", () => resolve()))
@@ -111,8 +122,20 @@ async function closeHost(host: Host) {
   await fs.rm(host.directory, { recursive: true, force: true })
 }
 
+/**
+ * `docker run` of the runtime image under the caller's own uid, its env passed
+ * by name so no value lands in the argument list. The image keeps its own
+ * PATH: the host's names none of the image's binaries.
+ */
+function containerRun(container: LocalBrokeringContainer, name: string, input: { root: string; workspace: string; env: Record<string, string> }) {
+  const user = `${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0}`
+  const mounts = [...new Set([input.root, ...container.mounts])].flatMap((mount) => ["-v", `${mount}:${mount}`])
+  const env = Object.keys(input.env).filter((key) => key !== "PATH").flatMap((key) => ["-e", key])
+  return { name, args: ["run", "--rm", "--name", name, "--network", "host", "--user", user, ...mounts, ...env, "-w", input.workspace, "--entrypoint", container.command, container.image] }
+}
+
 export function createLocalBrokeringSandboxDriver(options: LocalBrokeringDriverOptions): SandboxDriver & { catalogEntry: typeof localBrokeringTestDriverCatalogEntry } {
-  if (process.platform !== "darwin") throw new Error("local brokering test driver requires macOS sandbox-exec network policy")
+  if (process.platform !== "darwin" && !options.container) throw new Error("local brokering test driver requires macOS sandbox-exec network policy, or a runtime container")
   const authority = createTestAuthority(options.root)
   const hosts = new Map<string, Host>()
   const allowedOrigins = new Set(options.allowedOrigins.map((origin) => new URL(origin).origin))
@@ -288,11 +311,11 @@ export function createLocalBrokeringSandboxDriver(options: LocalBrokeringDriverO
       const log = openSync(logFile, "w", 0o600)
       let child: ChildProcess
       try {
-        child = spawn("/usr/bin/sandbox-exec", ["-p", networkPolicy, options.executable, ...options.args], {
-          cwd: workspace,
-          env,
-          stdio: ["ignore", log, log],
-        })
+        const container = options.container ? containerRun(options.container, `claxedo-local-${target.sandboxId}`, { root: options.root, workspace, env }) : undefined
+        if (container) host.container = container.name
+        child = container
+          ? spawn("docker", container.args, { env: { ...process.env, ...env }, stdio: ["ignore", log, log] })
+          : spawn("/usr/bin/sandbox-exec", ["-p", networkPolicy, options.executable, ...options.args], { cwd: workspace, env, stdio: ["ignore", log, log] })
       } finally {
         closeSync(log)
       }

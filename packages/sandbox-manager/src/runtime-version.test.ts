@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "vitest"
 import { readFileSync } from "node:fs"
-import { MINIMUM_SERVED_WORKSPACE_RUNTIME_VERSION, workspaceRuntimeVersion } from "./runtime-version"
+import { MINIMUM_SERVED_WORKSPACE_RUNTIME_VERSION, SERVED_WORKSPACE_RUNTIME_FLOOR, workspaceRuntimeVersion } from "./runtime-version"
 
 describe("workspaceRuntimeVersion", () => {
   const original = process.env.WORKSPACE_RUNTIME_VERSION
@@ -45,4 +45,11 @@ test("the oldest runtime the control plane serves is never newer than the runtim
   expect(floor.every(Number.isSafeInteger) && floor.length === 3).toBe(true)
   const newer = floor.findIndex((part, index) => part !== current[index])
   expect(newer === -1 || (floor[newer] ?? 0) < (current[newer] ?? 0), `${MINIMUM_SERVED_WORKSPACE_RUNTIME_VERSION} is above ${built}`).toBe(true)
+})
+
+test("the floor names the cloud image published at its version, so the skew suite runs the runtime it vouches for", () => {
+  const tag = SERVED_WORKSPACE_RUNTIME_FLOOR.image.split(":").at(-1) ?? ""
+  expect(SERVED_WORKSPACE_RUNTIME_FLOOR.image.startsWith("ghcr.io/kyashrathore/claxedo-sandbox:")).toBe(true)
+  expect(tag.startsWith(`workspace-runtime-${SERVED_WORKSPACE_RUNTIME_FLOOR.version.replaceAll(".", "-")}-`)).toBe(true)
+  expect(tag.endsWith("-agent-plugins-v8")).toBe(true)
 })

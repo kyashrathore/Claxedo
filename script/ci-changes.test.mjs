@@ -185,3 +185,12 @@ await test("a documentation change inside a baked package does not rebuild the s
 await test("an unavailable comparison rebuilds the sandbox image rather than assuming it is current", () => {
   assert.equal(classifyChangedFiles([]).sandbox_image, true)
 })
+
+await test("a control-plane, relay or runtime change runs the version-skew suite, and an app or docs change does not", () => {
+  for (const file of ["packages/claxedo-server/src/connections/hosted-connection-info.ts", "packages/workspace-relay/src/server.ts", "packages/workspace-runtime/src/routes/pty.ts", "packages/session-core/src/remote-session-authority.ts"]) {
+    assert.equal(classifyChangedFiles([file]).runtime_skew, true, file)
+  }
+  for (const file of ["packages/claxedo-app/src/server/relay.ts", "docs/perf/README.md"]) {
+    assert.equal(classifyChangedFiles([file]).runtime_skew, false, file)
+  }
+})
