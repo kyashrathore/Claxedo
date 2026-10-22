@@ -1,21 +1,12 @@
-import { createRequireText } from "@claxedo/helpers"
-import {
-  enrollmentPayload,
-  invitationRedeemPayload,
-  publicKeyFingerprint,
-  MACHINE_SEAL_VERSION,
-  publicKeyJwk,
-} from "@claxedo/account-contract/machine"
+import { enrollmentPayload } from "@claxedo/account-contract/machine"
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
-import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import { hostEnrollmentScope, hostProviderConfigRekeyed, hostSessionAuthority, nextHostProviderConfigRevision, pendingHostProviderConfig, storedHostProviderIds } from "@claxedo/server-core/platform/auth/host-connect-contract"
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { hostEnrollmentScope, hostProviderConfigRekeyed, hostSessionAuthority, pendingHostProviderConfig, storedHostProviderIds } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
-import type { HostAssignmentAck, HostAssignmentDescription, HostEnrollment, HostEnrollmentListRow, HostEnrollmentState, HostInvitationCreateInput, HostInvitationCreateResult, HostInvitationRedeemInput, HostInvitationRedeemResult, HostInvitationRow, HostMachineHeartbeatInput, HostMachineHeartbeatResult, HostProviderConfigPushInput, HostProviderConfigTarget, HostScopeDefinition, HostScopeUpdateResult, MachineAuthAdapter, MachinePrincipal } from "@claxedo/server-core/platform/auth/host-connect-contract"
+import type { HostAssignmentAck, HostAssignmentDescription, HostEnrollment, HostEnrollmentListRow, HostEnrollmentState, HostMachineHeartbeatInput, HostMachineHeartbeatResult, HostScopeDefinition, HostScopeUpdateResult, MachineAuthAdapter, MachinePrincipal } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { normalizeStoredDirectory } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { hostPathWithinRoots } from "@claxedo/account-contract/host-path"
-import { assignmentsOutsideRootsSql, requireScope, storedScope } from "./host-scope-rules"
-import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-crypto"
-import { sha256Hex } from "@claxedo/helpers/crypto"
+import { assignmentsOutsideRootsSql, requireScope } from "./host-scope-rules"
 import { asRecord, parseJson } from "@claxedo/server-core/platform/json/index"
 import { listHostDevices, stringList } from "./host-devices"
 import type { D1WorkspaceAuthority } from "./workspace-authority"
@@ -25,7 +16,21 @@ import {
 import { d1BatchAssertionFailed, d1ConstraintFailure, d1UniqueFailureOn } from "../../../platform/db/d1-constraint"
 import { requireHuman } from "./access-context"
 import { D1HostAccessAuthorityError } from "./host-access-errors"
-import { base64UrlBytes, canonicalP256Signature, randomBase64Url, sha256 } from "./host-attestation-codec"
+import { randomBase64Url, storedKeyFingerprint, verifiedPublicKey, verifyHostSignature } from "./host-attestation-codec"
+import {
+  DEFAULT_TTL_MS,
+  MACHINE_ELIGIBLE_SQL,
+  denied,
+  enrollmentById,
+  enrollmentJson,
+  enrollmentOf,
+  invitationOrgOf,
+  optionalText,
+  requireRevision,
+  requireText,
+  type EnrollmentRow,
+} from "./host-enrollment-records"
+import { declaredSealingPublicKey } from "./host-provider-config-authority"
 
 export const D1_HOST_ACCESS_AUTHORITY_METHODS = [
   "createHostEnrollmentRequest",
@@ -38,12 +43,6 @@ export const D1_HOST_ACCESS_AUTHORITY_METHODS = [
   "hostEnrollmentByHost",
   "updateHostEnrollmentScope",
   "renameHostEnrollment",
-  "hostProviderConfigTarget",
-  "pushHostProviderConfig",
-  "createHostInvitation",
-  "listHostInvitations",
-  "revokeHostInvitation",
-  "redeemHostInvitation",
   "authorizeWorkspaceHostAssignment",
   "assignWorkspaceHost",
   "unassignWorkspaceHost",
@@ -58,7 +57,7 @@ export type D1HostAccessAuthorityPort = Pick<WorkspaceAuthority, (typeof D1_HOST
 export type D1HostAccessAuthorityOptions = {
   deploymentId: string
   now?: () => number
-  randomId?: (prefix: "request" | "enrollment" | "grant" | "assert" | "invitation" | "audit") => string
+  randomId?: (prefix: "request" | "enrollment" | "grant" | "assert" | "audit") => string
   randomNonce?: () => string
   /** The statements that cold-register a machine-placed workspace, run inside the assignment's own batch. */
   localWorkspaceRegistration?: D1WorkspaceAuthority["localWorkspaceRegistration"]
@@ -68,8 +67,6 @@ export type D1HostAccessAuthorityOptions = {
    * registration's own admission rather than a second rule written here.
    */
   authorizeLocalWorkspaceRegistration?: D1WorkspaceAuthority["authorizeLocalWorkspaceRegistration"]
-  /** The caller's current organization, recorded on an invitation when it is created. */
-  resolveOrgId?: WorkspaceAuthority["resolveOrgId"]
 }
 
 type Principal = { userId: string; actorId: string; actorKind: "human" | "agent" }
@@ -95,69 +92,13 @@ type EnrollmentRequestRow = {
   used_signature_hash: string | null
 }
 
-type EnrollmentRow = {
-  enrollment_id: string
-  owner_user_id: string
-  owner_actor_id: string
-  host_id: string
-  public_key_json: string
-  display_name: string | null
-  last_seen_at: number
-  expires_at: number
-  paused_at: number | null
-  revoked_at: number | null
-  last_signature_hash: string | null
-  session_authority: string | null
-  created_at: number
-  updated_at: number
-  key_version: number
-  serving_generation: number
-  generation_acquired_at: number | null
-  enrolled_via: "account" | "invitation"
-  scope_json: string | null
-  scope_revision: number
-  sealing_public_key_json: string | null
-  provider_config_sealed: string | null
-  provider_config_revision: number
-  provider_config_acked_revision: number
-  provider_config_updated_at: number | null
-  provider_config_sealed_key_json: string | null
-  provider_config_provider_ids: string | null
-}
-
-type InvitationRow = {
-  invitation_id: string
-  owner_user_id: string
-  owner_actor_id: string
-  org_id: string
-  secret_hash: string
-  display_name: string | null
-  scope_json: string
-  expires_at: number
-  redeemed_at: number | null
-  redeemed_enrollment_id: string | null
-  redeemed_host_id: string | null
-  redeemed_public_key_fingerprint: string | null
-  created_by_actor_id: string
-  created_at: number
-  revoked_at: number | null
-}
-
-const DEFAULT_TTL_MS = 60_000
 /** A signed heartbeat payload must stay small; 200 shares per machine is generous. */
 const MAX_ACKED_WORKSPACES = 200
 const MAX_TTL_MS = 5 * 60_000
 const CHALLENGE_TTL_MS = 60_000
 const CONSUMED_REQUEST_RETENTION_MS = 10 * 60_000
 const REQUEST_SWEEP_LIMIT = 500
-const INVITATION_MIN_TTL_MS = 5 * 60_000
-const INVITATION_MAX_TTL_MS = 24 * 60 * 60_000
-const INVITATION_DEFAULT_TTL_MS = 60 * 60_000
 const MAX_SCOPE_ROOT_LENGTH = 1_024
-const MAX_SEALING_PUBLIC_KEY_LENGTH = 4_000
-/** base64url of the route's 32 KiB plaintext cap plus the ephemeral key, iv and tag. */
-const MAX_SEALED_LENGTH = 64 * 1024
-const MAX_PROVIDER_IDS = 100
 
 /**
  * The one definition of "a host is serving this workspace right now": an
@@ -182,22 +123,6 @@ export const HOST_SERVING_WORKSPACE_SQL = `enrollment.revoked_at is null and enr
             and readiness.enrollment_id = enrollment.enrollment_id
             and readiness.generation = enrollment.serving_generation
             and readiness.revision = assignment.revision
-        )`
-
-/**
- * The machine caller's eligibility, evaluated inside every batch that mutates
- * on its behalf: the enrollment is live, the key the verifier read is still
- * the key on the row, and the owner is an active user with an active actor.
- * Written against `host_enrollments` unaliased, binding `enrollment_id` and
- * `key_version` in that order.
- */
-const MACHINE_ELIGIBLE_SQL = `enrollment_id = ? and key_version = ? and revoked_at is null and paused_at is null
-        and exists (
-          select 1 from users owner
-          join actors owner_actor on owner_actor.actor_id = host_enrollments.owner_actor_id
-            and owner_actor.user_id = owner.user_id
-          where owner.user_id = host_enrollments.owner_user_id
-            and owner.state = 'active' and owner_actor.state = 'active'
         )`
 
 export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
@@ -293,13 +218,13 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     const hostId = requireText(args.hostId, "hostId")
     const displayName = optionalText(args.displayName, "displayName", 200)
     const requestedDirectory = optionalText(args.remoteDirectory, "remoteDirectory", MAX_SCOPE_ROOT_LENGTH)
-    const enrollment = await this.enrollment(who.actorId, hostId)
+    const enrollment = await enrollmentOf(this.database, who.actorId, hostId)
     if (!enrollment || enrollment.revoked_at !== null) {
       throw new D1HostAccessAuthorityError("host_attestation_denied", "Host enrollment is unavailable")
     }
     const scope = hostEnrollmentScope(enrollment.scope_json, enrollment.scope_revision)
     const invitationOrgId = enrollment.enrolled_via === "invitation"
-      ? await this.invitationOrgId(enrollment.enrollment_id)
+      ? await invitationOrgOf(this.database, enrollment.enrollment_id)
       : undefined
     if (invitationOrgId && args.orgId && args.orgId !== invitationOrgId) {
       throw new D1HostAccessAuthorityError("host_assignment_outside_scope", "Workspace organization differs from the invitation's")
@@ -563,7 +488,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       `).bind(assertionId, who.actorId, hostId, signatureHash),
       deleteAssertion(this.database, assertionId),
     ], (statements) => this.guardedBatch(statements, "Host enrollment raced with another request"))
-    return enrollmentJson((await this.enrollment(who.actorId, hostId))!)
+    return enrollmentJson((await enrollmentOf(this.database, who.actorId, hostId))!)
   }
 
   async heartbeatHostEnrollmentByMachine(
@@ -634,7 +559,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       if (!d1BatchAssertionFailed(error)) throw error
       throw await this.machineMutationRefusal(machine, generation, "Host heartbeat raced with an enrollment change")
     }
-    const row = await this.enrollmentById(machine.enrollmentId)
+    const row = await enrollmentById(this.database, machine.enrollmentId)
     if (!row) throw new D1HostAccessAuthorityError("host_attestation_denied", "Host enrollment is unavailable")
     const assigned = await this.assignmentDescriptions(row.owner_actor_id, row.host_id)
     const providerConfigPending = pendingHostProviderConfig(row)
@@ -771,7 +696,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     const who = await this.requirePrincipal(auth)
     const enrollmentId = requireText(args.enrollmentId, "enrollmentId")
     const scope = requireScope(args.scope)
-    const row = await this.enrollmentById(enrollmentId)
+    const row = await enrollmentById(this.database, enrollmentId)
     if (!row || row.owner_actor_id !== who.actorId || row.revoked_at !== null) {
       throw new D1HostAccessAuthorityError("host_enrollment_not_found", "Host enrollment not found")
     }
@@ -838,270 +763,6 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       now,
     }).run()
     return { enrollment_id: enrollmentId, display_name: displayName }
-  }
-
-  /**
-   * Scoped to the owner in the query itself: a row the caller does not own
-   * reads as absent, so a foreign account learns neither that the machine
-   * exists nor which key it declared.
-   */
-  async hostProviderConfigTarget(
-    auth: SignedControlPlaneAuth,
-    args: { enrollmentId: string },
-  ): Promise<HostProviderConfigTarget> {
-    const who = await this.requirePrincipal(auth)
-    const enrollmentId = requireText(args.enrollmentId, "enrollmentId")
-    const row = await this.database.prepare(`
-      select enrollment_id, host_id, display_name, sealing_public_key_json,
-        provider_config_revision, provider_config_acked_revision
-      from host_enrollments
-      where enrollment_id = ? and owner_actor_id = ? and revoked_at is null
-    `).bind(enrollmentId, who.actorId).first<
-      Pick<
-        EnrollmentRow,
-        | "enrollment_id" | "host_id" | "display_name" | "sealing_public_key_json"
-        | "provider_config_revision" | "provider_config_acked_revision"
-      >
-    >()
-    if (!row) throw new D1HostAccessAuthorityError("host_enrollment_not_found", "Host enrollment not found")
-    return {
-      enrollment_id: row.enrollment_id,
-      host_id: row.host_id,
-      ...(row.display_name ? { display_name: row.display_name } : {}),
-      sealing_public_key: row.sealing_public_key_json,
-      next_revision: nextHostProviderConfigRevision(row),
-    }
-  }
-
-  /**
-   * The write re-asserts what the caller sealed against — the revision it
-   * read and the key it sealed to — so a concurrent push or a re-key between
-   * the target read and this write refuses rather than storing a blob nobody
-   * can open. The audit row is the route's: only it knows which providers the
-   * ciphertext names.
-   */
-  async pushHostProviderConfig(
-    auth: SignedControlPlaneAuth,
-    args: HostProviderConfigPushInput,
-  ): Promise<{ enrollment_id: string; revision: number; sealed: boolean }> {
-    const who = await this.requirePrincipal(auth)
-    const enrollmentId = requireText(args.enrollmentId, "enrollmentId")
-    const revision = requireRevision(args.revision, "revision", 1)
-    const sealed = args.sealed === null ? null : requireSealed(args.sealed)
-    if (args.sealingPublicKey === null) throw sealingKeyUndeclared()
-    const sealingPublicKey = requireText(args.sealingPublicKey, "sealingPublicKey", MAX_SEALING_PUBLIC_KEY_LENGTH)
-    const providerIds = requireProviderIds(args.providerIds)
-    const now = this.now()
-    const assertionId = this.randomId("assert")
-    try {
-      await batchUnder(this.database, activeGuard(who), [
-        this.database.prepare(`
-          update host_enrollments set
-            provider_config_sealed = ?, provider_config_revision = ?, provider_config_acked_revision = 0,
-            provider_config_sealed_key_json = ?, provider_config_provider_ids = ?,
-            provider_config_updated_at = ?, updated_at = ?
-          where enrollment_id = ? and owner_actor_id = ? and revoked_at is null
-            and max(provider_config_revision, provider_config_acked_revision) = ?
-            and sealing_public_key_json = ?
-        `).bind(
-          sealed,
-          revision,
-          sealed === null ? null : sealingPublicKey,
-          providerIds.length === 0 ? null : JSON.stringify(providerIds),
-          now,
-          now,
-          enrollmentId,
-          who.actorId,
-          revision - 1,
-          sealingPublicKey,
-        ),
-        wonAssertion(this.database, assertionId),
-        deleteAssertion(this.database, assertionId),
-      ])
-    } catch (error) {
-      if (!d1BatchAssertionFailed(error)) throw error
-      const row = await this.database.prepare(`
-        select sealing_public_key_json, provider_config_revision, provider_config_acked_revision
-        from host_enrollments where enrollment_id = ? and owner_actor_id = ? and revoked_at is null
-      `).bind(enrollmentId, who.actorId).first<
-        Pick<EnrollmentRow, "sealing_public_key_json" | "provider_config_revision" | "provider_config_acked_revision">
-      >()
-      if (!row) throw new D1HostAccessAuthorityError("host_enrollment_not_found", "Host enrollment not found")
-      if (row.sealing_public_key_json !== sealingPublicKey) throw sealingKeyUndeclared()
-      throw new D1HostAccessAuthorityError(
-        "host_provider_config_revision_stale",
-        "Provider configuration was pushed concurrently",
-        { provider_config_revision: row.provider_config_revision },
-      )
-    }
-    return { enrollment_id: enrollmentId, revision, sealed: sealed !== null }
-  }
-
-  async createHostInvitation(
-    auth: SignedControlPlaneAuth,
-    args: HostInvitationCreateInput,
-  ): Promise<HostInvitationCreateResult> {
-    const who = await this.requirePrincipal(auth)
-    const scope = requireScope(args.scope)
-    const displayName = optionalText(args.displayName, "displayName", 200)
-    const orgId = await this.currentOrgId(who, auth)
-    const now = this.now()
-    const expiresAt = now + invitationTtl(args.expiresInMs)
-    const invitationId = this.randomId("invitation")
-    const secret = randomBase64Url(32)
-    await batchUnder(this.database, activeGuard(who), [this.database.prepare(`
-      insert into host_invitations (
-        invitation_id, owner_user_id, owner_actor_id, org_id, secret_hash, display_name, scope_json,
-        expires_at, redeemed_at, redeemed_enrollment_id, redeemed_host_id, redeemed_public_key_fingerprint,
-        created_by_actor_id, created_at, revoked_at
-      ) values (?, ?, ?, ?, ?, ?, ?, ?, null, null, null, null, ?, ?, null)
-    `).bind(
-      invitationId,
-      who.userId,
-      who.actorId,
-      orgId,
-      await sha256Hex(secret),
-      displayName ?? null,
-      JSON.stringify(scope),
-      expiresAt,
-      who.actorId,
-      now,
-    )])
-    return { invitationId, secret, expiresAt }
-  }
-
-  async listHostInvitations(auth: SignedControlPlaneAuth): Promise<HostInvitationRow[]> {
-    const who = await this.requirePrincipal(auth)
-    const rows = await this.database.prepare(`
-      select * from host_invitations where owner_actor_id = ?
-      order by created_at desc, invitation_id
-    `).bind(who.actorId).all<InvitationRow>()
-    return (rows.results ?? []).map((row) => ({
-      invitation_id: row.invitation_id,
-      ...(row.display_name ? { display_name: row.display_name } : {}),
-      scope: storedScope(row.scope_json),
-      org_id: row.org_id,
-      created_at: row.created_at,
-      expires_at: row.expires_at,
-      ...(row.redeemed_at !== null ? { redeemed_at: row.redeemed_at } : {}),
-      ...(row.redeemed_host_id !== null ? { redeemed_host_id: row.redeemed_host_id } : {}),
-      ...(row.redeemed_enrollment_id !== null ? { redeemed_enrollment_id: row.redeemed_enrollment_id } : {}),
-      ...(row.revoked_at !== null ? { revoked_at: row.revoked_at } : {}),
-    }))
-  }
-
-  async revokeHostInvitation(auth: SignedControlPlaneAuth, args: { invitationId: string }) {
-    const who = await this.requirePrincipal(auth)
-    const invitationId = requireText(args.invitationId, "invitationId")
-    const now = this.now()
-    const [result] = await batchUnder(this.database, activeGuard(who), [this.database.prepare(`
-      update host_invitations set revoked_at = ?
-      where invitation_id = ? and owner_actor_id = ? and revoked_at is null and redeemed_at is null
-    `).bind(now, invitationId, who.actorId)])
-    return { revoked: changes(result) > 0 }
-  }
-
-  /**
-   * No caller auth: the invitation secret is the credential. The row is read
-   * once and every decision below is made against that read; the batch then
-   * re-asserts single use, so two concurrent redeems produce one enrollment and
-   * the loser is answered from a fresh read.
-   */
-  async redeemHostInvitation(args: HostInvitationRedeemInput): Promise<HostInvitationRedeemResult> {
-    const invitationId = requireText(args.invitationId, "invitationId")
-    const secret = requireText(args.secret, "secret")
-    const hostId = requireText(args.hostId, "hostId")
-    const displayName = optionalText(args.displayName, "displayName", 200)
-    const invitation = await this.invitation(invitationId)
-    const secretHash = await sha256Hex(secret)
-    // One answer for a wrong id and a wrong secret: the id is not secret, and
-    // an answer that told them apart would confirm which ids exist.
-    if (!invitation || !timingSafeEqualStrings(invitation.secret_hash, secretHash)) {
-      throw new D1HostAccessAuthorityError("invitation_invalid", "Invitation is invalid")
-    }
-    const publicKey = await verifiedPublicKey(args.publicKey)
-    const fingerprint = await storedKeyFingerprint(publicKey)
-    await verifyHostSignature({
-      publicKey,
-      signature: args.signature,
-      payload: invitationRedeemPayload({ invitationId, hostId, publicKeySha256: fingerprint }),
-    })
-    const now = this.now()
-    const settled = await this.settledRedeem(invitation, { hostId, fingerprint, now })
-    if (settled) return settled
-    if (invitation.revoked_at !== null) {
-      throw new D1HostAccessAuthorityError("invitation_revoked", "Invitation has been revoked")
-    }
-    if (invitation.expires_at <= now) {
-      throw new D1HostAccessAuthorityError("invitation_expired", "Invitation has expired")
-    }
-    if (await this.enrollment(invitation.owner_actor_id, hostId)) {
-      throw new D1HostAccessAuthorityError(
-        "invitation_host_conflict",
-        "This owner already has an enrollment for the host id; enroll with a fresh host id",
-      )
-    }
-    const enrollmentId = this.randomId("enrollment")
-    const assertionId = this.randomId("assert")
-    const expiresAt = now + DEFAULT_TTL_MS
-    try {
-      await this.database.batch([
-        this.database.prepare(`
-          update host_invitations set
-            redeemed_at = ?, redeemed_host_id = ?, redeemed_public_key_fingerprint = ?, redeemed_enrollment_id = ?
-          where invitation_id = ? and secret_hash = ? and redeemed_at is null and revoked_at is null
-            and expires_at > ?
-        `).bind(now, hostId, fingerprint, enrollmentId, invitationId, secretHash, now),
-        this.database.prepare(`
-          insert into host_enrollments (
-            enrollment_id, owner_user_id, owner_actor_id, host_id, public_key_json,
-            display_name, last_seen_at, expires_at, paused_at, revoked_at,
-            last_signature_hash, created_at, updated_at, key_version, serving_generation,
-            enrolled_via, scope_json, scope_revision
-          )
-          select ?, invitation.owner_user_id, invitation.owner_actor_id, ?, ?, ?, ?, ?, null, null,
-            null, ?, ?, 1, 0, 'invitation', invitation.scope_json, 1
-          from host_invitations invitation
-          where invitation.invitation_id = ? and invitation.redeemed_enrollment_id = ?
-        `).bind(
-          enrollmentId,
-          hostId,
-          publicKey,
-          displayName ?? invitation.display_name,
-          now,
-          expiresAt,
-          now,
-          now,
-          invitationId,
-          enrollmentId,
-        ),
-        this.database.prepare(`
-          insert into authority_batch_assertions (assertion_id, passed)
-          values (?, case when exists (
-            select 1 from host_enrollments where enrollment_id = ? and enrolled_via = 'invitation'
-          ) then 1 else 0 end)
-        `).bind(assertionId, enrollmentId),
-        deleteAssertion(this.database, assertionId),
-      ])
-    } catch (error) {
-      if (d1UniqueFailureOn(error, "host_enrollments")) {
-        throw new D1HostAccessAuthorityError(
-          "invitation_host_conflict",
-          "This owner already has an enrollment for the host id; enroll with a fresh host id",
-        )
-      }
-      if (!d1BatchAssertionFailed(error)) throw error
-      const current = await this.invitation(invitationId)
-      const resumed = current && await this.settledRedeem(current, { hostId, fingerprint, now })
-      if (resumed) return resumed
-      if (current?.revoked_at !== null) {
-        throw new D1HostAccessAuthorityError("invitation_revoked", "Invitation has been revoked")
-      }
-      throw new D1HostAccessAuthorityError("invitation_expired", "Invitation has expired")
-    }
-    const result = await this.redeemResult(invitation, enrollmentId, false)
-    if (!result) throw new D1HostAccessAuthorityError("host_attestation_denied", "Host enrollment is unavailable")
-    return result
   }
 
   async revokeHostEnrollment(auth: SignedControlPlaneAuth, args: { hostId?: string }) {
@@ -1221,54 +882,6 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       .bind(requestId).first<EnrollmentRequestRow>()
   }
 
-  private async enrollment(actorId: string, hostId: string) {
-    return await this.database.prepare(`select * from host_enrollments where owner_actor_id = ? and host_id = ?`)
-      .bind(actorId, hostId).first<EnrollmentRow>()
-  }
-
-  private async enrollmentById(enrollmentId: string) {
-    return await this.database.prepare(`select * from host_enrollments where enrollment_id = ?`)
-      .bind(enrollmentId).first<EnrollmentRow>()
-  }
-
-  private async invitation(invitationId: string) {
-    return await this.database.prepare(`select * from host_invitations where invitation_id = ?`)
-      .bind(invitationId).first<InvitationRow>()
-  }
-
-  /**
-   * The caller's current organization: the token's org claim when it names
-   * one the caller is a live member or owner of, else the single organization
-   * the caller belongs to. Recorded on the invitation at creation and never
-   * inferred later.
-   */
-  private async currentOrgId(who: Principal, auth: SignedControlPlaneAuth) {
-    const claimed = auth.user.orgId?.trim()
-    if (claimed) {
-      const member = await this.database.prepare(`
-        select 1 from orgs organization
-        left join org_memberships membership
-          on membership.org_id = organization.org_id and membership.user_id = ? and membership.revoked_at is null
-        where organization.org_id = ? and organization.deleted_at is null
-          and (organization.owner_user_id = ? or membership.user_id is not null)
-      `).bind(who.userId, claimed, who.userId).first()
-      if (!member) throw denied("Invitation organization is not one the caller belongs to")
-      return claimed
-    }
-    if (!this.options.resolveOrgId) {
-      throw new D1HostAccessAuthorityError("invalid_input", "Invitation organization resolution is unavailable")
-    }
-    return requireText(await this.options.resolveOrgId(auth), "orgId")
-  }
-
-  /** The organization an invitation-enrolled machine is confined to. */
-  private async invitationOrgId(enrollmentId: string) {
-    const row = await this.database.prepare(`
-      select org_id from host_invitations where redeemed_enrollment_id = ? limit 1
-    `).bind(enrollmentId).first<{ org_id: string }>()
-    return row?.org_id
-  }
-
   /**
    * The assignments of an owner's hosts — one host, or every host when no
    * id is given — with the description each carries. An assignment whose
@@ -1304,47 +917,6 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
           revision: row.revision,
         } satisfies HostAssignmentDescription,
     }))
-  }
-
-  private async settledRedeem(
-    invitation: InvitationRow,
-    presented: { hostId: string; fingerprint: string; now: number },
-  ): Promise<HostInvitationRedeemResult | undefined> {
-    if (invitation.redeemed_at === null || invitation.redeemed_enrollment_id === null) return undefined
-    if (
-      invitation.redeemed_host_id === presented.hostId
-      && invitation.redeemed_public_key_fingerprint !== null
-      && timingSafeEqualStrings(invitation.redeemed_public_key_fingerprint, presented.fingerprint)
-    ) {
-      const resumed = await this.redeemResult(invitation, invitation.redeemed_enrollment_id, true)
-      if (resumed) return resumed
-    }
-    throw new D1HostAccessAuthorityError("invitation_redeemed", "Invitation has already been redeemed", {
-      redeemed_host_id: invitation.redeemed_host_id,
-      redeemed_at: invitation.redeemed_at,
-    })
-  }
-
-  /** The redeem answer for a live enrollment; undefined once the enrollment is gone or revoked. */
-  private async redeemResult(
-    invitation: InvitationRow,
-    enrollmentId: string,
-    resumed: boolean,
-  ): Promise<HostInvitationRedeemResult | undefined> {
-    const row = await this.enrollmentById(enrollmentId)
-    if (!row || row.revoked_at !== null) return undefined
-    const scope = hostEnrollmentScope(row.scope_json, row.scope_revision)
-    if (!scope) throw new D1HostAccessAuthorityError("resource_conflict", "Invitation enrollment carries no scope")
-    return {
-      resumed,
-      enrollment: enrollmentJson(row),
-      owner_user_id: row.owner_user_id,
-      owner_actor_id: row.owner_actor_id,
-      org_id: invitation.org_id,
-      key_version: row.key_version,
-      serving_generation: row.serving_generation,
-      scope,
-    }
   }
 
   /**
@@ -1456,12 +1028,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     )
   }
 
-  /**
-   * Passes only when the statement immediately before it in the batch
-   * changed a row: SQLite's `changes()` is per connection and a D1 batch runs
-   * its statements in order on one, so this is the batch's own write being
-   * counted, not a state another caller could have produced.
-   */
+  /** At most `REQUEST_SWEEP_LIMIT` expired rows per call, oldest first, so one request's batch stays bounded. */
   private expiredRowSweep(table: "host_enrollment_requests", id: string, now: number) {
     return this.database.prepare(`
       delete from ${table} where ${id} in (
@@ -1499,7 +1066,6 @@ class SqlJson {
   constructor(readonly sql: string, readonly bind: unknown[]) {}
 }
 
-
 function supersededGeneration(servingGeneration: number) {
   return new D1HostAccessAuthorityError(
     "enrollment_generation_superseded",
@@ -1513,53 +1079,6 @@ function requireGeneration(value: number) {
     throw new D1HostAccessAuthorityError("invalid_input", "generation must be a non-negative integer")
   }
   return value
-}
-
-function requireRevision(value: number, name: string, minimum: 0 | 1) {
-  if (!Number.isSafeInteger(value) || value < minimum) {
-    throw new D1HostAccessAuthorityError("invalid_input", `${name} must be an integer of at least ${minimum}`)
-  }
-  return value
-}
-
-/**
- * Stored as the four members `publicKeyJwk` keeps, so one key
- * always serializes to one text and the push's key assertion is a string
- * comparison. A key the sealer could not use is refused at the beat, where
- * the machine can fix it, rather than at the owner's push.
- */
-function declaredSealingPublicKey(input: string) {
-  const text = requireText(input, "sealingPublicKey", MAX_SEALING_PUBLIC_KEY_LENGTH)
-  try {
-    return JSON.stringify(publicKeyJwk(text))
-  } catch {
-    throw new D1HostAccessAuthorityError("invalid_input", "sealingPublicKey must be an ECDH P-256 public JWK")
-  }
-}
-
-function requireSealed(input: string) {
-  const sealed = requireText(input, "sealed", MAX_SEALED_LENGTH)
-  if (!sealed.startsWith(`${MACHINE_SEAL_VERSION}.`)) {
-    throw new D1HostAccessAuthorityError("invalid_input", `sealed must be a ${MACHINE_SEAL_VERSION} blob`)
-  }
-  return sealed
-}
-
-function requireProviderIds(input: string[]): string[] {
-  if (!Array.isArray(input) || input.some((id) => typeof id !== "string" || !id || id.length > 200)) {
-    throw new D1HostAccessAuthorityError("invalid_input", "providerIds must be a list of provider ids")
-  }
-  if (input.length > MAX_PROVIDER_IDS) {
-    throw new D1HostAccessAuthorityError("invalid_input", `providerIds must name at most ${MAX_PROVIDER_IDS} providers`)
-  }
-  return [...input].sort()
-}
-
-function sealingKeyUndeclared() {
-  return new D1HostAccessAuthorityError(
-    "host_sealing_key_undeclared",
-    "The machine has declared no sealing key, or replaced it since the configuration was sealed",
-  )
 }
 
 function requireAcks(input: HostAssignmentAck[]): HostAssignmentAck[] {
@@ -1577,50 +1096,6 @@ function requireAcks(input: HostAssignmentAck[]): HostAssignmentAck[] {
     seen.add(workspaceId)
     return { workspaceId, revision: ack.revision }
   })
-}
-
-function invitationTtl(input: number | undefined) {
-  if (input === undefined) return INVITATION_DEFAULT_TTL_MS
-  if (!Number.isFinite(input)) throw new D1HostAccessAuthorityError("invalid_input", "expiresInMs must be finite")
-  return Math.max(INVITATION_MIN_TTL_MS, Math.min(input, INVITATION_MAX_TTL_MS))
-}
-
-async function storedKeyFingerprint(publicKeyJson: string) {
-  const jwk = storedJsonWebKey(publicKeyJson)
-  if (!jwk) throw new D1HostAccessAuthorityError("resource_conflict", "Stored host public key is malformed")
-  return await publicKeyFingerprint(jwk)
-}
-
-async function verifiedPublicKey(input: string) {
-  const value = requireText(input, "publicKey", 8_000)
-  const jwk = storedJsonWebKey(value)
-  if (!jwk) throw new D1HostAccessAuthorityError("host_attestation_denied", "Invalid host public key")
-  if (jwk.kty !== "EC" || jwk.crv !== "P-256" || typeof jwk.x !== "string" || typeof jwk.y !== "string" || jwk.d) {
-    throw new D1HostAccessAuthorityError("host_attestation_denied", "Host public key must be a public P-256 JWK")
-  }
-  const normalized = { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y }
-  try {
-    await crypto.subtle.importKey("jwk", normalized, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"])
-  } catch {
-    throw new D1HostAccessAuthorityError("host_attestation_denied", "Invalid host public key")
-  }
-  // Stored as exactly these four members so the same key always serializes
-  // to the same text, which is what the re-enroll upsert compares.
-  return JSON.stringify(normalized)
-}
-
-async function verifyHostSignature(input: { publicKey: string; payload: string; signature: string }) {
-  const jwk = storedJsonWebKey(input.publicKey)
-  if (!jwk) throw new D1HostAccessAuthorityError("host_attestation_denied", "Invalid stored host public key")
-  const signatureBytes = base64UrlBytes(requireText(input.signature, "signature", 2_000))
-  const key = await crypto.subtle.importKey("jwk", jwk, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"])
-  if (!await crypto.subtle.verify(
-    { name: "ECDSA", hash: "SHA-256" },
-    key,
-    signatureBytes,
-    new TextEncoder().encode(input.payload),
-  )) throw new D1HostAccessAuthorityError("host_attestation_denied", "Invalid host attestation")
-  return await sha256(canonicalP256Signature(signatureBytes))
 }
 
 /**
@@ -1645,43 +1120,12 @@ function requireLocalWorkspace(workspace: WorkspaceRow) {
   }
 }
 
-function enrollmentJson(row: EnrollmentRow): HostEnrollment {
-  return {
-    enrollment_id: row.enrollment_id,
-    host_id: row.host_id,
-    ...(row.display_name ? { display_name: row.display_name } : {}),
-    expires_at: row.expires_at,
-    last_seen_at: row.last_seen_at,
-    created_at: row.created_at,
-  }
-}
-
-
 function normalizedTtl(input: number | undefined) {
   if (input === undefined) return DEFAULT_TTL_MS
   if (!Number.isFinite(input)) throw new D1HostAccessAuthorityError("invalid_input", "ttlMs must be finite")
   return Math.max(5_000, Math.min(input, MAX_TTL_MS))
 }
 
-
-const { requireText, optionalText } = createRequireText((message) => new D1HostAccessAuthorityError("invalid_input", message))
-
-
 function changes(result: { meta?: { changes?: number } }) {
   return result.meta?.changes ?? 0
-}
-
-function denied(message = "Workspace authority denied access") {
-  return new ControlPlaneAuthError(403, "workspace_authorization_denied", message)
-}
-
-
-
-/** A stored JWK, read as the record it is; the caller checks the key material itself. */
-function storedJsonWebKey(raw: string): JsonWebKey | undefined {
-  try {
-    return asRecord(parseJson(raw))
-  } catch {
-    return undefined
-  }
 }

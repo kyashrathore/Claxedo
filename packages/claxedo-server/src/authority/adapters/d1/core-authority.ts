@@ -27,6 +27,16 @@ import {
   D1_HOST_ACCESS_AUTHORITY_METHODS,
   type D1HostAccessAuthorityPort,
 } from "./host-access-authority"
+import {
+  D1HostInvitationAuthority,
+  D1_HOST_INVITATION_AUTHORITY_METHODS,
+  type D1HostInvitationAuthorityPort,
+} from "./host-invitation-authority"
+import {
+  D1HostProviderConfigAuthority,
+  D1_HOST_PROVIDER_CONFIG_AUTHORITY_METHODS,
+  type D1HostProviderConfigAuthorityPort,
+} from "./host-provider-config-authority"
 import { D1AuditAuthority, D1_AUDIT_AUTHORITY_METHODS, type D1AuditAuthorityPort } from "./audit-authority"
 import {
   D1ChannelRuntimeAuthority,
@@ -61,6 +71,8 @@ export type D1CoreAuthorityPort = D1WorkspaceAuthorityCore &
   PrivateSessionAuthority &
   SessionTurnAuthority &
   D1HostAccessAuthorityPort &
+  D1HostInvitationAuthorityPort &
+  D1HostProviderConfigAuthorityPort &
   D1AuditAuthorityPort &
   D1ChannelRuntimeAuthorityPort
 
@@ -132,8 +144,9 @@ export function createD1CoreAuthority(database: D1Database, options: D1CoreAutho
     ...shared,
     localWorkspaceRegistration: (auth, input) => workspace.localWorkspaceRegistration(auth, input),
     authorizeLocalWorkspaceRegistration: (auth, args) => workspace.authorizeLocalWorkspaceRegistration(auth, args),
-    resolveOrgId: (auth) => workspace.resolveOrgId(auth),
   })
+  const hostInvitations = new D1HostInvitationAuthority(database, { ...shared, resolveOrgId: (auth) => workspace.resolveOrgId(auth) })
+  const hostProviderConfig = new D1HostProviderConfigAuthority(database, shared)
   const audit = new D1AuditAuthority(database, shared)
   const channelsAndRuntime = new D1ChannelRuntimeAuthority(database, shared)
 
@@ -146,6 +159,8 @@ export function createD1CoreAuthority(database: D1Database, options: D1CoreAutho
     ...bindMethods(new D1ProjectMemberAuthority(access), D1_PROJECT_MEMBER_AUTHORITY_METHODS),
     ...bindMethods(sessions, D1_SESSION_AUTHORITY_METHODS),
     ...bindMethods(hosts, D1_HOST_ACCESS_AUTHORITY_METHODS),
+    ...bindMethods(hostInvitations, D1_HOST_INVITATION_AUTHORITY_METHODS),
+    ...bindMethods(hostProviderConfig, D1_HOST_PROVIDER_CONFIG_AUTHORITY_METHODS),
     ...bindMethods(audit, D1_AUDIT_AUTHORITY_METHODS),
     ...bindMethods(channelsAndRuntime, D1_CHANNEL_RUNTIME_AUTHORITY_METHODS),
     ...bindMethods(workspace, WORKSPACE_LIFECYCLE_METHODS),
