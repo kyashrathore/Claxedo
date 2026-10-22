@@ -114,9 +114,16 @@ export type MachineTransport = {
    * that renewed the lease.
    */
   heartbeat: (input: MachineHeartbeatInput) => Promise<HeartbeatResponse>
+  /**
+   * Hold the control plane's doorbell open: `onEvent` fires whenever the
+   * owner changes what this machine serves, and the connector answers with a
+   * beat. Without it a change waits for the interval. A transport that
+   * cannot hold a stream leaves this undefined.
+   */
+  watch?: (listener: { onEvent: () => void; onError?: (error: unknown) => void }) => { close: () => void }
 }
 
-export type ConnectorErrorStage = "heartbeat" | "acquire" | "reconcile" | "provider-config"
+export type ConnectorErrorStage = "heartbeat" | "acquire" | "reconcile" | "provider-config" | "events"
 
 /**
  * Where a host stands on the directory a description names.
@@ -336,11 +343,19 @@ export function createHostConnector(options: ConnectorOptions) {
    * that is gone.
    */
   let draining = false
+  /** The doorbell held for this instance; closed with it. */
+  let watch: { close: () => void } | undefined
+
+  const closeWatch = () => {
+    watch?.close()
+    watch = undefined
+  }
 
   const stop = (reason: Extract<ConnectorState, { status: "stopped" }>["reason"], detail: string) => {
     era++
     timer?.cancel()
     timer = undefined
+    closeWatch()
     descriptions.clear()
     acked.clear()
     pending.clear()
@@ -646,6 +661,7 @@ export function createHostConnector(options: ConnectorOptions) {
       draining = true
       timer?.cancel()
       timer = undefined
+      closeWatch()
       for (let beat = inFlight; beat; beat = inFlight) await beat.catch(() => undefined)
       acked.clear()
       pending.clear()
@@ -667,6 +683,16 @@ export function createHostConnector(options: ConnectorOptions) {
         return state
       }
       installTimer()
+      // Opened before the first beat so a change made while that beat is in
+      // flight rings the queued one. A ring is a request for a beat, nothing
+      // more: the answer is applied by the same reconciliation as the timer's.
+      closeWatch()
+      watch = options.transport.watch?.({
+        onEvent: () => {
+          void requestBeat()
+        },
+        onError: (error) => options.onError?.("events", error),
+      })
       // The first beat is part of starting: it is what turns a claimed
       // generation into a live lease and delivers the assignments, and a
       // decision there (revoked between redeem and now) belongs to `start`.

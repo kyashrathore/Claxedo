@@ -1,6 +1,7 @@
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { RemoteAccessOwnerService } from "../../routes/remote-access"
+import type { HostChangedInput } from "../../workspace/route-support"
 
 /**
  * The owner's view of their machines on the hosted control plane: which are
@@ -8,7 +9,10 @@ import type { RemoteAccessOwnerService } from "../../routes/remote-access"
  * machine side (enrolling, opening the tunnel) lives in the desktop app on the
  * machine itself; the control plane keeps the account's picture of it.
  */
-export function hostedRemoteAccessService(authority: WorkspaceAuthority): RemoteAccessOwnerService {
+export function hostedRemoteAccessService(
+  authority: WorkspaceAuthority,
+  options: { hostChanged?: (input: HostChangedInput) => Promise<void> } = {},
+): RemoteAccessOwnerService {
   return {
     async status(auth?: SignedControlPlaneAuth) {
       if (!auth) return { enrolled: false, enabled: false }
@@ -30,6 +34,9 @@ export function hostedRemoteAccessService(authority: WorkspaceAuthority): Remote
         throw new ControlPlaneAuthError(503, "workspace_authority_unavailable", "This control plane does not support revoking a machine")
       }
       const result = await authority.revokeHostEnrollment(auth, { hostId })
+      // Rung so the machine's next beat, the refused one, is now rather than
+      // up to an interval away.
+      if (result.revoked > 0) await options.hostChanged?.({ ownerUserId: auth.user.subject, hostId })
       return { revoked: result.revoked > 0 }
     },
     async rename(auth, { hostId, displayName }) {

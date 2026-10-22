@@ -225,8 +225,23 @@ export type ProvisionEvent = {
  * so a signed client learns of a Page change by its next read, not by a
  * notice.
  */
+/**
+ * The owner changed what one of their machines serves or holds: an
+ * assignment, a retirement, its roots, its pushed credentials, or the
+ * enrollment itself. It carries no description; the machine it names answers
+ * with a heartbeat, which is the one delivery path.
+ */
+export type HostChangedEvent = {
+  type: "host.changed"
+  hostId: string
+  /** The enrolling person, whose owner room the machine's doorbell stream is held in. */
+  ownerUserId: string
+  ts: number
+} & D1Announced
+
 export type ControlPlaneEvent =
   | ProvisionEvent
+  | HostChangedEvent
   | { type: "worktree.ready"; directory: string; name: string; branch: string }
   | { type: "worktree.failed"; directory: string; message: string }
   | DocumentChangedEvent

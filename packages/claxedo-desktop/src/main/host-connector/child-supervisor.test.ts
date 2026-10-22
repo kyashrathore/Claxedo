@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 
 import { createFakeControlPlane } from "@claxedo/host-connector/test-support"
-import { HOST_ENROLLMENT_HEARTBEAT_PATH, type FetchLike } from "@claxedo/host-connector/machine-transport"
+import { HOST_ENROLLMENT_EVENTS_PATH as EVENTS_PATH, HOST_ENROLLMENT_HEARTBEAT_PATH, type FetchLike } from "@claxedo/host-connector/machine-transport"
 
 import { runHostConnectorChild } from "../../host-connector-child/entry"
 import type {
@@ -512,7 +512,7 @@ describe("Electron-main child lifecycle", () => {
       "host.enrollmentNonce",
       "host.enrollCurrentMachine",
     ])
-    expect(host.cp.log.map((entry) => entry.path)).toEqual([
+    expect(host.cp.log.map((entry) => entry.path).filter((path) => path !== EVENTS_PATH)).toEqual([
       "/api/claxedo/host/enrollments/acquire",
       "/api/claxedo/host/enrollments/heartbeat",
     ])

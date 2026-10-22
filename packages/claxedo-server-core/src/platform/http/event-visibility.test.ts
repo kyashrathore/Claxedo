@@ -17,6 +17,21 @@ describe("control-plane event visibility", () => {
     expect(eventVisibleTo({ mode: "unsigned-local" }, event)).toBe(true)
   })
 
+  test("a machine's doorbell reaches the machine it names and no person", () => {
+    const event = { type: "host.changed", hostId: "host_a", ownerUserId: "user_owner", ts: 1 } as const
+    expect(eventVisibleTo({ mode: "machine", hostId: "host_a" }, event)).toBe(true)
+    expect(eventVisibleTo({ mode: "machine", hostId: "host_b" }, event)).toBe(false)
+    expect(eventVisibleTo({ mode: "signed", subject: "user_owner" }, event)).toBe(false)
+    expect(eventVisibleTo({ mode: "signed", subject: "user_owner", orgId: "org_a" }, event)).toBe(false)
+    expect(eventVisibleTo({ mode: "unsigned-local" }, event)).toBe(true)
+  })
+
+  test("a machine hears nothing but its doorbell", () => {
+    const machine = { mode: "machine", hostId: "host_a" } as const
+    expect(eventVisibleTo(machine, { type: "usage.quota.changed", ts: 1 })).toBe(false)
+    expect(eventVisibleTo(machine, { type: "provision", workspaceId: "ws_1", ownerUserId: "user_owner", orgId: "org_a", step: "ready", ts: 1 })).toBe(false)
+  })
+
   test("a workspace's machine start reaches its owner alone, never another member of its org", () => {
     const event = { type: "provision", workspaceId: "ws_owner", ownerUserId: "user_owner", orgId: "org_a", step: "starting", ts: 1 } as const
     expect(eventVisibleTo({ mode: "signed", subject: "user_owner", orgId: "org_a" }, event)).toBe(true)

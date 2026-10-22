@@ -301,17 +301,20 @@ describe("PtyRoutes", () => {
     const revoked = { active: false, calls: [] as HostCall[] }
 
     try {
+      // A revoked token's attach is refused on the socket, after the upgrade
+      // (the test above); every other verb, and every stamp-only refusal,
+      // answers before.
       const refusals = [
-        { app: appFor(hostPolicy(), "viewer"), status: 403, code: "terminal_role_denied" },
-        { app: appFor(hostPolicy(), "editor", { sessionScope: "session_shared" }), status: 403, code: "relay_scope_denied" },
-        { app: appFor(hostPolicy(revoked)), status: 401, code: "runtime_access_token_inactive" },
+        { app: appFor(hostPolicy(), "viewer"), status: 403, code: "terminal_role_denied", attach: true },
+        { app: appFor(hostPolicy(), "editor", { sessionScope: "session_shared" }), status: 403, code: "relay_scope_denied", attach: true },
+        { app: appFor(hostPolicy(revoked)), status: 401, code: "runtime_access_token_inactive", attach: false },
       ]
-      for (const { app, status, code } of refusals) {
+      for (const { app, status, code, attach } of refusals) {
         for (const request of [
           app.request("http://localhost/"),
           app.request("http://localhost/pty_a"),
           app.request("http://localhost/pty_a", { method: "DELETE" }),
-          app.request("http://localhost/pty_a/connect", { headers: { connection: "Upgrade", upgrade: "websocket" } }),
+          ...(attach ? [app.request("http://localhost/pty_a/connect", { headers: { connection: "Upgrade", upgrade: "websocket" } })] : []),
           app.request("http://localhost/", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }),
         ]) {
           const response = await request
@@ -382,6 +385,119 @@ describe("PtyRoutes", () => {
       expect(state.calls.map((call) => call.lease)).toEqual([undefined, "host-lease-1"])
       expect(state.calls[1]?.authorization).toBeUndefined()
     } finally {
+      get.mockRestore()
+      connect.mockRestore()
+    }
+  })
+
+  test("the attach's authority answer is awaited on the socket: the upgrade completes while it is open, nothing is read before it allows, and a refusal closes the socket first", async () => {
+    let events: WSEvents | undefined
+    const upgrade = ((createEvents: (c: Context) => WSEvents | Promise<WSEvents>) => async (c: Context) => {
+      events = await createEvents(c)
+      return new Response(null, { status: 200 })
+    }) as unknown as UpgradeWebSocket
+    const info: Pty.Info = { id: "pty_live", title: "live", command: "/bin/sh", args: [], cwd: "/workspace", status: "running", pid: 1 }
+    const get = spyOn(Pty, "get").mockReturnValue(info)
+    const connect = spyOn(Pty, "connect").mockImplementation(() => ({ onMessage() {}, onClose() {} }))
+    const answers: Array<(allowed: boolean) => void> = []
+    const policy = remoteWorkspaceSessionAccessPolicy({
+      url: "http://control-plane.test/runtime/session-authority",
+      fetch: () =>
+        new Promise((resolve) => {
+          answers.push((allowed) =>
+            resolve(
+              allowed
+                ? Response.json({ allowed: true, lease: "host-lease-live", expiresAt: Date.now() + 15_000 })
+                : Response.json({ error: { code: "runtime_access_token_inactive", message: "revoked" } }, { status: 401 }),
+            ))
+        }),
+    })
+    const socket = () => ({
+      readyState: 1,
+      bufferedAmount: 0,
+      send: spyOn({ call(_data: unknown) {} }, "call"),
+      close: spyOn({ call(_code?: number, _reason?: string) {} }, "call"),
+    })
+
+    try {
+      // Allowed, late: the upgrade has already answered when the authority does.
+      const allowed = socket()
+      expect((await appFor(policy, "editor", { upgrade }).request("http://localhost/pty_live/connect", {
+        headers: { connection: "Upgrade", upgrade: "websocket" },
+      })).status).toBe(200)
+      expect(answers).toHaveLength(1)
+      events?.onOpen?.(new Event("open"), { raw: allowed, close: allowed.close } as unknown as WSContext)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(connect, "nothing is read while the authority has not answered").not.toHaveBeenCalled()
+      answers[0](true)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(connect).toHaveBeenCalledTimes(1)
+      expect(allowed.close).not.toHaveBeenCalled()
+
+      // Refused after the terminal was created and the socket opened: closed before any byte.
+      const refused = socket()
+      expect((await appFor(policy, "editor", { upgrade }).request("http://localhost/pty_live/connect", {
+        headers: { connection: "Upgrade", upgrade: "websocket" },
+      })).status).toBe(200)
+      events?.onOpen?.(new Event("open"), { raw: refused, close: refused.close } as unknown as WSContext)
+      events?.onMessage?.({ data: "typed before the answer" } as MessageEvent, {} as WSContext)
+      answers[1](false)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(connect, "a refused caller never reaches the terminal").toHaveBeenCalledTimes(1)
+      expect(refused.send).not.toHaveBeenCalled()
+      expect(refused.close).toHaveBeenCalledWith(1008, "Terminal access denied")
+    } finally {
+      get.mockRestore()
+      connect.mockRestore()
+    }
+  })
+
+  test("a workspace token revoked between the create and the attach denies the attach", async () => {
+    let events: WSEvents | undefined
+    const upgrade = ((createEvents: (c: Context) => WSEvents | Promise<WSEvents>) => async (c: Context) => {
+      events = await createEvents(c)
+      return new Response(null, { status: 200 })
+    }) as unknown as UpgradeWebSocket
+    const state = { active: true, calls: [] as HostCall[] }
+    const policy = hostPolicy(state)
+    const created: Pty.Info = { id: "pty_created", title: "t", command: "/bin/sh", args: [], cwd: "/workspace", status: "running", pid: 1 }
+    const create = spyOn(Pty, "create").mockResolvedValue(created)
+    const bind = spyOn(Pty, "bindAccessOwner").mockReturnValue(true)
+    const commit = spyOn(Pty, "commit").mockReturnValue(created)
+    const get = spyOn(Pty, "get").mockReturnValue(created)
+    const connect = spyOn(Pty, "connect").mockImplementation(() => ({ onMessage() {}, onClose() {} }))
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = os.tmpdir()
+    const raw = {
+      readyState: 1,
+      bufferedAmount: 0,
+      send: spyOn({ call(_data: unknown) {} }, "call"),
+      close: spyOn({ call(_code?: number, _reason?: string) {} }, "call"),
+    }
+
+    try {
+      const app = appFor(policy, "editor", { upgrade })
+      expect((await app.request("http://localhost/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Terminal" }),
+      })).status).toBe(200)
+      expect(state.calls).toHaveLength(1)
+
+      state.active = false
+      expect((await app.request("http://localhost/pty_created/connect", {
+        headers: { connection: "Upgrade", upgrade: "websocket" },
+      })).status).toBe(200)
+      events?.onOpen?.(new Event("open"), { raw, close: raw.close } as unknown as WSContext)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+
+      expect(state.calls, "the attach asked the authority again rather than running on the create's answer").toHaveLength(2)
+      expect(connect).not.toHaveBeenCalled()
+      expect(raw.send).not.toHaveBeenCalled()
+      expect(raw.close).toHaveBeenCalledWith(1008, "Terminal access denied")
+    } finally {
+      create.mockRestore()
+      bind.mockRestore()
+      commit.mockRestore()
       get.mockRestore()
       connect.mockRestore()
     }

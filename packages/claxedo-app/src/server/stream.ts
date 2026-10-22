@@ -1,4 +1,5 @@
 import { batch } from "solid-js"
+import { reconnectDelayMs } from "@claxedo/helpers/backoff"
 import { createParser, type EventSourceMessage } from "eventsource-parser"
 import { EVENT_CURSOR_HEADER, EVENT_STREAM_STALL_TIMEOUT_MS } from "@claxedo/agent-runtime-contract"
 import { machine, unreachable, type Machine } from "../lib/machine"
@@ -38,11 +39,6 @@ type StreamRun = {
 
 const RECONNECT_BASE_MS = 250
 const RECONNECT_CEILING_MS = 15_000
-
-function reconnectDelayMs(attempt: number, random: () => number = Math.random) {
-  const ceiling = Math.min(RECONNECT_CEILING_MS, RECONNECT_BASE_MS * 2 ** attempt)
-  return Math.round(ceiling / 2 + random() * (ceiling / 2))
-}
 
 function connectionTransition(state: ConnectionState, event: ConnectionEvent): ConnectionState {
   switch (event.type) {
@@ -127,7 +123,7 @@ function scheduleReconnect(run: StreamRun, reason?: ServerError) {
   run.reconnectTimer = setTimeout(() => {
     run.reconnectTimer = undefined
     void openStreamAttempt(run)
-  }, reconnectDelayMs(state.attempt - 1))
+  }, reconnectDelayMs({ attempt: state.attempt - 1, baseMs: RECONNECT_BASE_MS, ceilingMs: RECONNECT_CEILING_MS }))
 }
 
 async function openResponse(run: StreamRun, controller: AbortController) {

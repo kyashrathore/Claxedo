@@ -8,6 +8,8 @@
 import { machineRequestSignature, randomNonce, type HostKeyPair } from "./host-identity"
 import { MACHINE_REQUEST_HEADERS } from "@claxedo/account-contract/machine"
 import { withDeadlineSignal } from "@claxedo/helpers/deadline"
+import { watchMachineEvents } from "./machine-events"
+import { transientHeartbeatFailure } from "./connector"
 import {
   canonicalControlPlaneUrl,
   canonicalFetchEndpointUrl,
@@ -29,6 +31,8 @@ export type FetchLike = (input: URL, init: RequestInit) => Promise<Response>
 export const HOST_ENROLLMENT_ACQUIRE_PATH = "/api/claxedo/host/enrollments/acquire"
 export const HOST_ENROLLMENT_HEARTBEAT_PATH = "/api/claxedo/host/enrollments/heartbeat"
 export const HOST_ENROLLMENT_REDEEM_PATH = "/api/claxedo/host/enrollments/redeem"
+/** The machine's doorbell stream (`./machine-events`); a signed GET, held open. */
+export const HOST_ENROLLMENT_EVENTS_PATH = "/api/claxedo/host/enrollments/events"
 
 /**
  * Headers and body of one beat or acquire; a beat that outlives this is
@@ -306,36 +310,56 @@ export function createMachineSignedTransport(options: MachineSignedTransportOpti
 
   const keyVersion = options.keyVersion === undefined ? {} : { keyVersion: options.keyVersion }
 
-  const signedPost = async (pathname: string, body: Record<string, unknown>, requestTimeoutMs = timeoutMs) => {
-    const url = controlPlaneRequestUrl(controlPlaneUrl, pathname)
-    const bodyText = JSON.stringify({ enrollmentId: options.enrollmentId, hostId: options.hostId, ...body })
-    // Fresh per request, never reused: the nonce is single-use at the
-    // control plane and the timestamp is checked against its clock.
+  // Fresh per request, never reused: the nonce is single-use at the control
+  // plane and the timestamp is checked against its clock.
+  const signedHeaders = async (method: string, url: URL, bodyText: string) => {
     const ts = Math.floor(now())
     const requestNonce = nonce()
     const signature = await machineRequestSignature(options.keys, {
-      method: "POST",
+      method,
       pathname: url.pathname,
       bodyText,
       ts,
       nonce: requestNonce,
       enrollmentId: options.enrollmentId,
     })
-    return await postJson(
-      options.fetch,
-      url,
-      bodyText,
-      {
-        [MACHINE_REQUEST_HEADERS.enrollmentId]: options.enrollmentId,
-        [MACHINE_REQUEST_HEADERS.ts]: String(ts),
-        [MACHINE_REQUEST_HEADERS.nonce]: requestNonce,
-        [MACHINE_REQUEST_HEADERS.signature]: signature,
-      },
-      requestTimeoutMs,
-    )
+    return {
+      [MACHINE_REQUEST_HEADERS.enrollmentId]: options.enrollmentId,
+      [MACHINE_REQUEST_HEADERS.ts]: String(ts),
+      [MACHINE_REQUEST_HEADERS.nonce]: requestNonce,
+      [MACHINE_REQUEST_HEADERS.signature]: signature,
+    }
+  }
+
+  const signedPost = async (pathname: string, body: Record<string, unknown>, requestTimeoutMs = timeoutMs) => {
+    const url = controlPlaneRequestUrl(controlPlaneUrl, pathname)
+    const bodyText = JSON.stringify({ enrollmentId: options.enrollmentId, hostId: options.hostId, ...body })
+    return await postJson(options.fetch, url, bodyText, await signedHeaders("POST", url, bodyText), requestTimeoutMs)
   }
 
   return {
+    watch: (listener) =>
+      watchMachineEvents({
+        open: async ({ signal, lastEventId }) => {
+          const url = controlPlaneRequestUrl(controlPlaneUrl, HOST_ENROLLMENT_EVENTS_PATH)
+          // A GET signed over an empty body: the verifier hashes the body text
+          // it read, and a GET has none.
+          const headers = await signedHeaders("GET", url, "")
+          return await options.fetch(url, {
+            method: "GET",
+            headers: {
+              accept: "text/event-stream",
+              ...headers,
+              ...(lastEventId === undefined ? {} : { "last-event-id": lastEventId }),
+            },
+            redirect: "manual",
+            signal,
+          })
+        },
+        onEvent: listener.onEvent,
+        ...(listener.onError ? { onError: listener.onError } : {}),
+        decisive: (error) => !transientHeartbeatFailure(error),
+      }),
     acquire: async (input) => {
       const value = await signedPost(
         HOST_ENROLLMENT_ACQUIRE_PATH,

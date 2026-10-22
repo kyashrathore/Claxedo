@@ -32,15 +32,18 @@ function externalImports() {
 }
 
 describe("Host Connector's dependency closure", () => {
-  test("imports only the machine wire contract and the import-free deadline from first-party packages", () => {
-    // The deadline module imports nothing, so it adds no code beyond itself;
-    // the connector's requests need its referenced timer on Bun for Windows.
-    // host-path is the directory form the wire carries, import-free too; the
-    // control plane and the owner's CLI compare roots by the same module.
+  test("imports only the machine wire contract and the import-free deadline, backoff and host-path from first-party packages", () => {
+    // The deadline, backoff and host-path modules import nothing, so each adds
+    // no code beyond itself: the connector's requests need the deadline's
+    // referenced timer on Bun for Windows; its doorbell stream reconnects on
+    // the same jittered wait as the app's event stream; host-path is the
+    // directory form the wire carries, which the control plane and the
+    // owner's CLI compare roots by too.
     const allowed = new Set([
       "@claxedo/account-contract/machine",
       "@claxedo/account-contract/machine-seal",
       "@claxedo/account-contract/host-path",
+      "@claxedo/helpers/backoff",
       "@claxedo/helpers/deadline",
     ])
     const offenders = externalImports().filter(

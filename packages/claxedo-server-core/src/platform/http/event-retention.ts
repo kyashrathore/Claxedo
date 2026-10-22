@@ -22,6 +22,10 @@ export function isRetainedControlPlaneEvent(event: ControlPlaneEvent): boolean {
     case "session.inventory.changed":
     case "plugins.changed":
       return true
+    case "host.changed":
+      // A ring the machine missed while its stream was down is a change it
+      // would otherwise learn a whole beat interval late.
+      return true
     case "session.status.changed":
       // Rung on every turn start, end and wait of every session a reader
       // follows; in the terminal ring it would evict the doorbells above.

@@ -16,7 +16,7 @@ import { effectiveRoots, type HostScope, type HostState } from "./host-state"
 import { createHostKeyPair, hostKeyPairFromJwk, newHostId } from "./host-identity"
 import { createMachineSealingKeyPair, openMachineSeal } from "./machine-seal"
 import { machineSealAad } from "@claxedo/account-contract/machine"
-import { createMachineSignedTransport } from "./machine-transport"
+import { createMachineSignedTransport, HOST_ENROLLMENT_EVENTS_PATH as EVENTS_PATH } from "./machine-transport"
 
 /**
  * Assignment discovery against the strict fake: the owner assigns, re-points,
@@ -117,6 +117,13 @@ async function machineHost(
     providerConfigs,
     beats,
     tick: () => tick?.(),
+    /**
+     * The doorbell stream is opened beside the first beat, not before it, and
+     * a ring reaches only a stream already held; a test that rings right
+     * after `start()` waits for it, as an owner's change during the boot
+     * would ride that first beat anyway.
+     */
+    doorbell: () => vi.waitFor(() => expect(cp.eventStreams(enrolled.enrollmentId)).toBe(1)),
     state: () => state,
   }
 }
@@ -130,11 +137,12 @@ describe("start", () => {
 
     expect(state).toMatchObject({ status: "enrolled", enrollment: { enrollment_id: h.enrolled.enrollmentId } })
     expect(h.connector.generation()).toBe(1)
-    expect(cp.log.map((entry) => entry.path)).toEqual([
+    expect(cp.log.map((entry) => entry.path).filter((path) => path !== EVENTS_PATH)).toEqual([
       "/api/claxedo/host/enrollments/redeem",
       "/api/claxedo/host/enrollments/acquire",
       "/api/claxedo/host/enrollments/heartbeat",
     ])
+    await vi.waitFor(() => expect(cp.eventStreams(h.enrolled.enrollmentId), "the doorbell is held open from the start").toBe(1))
     expect(h.beats()[0]?.body).toMatchObject({ generation: 1, acks: [], sessionAuthority: "managed-private" })
     expect(h.scopes).toEqual([{ revision: 1, allowed_roots: ["/srv"] }])
     expect(h.seen, "no assignments means nothing to reconcile").toEqual([])
@@ -223,6 +231,56 @@ describe("assignment discovery", () => {
     expect(h.seen).toEqual([[{ workspaceId: "ws_1", remoteDirectory: "/srv/api", revision }]])
   })
 
+  test("the owner's assignment rings the machine, which serves it without waiting for the interval", async () => {
+    const cp = createFakeControlPlane()
+    const h = await machineHost(cp)
+    await h.connector.start()
+    await h.doorbell()
+    const before = h.beats().length
+
+    const revision = cp.assign({ enrollmentId: h.enrolled.enrollmentId, workspaceId: "ws_1", remoteDirectory: "/srv/api" })
+    // No tick: the timer never fires in this test, so every beat below was rung.
+    await vi.waitFor(() => expect(cp.routable(h.enrolled.enrollmentId)).toEqual(["ws_1"]))
+
+    expect(h.beats().length - before, "one rung beat learns the assignment, the ack's beat publishes it").toBe(2)
+    expect(h.connector.acked()).toEqual([{ workspaceId: "ws_1", revision }])
+    expect(h.errors).toEqual([])
+
+    cp.unassign("ws_1")
+    await vi.waitFor(() => expect(h.connector.acked()).toEqual([]))
+    expect(cp.routable(h.enrolled.enrollmentId)).toEqual([])
+  })
+
+  test("a doorbell stream the control plane dropped is reopened, and the machine still hears the next ring", async () => {
+    const cp = createFakeControlPlane()
+    const h = await machineHost(cp)
+    await h.connector.start()
+    await vi.waitFor(() => expect(cp.eventStreams(h.enrolled.enrollmentId)).toBe(1))
+
+    cp.dropEventStreams(h.enrolled.enrollmentId)
+    await vi.waitFor(() => expect(h.errors.map((entry) => entry.stage)).toEqual(["events"]))
+    await vi.waitFor(() => expect(cp.eventStreams(h.enrolled.enrollmentId)).toBe(1), { timeout: 5_000 })
+
+    cp.assign({ enrollmentId: h.enrolled.enrollmentId, workspaceId: "ws_1", remoteDirectory: "/srv/api" })
+    await vi.waitFor(() => expect(cp.routable(h.enrolled.enrollmentId)).toEqual(["ws_1"]))
+  })
+
+  test("closing or draining the connector closes its doorbell stream", async () => {
+    const cp = createFakeControlPlane()
+    const closed = await machineHost(cp)
+    await closed.connector.start()
+    await closed.doorbell()
+    closed.connector.close()
+    await vi.waitFor(() => expect(cp.eventStreams(closed.enrolled.enrollmentId)).toBe(0))
+
+    const drained = await machineHost(cp)
+    await drained.connector.start()
+    await drained.doorbell()
+    await drained.connector.drain()
+    await vi.waitFor(() => expect(cp.eventStreams(drained.enrolled.enrollmentId)).toBe(0))
+    expect([...closed.errors, ...drained.errors]).toEqual([])
+  })
+
   // The credential is handed on untouched, and a consumer that serves out of
   // another process reads the machine's own enrollment out of it: nothing
   // else of the enrollment crosses that boundary.
@@ -305,9 +363,9 @@ describe("assignment discovery", () => {
     const links: Record<string, string> = { "/srv/link": "/home/u/elsewhere" }
     const h = await machineHost(cp, { resolvePath: async (p) => links[p] ?? p })
     await h.connector.start()
+    await h.doorbell()
 
     cp.assign({ enrollmentId: h.enrolled.enrollmentId, workspaceId: "ws_link", remoteDirectory: "/srv/link" })
-    h.tick()
     await vi.waitFor(() => expect(h.ackFailures).toHaveLength(1))
 
     expect(String(h.ackFailures[0])).toContain("outside this host's roots")
@@ -324,7 +382,10 @@ describe("assignment discovery", () => {
       },
     })
     await h.connector.start()
+    await h.doorbell()
     cp.assign({ enrollmentId: h.enrolled.enrollmentId, workspaceId: "ws_1", remoteDirectory: "/srv/api" })
+    // The assignment's ring is the first delivery; the timer's beats are counted from there.
+    await vi.waitFor(() => expect(h.seen).toHaveLength(1))
     const deliveriesAfter = async () => {
       h.tick()
       await vi.waitFor(() => expect(h.beats().length).toBe(beatsBefore + 1))
@@ -336,14 +397,14 @@ describe("assignment discovery", () => {
     const perBeat: number[] = []
     for (let beat = 1; beat <= 15; beat++) perBeat.push(await deliveriesAfter())
 
-    expect(perBeat).toEqual([1, 2, 3, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6])
+    expect(perBeat).toEqual([2, 3, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6, 6])
     expect(h.ackFailures).toHaveLength(6)
     expect(String(h.ackFailures[0])).toContain("cannot be resolved")
     expect(h.connector.acked()).toEqual([])
     expect(cp.routable(h.enrolled.enrollmentId)).toEqual([])
 
     exists = true
-    for (let beat = 1; beat <= 9; beat++) expect(await deliveriesAfter()).toBe(6)
+    for (let beat = 1; beat <= 8; beat++) expect(await deliveriesAfter()).toBe(6)
     h.tick()
     await vi.waitFor(() => expect(cp.routable(h.enrolled.enrollmentId)).toEqual(["ws_1"]))
 
@@ -383,9 +444,12 @@ describe("assignment discovery", () => {
 
     // A new revision of the folder and a narrower scope reach the host in the
     // same beat (the scope is set behind the route so the retirement the
-    // control plane's own update would do does not hide the case). The new
-    // scope must be in force when the new revision is validated, or the host
-    // would ack a folder the owner just excluded.
+    // control plane's own update would do does not hide the case, and the
+    // doorbell stream is down, as across a deploy, so the assignment's ring
+    // reaches nobody and both ride the timer's beat). The new scope must be in
+    // force when the new revision is validated, or the host would ack a
+    // folder the owner just excluded.
+    cp.dropEventStreams(h.enrolled.enrollmentId)
     cp.assign({ enrollmentId: h.enrolled.enrollmentId, workspaceId: "ws_1", remoteDirectory: "/srv/api" })
     cp.enrollments.get(h.enrolled.enrollmentId)!.scope = { revision: 2, allowed_roots: ["/srv/only"] }
     h.tick()
@@ -578,7 +642,7 @@ describe("a host that confines no directory", () => {
     await h.connector.start()
 
     const machineCalls = cp.log.filter((entry) => entry.path.startsWith("/api/claxedo/host/enrollments/"))
-    expect(machineCalls.map((entry) => entry.path)).toEqual([
+    expect(machineCalls.map((entry) => entry.path).filter((path) => path !== EVENTS_PATH)).toEqual([
       "/api/claxedo/host/enrollments/acquire",
       "/api/claxedo/host/enrollments/heartbeat",
     ])
@@ -959,6 +1023,7 @@ describe("with a real filesystem", () => {
       resolvePath: (p) => realpath(p),
     })
     await h.connector.start()
+    await h.doorbell()
 
     // Lexically `<srv>/link/repo` is under both `<srv>` and `<srv>/link`;
     // resolved it is `<elsewhere>/repo`, outside the owner's root.
@@ -967,7 +1032,6 @@ describe("with a real filesystem", () => {
       workspaceId: "ws_escape",
       remoteDirectory: path.join(srv, "link", "repo"),
     })
-    h.tick()
     await vi.waitFor(() => expect(h.ackFailures).toHaveLength(1))
 
     expect(String(h.ackFailures[0])).toContain("outside this host's roots")
@@ -993,6 +1057,7 @@ describe("provider configuration", () => {
     const sealing = await createMachineSealingKeyPair()
     const host = await machineHost(cp, { sealingPublicKey: sealing.publicKey, ...input })
     await host.connector.start()
+    await host.doorbell()
     return { ...host, sealing }
   }
 
@@ -1046,9 +1111,9 @@ describe("provider configuration", () => {
     })
     const revision = await host.cp.pushProviderConfig(host.enrolled.enrollmentId, PLAINTEXT)
 
-    await host.connector.beat()
+    // The push rings the machine; the rung beat delivers the revision the store refuses.
+    await vi.waitFor(() => expect(host.errors.filter((entry) => entry.stage === "provider-config")).toHaveLength(1))
     expect(host.connector.providerConfigRevision()).toBeUndefined()
-    expect(host.errors.filter((entry) => entry.stage === "provider-config")).toHaveLength(1)
     await host.connector.beat()
     expect(host.cp.providerConfigAckedRevision(host.enrolled.enrollmentId)).not.toBe(revision)
 

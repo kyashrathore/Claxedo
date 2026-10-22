@@ -4,13 +4,14 @@ import { asRecord, numberField } from "@claxedo/server-core/platform/json/index"
 import { sessionReaderState } from "@claxedo/server-core/session/reader"
 import type {
   ControlPlaneEvent,
+  HostChangedEvent,
   ProvisionEvent,
   SessionReaderChangedEvent,
   SessionShareChangedEvent,
   SessionStatusChangedEvent,
 } from "@claxedo/server-core/platform/runtime/lib/bus"
 
-type AdmittedEvent = SessionStatusChangedEvent | SessionShareChangedEvent | SessionReaderChangedEvent | ProvisionEvent
+type AdmittedEvent = SessionStatusChangedEvent | SessionShareChangedEvent | SessionReaderChangedEvent | ProvisionEvent | HostChangedEvent
 
 function lastTurnOf(turn: Record<string, unknown> | undefined): SessionLastTurn | undefined {
   const status = turn?.status
@@ -37,8 +38,8 @@ function sessionStatusEvent(row: Record<string, unknown>, ts: number): SessionSt
 
 /**
  * The events this room admits onto a client stream, a session share's
- * doorbell, a session's status notice, a reader's own marks and a workspace's
- * machine start, rebuilt field
+ * doorbell, a session's status notice, a reader's own marks, a workspace's
+ * machine start and a machine's own doorbell, rebuilt field
  * by field so the room forwards exactly the fields it verified and nothing
  * else the sender put in the object; the publisher's D1 bookmark rides along
  * when it is one.
@@ -68,6 +69,10 @@ function admittedEvent(row: Record<string, unknown>, ts: number): AdmittedEvent 
   }
   if (row.type === "session.reader.changed" && typeof ownerUserId === "string" && ownerUserId && typeof sessionId === "string" && typeof workspaceId === "string") {
     return { type: "session.reader.changed", ts, ownerUserId, sessionId, workspaceId, ...sessionReaderState(numberField(row, "seenAt"), numberField(row, "settledAt")) }
+  }
+  const { hostId } = row
+  if (row.type === "host.changed" && typeof ownerUserId === "string" && ownerUserId && typeof hostId === "string" && hostId) {
+    return { type: "host.changed", ts, ownerUserId, hostId }
   }
   const { orgId, step } = row
   if (

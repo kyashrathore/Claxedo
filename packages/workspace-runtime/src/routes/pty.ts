@@ -29,6 +29,8 @@ import {
 import {
   admitTerminal,
   authorizeTerminal,
+  terminalCallerRefusal,
+  type PtyAccessRefusal,
   type TerminalAccess,
   type TerminalAdmission,
 } from "../pty/terminal-authority"
@@ -72,8 +74,13 @@ function agentHookBinding(caller: TerminalAccess, admission: TerminalAdmission):
   }
 }
 
-/** The admission the pre-upgrade handler took, read by the upgrade closure behind it. */
-type PtyRouteVariables = RelayHostAuthContext & { ptyStreamAdmission?: TerminalAdmission }
+/**
+ * The authority's answer the pre-upgrade handler asked for, read by the
+ * upgrade closure behind it and awaited inside the stream: the upgrade's own
+ * round trip through the relay runs while the authority answers, and the
+ * stream reads nothing from the terminal until it has.
+ */
+type PtyRouteVariables = RelayHostAuthContext & { ptyStreamAdmission?: Promise<TerminalAdmission | PtyAccessRefusal> }
 
 /**
  * `ownership` is resolved per request, not captured once: one process serves
@@ -226,11 +233,14 @@ export function PtyRoutes(
           log.warn("terminal attach refused: no such PTY in this process", { ptyId: c.req.param("ptyID") })
           return c.json(notFound(), 404)
         }
-        const admission = await admitTerminal(policy, access(c))
-        if (!admission.allowed) return ptyAccessRefusalResponse(admission)
-        // The upgrade below is a second closure over the same request; the
-        // admission it runs on travels on the context rather than being asked
-        // for again.
+        const caller = access(c)
+        const refused = terminalCallerRefusal(caller)
+        if (refused) return ptyAccessRefusalResponse(refused)
+        // Asked here, answered on the socket. The upgrade below is a second
+        // closure over the same request; the pending answer travels on the
+        // context rather than being asked for again.
+        const admission = admitTerminal(policy, caller)
+        admission.catch(() => undefined)
         c.set("ptyStreamAdmission", admission)
         return next()
       },

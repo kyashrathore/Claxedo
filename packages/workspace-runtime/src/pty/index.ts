@@ -24,7 +24,7 @@ import { closeNativeTerminal } from "./native-close"
 
 import * as contracts from "./session-types"
 import type { ActiveSession } from "./session-types"
-import { startTerminal } from "./session-start"
+import { startTerminal, warmTerminalSpawn } from "./session-start"
 export { selectPtyCommand } from "./session-start"
 
 export namespace Pty {
@@ -453,6 +453,9 @@ export namespace Pty {
     if (!session || session.exited || session.removed) return undefined
     return session.agentHookAccess?.token
   }
+
+  /** Load the PTY binding ahead of the first terminal, so creating it does not pay the import. */
+  export const warm = warmTerminalSpawn
 
   export function snapshot(id: string, max = BUFFER_LIMIT) {
     const session = sessions.get(id)

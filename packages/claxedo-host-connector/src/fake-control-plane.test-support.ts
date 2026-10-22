@@ -41,6 +41,7 @@ import { hostPathWithinRoots, normalizeHostPath } from "@claxedo/account-contrac
 import { createHostStateStore, isPlainRecord, newHostState, type HostStateFs } from "./host-state"
 
 import { sealForMachine } from "@claxedo/account-contract/machine-seal"
+import { createFakeMachineEventStreams } from "./fake-machine-events.test-support"
 import type { FetchLike } from "./machine-transport"
 
 const SKEW_MS = 60_000
@@ -232,6 +233,7 @@ export function createFakeControlPlane(
    * decisions come after.
    */
   const verifyMachine = async (request: {
+    method: string
     pathname: string
     headers: Headers
     bodyText: string
@@ -258,7 +260,7 @@ export function createFakeControlPlane(
       throw new FakeRefusal(400, "machine_body_invalid")
     }
     const payload = await hostMachineRequestPayload({
-      method: "POST",
+      method: request.method,
       pathname: request.pathname,
       bodyText: request.bodyText,
       ts,
@@ -436,6 +438,9 @@ export function createFakeControlPlane(
   const json = (status: number, body: unknown) =>
     new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
 
+  const doorbell = createFakeMachineEventStreams(now)
+  const ring = (enrollment: FakeEnrollment) => doorbell.ring(enrollment)
+
   const fetchImpl: FetchLike = async (input, init) => {
     const target = new URL(input.href)
     const headers = new Headers(init?.headers)
@@ -449,7 +454,10 @@ export function createFakeControlPlane(
       if (faults.unavailable !== undefined) {
         return json(faults.unavailable, { error: { code: "deployment_candidate_unavailable", message: "deploying" } })
       }
-      const request = { pathname: target.pathname, headers, bodyText, body }
+      const request = { method, pathname: target.pathname, headers, bodyText, body }
+      if (target.pathname === "/api/claxedo/host/enrollments/events") {
+        return doorbell.open(await verifyMachine(request), init?.signal ?? undefined)
+      }
       if (target.pathname === "/api/claxedo/host/enrollments/acquire") {
         return json(200, acquire(await verifyMachine(request)))
       }
@@ -468,8 +476,11 @@ export function createFakeControlPlane(
     [...enrollments.values()].find((entry) => entry.host_id === hostId && entry.revoked_at === undefined)
 
   const unassign = (workspaceId: string) => {
+    const assignment = assignments.get(workspaceId)
     assignments.delete(workspaceId)
     readiness.delete(workspaceId)
+    const enrollment = assignment && enrollments.get(assignment.enrollment_id)
+    if (enrollment) ring(enrollment)
   }
 
   return {
@@ -482,6 +493,10 @@ export function createFakeControlPlane(
     assignments,
     readiness,
     beats: () => log.filter((entry) => entry.path === "/api/claxedo/host/enrollments/heartbeat"),
+    /** How many doorbell streams this enrollment holds open right now. */
+    eventStreams: (enrollmentId: string) => doorbell.held(enrollmentId),
+    /** End every stream the enrollment holds, as a deploy or an idle proxy would, without deciding anything. */
+    dropEventStreams: (enrollmentId: string) => doorbell.drop(enrollmentId),
     /** What the relay would be told is routable right now, per enrollment. */
     routable: (enrollmentId: string) => {
       const enrollment = enrollments.get(enrollmentId)
@@ -604,6 +619,7 @@ export function createFakeControlPlane(
         revision: (existing?.revision ?? 0) + 1,
       }
       assignments.set(input.workspaceId, assignment)
+      ring(enrollment)
       return assignment.revision
     },
     unassign,
@@ -621,6 +637,7 @@ export function createFakeControlPlane(
       const revision = (enrollment.provider_config?.revision ?? 0) + 1
       if (plaintext === null) {
         enrollment.provider_config = { revision, sealed: null }
+        ring(enrollment)
         return revision
       }
       const key = enrollment.sealing_public_key
@@ -629,6 +646,7 @@ export function createFakeControlPlane(
         revision,
         sealed: await sealForMachine(key, plaintext, machineSealAad({ enrollmentId, revision })),
       }
+      ring(enrollment)
       return revision
     },
     /**
@@ -656,6 +674,7 @@ export function createFakeControlPlane(
         if (assignment.enrollment_id !== enrollmentId) continue
         if (!hostPathWithinRoots(assignment.remote_directory ?? "", scope.allowed_roots)) unassign(workspaceId)
       }
+      ring(enrollment)
       return enrollment.scope
     },
     revoke: (enrollmentId: string) => {
@@ -665,6 +684,7 @@ export function createFakeControlPlane(
       for (const [workspaceId, assignment] of assignments) {
         if (assignment.enrollment_id === enrollmentId) unassign(workspaceId)
       }
+      ring(enrollment)
     },
     pause: (enrollmentId: string, paused: boolean) => {
       const enrollment = enrollments.get(enrollmentId)

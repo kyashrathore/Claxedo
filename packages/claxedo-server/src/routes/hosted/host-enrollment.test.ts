@@ -9,6 +9,8 @@ import type { ControlPlaneServices } from "../../authority/services"
 import { D1HostAccessAuthorityError } from "../../authority/adapters/d1/host-access-errors"
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { HostEnrollmentRoutes, HostInvitationRoutes } from "./host-enrollment"
+import { LiveSyncRoom } from "../../deployments/hosted-workerd/live-sync-room.cf"
+import { nudgeLiveSyncRoom, type LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
 
 const authConfig = {
   enabled: true,
@@ -1246,6 +1248,99 @@ async function mountedRoutes(api: ReturnType<typeof authority>, routeOptions: Re
   }
   return { api, signedCall, app }
 }
+
+/** One room per name, served on the room's own SSE path (no Durable Object socket API here). */
+function fakeLiveSyncNamespace(): LiveSyncRoomNamespace & { rooms: Map<string, LiveSyncRoom> } {
+  const rooms = new Map<string, LiveSyncRoom>()
+  return {
+    rooms,
+    idFromName: (name: string) => name,
+    get(id: unknown) {
+      const name = id as string
+      const room = rooms.get(name) ?? new LiveSyncRoom({}, {})
+      rooms.set(name, room)
+      return { fetch: (request: Request) => room.fetch(request) }
+    },
+  }
+}
+
+async function readSseFrame(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<Record<string, unknown>> {
+  const { value, done } = await reader.read()
+  if (done || !value) throw new Error("the stream ended before a frame arrived")
+  const text = new TextDecoder().decode(value)
+  const data = text.split("\n").find((line) => line.startsWith("data:"))?.slice("data:".length).trim()
+  return JSON.parse(data ?? "{}") as Record<string, unknown>
+}
+
+describe("GET /events, the machine's doorbell", () => {
+  const signedGet = async (
+    app: Awaited<ReturnType<typeof mountedRoutes>>["app"],
+    key: Awaited<ReturnType<typeof machineKey>>,
+    options: { enrollmentId?: string; query?: string; headers?: Record<string, string> } = {},
+  ) => {
+    const enrollmentId = options.enrollmentId ?? "enr_1"
+    const nonce = `nonce_${Math.random().toString(36).slice(2).padEnd(16, "x")}`
+    const signature = await key.sign(
+      machineRequestPayload({
+        method: "GET",
+        pathname: "/api/claxedo/host/enrollments/events",
+        bodySha256Hex: await sha256Hex(""),
+        ts: NOW,
+        nonce,
+        enrollmentId,
+      }),
+    )
+    return app.request(`http://control.test/api/claxedo/host/enrollments/events${options.query ?? ""}`, {
+      method: "GET",
+      headers: {
+        accept: "text/event-stream",
+        [MACHINE_REQUEST_HEADERS.enrollmentId]: enrollmentId,
+        [MACHINE_REQUEST_HEADERS.ts]: String(NOW),
+        [MACHINE_REQUEST_HEADERS.nonce]: nonce,
+        [MACHINE_REQUEST_HEADERS.signature]: signature,
+        ...options.headers,
+      },
+    })
+  }
+
+  test("holds a signed machine in its owner's room, where a host.changed for its host rings it and another host's does not", async () => {
+    const key = await machineKey()
+    const liveSyncRoom = fakeLiveSyncNamespace()
+    const { app } = await mountedRoutes(machineAuthority(enrollmentRow(key)), { liveSyncRoom, eventsHeartbeatMs: 60_000 })
+
+    const response = await signedGet(app, key)
+    expect(response.status).toBe(200)
+    expect(response.headers.get("content-type")).toContain("text/event-stream")
+    const reader = response.body!.getReader()
+    expect(await readSseFrame(reader)).toEqual({ type: "heartbeat" })
+    expect([...liveSyncRoom.rooms.keys()]).toEqual(["owner:usr_owner"])
+
+    await nudgeLiveSyncRoom(liveSyncRoom, "owner:usr_owner", { type: "host.changed", hostId: "host_other", ownerUserId: "usr_owner", ts: NOW })
+    await nudgeLiveSyncRoom(liveSyncRoom, "owner:usr_owner", { type: "host.changed", hostId: "host_1", ownerUserId: "usr_owner", ts: NOW })
+    expect(await readSseFrame(reader)).toMatchObject({ type: "host.changed", hostId: "host_1" })
+    await reader.cancel()
+  })
+
+  test("refuses an unsigned caller, a forged signature and a query, like every machine route", async () => {
+    const key = await machineKey()
+    const forger = await machineKey()
+    const liveSyncRoom = fakeLiveSyncNamespace()
+    const { app } = await mountedRoutes(machineAuthority(enrollmentRow(key)), { liveSyncRoom })
+
+    expect((await app.request("http://control.test/api/claxedo/host/enrollments/events")).status).toBe(400)
+    expect((await signedGet(app, forger)).status).toBe(401)
+    expect((await signedGet(app, key, { query: "?hostId=host_1" })).status).toBe(400)
+    expect(liveSyncRoom.rooms.size).toBe(0)
+  })
+
+  test("a plane with no live-sync room answers 503 rather than holding nothing", async () => {
+    const key = await machineKey()
+    const { app } = await mountedRoutes(machineAuthority(enrollmentRow(key)))
+    const response = await signedGet(app, key)
+    expect(response.status).toBe(503)
+    expect(await response.json()).toMatchObject({ error: { code: "machine_events_unavailable" } })
+  })
+})
 
 async function openSeal(privateKey: CryptoKey, sealed: string, aad: string) {
   const parts = decodeMachineSeal(sealed)

@@ -55,8 +55,18 @@ export type RepositoryConnectionAccess =
   | { ok: true; repository: CodeHostRepository; connectionId: string }
   | { ok: false; status: 401 | 402 | 403 | 404 | 409 | 501 | 502 | 503; code: string }
 
+/** What a host route rings the owner's machine with: the host, and the person whose room holds its stream. */
+export type HostChangedInput = { ownerUserId: string; hostId: string }
+
 export type WorkspaceRouteOptions = {
   authentication?: RequestAuthenticationAdapter
+  /**
+   * Ring one of the owner's machines after a change to what it serves or
+   * holds; the machine beats at once instead of at its next interval. Absent
+   * on a plane that holds no machine streams, where the beat interval is the
+   * delivery.
+   */
+  hostChanged?: (input: HostChangedInput) => Promise<void>
   authConfig?: ControlPlaneAuthConfig
   verifier?: ControlPlaneTokenVerifier
   cliTokenEnv?: Record<string, string | undefined>

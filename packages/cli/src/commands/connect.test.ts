@@ -17,7 +17,7 @@ import {
 import { connectPaths, connectStateStore } from "../connect/paths"
 import { relayStub, until as waitUntil } from "../connect/relay-stub.test-support"
 import type { ServiceDeps } from "../connect/service"
-import { HostedHttpError, HostedRequestTimeoutError } from "@claxedo/host-connector/machine-transport"
+import { HOST_ENROLLMENT_EVENTS_PATH as EVENTS_PATH, HostedHttpError, HostedRequestTimeoutError } from "@claxedo/host-connector/machine-transport"
 import { HostEndpointUrlError } from "@claxedo/host-connector/host-state"
 import { HostConnectDecisionError } from "@claxedo/host-connector/bootstrap"
 import { freePort } from "@claxedo/helpers/net"
@@ -231,11 +231,12 @@ describe("claxedo connect", () => {
     const running = connect(["--token-file", file, "--root", h.root], h.deps)
     await until(() => h.cp.beats().length >= 1, "first beat")
 
-    expect(h.cp.log.map((entry) => entry.path)).toEqual([
+    expect(h.cp.log.map((entry) => entry.path).filter((path) => path !== EVENTS_PATH)).toEqual([
       "/api/claxedo/host/enrollments/redeem",
       "/api/claxedo/host/enrollments/acquire",
       "/api/claxedo/host/enrollments/heartbeat",
     ])
+    expect(h.cp.eventStreams(enrollmentIdOf(h)), "the doorbell is held open from the first beat").toBe(1)
     expect(await fs.readFile(file, "utf8").catch(() => "gone")).toBe("gone")
     await until(async () => (await h.deps.store.load())?.run?.last_beat_ok_at !== undefined, "run record")
     const enrolled = await h.deps.store.load()
@@ -295,7 +296,7 @@ describe("claxedo connect", () => {
 
     const second = connect([], h.deps)
     await until(() => h.cp.beats().length >= 1, "resumed beat")
-    expect(h.cp.log.map((entry) => entry.path)).toEqual([
+    expect(h.cp.log.map((entry) => entry.path).filter((path) => path !== EVENTS_PATH)).toEqual([
       "/api/claxedo/host/enrollments/acquire",
       "/api/claxedo/host/enrollments/heartbeat",
     ])

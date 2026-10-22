@@ -52,6 +52,18 @@ export const TERMINAL_AUTHORITY_UNAVAILABLE: PtyAccessRefusal = {
   message: "Terminal stream authority is unavailable",
 }
 
+/** How long before a lease's deadline a stream renews it, and the least a held lease may have left to be run on. */
+export const READ_RENEW_WINDOW_MS = 5_000
+
+/** What the verified stamp alone refuses, before any authority is asked: a session-scoped token and a viewer reach no terminal. */
+export function terminalCallerRefusal(access: Pick<TerminalAccess, "authority">): PtyAccessRefusal | undefined {
+  const authority = access.authority
+  if (!authority) return undefined
+  if (authority.sessionId !== undefined) return PTY_SCOPE_REFUSAL
+  if (authority.role === "viewer") return TERMINAL_ROLE_REFUSAL
+  return undefined
+}
+
 export async function authorizeTerminal(
   policy: SessionAccessPolicy | undefined,
   access: TerminalAccess,
@@ -59,8 +71,8 @@ export async function authorizeTerminal(
 ): Promise<TerminalAdmission | PtyAccessRefusal> {
   const authority = access.authority
   if (!authority) return policy ? await policy.authorize({ ...access, operation: "pty_write" }) : { allowed: true }
-  if (authority.sessionId !== undefined) return PTY_SCOPE_REFUSAL
-  if (authority.role === "viewer") return TERMINAL_ROLE_REFUSAL
+  const refused = terminalCallerRefusal(access)
+  if (refused) return refused
   if (!policy?.authorizeHost) return HOST_AUTHORITY_REQUIRED
   try {
     return await policy.authorizeHost({

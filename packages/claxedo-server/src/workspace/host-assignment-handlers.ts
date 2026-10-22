@@ -26,7 +26,8 @@ import { controlPlaneRateLimitError } from "./runtime-token-guards"
  * machine. No machine signature is checked here: liveness is the enrollment
  * lease and consent is the machine's heartbeat-acked served set. The answer
  * carries no tunnel credential; the machine receives its fenced one in the
- * answer to the heartbeat that acks this assignment.
+ * answer to the heartbeat that acks this assignment, and each verb rings the
+ * machine (`options.hostChanged`) so that heartbeat is its next one.
  */
 
 /** Names, ids and a repository URL — the control-plane JSON bound. */
@@ -125,6 +126,7 @@ export function hostAssignmentHandlers(
           workspaceId,
           properties: { hostId: body.hostId },
         })
+        await options.hostChanged?.({ ownerUserId: auth.user.subject, hostId: body.hostId })
         return c.json({ assignment })
       } catch (err) {
         if (isWorkspaceBackingConflict(err)) return c.json(workspaceBackingConflictBody(), 409)
@@ -159,7 +161,8 @@ export function hostAssignmentHandlers(
           workspaceId,
           metadata: {},
         })
-        return c.json(result)
+        if (result.host_id) await options.hostChanged?.({ ownerUserId: auth.user.subject, hostId: result.host_id })
+        return c.json({ unassigned: result.unassigned })
       } catch (err) {
         if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
         throw err
