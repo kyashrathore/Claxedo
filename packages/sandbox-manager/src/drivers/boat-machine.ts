@@ -1,5 +1,5 @@
 import { shell } from "../command"
-import { MINIMUM_RESTORABLE_WORKSPACE_RUNTIME_VERSION } from "../runtime-version"
+import { MINIMUM_SERVED_WORKSPACE_RUNTIME_VERSION } from "../runtime-version"
 
 // What a Boat machine runs to boot the workspace runtime: the image's trees
 // seeded onto the VM's disk, the runtime's container started from a stub over
@@ -176,7 +176,7 @@ const stubLabel = `docker image inspect --format '{{index .Config.Labels "${IMAG
 const treesFunctions = [
   `trees_of() { printf '%s/${PERSISTENT_ROOT}/image-%s' "$(pwd)" "$(printf %s "$1" | sed 's/[^A-Za-z0-9._-]/-/g')"; }`,
   `seeded() { [ -f "$1/${IMAGE_TREES_COMPLETE_MARKER}" ] && [ -f "$1/${STUB_IMAGE_ARCHIVE}" ] && [ -f "$1/${IMAGE_ENV_FILE}" ]; }`,
-  `served() { version=$(cat "$1/${VERSION_FILE}" 2>/dev/null) && [ -n "$version" ] && [ "$(printf '%s\\n%s\\n' ${MINIMUM_RESTORABLE_WORKSPACE_RUNTIME_VERSION} "$version" | sort -V | head -n 1)" = ${MINIMUM_RESTORABLE_WORKSPACE_RUNTIME_VERSION} ]; }`,
+  `served() { version=$(cat "$1/${VERSION_FILE}" 2>/dev/null) && [ -n "$version" ] && [ "$(printf '%s\\n%s\\n' ${MINIMUM_SERVED_WORKSPACE_RUNTIME_VERSION} "$version" | sort -V | head -n 1)" = ${MINIMUM_SERVED_WORKSPACE_RUNTIME_VERSION} ]; }`,
 ].join(" && ")
 
 /**

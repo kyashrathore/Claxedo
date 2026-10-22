@@ -151,7 +151,7 @@ A snapshot is bound to the image it was taken from, so a restored workspace
 keeps the runtime build it was captured with until it starts fresh, as the
 Modal and Vercel drivers' filesystem snapshots do. A restore whose recorded
 runtime version is below the control plane's
-`MINIMUM_RESTORABLE_WORKSPACE_RUNTIME_VERSION` (`sandbox-manager`
+`MINIMUM_SERVED_WORKSPACE_RUNTIME_VERSION` (`sandbox-manager`
 `runtime-version.ts`) is refused as `runtime_outdated`. Raise that minimum,
 together with the runtime version, for a security-relevant runtime change
 alone: every workspace saved below it must start fresh.

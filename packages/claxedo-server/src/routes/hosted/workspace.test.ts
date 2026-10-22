@@ -651,13 +651,14 @@ describe("hosted connection", () => {
       allowed: true, role: "owner", workspace: { workspace_id: "ws_1", org_id: "org_1", backing: "cloud-vm" },
     }) })
     const ensure = vi.fn()
-    const { app } = buildApp({ authority, sandboxManager: {
-      target: async () => ({ status: "ready", hostId: "host_1", epoch: 1, imageOutdated: true }), ensure,
+    const { app, capture } = buildApp({ authority, sandboxManager: {
+      target: async () => ({ status: "ready", hostId: "host_1", epoch: 1, labels: { image: "ghcr.io/test/sandbox:0" }, imageOutdated: true }), ensure,
     } as unknown as SandboxManager })
     const res = await app.fetch(get("/ws_1/connection"))
     expect(res.status).toBe(200)
-    expect(await res.json()).toMatchObject({ runtimeAccessToken: "rat-token", hostId: "host_1", imageOutdated: true })
+    expect(await res.json()).toMatchObject({ runtimeAccessToken: "rat-token", hostId: "host_1", runtimeImage: "ghcr.io/test/sandbox:0", imageOutdated: true })
     expect(authority.recordRuntimeAccessToken).toHaveBeenCalledTimes(1)
+    expect(capture).toHaveBeenCalledWith("user_1", "sandbox.runtime_outdated_served", expect.objectContaining({ workspace_id: "ws_1", runtimeImage: "ghcr.io/test/sandbox:0" }))
     expect(ensure).not.toHaveBeenCalled()
   })
 

@@ -21,7 +21,7 @@ import {
 } from "../workspace/runtime-token-guards"
 import type { RuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import { cloudRuntimeLifecycle } from "@claxedo/server-core/workspace/cloud-runtime-readiness"
-import { sandboxCheckpointUnusable, sandboxLeaseEndedUnderStart, sandboxRuntimeBootFailure, sandboxStartFailureReason, type SandboxManager, type SandboxTargetResult } from "@claxedo/sandbox-manager"
+import { SANDBOX_IMAGE_LABEL, sandboxCheckpointUnusable, sandboxLeaseEndedUnderStart, sandboxRuntimeBootFailure, sandboxStartFailureReason, type SandboxManager, type SandboxTargetResult } from "@claxedo/sandbox-manager"
 import { sessionHostAdmits } from "../authority/session-hosts"
 import { workspaceRoleAllowsWrite } from "../authority/pulled-session"
 import { mintSessionHostConnection } from "./session-host-connection"
@@ -136,7 +136,7 @@ async function mintCloudConnection(
     workspaceId: string
     homeRegion: ClaxedoRegion
     relayUrl: string
-    target: { hostId: string; epoch: number; routingId?: string; driverResourceId?: string; imageOutdated?: true }
+    target: { hostId: string; epoch: number; routingId?: string; driverResourceId?: string; labels?: Record<string, string>; imageOutdated?: true }
     actor: RuntimeActor
     previousJti?: string
   },
@@ -195,6 +195,17 @@ async function mintCloudConnection(
     orgId,
     properties: { backing: "cloud-vm", role, homeRegion, leaseEpoch: target.epoch },
   })
+  const runtimeImage = target.labels?.[SANDBOX_IMAGE_LABEL]
+  if (target.imageOutdated) {
+    captureWorkspaceTelemetry({
+      services,
+      auth,
+      event: "sandbox.runtime_outdated_served",
+      workspaceId,
+      orgId,
+      properties: { homeRegion, leaseEpoch: target.epoch, ...(runtimeImage ? { runtimeImage } : {}) },
+    })
+  }
   if (previousJti) {
     await authority.revokeRuntimeAccessToken(auth, { jti: previousJti, workspaceId })
   }
@@ -213,6 +224,7 @@ async function mintCloudConnection(
       tokenExpiresAt: token.tokenExpiresAt,
       role,
       hostId: target.hostId,
+      ...(runtimeImage ? { runtimeImage } : {}),
       ...(target.imageOutdated ? { imageOutdated: true as const } : {}),
     },
   } as const
