@@ -14,6 +14,7 @@ import { createD1HostTunnelTargetResolver } from "../d1/host-tunnel-relay-target
 import { hostedBrokerCredentialReader, hostedCredentialsEnabled, hostedOrgCredentials } from "../../../credentials/worker/index"
 import { createCredentialRefusals } from "../../../credentials/credential-refusals"
 import { createHostedEgressBroker, HOSTED_EGRESS_BROKER_GUARD_EXEMPTION, type HostedEgressBroker } from "../../../credentials/hosted-egress-broker"
+import { createMachineProviderConfig } from "../../../credentials/machine-provider-config"
 import { d1UserAgentConfigRepository } from "../d1/user-agent-config"
 import { hostedSandboxDriverKeys } from "../../../sandbox/hosted-sandbox-driver-keys"
 import { hostedOrgAdministers } from "../../../credentials/worker/org-administers"
@@ -269,11 +270,17 @@ export function composeBetterAuthD1UserDeployedControlPlane(
         read: (orgId) => hostedBrokerCredentialReader(orgId, { database: input.controlPlaneDatabase, env: input.env }),
         workspaceOwner: async (workspaceId) => await authority.resolveWorkspaceOwner?.(workspaceId),
         sandboxManager,
+        machine: (enrollmentId) => authority.machineBrokerSubject(enrollmentId),
         env: input.env,
         origin,
         telemetry: plane.services.telemetry,
         credentialRefusals,
       })
+    : undefined
+  // Every `claxedo connect` machine spends its owner's accounts through this
+  // broker, whatever the machine's network.
+  const machineProviderConfig = broker && plane.orgCredentials
+    ? createMachineProviderConfig({ store: authority, credentials: plane.orgCredentials, broker, ...(input.now ? { now: input.now } : {}) })
     : undefined
   const delivery = sandbox && plane.orgCredentials && sandboxManager && workspaceSecretBrokering
     ? createHostedRuntimeDelivery({
@@ -348,6 +355,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
       product: STATIC_PRODUCT_DESCRIPTORS["user-deployed"],
       requestGuardExemptions: broker ? [HOSTED_EGRESS_BROKER_GUARD_EXEMPTION] : [],
       ...(broker ? { egressBroker: broker.handler } : {}),
+      ...(machineProviderConfig ? { machineProviderConfig } : {}),
       ...(credentialRefusals ? { credentialRefusals } : {}),
       usageLedger: createD1UsageLedger({ database: input.controlPlaneDatabase, ...(input.now ? { now: input.now } : {}) }),
     },

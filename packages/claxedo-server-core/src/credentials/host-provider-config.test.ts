@@ -4,6 +4,7 @@ import type { CredentialSnapshot } from "@claxedo/agent-runtime-contract"
 import {
   HOST_PROVIDER_CONFIG_VERSION,
   hostProviderConfigProjectAuth,
+  layeredHostProviderConfig,
   parseHostProviderConfig,
   serializeHostProviderConfig,
 } from "./host-provider-config"
@@ -19,8 +20,14 @@ const PUSHED = {
 describe("the sealed payload", () => {
   test("round trips through the shape the control plane writes", () => {
     const text = serializeHostProviderConfig({ openai: PUSHED }, "local")
-    expect(JSON.parse(text)).toEqual({ version: HOST_PROVIDER_CONFIG_VERSION, credentials: snapshot({ openai: PUSHED }) })
+    expect(JSON.parse(text)).toEqual({ version: HOST_PROVIDER_CONFIG_VERSION, source: "owner", credentials: snapshot({ openai: PUSHED }) })
     expect(parseHostProviderConfig(text).credentials.accounts.local).toEqual({ openai: PUSHED })
+  })
+
+  test("names its source, and a revision sealed before any was built is the owner's", () => {
+    expect(parseHostProviderConfig(serializeHostProviderConfig({ openai: PUSHED }, "local", {}, "control-plane")).source).toBe("control-plane")
+    expect(parseHostProviderConfig(JSON.stringify({ version: 1, credentials: snapshot({ openai: PUSHED }) })).source).toBe("owner")
+    expect(() => parseHostProviderConfig(JSON.stringify({ version: 1, source: "someone", credentials: snapshot({}) }))).toThrow(/source someone/)
   })
 
   test("an empty configuration is a payload, not an absent one", () => {
@@ -99,5 +106,30 @@ describe("what a host answers once a configuration is pushed", () => {
     const answer = await hostProviderConfigProjectAuth(broker, pushed, () => "owner", () => ({ openai: "org" }))({})
     expect(answer.direct).toEqual({ owner: { "codex-app-server": plan } })
     expect(Object.keys(answer.direct ?? {})).toEqual(["owner"])
+  })
+})
+
+describe("what a connected machine spends from its two configurations", () => {
+  const built = { baseUrl: "https://cp.test/bindings/b", placeholder: "stand-in", authMode: "api-key", expiresAt: 2_000 } as const
+  const of = (person: string, providers: Record<string, unknown>, source: "owner" | "control-plane", direct = {}) =>
+    parseHostProviderConfig(serializeHostProviderConfig(providers as Record<string, typeof PUSHED>, person, direct, source)).credentials
+
+  test("every built row, with a provider the owner pushed by hand written over the built one", () => {
+    expect(layeredHostProviderConfig(of("owner", { openai: PUSHED }, "owner"), of("owner", { openai: built, anthropic: built }, "control-plane")))
+      .toEqual({ machineOwnerUserId: "owner", accounts: { owner: { openai: PUSHED, anthropic: built } } })
+  })
+
+  test("either alone is spent alone, and neither is nothing", () => {
+    expect(layeredHostProviderConfig(undefined, of("owner", { anthropic: built }, "control-plane"))?.accounts.owner).toEqual({ anthropic: built })
+    expect(layeredHostProviderConfig(of("owner", { openai: PUSHED }, "owner"), undefined)?.accounts.owner).toEqual({ openai: PUSHED })
+    expect(layeredHostProviderConfig(undefined, undefined)).toBeUndefined()
+  })
+
+  test("direct rows come from the owner's push alone, and a push naming someone else adds nothing", () => {
+    const plan = { delivery: "direct", baseUrl: "https://chatgpt.com", secret: "plan-token", authKind: "subscription" } as const
+    expect(layeredHostProviderConfig(of("owner", {}, "owner", { "codex-app-server": plan }), of("owner", { anthropic: built }, "control-plane")))
+      .toEqual({ machineOwnerUserId: "owner", accounts: { owner: { anthropic: built } }, direct: { owner: { "codex-app-server": plan } } })
+    expect(layeredHostProviderConfig(of("earlier", { openai: PUSHED }, "owner"), of("owner", { anthropic: built }, "control-plane")))
+      .toEqual({ machineOwnerUserId: "owner", accounts: { owner: { anthropic: built } } })
   })
 })

@@ -238,6 +238,41 @@ export function storedHostProviderIds(json: string | null): string[] {
   return value.filter((entry): entry is string => typeof entry === "string")
 }
 
+/**
+ * A `claxedo connect` machine's provider configuration as the control plane
+ * reads it before building one from the owner's stored accounts.
+ */
+export type MachineProviderConfigState = {
+  enrollmentId: string
+  hostId: string
+  ownerUserId: string
+  /** The organization the machine was invited into, whose accounts it spends. */
+  orgId: string
+  servingGeneration: number
+  sealingPublicKey: string | null
+  nextRevision: number
+  /** An owner's push the machine has not acked: a build waits behind it rather than replace it unseen. */
+  ownerPushPending: boolean
+  /** The stored revision is sealed to a key the machine no longer declares, so it holds nothing that opens. */
+  rekeyed: boolean
+  /** The last build, absent once the owner's accounts changed since it or an owner's push replaced it before the machine acked it. */
+  built?: { generation: number; renewAt: number | null; accounts: string }
+}
+
+/** One build the control plane stores for a machine, ciphertext only. */
+export type MachineProviderConfigBuild = {
+  revision: number
+  sealed: string
+  sealingPublicKey: string
+  providerIds: string[]
+  /** The serving generation the build's stand-ins name. */
+  generation: number
+  /** When the build's stand-ins are past half their life; null when none expires. */
+  renewAt: number | null
+  /** Which stored account each provider the build delivers resolves to, by `deliveredAccountsIdentity`. */
+  accounts: string
+}
+
 export type HostMachineHeartbeatResult = {
   expires_at: number
   last_seen_at: number
@@ -254,6 +289,8 @@ export type HostProviderConfigTarget = {
   enrollment_id: string
   host_id: string
   display_name?: string
+  /** An `invitation` machine spends the owner's accounts through the control plane's broker, so the owner's push carries no secret to it. */
+  enrolled_via: HostEnrolledVia
   /** Absent until a beat declares one; a push is refused rather than sealed to nothing. */
   sealing_public_key: string | null
   /**

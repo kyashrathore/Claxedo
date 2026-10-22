@@ -1,6 +1,6 @@
 import type { CredentialSnapshot, ProviderDirect, ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
 /**
- * What the owner sealed for a host, once it is open again.
+ * What the control plane sealed for a host, once it is open again.
  *
  * The plaintext is a `CredentialSnapshot` naming its owner as the machine
  * owner: the same shape `projectAuth` answers, so a pushed credential reaches a
@@ -8,12 +8,18 @@ import type { CredentialSnapshot, ProviderDirect, ProviderProjectionSource } fro
  * rather than a second credential path beside it. Nothing here decrypts — the
  * process holding the machine's sealing key does that and hands the text over.
  *
+ * A revision comes from one of two sources. The owner's push (`owner`) is the
+ * rows they wrote by hand; the control plane's build (`control-plane`) is
+ * their stored accounts bound on its broker, which it seals for a
+ * `claxedo connect` machine on its own. A machine keeps the latest of each and
+ * spends both (`layeredHostProviderConfig`).
+ *
  * Precedence, and it is the whole policy: a provider the owner pushed replaces
- * whatever this machine would have answered for their own account on that
- * provider, and a provider the owner did not push, or chose the org account
- * for, is untouched. A harness only falls back to the login its own box holds
- * when NO row names its provider, so naming one here is what puts the owner's
- * account ahead of the machine's.
+ * the built row for that provider and whatever this machine would have
+ * answered for their own account on it, and a provider the owner did not
+ * push, or chose the org account for, is untouched. A harness only falls back
+ * to the login its own box holds when NO row names its provider, so naming one
+ * here is what puts the owner's account ahead of the machine's.
  */
 
 import { credentialSnapshot } from "@claxedo/agent-runtime-contract"
@@ -22,23 +28,33 @@ import type { AccountSources } from "./account-holder"
 /** Bumped when the sealed shape changes; a host that cannot read a version refuses the whole revision. */
 export const HOST_PROVIDER_CONFIG_VERSION = 1
 
+export type HostProviderConfigSource = "owner" | "control-plane"
+
+const HOST_PROVIDER_CONFIG_SOURCES: readonly HostProviderConfigSource[] = ["owner", "control-plane"]
+
 export type HostProviderConfig = {
   version: number
+  source: HostProviderConfigSource
   credentials: CredentialSnapshot
 }
 
-/** `direct` is the owner's accounts their machine's in-process Pi spends as secrets; nobody else's rows ever ride here. */
+/**
+ * `direct` is the owner's accounts their desktop's in-process Pi spends as
+ * secrets; nobody else's rows ever ride here, and a `control-plane` build
+ * carries none.
+ */
 export function serializeHostProviderConfig(
   providers: Record<string, ProviderProjectionSource>,
   owner: string,
   direct: Record<string, ProviderDirect> = {},
+  source: HostProviderConfigSource = "owner",
 ): string {
   const credentials: CredentialSnapshot = {
     machineOwnerUserId: owner,
     accounts: { [owner]: providers },
     ...(Object.keys(direct).length > 0 ? { direct: { [owner]: direct } } : {}),
   }
-  return JSON.stringify({ version: HOST_PROVIDER_CONFIG_VERSION, credentials })
+  return JSON.stringify({ version: HOST_PROVIDER_CONFIG_VERSION, source, credentials })
 }
 
 /**
@@ -65,6 +81,10 @@ export function parseHostProviderConfig(text: string): HostProviderConfig {
   if (record.version !== HOST_PROVIDER_CONFIG_VERSION) {
     throw new Error(`pushed provider configuration is version ${String(record.version)}, not ${HOST_PROVIDER_CONFIG_VERSION}`)
   }
+  // A revision sealed before the control plane built any is the owner's push,
+  // and a machine keeps such a revision on disk across the upgrade.
+  const source = record.source === undefined ? "owner" : HOST_PROVIDER_CONFIG_SOURCES.find((known) => known === record.source)
+  if (!source) throw new Error(`pushed provider configuration names source ${String(record.source)}, which this host cannot read`)
   // Validated with the runtime's own reader, so a row that would be refused on
   // apply is refused on arrival instead, where the revision can stay unacked.
   // The validated rows are what is kept: an already-resolved projection is a
@@ -74,7 +94,30 @@ export function parseHostProviderConfig(text: string): HostProviderConfig {
   // absent.
   const credentials = credentialSnapshot(record.credentials, {})
   if (!credentials) throw new Error("pushed provider configuration names a provider row this host cannot read")
-  return { version: HOST_PROVIDER_CONFIG_VERSION, credentials }
+  return { version: HOST_PROVIDER_CONFIG_VERSION, source, credentials }
+}
+
+/**
+ * What a machine spends from the latest revision of each source: the rows the
+ * control plane built for its owner's accounts, with every provider the owner
+ * pushed by hand written over the built row for that provider. Direct rows
+ * come from the owner's push alone. A snapshot naming another person than the
+ * other's is an earlier enrollment's and adds nothing.
+ */
+export function layeredHostProviderConfig(
+  pushed: CredentialSnapshot | undefined,
+  built: CredentialSnapshot | undefined,
+): CredentialSnapshot | undefined {
+  const base = built ?? pushed
+  if (!base) return undefined
+  const person = base.machineOwnerUserId
+  const own = pushed?.machineOwnerUserId === person ? pushed : undefined
+  const direct = own?.direct?.[person]
+  return {
+    machineOwnerUserId: person,
+    accounts: { [person]: { ...built?.accounts[person], ...own?.accounts[person] } },
+    ...(direct ? { direct: { [person]: direct } } : {}),
+  }
 }
 
 /**

@@ -196,7 +196,12 @@ const ENTRIES = [
   // (`authority/adapters/d1/host-invitation-authority.ts`), and what a
   // machine's provider configuration stores
   // (`authority/adapters/d1/host-provider-config-authority.ts`).
-  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 189, packages: 23 },
+  // Every entry builds each `claxedo connect` machine's provider
+  // configuration from its owner's accounts on the machine's beat
+  // (`credentials/machine-provider-config.ts`), and mounts the routes a
+  // machine is connected through from their own module
+  // (`deployments/hosted-shared/hosted-host-routes.ts`).
+  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 191, packages: 23 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the
   // manifest, and `cloudflare:workers` for the supervisor and its entrypoints,
@@ -223,7 +228,7 @@ const ENTRIES = [
   // The hosted connections setup picks which code-host connection can read a
   // pasted repository by the rule the local connections host shares
   // (`connections/repository-access.ts`).
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 242, packages: 27 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 244, packages: 27 },
   // The full-hosted entry alone carries the session rows pass
   // (`session/session-rows-pass.ts`) and its wiring to the sandbox and the
   // relay (`hosted-workerd/full-hosted-sandbox.ts`): it delivers the pass to a
@@ -238,7 +243,7 @@ const ENTRIES = [
   // their readers (`workspace/runtime-lost.ts`,
   // `authority/adapters/d1/runtime-lost-sessions.ts`), since only this entry
   // has cloud runtimes to lose.
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 254, packages: 27 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 256, packages: 27 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {

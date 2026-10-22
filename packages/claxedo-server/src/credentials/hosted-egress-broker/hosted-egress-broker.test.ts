@@ -18,7 +18,7 @@ import { testRequestAuthenticationAdapter } from "../../test-support/request-aut
 import { HOSTED_CREDENTIALS_FLAG, hostedBrokerCredentialReader, hostedOrgCredentials } from "../worker/index"
 import { hostedRepositoryCloneDelivery } from "../../workspace/repository-clone"
 import { hostedRepositoryBindings } from "./repository-binding"
-import { createHostedEgressBroker, HOSTED_EGRESS_BROKER_GUARD_EXEMPTION, RUNTIME_UPSTREAM_LANES, verifyBrokerPlaceholder } from "./index"
+import { createHostedEgressBroker, HOSTED_EGRESS_BROKER_GUARD_EXEMPTION, RUNTIME_UPSTREAM_LANES, verifyBrokerPlaceholder, type MachineBrokerLease, type MachineBrokerSubject } from "./index"
 
 /**
  * A Boat sandbox's turn, end to end through the composed control plane: the
@@ -89,6 +89,10 @@ afterEach(() => workspaceOwners.clear())
 const workspaceOwner = async (workspaceId: string) =>
   workspaceOwners.has(workspaceId) ? workspaceOwners.get(workspaceId) : { userId: "alice", actorId: "actor-alice", orgId: "org-1", projectId: "project-1" }
 
+/** Each connected machine's enrollment as the authority answers now; a revoked or paused one, or one whose owner left, answers none. */
+const machines = new Map<string, MachineBrokerSubject | undefined>()
+afterEach(() => machines.clear())
+
 async function composition(options: { now?: () => number; upstreamTimeoutMs?: number; sandboxManager?: Pick<SandboxManager, "target"> } = {}) {
   const instance = await miniflareControlPlaneDatabase()
   active.push(instance)
@@ -103,6 +107,7 @@ async function composition(options: { now?: () => number; upstreamTimeoutMs?: nu
     read: (orgId) => hostedBrokerCredentialReader(orgId, { database, env: CREDENTIAL_ENV }),
     workspaceOwner,
     sandboxManager: options.sandboxManager ?? sandboxes.sandboxManager,
+    machine: async (enrollmentId) => machines.get(enrollmentId),
     env: signing,
     origin: ORIGIN,
     fetch: upstream.fetch,
@@ -168,7 +173,16 @@ async function composition(options: { now?: () => number; upstreamTimeoutMs?: nu
     if ("unavailable" in projection || !projection.placeholder) throw new Error("the account was not bound")
     return { baseUrl: projection.baseUrl, placeholder: projection.placeholder, authMode: projection.authMode, expiresAt: projection.expiresAt }
   }
-  return { app, store, upstream, delivered, signing, sandboxes, telemetry, broker }
+  /** What a connected machine's built configuration carries for one stored account. */
+  const deliveredToMachine = async (credential: CredentialMetadata, machine: MachineBrokerLease) => {
+    const secret = await store.resolveCredentialSecretById?.(credential.id)
+    const destination = builtInProviderDestination({ providerId: credential.provider_id, kind: credential.kind, secret: secret ?? "" })
+    if (!destination) throw new Error("the account has no destination")
+    const projection = await broker.machineBinder({ orgId: "org-1", machine }).bind(credential, destination)
+    if ("unavailable" in projection || !projection.placeholder) throw new Error("the account was not bound")
+    return { baseUrl: projection.baseUrl, placeholder: projection.placeholder, authMode: projection.authMode, apiPath: projection.apiPath }
+  }
+  return { app, store, upstream, delivered, deliveredToMachine, signing, sandboxes, telemetry, broker }
 }
 
 describe("a sandbox spending its organization account through the hosted broker", () => {
@@ -618,5 +632,105 @@ describe("a sandbox with no provider edge cloning its private repository through
     expect(await refusal(await git("/acme/private.git/info/refs", { headers: { authorization: `Bearer ${account.placeholder}` } })))
       .toEqual([403, "binding_not_permitted"])
     expect(upstream.seen).toHaveLength(0)
+  })
+})
+
+describe("a connected machine spending its owner's accounts through the hosted broker", () => {
+  const MACHINE: MachineBrokerLease = { enrollmentId: "enrollment_1", servingGeneration: 3, hostId: "host_machine" }
+  const LIVE: MachineBrokerSubject = { ownerUserId: "alice", orgId: "org-1", hostId: "host_machine", servingGeneration: 3 }
+  const refusal = async (response: Response) => [response.status, (await response.json() as { error: { code: string } }).error.code]
+
+  test("the stand-in reaches the vendor with the real key, and is refused once the enrollment is revoked or paused, superseded, moved to another host or another organization", async () => {
+    const { app, store, upstream, deliveredToMachine } = await composition()
+    const key = await store.putCredential({ owner: "alice", provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-real-key" })
+    machines.set(MACHINE.enrollmentId, LIVE)
+    const { baseUrl, placeholder, authMode } = await deliveredToMachine(key, MACHINE)
+    expect(authMode).toBe("api-key")
+    const send = () => app.request(`${baseUrl}/v1/messages`, { method: "POST", headers: { "x-api-key": placeholder }, body: "{}" })
+
+    expect((await send()).status).toBe(200)
+    expect(upstream.seen.map((sent) => sent.request.headers.get("x-api-key"))).toEqual(["sk-ant-api03-real-key"])
+    expect(JSON.stringify([...upstream.seen[0].request.headers])).not.toContain(placeholder)
+
+    machines.set(MACHINE.enrollmentId, undefined)
+    expect(await refusal(await send())).toEqual([403, "binding_unavailable"])
+    machines.set(MACHINE.enrollmentId, { ...LIVE, servingGeneration: 4 })
+    expect(await refusal(await send())).toEqual([403, "binding_unavailable"])
+    machines.set(MACHINE.enrollmentId, { ...LIVE, hostId: "host_other" })
+    expect(await refusal(await send())).toEqual([403, "binding_unavailable"])
+    machines.set(MACHINE.enrollmentId, { ...LIVE, orgId: "org-2" })
+    expect(await refusal(await send())).toEqual([403, "binding_unavailable"])
+    machines.set(MACHINE.enrollmentId, LIVE)
+    expect((await send()).status).toBe(200)
+    expect(upstream.seen).toHaveLength(2)
+  })
+
+  test("the stand-in names the machine's enrollment and no workspace, and binds per provider under that enrollment", async () => {
+    const { store, signing, deliveredToMachine, delivered } = await composition()
+    const key = await store.putCredential({ owner: "alice", provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-real-key" })
+    const first = await deliveredToMachine(key, MACHINE)
+    const renewed = await deliveredToMachine(key, { ...MACHINE, servingGeneration: 4 })
+    const other = await deliveredToMachine(key, { ...MACHINE, enrollmentId: "enrollment_2" })
+    const sandbox = await delivered(key, { workspaceId: MACHINE.enrollmentId })
+    expect(renewed.baseUrl).toBe(first.baseUrl)
+    expect(new Set([first.baseUrl, other.baseUrl, sandbox.baseUrl]).size).toBe(3)
+    const claims = await verifyBrokerPlaceholder(first.placeholder, signing)
+    expect(claims).toMatchObject({
+      userId: "alice", orgId: "org-1", enrollmentId: MACHINE.enrollmentId, leaseId: `host:${MACHINE.enrollmentId}`,
+      leaseGeneration: 3, runtimeId: "host_machine", credentialId: key.id,
+    })
+    expect(claims).not.toHaveProperty("workspaceId")
+  })
+
+  test("a machine's stand-in spends no workspace's binding, and a workspace's spends no machine's", async () => {
+    const { app, store, upstream, deliveredToMachine, delivered } = await composition()
+    const key = await store.putCredential({ owner: "alice", provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-real-key" })
+    machines.set(MACHINE.enrollmentId, LIVE)
+    const machine = await deliveredToMachine(key, MACHINE)
+    const sandbox = await delivered(key, { workspaceId: "ws_root" })
+    const at = (baseUrl: string, placeholder: string) => app.request(`${baseUrl}/v1/messages`, { method: "POST", headers: { "x-api-key": placeholder }, body: "{}" })
+    expect(await refusal(await at(sandbox.baseUrl, machine.placeholder))).toEqual([403, "binding_not_permitted"])
+    expect(await refusal(await at(machine.baseUrl, sandbox.placeholder))).toEqual([403, "binding_not_permitted"])
+    expect(upstream.seen).toHaveLength(0)
+  })
+
+  test("the organization's account is spent on a machine only while its owner chooses it and the enrollment answers", async () => {
+    const { app, store, upstream, deliveredToMachine } = await composition()
+    const team = await store.putCredential({ owner: null, provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-team-key" })
+    await store.setAccountSources(["anthropic", "claude-sdk", "claude-acp"], "org", "org-1", "alice")
+    machines.set(MACHINE.enrollmentId, LIVE)
+    const { baseUrl, placeholder } = await deliveredToMachine(team, MACHINE)
+    const send = () => app.request(`${baseUrl}/v1/messages`, { method: "POST", headers: { "x-api-key": placeholder }, body: "{}" })
+    expect((await send()).status).toBe(200)
+    await store.setAccountSources(["anthropic", "claude-sdk", "claude-acp"], "own", "org-1", "alice")
+    expect(await refusal(await send())).toEqual([403, "binding_unavailable"])
+    await store.setAccountSources(["anthropic", "claude-sdk", "claude-acp"], "org", "org-1", "alice")
+    machines.set(MACHINE.enrollmentId, undefined)
+    expect(await refusal(await send())).toEqual([403, "binding_unavailable"])
+    expect(upstream.seen.map((sent) => sent.request.headers.get("x-api-key"))).toEqual(["sk-ant-api03-team-key"])
+  })
+
+  test("a ChatGPT plan's stand-in names the plan's account the way the plan's token does, and the vendor gets the real token beside the account header the broker sets", async () => {
+    const { app, store, upstream, deliveredToMachine } = await composition()
+    const plan = await store.putCredential({
+      owner: "alice", provider_id: "codex-app-server", kind: "oauth_token", source: "managed",
+      secret: JSON.stringify({ tokens: { access_token: "chatgpt-real-access", account_id: "acct_plan" } }),
+    })
+    machines.set(MACHINE.enrollmentId, LIVE)
+    const { baseUrl, placeholder, authMode, apiPath } = await deliveredToMachine(plan, MACHINE)
+    expect([authMode, apiPath]).toEqual(["bearer", "/backend-api/codex"])
+    const claims = JSON.parse(Buffer.from(placeholder.split(".")[1], "base64url").toString("utf8")) as Record<string, unknown>
+    expect(claims["https://api.openai.com/auth"]).toEqual({ chatgpt_account_id: "acct_plan" })
+
+    const response = await app.request(`${baseUrl}/backend-api/codex/responses`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${placeholder}`, "chatgpt-account-id": "acct_from_the_client", "content-type": "application/json" },
+      body: "{}",
+    })
+    expect(response.status).toBe(200)
+    const [sent] = upstream.seen
+    expect(sent.request.url).toBe("https://chatgpt.com/backend-api/codex/responses")
+    expect(sent.request.headers.get("authorization")).toBe("Bearer chatgpt-real-access")
+    expect(sent.request.headers.get("chatgpt-account-id")).toBe("acct_plan")
   })
 })

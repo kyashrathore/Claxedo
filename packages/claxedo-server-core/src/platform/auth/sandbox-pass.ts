@@ -28,6 +28,13 @@ import type { SandboxPassRegister } from "./sandbox-pass-register"
  * `claxedo-egress-broker` audience naming the binding and the stored account
  * it spends. The runtime's own HS256 session credential is not: it is minted inside the
  * sandbox and never presented to this plane.
+ *
+ * A connected machine's placeholder is the one pass that names no workspace:
+ * it names the machine's enrollment instead ({@link MachinePassScope}), since
+ * one machine serves every workspace its owner assigns it under one
+ * enrollment. Only {@link verifyScopedPass} reads such a pass;
+ * {@link verifySandboxPass} refuses it, so no audience that expects a
+ * workspace is ever handed one.
  */
 export type SandboxPassScope = Readonly<{
   userId: string
@@ -37,21 +44,36 @@ export type SandboxPassScope = Readonly<{
   sessionId?: string
 }>
 
+/** A connected machine's pass: one user, one organization and the machine's enrollment, in place of a workspace. */
+export type MachinePassScope = Readonly<{
+  userId: string
+  orgId: string
+  enrollmentId: string
+}>
+
 export type SandboxPassInput = Readonly<{
   audience: string
-  scope: SandboxPassScope
   operations: readonly string[]
-  /** Claims beyond the scope, under the audience's own names; none may reuse a family claim name. */
-  extra?: Readonly<Record<string, string>>
+  /**
+   * Claims beyond the scope, under the audience's own names; none may reuse a
+   * family claim name. A claim is a string, or a record of strings for a
+   * client that reads a nested claim off the token it is handed.
+   */
+  extra?: Readonly<Record<string, string | Readonly<Record<string, string>>>>
+  scope: SandboxPassScope | MachinePassScope
   ttlSeconds?: number
   now?: () => number
-  /** Where the minted `jti` is written down, so the pass can be taken back before it expires. */
+  /**
+   * Where the minted `jti` is written down, so the pass can be taken back
+   * before it expires. The register finds passes by workspace, so a machine's
+   * pass, which names none, is refused one.
+   */
   register?: SandboxPassRegister
 }>
 
-export type SandboxPass = Readonly<{
+export type ScopedPass<Scope extends SandboxPassScope | MachinePassScope> = Readonly<{
   audience: string
-  scope: SandboxPassScope
+  scope: Scope
   /** Empty only for a token carrying no `operations` claim; whether that is acceptable is the audience's rule. */
   operations: readonly string[]
   extra: Readonly<Record<string, unknown>>
@@ -59,6 +81,8 @@ export type SandboxPass = Readonly<{
   issuedAt: number
   expiresAt: number
 }>
+
+export type SandboxPass = ScopedPass<SandboxPassScope>
 
 export const SANDBOX_PASS_DEFAULT_TTL_SECONDS = 30 * 60
 export const SANDBOX_PASS_MAX_TTL_SECONDS = 60 * 60
@@ -78,6 +102,7 @@ const SCOPE_CLAIMS = {
   workspaceId: "workspace_id",
   projectId: "project_id",
   sessionId: "session_id",
+  enrollmentId: "enrollment_id",
 } as const
 
 const FAMILY_CLAIMS = new Set<string>([...Object.values(SCOPE_CLAIMS), "operations", "iss", "aud", "sub", "jti", "iat", "exp", "nbf"])
@@ -88,18 +113,39 @@ function lifetimeSeconds(requested: number | undefined, fault: CredentialFault) 
   return Math.min(SANDBOX_PASS_MAX_TTL_SECONDS, Math.max(MIN_TTL_SECONDS, Math.floor(requested)))
 }
 
-export async function mintSandboxPass(input: SandboxPassInput, env: Record<string, string | undefined>, fault: CredentialFault) {
-  const { scope, extra = {} } = input
-  requiredCredentialField(input.audience, "audience", fault)
-  for (const name of ["userId", "orgId", "workspaceId"] as const) requiredCredentialField(scope[name], name, fault)
+function passScopeClaims(scope: SandboxPassScope | MachinePassScope, fault: CredentialFault): Record<string, string> {
+  for (const name of ["userId", "orgId"] as const) requiredCredentialField(scope[name], name, fault)
+  if ("enrollmentId" in scope) {
+    return {
+      [SCOPE_CLAIMS.userId]: scope.userId,
+      [SCOPE_CLAIMS.orgId]: scope.orgId,
+      [SCOPE_CLAIMS.enrollmentId]: requiredCredentialField(scope.enrollmentId, "enrollmentId", fault),
+    }
+  }
+  requiredCredentialField(scope.workspaceId, "workspaceId", fault)
   for (const name of ["projectId", "sessionId"] as const) {
     if (scope[name] !== undefined) requiredCredentialField(scope[name], name, fault)
   }
+  return {
+    [SCOPE_CLAIMS.userId]: scope.userId,
+    [SCOPE_CLAIMS.orgId]: scope.orgId,
+    [SCOPE_CLAIMS.workspaceId]: scope.workspaceId,
+    ...(scope.projectId === undefined ? {} : { [SCOPE_CLAIMS.projectId]: scope.projectId }),
+    ...(scope.sessionId === undefined ? {} : { [SCOPE_CLAIMS.sessionId]: scope.sessionId }),
+  }
+}
+
+export async function mintSandboxPass(input: SandboxPassInput, env: Record<string, string | undefined>, fault: CredentialFault) {
+  const { scope, extra = {} } = input
+  requiredCredentialField(input.audience, "audience", fault)
+  const claims = passScopeClaims(scope, fault)
+  if (input.register && "enrollmentId" in scope) throw fault("a workspace scope to be written to a register")
   if (input.operations.length === 0) throw fault("at least one operation")
   for (const operation of input.operations) requiredCredentialField(operation, "operation", fault)
   for (const [name, value] of Object.entries(extra)) {
     if (FAMILY_CLAIMS.has(name)) throw fault(`a claim name other than ${name}, which the pass family owns`)
-    requiredCredentialField(value, name, fault)
+    if (typeof value === "string") requiredCredentialField(value, name, fault)
+    else for (const [member, nested] of Object.entries(value)) requiredCredentialField(nested, `${name}.${member}`, fault)
   }
   const ttl = lifetimeSeconds(input.ttlSeconds, fault)
   const { alg, key } = await runtimeTokenSigningKey(env, fault)
@@ -108,11 +154,7 @@ export async function mintSandboxPass(input: SandboxPassInput, env: Record<strin
   const jti = randomToken()
   const token = await new SignJWT({
     ...extra,
-    [SCOPE_CLAIMS.userId]: scope.userId,
-    [SCOPE_CLAIMS.orgId]: scope.orgId,
-    [SCOPE_CLAIMS.workspaceId]: scope.workspaceId,
-    ...(scope.projectId === undefined ? {} : { [SCOPE_CLAIMS.projectId]: scope.projectId }),
-    ...(scope.sessionId === undefined ? {} : { [SCOPE_CLAIMS.sessionId]: scope.sessionId }),
+    ...claims,
     operations: [...input.operations],
   })
     .setProtectedHeader({ alg, kid })
@@ -124,7 +166,7 @@ export async function mintSandboxPass(input: SandboxPassInput, env: Record<strin
     .setJti(jti)
     .sign(key)
   const expiresAt = (now + ttl) * 1_000
-  await input.register?.record({ jti, audience: input.audience, scope, issuedAt: now * 1_000, expiresAt })
+  if (!("enrollmentId" in scope)) await input.register?.record({ jti, audience: input.audience, scope, issuedAt: now * 1_000, expiresAt })
   return { token, jti, expiresAt }
 }
 
@@ -133,11 +175,18 @@ function claimString(payload: JWTPayload, name: string) {
   return typeof value === "string" && value ? value : undefined
 }
 
-function passScope(payload: JWTPayload): SandboxPassScope | undefined {
+/** A workspace's scope or a machine's, never both: a pass naming a workspace and an enrollment says nothing trustworthy about either. */
+function passScope(payload: JWTPayload): SandboxPassScope | MachinePassScope | undefined {
   const userId = claimString(payload, SCOPE_CLAIMS.userId)
   const orgId = claimString(payload, SCOPE_CLAIMS.orgId)
+  if (!userId || !orgId || payload.sub !== userId) return undefined
+  if (payload[SCOPE_CLAIMS.workspaceId] === undefined) {
+    const enrollmentId = claimString(payload, SCOPE_CLAIMS.enrollmentId)
+    if (!enrollmentId || payload[SCOPE_CLAIMS.projectId] !== undefined || payload[SCOPE_CLAIMS.sessionId] !== undefined) return undefined
+    return { userId, orgId, enrollmentId }
+  }
   const workspaceId = claimString(payload, SCOPE_CLAIMS.workspaceId)
-  if (!userId || !orgId || !workspaceId || payload.sub !== userId) return undefined
+  if (!workspaceId || payload[SCOPE_CLAIMS.enrollmentId] !== undefined) return undefined
   const scope: { -readonly [K in keyof SandboxPassScope]: SandboxPassScope[K] } = { userId, orgId, workspaceId }
   for (const name of ["projectId", "sessionId"] as const) {
     const claim = SCOPE_CLAIMS[name]
@@ -156,17 +205,32 @@ function passOperations(payload: JWTPayload): readonly string[] | undefined {
   return value.every((item): item is string => typeof item === "string" && item !== "") ? value : undefined
 }
 
+type PassVerification = {
+  audience: string
+  fault: CredentialFault
+  now?: () => number
+  /** Asked only for a well-signed, unexpired pass; a verifier given none answers for the signature alone. */
+  revoked?: (jti: string) => Promise<boolean>
+}
+
+/** A pass that names a workspace; a machine's pass is refused, so an audience that expects a workspace always has one. */
 export async function verifySandboxPass(
   token: string,
   env: Record<string, string | undefined>,
-  options: {
-    audience: string
-    fault: CredentialFault
-    now?: () => number
-    /** Asked only for a well-signed, unexpired pass; a verifier given none answers for the signature alone. */
-    revoked?: (jti: string) => Promise<boolean>
-  },
+  options: PassVerification,
 ): Promise<SandboxPass> {
+  const pass = await verifyScopedPass(token, env, options)
+  const scope = pass.scope
+  if ("enrollmentId" in scope) throw new SandboxPassError(options.audience, "scope is invalid")
+  return { ...pass, scope }
+}
+
+/** A pass that names a workspace or a connected machine's enrollment, for the one audience that serves both. */
+export async function verifyScopedPass(
+  token: string,
+  env: Record<string, string | undefined>,
+  options: PassVerification,
+): Promise<ScopedPass<SandboxPassScope | MachinePassScope>> {
   const { key } = await runtimeTokenVerificationKey(env, options.fault)
   const { payload } = await jwtVerify(token, key, {
     algorithms: [RUNTIME_ACCESS_TOKEN_ALGORITHM],

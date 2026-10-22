@@ -139,7 +139,7 @@ describe("local binding authority", () => {
       },
       injection: { header: "x-api-key" },
     })
-    expect(await local.authority.currentRuntime(await local.runtimeIdentity(workspaceId, "__local__", "local"))).toBe(true)
+    expect(await local.authority.currentRuntime({ ...await local.runtimeIdentity(workspaceId, "__local__", "local"), bindingIds: ["binding"], exp: 0 })).toBe(true)
   })
 
   test("the projection names the credential it spends by its non-secret metadata", async () => {
@@ -293,7 +293,7 @@ describe("local binding authority", () => {
 
     const other = broker()
     expect(await other.authority.resolve(id, unusedClaims)).toBeUndefined()
-    expect(await other.authority.currentRuntime(await projecting.runtimeIdentity(workspaceId, "__local__", "local"))).toBe(false)
+    expect(await other.authority.currentRuntime({ ...await projecting.runtimeIdentity(workspaceId, "__local__", "local"), bindingIds: ["binding"], exp: 0 })).toBe(false)
   })
 
   test("a provider with no destination policy is reported, never dropped", async () => {

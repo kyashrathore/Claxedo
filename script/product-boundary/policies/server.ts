@@ -304,8 +304,15 @@ export const serverWorkerd: Policy = {
   // machine's provider configuration stores
   // (`authority/adapters/d1/host-provider-config-authority.ts`). It adds no
   // package edge.
-  // 189/23, no headroom.
-  ceilings: { modules: 189, packages: 23 },
+  // +2 modules (owner: the hosted egress broker composition): every machine
+  // enrolled with `claxedo connect` is built its provider configuration from
+  // its owner's accounts on its own beat, bound on the plane's broker
+  // (`credentials/machine-provider-config.ts`); the routes a machine is
+  // connected through moved out of the hosted core app into their own module
+  // (`deployments/hosted-shared/hosted-host-routes.ts`) so the builder's
+  // composition fits beside them. It adds no package edge.
+  // 191/23, no headroom.
+  ceilings: { modules: 191, packages: 23 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

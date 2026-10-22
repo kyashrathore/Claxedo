@@ -23,7 +23,9 @@ import type { ProviderDirect, ProviderProjectionSource } from "@claxedo/agent-ru
  *   enrolled it
  *     POST /redeem     → no auth: the single-use invitation secret is the credential.
  *     POST /acquire    → machine-signed: claim the next serving generation.
- *     POST /heartbeat  → machine-signed: renew, ack descriptions, discover assignments.
+ *     POST /heartbeat  → machine-signed: renew, ack descriptions, discover assignments,
+ *                        and for a `claxedo connect` machine take the provider
+ *                        configuration built from its owner's accounts.
  *
  * An account credential buys no beat here. Enrollment is where the owner
  * speaks; everything after it is the machine speaking for itself.
@@ -53,6 +55,7 @@ import { providerProjectionRecord } from "@claxedo/agent-runtime-contract"
 import type { ControlPlaneServices } from "../../authority/services"
 import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import type { LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
+import type { MachineProviderConfig } from "../../credentials/machine-provider-config"
 import { admitMachineCaller, budgetExceeded, clientBudget } from "../../workspace/machine-caller"
 import { machineEventsHandler } from "../../workspace/host-events"
 import { contentfulStatus } from "../../platform/http/status"
@@ -238,8 +241,10 @@ export type HostEnrollmentRouteOptions = WorkspaceRouteOptions & {
   invitationRedeemRateLimiter?: ConnectionRateLimiter
   /** The verifier's clock; tests pin it to sign requests at a known time. */
   now?: () => number
-  /** The owner's Pi accounts as secrets, sealed beside their pushed rows; absent where the plane stores no accounts. */
+  /** The owner's Pi accounts as secrets, sealed beside their pushed rows for a machine enrolled from their account; absent where the plane stores no accounts. */
   ownerPiDirectRows?: (auth: SignedControlPlaneAuth) => Promise<Record<string, ProviderDirect>>
+  /** Builds a `claxedo connect` machine's configuration from its owner's accounts on its beat; absent where the plane has no broker. */
+  machineProviderConfig?: Pick<MachineProviderConfig, "beat">
   /** Where a machine's doorbell stream is held (`workspace/host-events.ts`); absent, the stream route answers 503. */
   liveSyncRoom?: LiveSyncRoomNamespace
   /** The doorbell stream's heartbeat cadence (tests shrink it). */
@@ -438,7 +443,8 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
       .map((ack) => ack.workspaceId)
       .sort()
     const endpoints = hostEndpoints()
-    const response: Record<string, unknown> = { ...result, ...endpoints, serving_generation: caller.generation }
+    const built = await options.machineProviderConfig?.beat(caller)
+    const response: Record<string, unknown> = { ...result, ...(built ? { provider_config: built } : {}), ...endpoints, serving_generation: caller.generation }
     const signer = configuredHostTunnelTokenSigner(options)
     if (!signer || ready.length === 0) return response
     const input: HostTunnelTokenSignerInput = {
@@ -605,9 +611,12 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
           })
         }
         const providers = body.providers
-        const direct = Object.keys(providers).length > 0 && options.ownerPiDirectRows ? await options.ownerPiDirectRows(auth) : {}
-        const providerIds = [...new Set([...Object.keys(providers), ...Object.keys(direct)])].sort()
         const target = await authority.hostProviderConfigTarget(auth, { enrollmentId: routeParam(c, "id") })
+        // A machine invited with `claxedo connect` spends the owner's accounts
+        // through the plane's broker, so no secret is sealed beside the rows.
+        const piDirect = Object.keys(providers).length > 0 && target.enrolled_via === "account" ? options.ownerPiDirectRows : undefined
+        const direct = piDirect ? await piDirect(auth) : {}
+        const providerIds = [...new Set([...Object.keys(providers), ...Object.keys(direct)])].sort()
         if (target.sealing_public_key === null) {
           throw new HostProviderConfigError({
             code: "host_sealing_key_undeclared",
@@ -624,7 +633,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
           ? null
           : await sealForMachine(
             target.sealing_public_key,
-            serializeHostProviderConfig(providers, auth.user.subject, direct),
+            serializeHostProviderConfig(providers, auth.user.subject, direct, "owner"),
             machineSealAad({ enrollmentId, revision }),
           )
         const result = await authority.pushHostProviderConfig(auth, {

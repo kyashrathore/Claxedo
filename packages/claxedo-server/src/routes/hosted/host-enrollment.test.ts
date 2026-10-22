@@ -1,8 +1,8 @@
 import { describe, expect, test, vi } from "vitest"
 import type { ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
 import type { MachineEnrollmentRow } from "@claxedo/server-core/platform/auth/host-connect-contract"
-import { MACHINE_REQUEST_HEADERS, decodeInvitationToken, decodeMachineSeal, machineRequestPayload, machineSealAad } from "@claxedo/account-contract/machine"
-import { machineSealContentKey } from "@claxedo/account-contract/machine-seal"
+import { MACHINE_REQUEST_HEADERS, decodeInvitationToken, machineRequestPayload, machineSealAad } from "@claxedo/account-contract/machine"
+import { openSeal } from "../../test-support/machine-seal"
 import type { HostTunnelTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { sha256Hex } from "@claxedo/helpers/crypto"
 import type { ControlPlaneServices } from "../../authority/services"
@@ -47,6 +47,7 @@ function authority(overrides: Record<string, unknown> = {}): Record<string, Retu
     hostProviderConfigTarget: vi.fn(async () => ({
       enrollment_id: "enr_1",
       host_id: "host_1",
+      enrolled_via: "account",
       sealing_public_key: null,
       next_revision: 1,
     })),
@@ -545,6 +546,30 @@ describe("POST /heartbeat, machine caller (v3)", () => {
     )
   })
 
+  test("the configuration the control plane builds on this beat is the one the same answer delivers, and a beat with none due relays the stored one", async () => {
+    const key = await machineKey()
+    const api = machineAuthority(enrollmentRow(key), {
+      heartbeatHostEnrollmentByMachine: vi.fn(async () => ({
+        expires_at: NOW + 8_000,
+        last_seen_at: NOW,
+        assignments: [],
+        scope: undefined,
+        assigned_workspace_ids: [],
+        provider_config: { revision: 2, sealed: "mseal1.stored.i.c" },
+      })),
+    })
+    let due = true
+    const beat_ = vi.fn(async () => due ? { revision: 3, sealed: "mseal1.built.i.c" } : undefined)
+    const { signedCall } = await mountedRoutes(api, { machineProviderConfig: { beat: beat_ } })
+
+    const built = await signedCall(key, "/heartbeat", beat({ acks: [], providerConfigRevision: 2 }))
+    expect(await built.json()).toMatchObject({ provider_config: { revision: 3, sealed: "mseal1.built.i.c" } })
+    expect(beat_).toHaveBeenCalledWith(expect.objectContaining({ enrollmentId: "enr_1", hostId: "host_1", generation: 2 }))
+    due = false
+    const stored = await signedCall(key, "/heartbeat", beat({ acks: [], providerConfigRevision: 2 }))
+    expect(await stored.json()).toMatchObject({ provider_config: { revision: 2, sealed: "mseal1.stored.i.c" } })
+  })
+
   test("uses a configured relay JWKS URL over the derived one and omits endpoints it does not know", async () => {
     const key = await machineKey()
     const { signedCall } = await mountedRoutes(machineAuthority(enrollmentRow(key)), {
@@ -948,6 +973,7 @@ describe("POST /:id/provider-config", () => {
       enrollment_id: "enr_1",
       host_id: "host_1",
       display_name: "Laptop",
+      enrolled_via: "account",
       sealing_public_key: key,
       next_revision: 4,
     }
@@ -994,9 +1020,9 @@ describe("POST /:id/provider-config", () => {
     expect(again.sealed).not.toBe(pushed.sealed)
   })
 
-  test("seals the owner's Pi accounts as direct rows beside the pushed rows, for the owner alone", async () => {
+  test("seals the owner's Pi accounts as direct rows beside the pushed rows of a machine enrolled from their account, for the owner alone", async () => {
     const pair = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"])
-    const target = { enrollment_id: "enr_1", host_id: "host_1", display_name: "Laptop", sealing_public_key: JSON.stringify(await crypto.subtle.exportKey("jwk", pair.publicKey)), next_revision: 4 }
+    const target = { enrollment_id: "enr_1", host_id: "host_1", display_name: "Laptop", enrolled_via: "account", sealing_public_key: JSON.stringify(await crypto.subtle.exportKey("jwk", pair.publicKey)), next_revision: 4 }
     const direct = { "codex-app-server": { delivery: "direct", baseUrl: "https://chatgpt.com", apiPath: "/backend-api/codex", secret: "plan-token", authKind: "subscription" } }
     const ownerPiDirectRows = vi.fn(async () => direct)
     const { api, post } = routes({ hostProviderConfigTarget: vi.fn(async () => target) }, { ownerPiDirectRows })
@@ -1009,6 +1035,23 @@ describe("POST /:id/provider-config", () => {
     expect(opened.credentials.direct).toEqual({ [opened.credentials.machineOwnerUserId]: direct })
     await post("/enr_1/provider-config", { providers: {} })
     expect(ownerPiDirectRows).toHaveBeenCalledOnce()
+  })
+
+  test("seals no secret beside the pushed rows of a machine invited with `claxedo connect`, and marks them the owner's", async () => {
+    const pair = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"])
+    const target = { enrollment_id: "enr_1", host_id: "host_1", enrolled_via: "invitation", sealing_public_key: JSON.stringify(await crypto.subtle.exportKey("jwk", pair.publicKey)), next_revision: 4 }
+    const ownerPiDirectRows = vi.fn(async () => ({ openai: { delivery: "direct", baseUrl: "https://api.openai.com", secret: "sk-owner", authKind: "api-key" } }))
+    const { api, post } = routes({ hostProviderConfigTarget: vi.fn(async () => target) }, { ownerPiDirectRows })
+    expect((await post("/enr_1/provider-config", { providers })).status).toBe(200)
+    const pushed = api.pushHostProviderConfig.mock.calls[0]?.[1] as { sealed: string; providerIds: string[] }
+    expect(pushed.providerIds).toEqual(["anthropic", "openai"])
+    const opened = JSON.parse(await openSeal(pair.privateKey, pushed.sealed, machineSealAad({ enrollmentId: "enr_1", revision: 4 }))) as {
+      source: string
+      credentials: Record<string, unknown>
+    }
+    expect(opened.source).toBe("owner")
+    expect(opened.credentials).not.toHaveProperty("direct")
+    expect(ownerPiDirectRows).not.toHaveBeenCalled()
   })
 
   test("an empty map is the withdrawal: nothing is sealed, the store receives null, and the audit names no provider", async () => {
@@ -1339,14 +1382,3 @@ describe("GET /events, the machine's doorbell", () => {
     expect(await response.json()).toMatchObject({ error: { code: "machine_events_unavailable" } })
   })
 })
-
-async function openSeal(privateKey: CryptoKey, sealed: string, aad: string) {
-  const parts = decodeMachineSeal(sealed)
-  const bytes = (text: string) => new Uint8Array(Buffer.from(text, "base64url"))
-  const ephemeralRaw = bytes(parts.ephemeral)
-  const ephemeral = await crypto.subtle.importKey("raw", ephemeralRaw, { name: "ECDH", namedCurve: "P-256" }, false, [])
-  const shared = await crypto.subtle.deriveBits({ name: "ECDH", public: ephemeral }, privateKey, 256)
-  const key = await machineSealContentKey(shared, ephemeralRaw, ["decrypt"])
-  const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes(parts.iv), additionalData: new TextEncoder().encode(aad) }, key, bytes(parts.ciphertext))
-  return new TextDecoder().decode(plaintext)
-}

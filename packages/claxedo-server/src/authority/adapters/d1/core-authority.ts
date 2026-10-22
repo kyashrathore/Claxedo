@@ -35,6 +35,7 @@ import {
 import {
   D1HostProviderConfigAuthority,
   D1_HOST_PROVIDER_CONFIG_AUTHORITY_METHODS,
+  D1_MACHINE_PROVIDER_CONFIG_METHODS,
   type D1HostProviderConfigAuthorityPort,
 } from "./host-provider-config-authority"
 import { D1AuditAuthority, D1_AUDIT_AUTHORITY_METHODS, type D1AuditAuthorityPort } from "./audit-authority"
@@ -92,7 +93,8 @@ export type D1CoreAuthorityBoundary = WorkspaceAuthority &
   SessionTurnAuthority &
   SessionHostAuthority &
   SessionReaderAuthority &
-  Pick<D1HostAccessAuthority, (typeof HOST_LIFECYCLE_METHODS)[number]>
+  Pick<D1HostAccessAuthority, (typeof HOST_LIFECYCLE_METHODS)[number]> &
+  Pick<D1HostProviderConfigAuthority, (typeof D1_MACHINE_PROVIDER_CONFIG_METHODS)[number]>
 
 type RequiredWorkspaceAuthorityCapability = {
   [K in keyof WorkspaceAuthority]-?: object extends Pick<WorkspaceAuthority, K> ? never : K
@@ -168,6 +170,7 @@ export function createD1CoreAuthority(database: D1Database, options: D1CoreAutho
     ...bindMethods(sessions, PRIVATE_SESSION_AUTHORITY_METHODS),
     ...bindMethods(sessions, D1_SESSION_TURN_AUTHORITY_METHODS),
     ...bindMethods(hosts, HOST_LIFECYCLE_METHODS),
+    ...bindMethods(hostProviderConfig, D1_MACHINE_PROVIDER_CONFIG_METHODS),
     machineAuth: hosts.machineAuth,
     readSessionHostPlacement: (input) => readD1SessionHostPlacement(database, input),
     recordTurnRuntimeAccessToken: (actorId, token) => channelsAndRuntime.recordTurnRuntimeAccessToken(actorId, token),

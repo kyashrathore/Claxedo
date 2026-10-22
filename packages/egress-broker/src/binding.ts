@@ -3,7 +3,11 @@ import type { RuntimeTokenClaims } from "./token.js"
 export type RuntimeIdentity = Readonly<{
   userId: string
   orgId: string
-  workspaceId: string
+  /**
+   * The workspace the runtime serves. Absent for a connected machine, whose
+   * one lease (its enrollment) serves every workspace its owner assigns it.
+   */
+  workspaceId?: string
   leaseId: string
   leaseGeneration: number
   runtimeId: string
@@ -73,7 +77,7 @@ export type BindingFailure = Readonly<{
  */
 export interface BindingAuthority<Claims extends RuntimeTokenClaims = RuntimeTokenClaims> {
   resolve(bindingId: string, claims: Claims): Promise<{ binding: Binding; value: string } | undefined>
-  currentRuntime(identity: RuntimeIdentity): Promise<boolean>
+  currentRuntime(claims: Claims): Promise<boolean>
   /**
    * Called for a request the broker is about to forward, never from `resolve`:
    * a placeholder minted before an account switch resolves to the account that

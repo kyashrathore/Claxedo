@@ -32,6 +32,10 @@ export type EnrollmentRow = {
   provider_config_updated_at: number | null
   provider_config_sealed_key_json: string | null
   provider_config_provider_ids: string | null
+  provider_config_built_at: number | null
+  provider_config_renew_at: number | null
+  provider_config_accounts: string | null
+  provider_config_built_generation: number | null
 }
 
 export type InvitationRow = {

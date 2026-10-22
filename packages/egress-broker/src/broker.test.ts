@@ -212,6 +212,16 @@ describe("binding broker HTTP entrypoint", () => {
     expect((await f.request("/v1/messages", { method: "DELETE" })).status).toBe(403)
   })
 
+  test("refuses a WebSocket upgrade before the vendor sees it", async () => {
+    const f = await fixture()
+    f.update({ destination: { origin: "https://api.anthropic.com", methods: ["GET", "POST"], pathPrefixes: ["/v1/messages"] } })
+    const response = await f.request("/v1/messages", { method: "GET", body: null, headers: { "x-api-key": f.token, connection: "Upgrade", upgrade: "websocket" } })
+    expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({ error: { code: "request_outside_policy" } })
+    expect(f.upstream).toHaveLength(0)
+    expect((await f.request("/v1/messages", { method: "GET", body: null, headers: { "x-api-key": f.token } })).status).toBe(200)
+  })
+
   test.each([{ orgId: "other" }, { userId: "other" }, { workspaceId: "other" }, { leaseId: "other" }, { leaseGeneration: 2 }, { runtimeId: "other" }, { status: "withdrawn" as const }])("refuses foreign or withdrawn binding %j", async (patch) => {
     const f = await fixture()
     f.update(patch)
