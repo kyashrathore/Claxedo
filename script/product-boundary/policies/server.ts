@@ -280,8 +280,13 @@ export const serverWorkerd: Policy = {
   // header and live-sync notices (`platform/db/d1-sessions.ts`). It adds no
   // package edge: `@claxedo/agent-runtime-contract`, which holds the bookmark
   // wire format, was already in the Worker.
-  // 180/23, no headroom.
-  ceilings: { modules: 180, packages: 23 },
+  // +1 module (owner: the D1 host access authority): a machine's scope rule
+  // and the SQL that retires assignments a tightened scope leaves outside
+  // its roots, by the host-path contract for POSIX and Windows paths alike
+  // (`authority/adapters/d1/host-scope-rules.ts`). It adds no package edge:
+  // `@claxedo/account-contract` was already in the Worker.
+  // 181/23, no headroom.
+  ceilings: { modules: 181, packages: 23 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",
