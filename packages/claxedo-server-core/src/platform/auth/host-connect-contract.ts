@@ -1,3 +1,4 @@
+import { normalizeHostPath } from "@claxedo/account-contract/host-path"
 import { isBase64Url } from "@claxedo/account-contract/machine"
 import { isRecord } from "@claxedo/helpers/guards"
 
@@ -13,48 +14,15 @@ export function isMachineNonce(value: string) {
 }
 
 /**
- * Collapses `.`, `..`, empty segments and trailing slashes of an absolute
- * POSIX path; `..` above the root stays at the root, as the kernel resolves
- * it. Undefined for a relative or empty path. Text-only: the host repeats
- * the check on the `realpath`, which is where symlinks are resolved.
- */
-export function normalizePosixDirectory(input: string): string | undefined {
-  if (!input.startsWith("/")) return undefined
-  const segments: string[] = []
-  for (const segment of input.split("/")) {
-    if (segment === "" || segment === ".") continue
-    if (segment === "..") {
-      segments.pop()
-      continue
-    }
-    segments.push(segment)
-  }
-  return `/${segments.join("/")}`
-}
-
-/**
  * The form a workspace's directory is recorded in by every authority backend:
- * an absolute POSIX path normalized as above, so `/srv/app/` and `/srv/app`
- * are one row and a stored value can be compared to a root by plain prefix.
- * Anything else — a Windows path on an account machine — is recorded as given.
+ * the machine's own absolute path normalized by the host-path contract, so
+ * `/srv/app/` and `/srv/app`, or `c:/work/app` and `C:\\work\\app`, are one
+ * row and a stored value compares to a root by the same rule the host uses.
+ * Anything else — a relative directory on an account machine — is recorded
+ * as given.
  */
 export function normalizeStoredDirectory(input: string): string {
-  return normalizePosixDirectory(input) ?? input
-}
-
-/**
- * The P1.4 root rule: `directory` is one of `roots` or under one of them,
- * segment-aware (`/srv/api` is under `/srv`; `/srvx` is not). Empty roots
- * admit nothing; a root that is not an absolute path admits nothing.
- */
-export function directoryWithinRoots(directory: string, roots: readonly string[]): boolean {
-  const target = normalizePosixDirectory(directory)
-  if (target === undefined) return false
-  return roots.some((candidate) => {
-    const root = normalizePosixDirectory(candidate)
-    if (root === undefined) return false
-    return target === root || target.startsWith(root === "/" ? "/" : `${root}/`)
-  })
+  return normalizeHostPath(input) ?? input
 }
 
 /**
@@ -106,7 +74,7 @@ export type HostEnrolledVia = "account" | "invitation"
 
 /** What an owner grants a machine: the roots it may serve. */
 export type HostScopeDefinition = {
-  /** Absolute POSIX paths. Empty means the machine may serve nothing. */
+  /** Absolute paths as the machine writes them (`@claxedo/account-contract/host-path`). Empty means the machine may serve nothing. */
   allowed_roots: string[]
 }
 

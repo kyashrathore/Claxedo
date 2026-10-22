@@ -47,10 +47,11 @@ plane so your other devices can find them.
 On a signed-in laptop, mint an invitation:
 
 ```sh
-claxedo host invite --name build-box --root ~/code
+claxedo host invite --name build-box --root /home/me/code
 ```
 
-The command prints a single-use token once. On the machine you are adding,
+A root is written the way the machine writes it: `/home/me/code` on Linux
+or macOS, `C:\code` on Windows. The command prints a single-use token once. On the machine you are adding,
 install the CLI and enroll with that token:
 
 ```sh
@@ -58,7 +59,8 @@ curl -fsSL https://raw.githubusercontent.com/kyashrathore/Claxedo/dev/packages/c
 claxedo connect --token-file ./invite.txt --install-service
 ```
 
-The machine enrolls, starts a background service, and appears in Settings →
+The machine enrolls, starts a background service (a systemd user unit, a
+LaunchAgent, or a scheduled task on Windows), and appears in Settings →
 Machines within a few seconds. `--root` decides which folders that machine may
 ever serve; you can widen or narrow it later with `claxedo host scope`.
 

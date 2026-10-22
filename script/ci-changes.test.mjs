@@ -55,6 +55,12 @@ await test("the app's rule checks run for app and kit code and nothing else", ()
   assert.equal(classifyChangedFiles([]).app_checks, true)
 })
 
+await test("the machine path contract selects Windows, whose host it is written for", () => {
+  const result = classifyChangedFiles(["packages/account-contract/src/host-path.ts"])
+  assert.equal(result.unit, true)
+  assert.equal(result.windows, true)
+})
+
 await test("server changes select Windows and the server boundary", () => {
   const result = classifyChangedFiles(["packages/claxedo-server/src/workspace/routes/session.ts"])
   assert.equal(result.unit, true)

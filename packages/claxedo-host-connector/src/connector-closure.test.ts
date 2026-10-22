@@ -35,9 +35,12 @@ describe("Host Connector's dependency closure", () => {
   test("imports only the machine wire contract and the import-free deadline from first-party packages", () => {
     // The deadline module imports nothing, so it adds no code beyond itself;
     // the connector's requests need its referenced timer on Bun for Windows.
+    // host-path is the directory form the wire carries, import-free too; the
+    // control plane and the owner's CLI compare roots by the same module.
     const allowed = new Set([
       "@claxedo/account-contract/machine",
       "@claxedo/account-contract/machine-seal",
+      "@claxedo/account-contract/host-path",
       "@claxedo/helpers/deadline",
     ])
     const offenders = externalImports().filter(

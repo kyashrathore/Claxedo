@@ -5,6 +5,7 @@ import path from "node:path"
 import { promisify } from "node:util"
 import type { HostState } from "@claxedo/host-connector/host-state"
 import { EXIT_TIMEOUT_S } from "./paths"
+import { WINDOWS_TASK, windowsScriptPath, windowsTaskXml, windowsTaskXmlPath, windowsWrapperScript } from "./service-windows"
 
 const execFileAsync = promisify(execFile)
 
@@ -69,14 +70,16 @@ export function defaultServiceDeps(): ServiceDeps {
 export function serviceKind(platform: NodeJS.Platform): ServiceKind {
   if (platform === "linux") return "systemd-user"
   if (platform === "darwin") return "launchd"
-  throw new Error(`--install-service supports Linux (systemd --user) and macOS (launchd); this is ${platform}`)
+  if (platform === "win32") return "windows-task"
+  throw new Error(`--install-service supports Linux (systemd --user), macOS (launchd) and Windows (a scheduled task); this is ${platform}`)
 }
 
-/** A path on the platform `deps` names, so it is POSIX wherever it is computed. */
-export function serviceUnitPath(deps: Pick<ServiceDeps, "platform" | "homedir">) {
-  return serviceKind(deps.platform) === "systemd-user"
-    ? path.posix.join(deps.homedir, ".config", "systemd", "user", SYSTEMD_UNIT)
-    : path.posix.join(deps.homedir, "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`)
+/** The file the service manager is pointed at, on the platform `deps` names, wherever it is computed. */
+export function serviceUnitPath(deps: Pick<ServiceDeps, "platform" | "homedir" | "env">) {
+  const kind = serviceKind(deps.platform)
+  if (kind === "systemd-user") return path.posix.join(deps.homedir, ".config", "systemd", "user", SYSTEMD_UNIT)
+  if (kind === "launchd") return path.posix.join(deps.homedir, "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`)
+  return windowsScriptPath(deps)
 }
 
 // systemd expands % specifiers and $ variables even inside double quotes;
@@ -206,7 +209,9 @@ export type InstalledService = NonNullable<HostState["service"]>
 export async function writeServiceUnit(deps: ServiceDeps, options: ServiceUnitOptions): Promise<InstalledService> {
   const kind = serviceKind(deps.platform)
   const unit = serviceUnitPath(deps)
-  await deps.writeFile(unit, kind === "systemd-user" ? systemdUnit(deps, options) : launchdPlist(deps, options))
+  const text =
+    kind === "systemd-user" ? systemdUnit(deps, options) : kind === "launchd" ? launchdPlist(deps, options) : windowsWrapperScript(deps, options)
+  await deps.writeFile(unit, text)
   return { kind, unit, installed_at: deps.now() }
 }
 
@@ -283,13 +288,31 @@ export async function startService(deps: ServiceDeps, service: InstalledService)
       ],
     }
   }
-  await deps.run("launchctl", ["bootout", `${launchdDomain()}/${LAUNCHD_LABEL}`])
-  await must(deps, "launchctl", ["bootstrap", launchdDomain(), service.unit])
+  if (service.kind === "launchd") {
+    await deps.run("launchctl", ["bootout", `${launchdDomain()}/${LAUNCHD_LABEL}`])
+    await must(deps, "launchctl", ["bootstrap", launchdDomain(), service.unit])
+    return {
+      started: true,
+      lines: [
+        `Installed and started ${LAUNCHD_LABEL} (${service.unit}).`,
+        `KeepAlive/SuccessfulExit=false restarts the job after any failure except a control-plane decision (exit 78), which unloads it until the next login or \`launchctl bootstrap ${launchdDomain()} ${service.unit}\`.`,
+      ],
+    }
+  }
+  // The XML is the registration's input only; the task holds its own copy.
+  const taskXml = windowsTaskXmlPath(deps)
+  await deps.writeFile(taskXml, windowsTaskXml(deps))
+  try {
+    await must(deps, "schtasks.exe", ["/Create", "/TN", WINDOWS_TASK, "/XML", taskXml, "/F"])
+  } finally {
+    await deps.unlink(taskXml)
+  }
+  await must(deps, "schtasks.exe", ["/Run", "/TN", WINDOWS_TASK])
   return {
     started: true,
     lines: [
-      `Installed and started ${LAUNCHD_LABEL} (${service.unit}).`,
-      `KeepAlive/SuccessfulExit=false restarts the job after any failure except a control-plane decision (exit 78), which unloads it until the next login or \`launchctl bootstrap ${launchdDomain()} ${service.unit}\`.`,
+      `Installed and started the scheduled task ${WINDOWS_TASK} (${service.unit}).`,
+      `It runs at each logon of ${deps.username} and restarts connect after any failure except a control-plane decision (exit 78), which disables the task until \`schtasks /Change /TN ${WINDOWS_TASK} /Enable\` and \`schtasks /Run /TN ${WINDOWS_TASK}\`.`,
     ],
   }
 }
@@ -303,7 +326,13 @@ export async function uninstallService(deps: ServiceDeps, installed: InstalledSe
     await deps.run("systemctl", ["--user", "daemon-reload"])
     return [`Stopped and removed ${SYSTEMD_UNIT} (${unit}).`]
   }
-  await deps.run("launchctl", ["bootout", `${launchdDomain()}/${LAUNCHD_LABEL}`])
+  if (kind === "launchd") {
+    await deps.run("launchctl", ["bootout", `${launchdDomain()}/${LAUNCHD_LABEL}`])
+    await deps.unlink(unit)
+    return [`Stopped and removed ${LAUNCHD_LABEL} (${unit}).`]
+  }
+  await deps.run("schtasks.exe", ["/End", "/TN", WINDOWS_TASK])
+  await deps.run("schtasks.exe", ["/Delete", "/TN", WINDOWS_TASK, "/F"])
   await deps.unlink(unit)
-  return [`Stopped and removed ${LAUNCHD_LABEL} (${unit}).`]
+  return [`Stopped and removed the scheduled task ${WINDOWS_TASK} (${unit}).`]
 }

@@ -37,6 +37,7 @@ const DOC_PREFIXES = [
 // which Windows refuses while a handle is open; helpers owns the PowerShell and
 // private-file runners.
 const WINDOWS_PREFIXES = [
+  "packages/account-contract/",
   "packages/claxedo-desktop/",
   "packages/claxedo-documents/",
   "packages/claxedo-helpers/",

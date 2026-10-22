@@ -3,9 +3,9 @@ import path from "node:path"
 import { createHostConnector, type AssignmentDescription, type HostEndpoints } from "@claxedo/host-connector/connector"
 import { DECISION_EXIT_CODE, DECISION_STATUSES, HostConnectDecisionError } from "@claxedo/host-connector/bootstrap"
 import { hostKeyPairFromJwk } from "@claxedo/host-connector/host-identity"
+import { hostPathWithinRoots } from "@claxedo/account-contract/host-path"
 import {
   canonicalRelayUrl,
-  pathWithinRoots,
   resolveRoots,
   type HostScope,
   type HostState,
@@ -341,7 +341,7 @@ export async function runHost(input: HostRunInput): Promise<number> {
     const directory = await deps.resolvePath(description.remoteDirectory).catch((error: unknown) => {
       throw new Error(`${description.remoteDirectory} cannot be resolved: ${errorMessage(error)}`)
     })
-    if (!pathWithinRoots(directory, roots)) {
+    if (!hostPathWithinRoots(directory, roots)) {
       throw new Error(`${description.remoteDirectory} is outside this host's roots (${roots.join(", ") || "none"})`)
     }
     const current = owned.get(workspaceId)

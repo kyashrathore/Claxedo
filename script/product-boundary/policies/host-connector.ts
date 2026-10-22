@@ -30,30 +30,32 @@ export const hostConnector: Policy = {
   forbiddenModules: [],
 
   control: {
-    // The connector entry reaches two modules: itself and host-state.ts,
-    // because `ack` validates a description's resolved directory against the
+    // The connector entry is one module of its own plus one package edge:
+    // `ack` validates a description's resolved directory against the
     // effective roots inside the connector — the one place no caller can
-    // bypass. It reaches no key material: the machine signature belongs to
-    // the transport, which is a separate entry, as are bootstrap and the node
-    // adapter. Small enough that the required list below is doing the real
-    // work.
-    minModules: 2,
-    requiredModules: [`${SRC}/connector.ts`, `${SRC}/host-state.ts`],
-    // Signing and sealing enter through separate entrypoints; the assignment
-    // connector reaches only its state adapter, so this closure has no packages.
-    requiredPackages: [],
+    // bypass — by the contract's host-path, the directory form the control
+    // plane stores and compares by, so both sides refuse the same paths.
+    // host-state.ts is reached by type only. The entry reaches no key
+    // material: the machine signature belongs to the transport, which is a
+    // separate entry, as are bootstrap and the node adapter. Small enough
+    // that the required list below is doing the real work.
+    minModules: 1,
+    requiredModules: [`${SRC}/connector.ts`],
+    // Signing and sealing enter through separate entrypoints; the one
+    // package here is the wire contract, for its import-free path module.
+    requiredPackages: ["@claxedo/account-contract"],
   },
 
-  ceilings: { modules: 2, packages: 0 },
+  ceilings: { modules: 1, packages: 1 },
 
   emitted: {
     file: "packages/claxedo-host-connector/.artifacts/u8-package-split/manifests/host-connector.json",
     minModules: 2,
     minChunks: 2,
-    // The same two the source walk reaches. `host-identity` is still a built
-    // chunk — the transport and bootstrap entries import it — but nothing on
-    // the connector entry's path does.
-    requiredModules: [`${SRC}/connector.ts`, `${SRC}/host-state.ts`],
+    // The connector and the path module it bundles. `host-identity` is still
+    // a built chunk — the transport and bootstrap entries import it — but
+    // nothing on the connector entry's path does.
+    requiredModules: [`${SRC}/connector.ts`, "packages/account-contract/src/host-path.ts"],
   },
 
   isolation: {

@@ -1405,6 +1405,52 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
     ).toEqual(["ws_a", "ws_b", "ws_c", "ws_cloud", "ws_local"])
   })
 
+  test("a Windows machine's roots and directories are stored in its own form and compared case-insensitively", async () => {
+    const input = await setup()
+    await fixture(input)
+    const owner = await signed(input.workspace, "alice", "org_acme")
+    const { enrollment, scope } = await redeem(input, await invite(input, owner, ["c:/work/", "\\\\nas\\share\\repos"]), "win-box", await hostKey())
+    expect(scope.allowed_roots).toEqual(["C:\\work", "\\\\nas\\share\\repos"])
+    const assign = (workspaceId: string, remoteDirectory: string) =>
+      input.hostAccess.assignWorkspaceHost(owner, { workspaceId, hostId: enrollment.host_id, remoteDirectory })
+    await expect(assign("ws_is", "C:\\work\\is")).resolves.toMatchObject({ assigned: true })
+    await expect(assign("ws_case", "c:/Work/Case/")).resolves.toMatchObject({ assigned: true })
+    await expect(assign("ws_root", "C:\\WORK")).resolves.toMatchObject({ assigned: true })
+    await expect(assign("ws_nas", "\\\\NAS\\share\\repos\\app")).resolves.toMatchObject({ assigned: true })
+    for (const outside of ["C:\\other", "C:\\workx", "C:\\work\\..\\Windows", "D:\\work\\is", "/work/is", "C:work", "\\\\nas\\other\\repos"]) {
+      await expect(assign(`ws_${outside}`, outside)).rejects.toMatchObject({ code: "host_assignment_outside_scope", status: 400 })
+    }
+    expect(
+      (await input.database
+        .prepare("select workspace_id, remote_directory from workspaces where workspace_id in ('ws_is', 'ws_case', 'ws_root', 'ws_nas') order by workspace_id")
+        .all()).results,
+      "stored normalized: one separator, the drive upper-cased, the folder's own case kept",
+    ).toEqual([
+      { workspace_id: "ws_case", remote_directory: "C:\\Work\\Case" },
+      { workspace_id: "ws_is", remote_directory: "C:\\work\\is" },
+      { workspace_id: "ws_nas", remote_directory: "\\\\NAS\\share\\repos\\app" },
+      { workspace_id: "ws_root", remote_directory: "C:\\WORK" },
+    ])
+
+    const updated = await input.hostAccess.updateHostEnrollmentScope(owner, {
+      enrollmentId: enrollment.enrollment_id,
+      scope: { allowed_roots: ["C:\\Work\\IS", "C:\\work\\casex"] },
+    })
+    expect(updated, "the root's own case is kept; retirement compares without it and by whole segments").toEqual({
+      scope: { allowed_roots: ["C:\\Work\\IS", "C:\\work\\casex"], revision: 2 },
+      retired_workspace_ids: ["ws_case", "ws_nas", "ws_root"],
+    })
+    const drive = await input.hostAccess.updateHostEnrollmentScope(owner, {
+      enrollmentId: enrollment.enrollment_id,
+      scope: { allowed_roots: ["c:\\"] },
+    })
+    expect(drive, "a drive root admits everything on the drive").toEqual({
+      scope: { allowed_roots: ["C:\\"], revision: 3 },
+      retired_workspace_ids: [],
+    })
+    await expect(assign("ws_d", "D:\\work")).rejects.toMatchObject({ code: "host_assignment_outside_scope" })
+  })
+
   test("an invitation enrollment refuses assignment of a workspace in another organization", async () => {
     const input = await setup()
     const { alice } = await fixture(input)
