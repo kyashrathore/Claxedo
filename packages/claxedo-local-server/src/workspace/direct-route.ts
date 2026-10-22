@@ -246,8 +246,9 @@ export function createDirectRouteCarrier(options: { interfaces?: () => NetworkIn
   }
 
   const carryUpgrade = async (app: Pick<Hono, "request">, request: IncomingMessage, socket: Duplex, head: Buffer) => {
+    if (!request.headers.host) return refuseUpgrade(socket, 400)
     const headers = new Headers(Object.entries(request.headers).flatMap(([name, value]) => (value === undefined ? [] : [[name, Array.isArray(value) ? value[0]! : value] as [string, string]])))
-    const answer = await app.request(new URL(request.url ?? "/", "http://daemon.invalid"), { headers }, { incoming: request, outgoing: undefined })
+    const answer = await app.request(new URL(request.url ?? "/", `http://${request.headers.host}`), { headers }, { incoming: request, outgoing: undefined })
     const pending = pendingUpgrades.get(request)
     pendingUpgrades.delete(request)
     if (!pending) return refuseUpgrade(socket, answer.status)

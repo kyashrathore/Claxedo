@@ -8,6 +8,8 @@ import { Hono } from "hono"
 import { getRequestListener } from "@hono/node-server"
 import { createDirectTlsKey, directTlsIdentity, type DirectTlsIdentity } from "@claxedo/host-serving/direct-certificate"
 import { privateNetworkAddresses } from "@claxedo/host-serving/direct-listener"
+import { unsignedLocalRequestGuard } from "@claxedo/server-core/authority/deployment-mode"
+import { peerAddressStamp } from "@claxedo/server-core/platform/http/peer-address"
 import { DirectRouteUnreachable, pinnedConnection } from "./direct-connection"
 import { createDirectRouteCarrier } from "./direct-route"
 
@@ -59,6 +61,8 @@ async function machine(identity: DirectTlsIdentity, host = lanAddress!) {
 async function daemon(interfaces: () => ReturnType<typeof os.networkInterfaces> = () => os.networkInterfaces()) {
   const direct = createDirectRouteCarrier({ interfaces })
   const app = new Hono()
+  app.use(peerAddressStamp())
+  app.use(unsignedLocalRequestGuard({ mode: "local", authConfig: { enabled: false, mode: "local-only", reason: "signed/cloud auth is disabled" } }))
   app.put("/api/claxedo/direct-routes/:workspaceId", direct.register)
   app.all("/direct/workspaces/:workspaceId/*", direct.route)
   const server = createServer(getRequestListener(app.fetch))
@@ -171,6 +175,7 @@ describe("the daemon's direct route", () => {
           resolve({ head, echo: received })
         }
       })
+      socket.on("end", () => resolve({ head: head || received, echo: "" }))
       socket.on("error", reject)
     })
 
