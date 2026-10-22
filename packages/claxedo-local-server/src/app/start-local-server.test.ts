@@ -5,6 +5,10 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { customVerifierAuthAdapter, localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
+import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
+import { testSessionCore } from "@claxedo/session-core/testing"
+import { Pty } from "@claxedo/workspace-runtime"
+import { withSessionCore } from "@claxedo/workspace-runtime/testing"
 import { startLocalServer, type LocalServer } from "./start-local-server"
 import type { LocalAppOptions } from "./local-app"
 import { createLocalControlPlaneServices } from "./local-services"
@@ -280,6 +284,22 @@ describe("startLocalServer", () => {
       probe.once("error", reject)
       probe.listen(port, "127.0.0.1", () => probe.close(() => resolve()))
     })).resolves.toBeUndefined()
+  }, 30_000)
+
+  test.skipIf(process.platform === "win32")("stopping retires a terminal still open, so the daemon process can exit", async () => {
+    const local = await boot()
+    // A login shell ignores SIGTERM, which is what this stands in for.
+    const terminal = await withSessionCore(testSessionCore(dataDir), () =>
+      Pty.create({ command: "/bin/sh", args: ["-c", "trap '' TERM; while :; do sleep 1; done"], cwd: dataDir }, volatileLaunchOwnership()))
+    try {
+      await local.stop()
+      server = undefined
+
+      expect(Pty.list()).toEqual([])
+      expect(() => process.kill(terminal.pid, 0), "the terminal's shell outlived the server").toThrow()
+    } finally {
+      await Pty.dispose()
+    }
   }, 30_000)
 
   test("stopping bounds the drain of an open event stream", async () => {

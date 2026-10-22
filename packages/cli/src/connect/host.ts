@@ -35,6 +35,7 @@ import {
   type HostServingCredential,
 } from "@claxedo/host-serving/serving"
 import { createKeyedSerializer } from "@claxedo/helpers"
+import { Pty } from "@claxedo/workspace-runtime"
 import { asFiniteNumber, asRecordOrEmpty } from "@claxedo/helpers/guards"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { errorMessage } from "../json"
@@ -528,6 +529,9 @@ export async function runHost(input: HostRunInput): Promise<number> {
   await drainWithin(connector.drain(), deps)
   connector.close()
   deps.stopServing()
+  // Terminals belong to the process, not to a runtime the listener retires,
+  // and a live one's shell keeps Node from exiting.
+  await Pty.dispose()
   await listener.close()
   owned.clear()
   const { run: _run, ...rest } = state

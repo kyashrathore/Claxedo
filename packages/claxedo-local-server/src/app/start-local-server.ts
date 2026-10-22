@@ -61,6 +61,7 @@ import { createSqliteTurnMeterStateStore } from "@claxedo/server-core/usage/adap
 import { readMachineAgentUsage } from "../usage/adapters/token-tracker-usage-limits"
 import { localUsageHostId } from "../usage/host-id"
 import { drainUsageEvents } from "../usage/usage-event-drain"
+import { Pty } from "@claxedo/workspace-runtime"
 import { createLocalWorkspaceRelayProxy } from "../workspace/runtime-dispatch/shared-workspace-endpoint"
 import { localHostRelayActor, localHostSessionAccessPolicy } from "../deployments/local/host-session-authority"
 
@@ -397,6 +398,9 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
         stopConfigRenewal()
         sessionRows.stop()
         options.daemon?.lifecycle.stop()
+        // Terminals belong to the process, not to a runtime retired below, and
+        // a live one's shell keeps Node from exiting.
+        await Pty.dispose()
         // An owner this process could not retire is reported and the rest of
         // shutdown still runs. Skipping the usage drain because one workspace
         // refused teardown loses metering that had nothing to do with it.

@@ -37,7 +37,7 @@
     "build": "bun scripts/build.ts",
     "verify:publish": "bun scripts/verify-publish.ts",
     "dev": "bun run src/index.ts",
-    "test": "mkdir -p .artifacts/unit && node ../../script/test-deadline.mjs node ../../script/windows-test-timeout.mjs bun test src --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
+    "test": "mkdir -p .artifacts/unit && node ../../script/test-deadline.mjs node ../../script/windows-test-timeout.mjs bun test src --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml && node ../../script/test-home/run.mjs node ../../script/test-deadline.mjs node --import tsx --test src/commands/connect-terminal.node-test.ts",
     "typecheck": "tsgo --noEmit"
   },
   "dependencies": {
@@ -53,10 +53,12 @@
     "@claxedo/plugin-api": "workspace:*",
     "@claxedo/process-ownership": "workspace:*",
     "@claxedo/server-core": "workspace:*",
+    "@claxedo/session-core": "workspace:*",
     "@tsconfig/bun": "catalog:",
     "@tsconfig/node-lts": "22.0.4",
     "@types/bun": "catalog:",
     "@types/node": "catalog:",
-    "@typescript/native-preview": "catalog:"
+    "@typescript/native-preview": "catalog:",
+    "tsx": "4.22.3"
   }
 }
