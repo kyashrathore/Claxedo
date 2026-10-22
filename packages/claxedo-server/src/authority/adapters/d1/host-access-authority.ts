@@ -13,7 +13,8 @@ import { hostEnrollmentScope, hostProviderConfigRekeyed, hostSessionAuthority, n
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { HostAssignmentAck, HostAssignmentDescription, HostEnrollment, HostEnrollmentListRow, HostEnrollmentState, HostInvitationCreateInput, HostInvitationCreateResult, HostInvitationRedeemInput, HostInvitationRedeemResult, HostInvitationRow, HostMachineHeartbeatInput, HostMachineHeartbeatResult, HostProviderConfigPushInput, HostProviderConfigTarget, HostScopeDefinition, HostScopeUpdateResult, MachineAuthAdapter, MachinePrincipal } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { normalizeStoredDirectory } from "@claxedo/server-core/platform/auth/host-connect-contract"
-import { hostPathWithinRoots, normalizeHostPath } from "@claxedo/account-contract/host-path"
+import { hostPathWithinRoots } from "@claxedo/account-contract/host-path"
+import { assignmentsOutsideRootsSql, requireScope, storedScope } from "./host-scope-rules"
 import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-crypto"
 import { sha256Hex } from "@claxedo/helpers/crypto"
 import { asRecord, parseJson } from "@claxedo/server-core/platform/json/index"
@@ -152,7 +153,6 @@ const REQUEST_SWEEP_LIMIT = 500
 const INVITATION_MIN_TTL_MS = 5 * 60_000
 const INVITATION_MAX_TTL_MS = 24 * 60 * 60_000
 const INVITATION_DEFAULT_TTL_MS = 60 * 60_000
-const MAX_SCOPE_ROOTS = 50
 const MAX_SCOPE_ROOT_LENGTH = 1_024
 const MAX_SEALING_PUBLIC_KEY_LENGTH = 4_000
 /** base64url of the route's 32 KiB plaintext cap plus the ephemeral key, iv and tag. */
@@ -778,32 +778,6 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     const now = this.now()
     const auditId = this.randomId("audit")
     const assertionId = this.randomId("assert")
-    // The assignments of this host whose directory is neither one of the new
-    // roots nor under one, read inside the batch against the rows it deletes;
-    // binds host_id, owner_actor_id and the roots JSON, in that order. A row
-    // with no directory is outside every root, as in `hostPathWithinRoots`.
-    // A POSIX root compares byte for byte with `/` as the separator; a
-    // Windows root (anything not starting with `/`) compares by `lower()`
-    // with `\`, and a volume root (`C:\`) already ends in its separator.
-    // `.` and `..` segments the prefix cannot see are what every writer
-    // normalizes away. SQLite's `lower()` folds ASCII only, so a non-ASCII
-    // Windows folder name that differs from its root only by case stays
-    // assigned here and is refused by the host's own check at its next ack.
-    const outsideRootsSql = `
-      select assignment.workspace_id from host_workspace_assignments assignment
-      left join workspaces workspace on workspace.workspace_id = assignment.workspace_id
-      where assignment.host_id = ? and assignment.owner_actor_id = ?
-        and not exists (
-          select 1 from json_each(?) root
-          where case when substr(root.value, 1, 1) = '/'
-            then workspace.remote_directory = root.value
-              or (root.value = '/' and substr(workspace.remote_directory, 1, 1) = '/')
-              or substr(workspace.remote_directory, 1, length(root.value) + 1) = root.value || '/'
-            else lower(workspace.remote_directory) = lower(root.value)
-              or (substr(root.value, -1) = '\\' and lower(substr(workspace.remote_directory, 1, length(root.value))) = lower(root.value))
-              or lower(substr(workspace.remote_directory, 1, length(root.value) + 1)) = lower(root.value || '\\')
-          end
-        )`
     const outsideRoots = () => [row.host_id, row.owner_actor_id, rootsJson]
     await batchUnder(this.database, activeGuard(who), [
       this.database.prepare(`
@@ -811,10 +785,10 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
         where enrollment_id = ? and owner_actor_id = ? and scope_revision = ? and revoked_at is null
       `).bind(JSON.stringify(scope), revision, now, enrollmentId, who.actorId, row.scope_revision),
       wonAssertion(this.database, assertionId),
-      this.database.prepare(retireMachinePlacedWorkspaceSql(`workspace_id in (${outsideRootsSql})`))
+      this.database.prepare(retireMachinePlacedWorkspaceSql(`workspace_id in (${assignmentsOutsideRootsSql})`))
         .bind(now, now, ...outsideRoots()),
       this.database.prepare(`
-        delete from host_assignment_readiness where workspace_id in (${outsideRootsSql})
+        delete from host_assignment_readiness where workspace_id in (${assignmentsOutsideRootsSql})
       `).bind(...outsideRoots()),
       this.auditRow({
         eventId: auditId,
@@ -822,13 +796,13 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
         action: "host_enrollment.scope_updated",
         metadata: new SqlJson(
           `json_object('enrollmentId', ?, 'hostId', ?, 'scopeRevision', ?, 'retiredWorkspaceIds',
-            json((select json_group_array(workspace_id) from (${outsideRootsSql} order by assignment.workspace_id))))`,
+            json((select json_group_array(workspace_id) from (${assignmentsOutsideRootsSql} order by assignment.workspace_id))))`,
           [enrollmentId, row.host_id, revision, ...outsideRoots()],
         ),
         now,
       }),
       this.database.prepare(`
-        delete from host_workspace_assignments where workspace_id in (${outsideRootsSql})
+        delete from host_workspace_assignments where workspace_id in (${assignmentsOutsideRootsSql})
       `).bind(...outsideRoots()),
       deleteAssertion(this.database, assertionId),
     ], (statements) => this.guardedBatch(statements, "Host enrollment scope changed concurrently"))
@@ -1523,27 +1497,6 @@ class SqlJson {
   constructor(readonly sql: string, readonly bind: unknown[]) {}
 }
 
-
-function requireScope(input: HostScopeDefinition): HostScopeDefinition {
-  if (!input || typeof input !== "object" || !Array.isArray(input.allowed_roots)) {
-    throw new D1HostAccessAuthorityError("invalid_input", "scope.allowed_roots must be a list of absolute paths")
-  }
-  if (input.allowed_roots.length > MAX_SCOPE_ROOTS) {
-    throw new D1HostAccessAuthorityError("invalid_input", `scope.allowed_roots may name at most ${MAX_SCOPE_ROOTS} roots`)
-  }
-  const roots = input.allowed_roots.map((root) => {
-    const normalized = normalizeHostPath(requireText(root, "scope.allowed_roots", MAX_SCOPE_ROOT_LENGTH))
-    if (!normalized) throw new D1HostAccessAuthorityError("invalid_input", "scope.allowed_roots must be absolute paths")
-    return normalized
-  })
-  return { allowed_roots: [...new Set(roots)] }
-}
-
-function storedScope(json: string): HostScopeDefinition {
-  const scope = hostEnrollmentScope(json, 0)
-  if (!scope) throw new D1HostAccessAuthorityError("resource_conflict", "Stored invitation scope is malformed")
-  return { allowed_roots: scope.allowed_roots }
-}
 
 function supersededGeneration(servingGeneration: number) {
   return new D1HostAccessAuthorityError(

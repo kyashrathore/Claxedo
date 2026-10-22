@@ -931,7 +931,11 @@ describe("claxedo connect", () => {
       homedir: home,
       command: ["C:\\Program Files\\nodejs\\node.exe", "C:\\Users\\svc\\AppData\\Roaming\\npm\\node_modules\\@claxedo\\cli\\dist\\index.mjs"],
       claxedoHome: "C:\\Users\\svc\\.claxedo",
-      env: { APPDATA: "C:\\Users\\svc\\AppData\\Roaming", USERDOMAIN: "WIN-BOX" },
+      env: { APPDATA: "C:\\Users\\svc\\AppData\\Roaming" },
+      run: async (file, args) => {
+        h.serviceCalls.push([file, ...args].join(" "))
+        return file === "whoami.exe" ? { code: 0, stdout: "win-box\\svc\r\n" } : { code: 0, stdout: "" }
+      },
       writeFile: async (file, text) => {
         h.serviceCalls.push(`write ${file}`)
         written.set(file, text)
@@ -949,6 +953,7 @@ describe("claxedo connect", () => {
 
     expect(h.serviceCalls).toEqual([
       `write ${script}`,
+      "whoami.exe",
       `write ${taskXml}`,
       `schtasks.exe /Create /TN ClaxedoConnect /XML ${taskXml} /F`,
       `unlink ${taskXml}`,
@@ -965,7 +970,7 @@ describe("claxedo connect", () => {
     expect(h.cp.beats(), "the task's process beats, not this one").toHaveLength(0)
 
     expect(await connect(["--uninstall-service"], h.deps)).toBe(0)
-    expect(h.serviceCalls.slice(5)).toEqual([
+    expect(h.serviceCalls.slice(6)).toEqual([
       "schtasks.exe /End /TN ClaxedoConnect",
       "schtasks.exe /Delete /TN ClaxedoConnect /F",
       `unlink ${script}`,

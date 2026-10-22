@@ -16,7 +16,7 @@ import {
   type CommandResult,
   type ServiceDeps,
 } from "./service"
-import { windowsTaskXml, windowsUserId, windowsWrapperScript } from "./service-windows"
+import { windowsTaskXml, windowsWrapperScript } from "./service-windows"
 
 type Box = {
   linger?: CommandResult
@@ -251,18 +251,21 @@ describe("service units", () => {
     let registered: string | undefined
     deps.run = async (file, args) => {
       calls.push([file, ...args].join(" "))
+      if (file === "whoami.exe") return { code: 0, stdout: "win-box\\svc\r\n" }
       if (args[0] === "/Create") registered = files.get(args[4])
       return { code: 0, stdout: "" }
     }
     const { started, lines } = await startService(deps, service)
     expect(started).toBe(true)
     expect(calls).toEqual([
+      "whoami.exe",
       `schtasks.exe /Create /TN ClaxedoConnect /XML ${taskXml} /F`,
       "schtasks.exe /Run /TN ClaxedoConnect",
     ])
-    expect(registered).toBe(windowsTaskXml(deps))
-    expect(registered).toContain("<LogonTrigger><Enabled>true</Enabled><UserId>WIN-BOX\\svc</UserId></LogonTrigger>")
-    expect(registered).toContain("<Principal id=\"Author\"><UserId>WIN-BOX\\svc</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal>")
+    expect(registered).toBe(windowsTaskXml(deps, "win-box\\svc"))
+    expect(registered?.startsWith("<Task version"), "no XML declaration, which schtasks misreads as UTF-16").toBe(true)
+    expect(registered).toContain("<LogonTrigger><Enabled>true</Enabled><UserId>win-box\\svc</UserId></LogonTrigger>")
+    expect(registered).toContain("<Principal id=\"Author\"><UserId>win-box\\svc</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal>")
     expect(registered).toContain("<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>")
     expect(registered).toContain(`<Arguments>-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File &quot;${script}&quot;</Arguments>`)
     expect(files.has(taskXml), "the registration input is removed once the task holds it").toBe(false)
@@ -270,17 +273,22 @@ describe("service units", () => {
     expect(lines[1]).toContain("exit 78), which disables the task until `schtasks /Change /TN ClaxedoConnect /Enable`")
 
     expect(await uninstallService(deps, service)).toEqual([`Stopped and removed the scheduled task ClaxedoConnect (${script}).`])
-    expect(calls.slice(2)).toEqual(["schtasks.exe /End /TN ClaxedoConnect", "schtasks.exe /Delete /TN ClaxedoConnect /F"])
+    expect(calls.slice(3)).toEqual(["schtasks.exe /End /TN ClaxedoConnect", "schtasks.exe /Delete /TN ClaxedoConnect /F"])
     expect(files.size).toBe(0)
   })
 
-  test("the task's user and files follow the environment: APPDATA for the files, COMPUTERNAME when no domain is set", () => {
-    expect(windowsUserId({ username: "svc", env: { COMPUTERNAME: "DESKTOP-1" } })).toBe("DESKTOP-1\\svc")
-    expect(windowsUserId({ username: "svc", env: {} })).toBe("svc")
+  test("the task's files follow APPDATA, its user is escaped as XML text, and no user means no registration", async () => {
     expect(serviceUnitPath({ platform: "win32", homedir: "C:\\Users\\svc", env: { APPDATA: "D:\\Roaming" } })).toBe(
       "D:\\Roaming\\Claxedo\\claxedo-connect.ps1",
     )
-    expect(windowsTaskXml({ username: "a&b", homedir: "C:\\Users\\a&b", env: {} })).toContain("<UserId>a&amp;b</UserId>")
+    expect(windowsTaskXml({ homedir: "C:\\Users\\a&b", env: {} }, "BOX\\a&b")).toContain("<UserId>BOX\\a&amp;b</UserId>")
+    const { deps, calls } = fakeDeps("win32")
+    deps.run = async (file, args) => {
+      calls.push([file, ...args].join(" "))
+      return { code: 1, stdout: "" }
+    }
+    await expect(startService(deps, await writeServiceUnit(deps, { alongsideDesktop: false }))).rejects.toThrow("whoami.exe did not answer")
+    expect(calls).toEqual(["whoami.exe"])
   })
 
   test("other platforms are refused before anything is written", async () => {
