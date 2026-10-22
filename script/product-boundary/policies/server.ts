@@ -311,8 +311,12 @@ export const serverWorkerd: Policy = {
   // connected through moved out of the hosted core app into their own module
   // (`deployments/hosted-shared/hosted-host-routes.ts`) so the builder's
   // composition fits beside them. It adds no package edge.
-  // 191/23, no headroom.
-  ceilings: { modules: 191, packages: 23 },
+  // +1 module (owner: the D1 host access authority's beat): the direct routes
+  // a machine's latest beat reports, kept in a table and a module of their
+  // own and read only for the workspace owner's connection
+  // (`authority/adapters/d1/host-direct-routes.ts`). It adds no package edge.
+  // 192/23, no headroom.
+  ceilings: { modules: 192, packages: 23 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

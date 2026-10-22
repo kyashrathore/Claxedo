@@ -1,5 +1,5 @@
 import type { HostDevice } from "./host-devices"
-import type { HostEnrollment, HostEnrollmentListRow, HostEnrollmentState, HostInvitationCreateInput, HostInvitationCreateResult, HostInvitationRedeemInput, HostInvitationRedeemResult, HostInvitationRow, HostMachineHeartbeatInput, HostMachineHeartbeatResult, HostProviderConfigPushInput, HostProviderConfigTarget, HostScopeDefinition, HostScopeUpdateResult, HostSessionAuthority, MachineAuthAdapter, MachinePrincipal } from "./host-connect-contract"
+import type { HostDirectRoutes, HostEnrollment, HostEnrollmentListRow, HostEnrollmentState, HostInvitationCreateInput, HostInvitationCreateResult, HostInvitationRedeemInput, HostInvitationRedeemResult, HostInvitationRow, HostMachineHeartbeatInput, HostMachineHeartbeatResult, HostProviderConfigPushInput, HostProviderConfigTarget, HostScopeDefinition, HostScopeUpdateResult, HostSessionAuthority, MachineAuthAdapter, MachinePrincipal } from "./host-connect-contract"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "./auth"
 import type { OrgId, ProjectId } from "./branded-id"
 import type { SandboxMachineClass } from "@claxedo/sandbox-contract"
@@ -337,6 +337,18 @@ export type WorkspaceAuthority = OrgAccessAuthority & SessionShareAuthority & Pa
     machine: MachinePrincipal,
     args: HostMachineHeartbeatInput,
   ) => Promise<HostMachineHeartbeatResult>
+  /**
+   * The direct routes the machine's latest beat reported, replacing the ones
+   * before; `undefined` is a beat that reported none, since nothing listens.
+   * Absent on an authority that hands out no direct routes.
+   */
+  recordHostDirectRoutes?: (machine: MachinePrincipal, routes: HostDirectRoutes | undefined) => Promise<void>
+  /**
+   * The direct routes of the enrollment serving this workspace now. It decides
+   * no access: the caller asks only once it has decided the workspace is the
+   * caller's own.
+   */
+  hostDirectRoutes?: (args: { workspaceId: string }) => Promise<HostDirectRoutes | undefined>
   /**
    * A starting instance claims the next serving generation; beats and tunnels
    * of every earlier generation are refused from this point. Readiness rows of

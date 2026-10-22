@@ -152,6 +152,13 @@ export type HostAssignmentDescription = {
 /** The host's statement that it serves a workspace at a given description. */
 export type HostAssignmentAck = { workspaceId: string; revision: number }
 
+/**
+ * Where the workspace owner's desktop on the machine's own network reaches it
+ * without the relay: one TLS port on each private-network address, behind a
+ * key whose SHA-256 SubjectPublicKeyInfo hash (base64url) a client pins.
+ */
+export type HostDirectRoutes = { port: number; addresses: string[]; spkiSha256: string }
+
 export type HostMachineHeartbeatInput = {
   enrollmentId: string
   hostId: string

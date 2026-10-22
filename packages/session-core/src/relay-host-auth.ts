@@ -1,5 +1,6 @@
 import { createMiddleware } from "hono/factory"
-import { createRemoteJWKSet, exportJWK, importSPKI, jwksCache, type RemoteJWKSetOptions } from "jose"
+import type { Context, Next } from "hono"
+import { createRemoteJWKSet, decodeJwt, exportJWK, importSPKI, jwksCache, type RemoteJWKSetOptions } from "jose"
 import { sessionScopeReaches, type RelayHostVerifierClaims, type TokenVerifier } from "@claxedo/workspace-relay-protocol"
 import {
   WorkspaceRelayAuthError,
@@ -7,11 +8,14 @@ import {
   isRelayBacking,
   relayHostTokenAudience,
   relayHostTokenIssuer,
+  runtimeAccessTokenAudience,
   tokenPurposeClaims,
   tokenScopeClaims,
   verifyRelayHostToken,
+  verifyRuntimeAccessToken,
   type RelayHostTokenClaims,
   type RelayKey,
+  type RuntimeAccessTokenClaims,
 } from "@claxedo/workspace-relay"
 import { bearerToken, errorBody } from "./routes/http"
 import { trimToUndefined } from "@claxedo/helpers/string"
@@ -37,10 +41,27 @@ export type RelayHostAuthOptions = {
    * same codes as the key path.
    */
   verifier?: TokenVerifier<RelayHostVerifierClaims>
+  /** Admits a caller that reached this host without the relay; absent, only a Relay Host Token is admitted. */
+  runtimeAccess?: RuntimeAccessAdmission
+}
+
+export type RuntimeAccessTokenState = { active: true } | { active: false; code: string; message: string }
+
+/**
+ * A control-plane-signed Runtime Access Token presented to this host directly,
+ * as the relay is presented one. Only the workspace owner's own token is
+ * admitted: workspace-wide, for no purpose, cloud routing or channel. A
+ * signature outlives a revocation, so `active` asks the control plane whether
+ * the token's row still stands on every admission.
+ */
+export type RuntimeAccessAdmission = {
+  /** The control plane's published key set, by `kid`. */
+  key: RelayKey
+  active: (input: { token: string; claims: RuntimeAccessTokenClaims }) => Promise<RuntimeAccessTokenState>
 }
 
 export type RelayHostAuthContext = {
-  relayHostAuth?: RelayHostTokenClaims | EmbeddedRelayHostIdentity
+  relayHostAuth?: RelayHostTokenClaims | EmbeddedRelayHostIdentity | RuntimeAccessTokenClaims
   relayHostDirectAuth?: true
 }
 
@@ -71,7 +92,12 @@ export type EmbeddedRelayHostIdentity = {
 }
 
 export type RelayHostAuthAuditEvent = {
-  action: "relay_host_token.accepted" | "relay_host_token.rejected" | "direct_host_token.accepted"
+  action:
+    | "relay_host_token.accepted"
+    | "relay_host_token.rejected"
+    | "direct_host_token.accepted"
+    | "runtime_access_token.accepted"
+    | "runtime_access_token.rejected"
   result: "allow" | "deny"
   reason?: string
   workspaceId: string
@@ -286,6 +312,53 @@ async function audit(options: RelayHostAuthOptions, input: Omit<RelayHostAuthAud
   })
 }
 
+function namesRuntimeAccessAudience(token: string): boolean {
+  try {
+    return decodeJwt(token).aud === runtimeAccessTokenAudience
+  } catch {
+    return false
+  }
+}
+
+function authErrorCode(error: unknown, fallback: string): string {
+  return error && typeof error === "object" && "code" in error && typeof error.code === "string" ? error.code : fallback
+}
+
+async function admitRuntimeAccessToken(
+  c: Context<{ Variables: RelayHostAuthContext }>,
+  next: Next,
+  options: RelayHostAuthOptions,
+  access: RuntimeAccessAdmission,
+  token: string,
+) {
+  const request = { path: c.req.path, method: c.req.method }
+  const refuse = async (status: 401 | 403 | 503, code: string, message: string) => {
+    await audit(options, { action: "runtime_access_token.rejected", result: "deny", reason: code, ...request })
+    return c.json(errorBody(code, message), status)
+  }
+  let claims: RuntimeAccessTokenClaims
+  try {
+    claims = await verifyRuntimeAccessToken(token, access.key, { workspaceId: options.workspaceId, hostId: options.hostId })
+  } catch (error) {
+    const code = authErrorCode(error, "runtime_access_token_invalid")
+    return await refuse(code.includes("mismatch") ? 403 : 401, code, "Runtime Access Token is invalid")
+  }
+  if (claims.scope !== "workspace" || claims.purpose || claims.routing_id !== undefined || claims.channel_identity) {
+    return await refuse(403, "runtime_access_token_scope_denied", "Only the workspace owner's own token reaches this host directly")
+  }
+  const state = await access.active({ token, claims }).catch((): RuntimeAccessTokenState => ({
+    active: false,
+    code: "runtime_access_token_state_unavailable",
+    message: "Whether the Runtime Access Token still stands could not be read",
+  }))
+  if (!state.active) {
+    return await refuse(state.code === "runtime_access_token_state_unavailable" ? 503 : 401, state.code, state.message)
+  }
+  c.set("relayHostAuth", claims)
+  await audit(options, { action: "runtime_access_token.accepted", result: "allow", ...request })
+  return await next()
+}
+
 // Upgraded connections trust the RHT until close and verify a fresh one on
 // reconnect. Session streams also renew their authority and observe expired
 // proofs or revoked shares while the connection remains open.
@@ -319,6 +392,10 @@ export function createRelayHostAuthMiddleware(options: RelayHostAuthOptions) {
         method: c.req.method,
       })
       return c.json(errorBody("relay_host_token_required", "Relay Host Token is required"), 401)
+    }
+
+    if (options.runtimeAccess && namesRuntimeAccessAudience(token)) {
+      return await admitRuntimeAccessToken(c, next, options, options.runtimeAccess, token)
     }
 
     try {
@@ -395,9 +472,7 @@ export function createRelayHostAuthMiddleware(options: RelayHostAuthOptions) {
       })
       return await next()
     } catch (err) {
-      const code = err && typeof err === "object" && "code" in err && typeof err.code === "string"
-        ? err.code
-        : "invalid_relay_host_token"
+      const code = authErrorCode(err, "invalid_relay_host_token")
       await audit(options, {
         action: "relay_host_token.rejected",
         result: "deny",

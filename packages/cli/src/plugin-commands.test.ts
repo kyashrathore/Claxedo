@@ -26,7 +26,7 @@ afterEach(() => {
 test("help prints each plugin command's usage where the documents lines always stood", () => {
   expect(helpText()).toBe(`claxedo login
 claxedo logout
-claxedo connect [--token-file F] [--root DIR]... [--name N] [--install-service] [--uninstall-service] [--foreground] [--alongside-desktop] [--reset] [--reset-roots]
+claxedo connect [--token-file F] [--root DIR]... [--name N] [--direct on|off] [--install-service] [--uninstall-service] [--foreground] [--alongside-desktop] [--reset] [--reset-roots]
 claxedo host invite --name N --root DIR... [--expires 1h]
 claxedo host list
 claxedo host assign --machine <name|enrollment_id> <dir> [--name N]

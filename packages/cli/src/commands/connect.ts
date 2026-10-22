@@ -46,6 +46,7 @@ export const connectHelp = `${connectUsage}
   --token-file F        redeem an invitation from F (minted by \`claxedo host invite\`); the file is removed once the enrollment is on disk
   --root DIR            serve only under DIR (repeatable, absolute as this machine writes it); the effective roots are the owner's scope ∩ these
   --name N              this machine's display name at first enrollment (default: the name this computer answers to)
+  --direct on|off       whether this machine also listens, TLS only, on its private-network addresses (LAN, tailnet) so the owner's desktop app on the same network reaches it without the relay; on by default, remembered until changed, and off means nothing listens and no route is reported
   --install-service     enroll if --token-file is given, then install and start a user service that runs \`claxedo connect --foreground\`
   --uninstall-service   stop and remove that service
   --foreground          serve in this process (the default when no service flag is given)
@@ -269,6 +270,10 @@ export async function connect(argv: string[], deps: ConnectDeps = defaultConnect
     if (!state?.enrollment) {
       state = await enroll(deps, args, state, log)
       if (!state) return DECISION_EXIT_CODE
+    }
+    if (args.direct !== undefined && (state.direct?.enabled ?? true) !== args.direct) {
+      state = { ...state, direct: { ...state.direct, enabled: args.direct } }
+      await deps.store.save(state)
     }
 
     if (args.installService) {

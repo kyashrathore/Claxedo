@@ -11,6 +11,7 @@ import {
   type RelayHostAuthAuditEvent,
   type RelayHostAuthContext,
   type RelayHostAuthOptions,
+  type RuntimeAccessTokenState,
 } from "./relay-host-auth"
 
 async function app(input: { trustedDirectTokenForRequest?: RelayHostAuthOptions["trustedDirectTokenForRequest"] } = {}) {
@@ -1074,5 +1075,97 @@ describe("relay host token verifier outside a middleware", () => {
     } finally {
       await new Promise<void>((resolve) => relay.server.close(() => resolve()))
     }
+  })
+})
+
+describe("a Runtime Access Token presented without the relay", () => {
+  async function directApp(state: (token: string) => Promise<RuntimeAccessTokenState> = async () => ({ active: true })) {
+    const relayKey = await generateKeyPair("EdDSA", { extractable: true })
+    const controlPlaneKey = await generateKeyPair("EdDSA", { extractable: true })
+    const asked: string[] = []
+    const auditEvents: RelayHostAuthAuditEvent[] = []
+    const app = new Hono<{ Variables: RelayHostAuthContext }>()
+    app.use("*", createRelayHostAuthMiddleware({
+      key: relayKey.publicKey,
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      runtimeAccess: {
+        key: controlPlaneKey.publicKey,
+        active: async ({ token, claims }) => {
+          asked.push(claims.jti)
+          return await state(token)
+        },
+      },
+      audit: (event) => {
+        auditEvents.push(event)
+      },
+    }))
+    app.get("/api/wr/pty", (c) => c.json({ actorId: c.get("relayHostAuth")?.actor_id, workspaceId: c.get("relayHostAuth")?.workspace_id }))
+    const call = (token: string) => app.request("http://localhost/api/wr/pty", { headers: { authorization: `Bearer ${token}` } })
+    return { app, call, relayKey, controlPlaneKey, asked, auditEvents }
+  }
+
+  test("admits the owner's token for this workspace and host as its actor, once the control plane says it stands", async () => {
+    const harness = await directApp()
+    const token = await mintRuntimeAccessToken(tokenInput, harness.controlPlaneKey.privateKey, "EdDSA")
+
+    const res = await harness.call(token)
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ actorId: "actor_1", workspaceId: "ws_1" })
+    expect(harness.asked).toEqual(["jti_1"])
+    expect(harness.auditEvents.map((event) => event.action)).toEqual(["runtime_access_token.accepted"])
+  })
+
+  test("refuses a token the control plane revoked, without serving the route", async () => {
+    const harness = await directApp(async () => ({ active: false, code: "runtime_access_token_revoked", message: "Runtime Access Token has been revoked" }))
+    const token = await mintRuntimeAccessToken(tokenInput, harness.controlPlaneKey.privateKey, "EdDSA")
+
+    const res = await harness.call(token)
+
+    expect(res.status).toBe(401)
+    expect(await res.json()).toEqual({ error: { code: "runtime_access_token_revoked", message: "Runtime Access Token has been revoked" } })
+  })
+
+  test("answers 503 when whether the token stands cannot be read", async () => {
+    const harness = await directApp(async () => {
+      throw new Error("control plane unreachable")
+    })
+    const token = await mintRuntimeAccessToken(tokenInput, harness.controlPlaneKey.privateKey, "EdDSA")
+
+    const res = await harness.call(token)
+
+    expect(res.status).toBe(503)
+    expect((await res.json() as { error: { code: string } }).error.code).toBe("runtime_access_token_state_unavailable")
+  })
+
+  test("refuses a token signed by another key, for another workspace or host, or reaching less than the workspace, before asking the control plane", async () => {
+    const harness = await directApp()
+    const stranger = await generateKeyPair("EdDSA", { extractable: true })
+    const owner = harness.controlPlaneKey.privateKey
+    const cases: Array<[string, number, string]> = [
+      [await mintRuntimeAccessToken(tokenInput, stranger.privateKey, "EdDSA"), 401, "invalid_relay_token"],
+      [await mintRuntimeAccessToken({ ...tokenInput, workspaceId: "ws_2" }, owner, "EdDSA"), 403, "relay_token_workspace_mismatch"],
+      [await mintRuntimeAccessToken({ ...tokenInput, hostId: "host_2" }, owner, "EdDSA"), 403, "relay_token_host_mismatch"],
+      [await mintRuntimeAccessToken({ ...tokenInput, sessionId: "ses_1", role: "viewer" }, owner, "EdDSA"), 403, "runtime_access_token_scope_denied"],
+      [await mintRuntimeAccessToken({ ...tokenInput, routingId: "route_1" }, owner, "EdDSA"), 403, "runtime_access_token_scope_denied"],
+      [await mintRuntimeAccessToken({ ...tokenInput, purpose: "turn-execution" }, owner, "EdDSA"), 403, "runtime_access_token_scope_denied"],
+    ]
+    for (const [token, status, code] of cases) {
+      const res = await harness.call(token)
+      expect(res.status, code).toBe(status)
+      expect((await res.json() as { error: { code: string } }).error.code).toBe(code)
+    }
+    expect(harness.asked).toEqual([])
+  })
+
+  test("still refuses a relay host token replayed around the relay", async () => {
+    const harness = await directApp()
+    const token = await mintRelayHostToken({ ...tokenInput, backing: "local-worktree" }, harness.relayKey.privateKey, "EdDSA")
+
+    const res = await harness.app.request("http://localhost/api/wr/pty", { headers: { authorization: `Bearer ${token}`, "x-workspace-id": "ws_1" } })
+
+    expect(res.status).toBe(401)
+    expect((await res.json() as { error: { code: string } }).error.code).toBe("relay_marker_required")
   })
 })

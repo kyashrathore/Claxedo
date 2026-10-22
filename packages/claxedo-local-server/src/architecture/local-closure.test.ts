@@ -278,12 +278,16 @@ describe("@claxedo/local-server closure", () => {
     //    projection: the retained skill roots and the projected MCP servers
     //    the embedded `transports/pi-durable` connects itself, beside the
     //    other harnesses' adapters.
+    //  - `workspace/direct-route.ts` and `workspace/direct-connection.ts` —
+    //    the desktop's direct route to another machine on its own network:
+    //    the renderer's runtime requests and terminal sockets for a remote
+    //    workspace, carried over TLS pinned to the key the machine reported,
+    //    with `node:tls` and `node:http`.
     //
-    // 96 modules and 28 packages, measured once the desktop-local Tasks
-    // composition moved to `@claxedo/tasks/local`, which the desktop entry
-    // composes; no headroom.
+    // 97 modules and 30 packages, measured once the direct route joined; no
+    // headroom.
     const { modules, packages } = closure({ runtimeOnly: true })
-    expect(modules.size).toBeLessThanOrEqual(96)
-    expect(packages.size).toBeLessThanOrEqual(28)
+    expect(modules.size).toBeLessThanOrEqual(97)
+    expect(packages.size).toBeLessThanOrEqual(30)
   })
 })

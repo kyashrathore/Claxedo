@@ -59,6 +59,7 @@
       "names": [
         "isLoopbackIpAddress",
         "isPrivateIpAddress",
+        "isPrivateNetworkAddress",
         "parseIpAddress"
       ]
     },

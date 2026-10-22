@@ -11,9 +11,9 @@
  *
  * What this deliberately does not do:
  *
- *   - **Serve anything.** The connector is a client. A laptop that listens is a
- *     laptop with an attack surface, and the Relay already provides the inbound
- *     path.
+ *   - **Serve anything.** The connector is a client. What the machine serves —
+ *     the relay tunnel, and the private-network listener whose routes a beat
+ *     reports — is opened by the process that owns the runtimes.
  *   - **Hold an account credential.** It signs with the machine key. The
  *     account token lives in Electron main, and a headless connector on a
  *     server has no account at all.
@@ -79,6 +79,14 @@ export type HeartbeatResponse = {
   providerConfig?: ProviderConfigRevision
 } & HostEndpoints
 
+/**
+ * Where a client on this machine's own network reaches it without the relay:
+ * one TLS port on each private-network address, behind a certificate whose
+ * public key hashes (SHA-256 over the DER SubjectPublicKeyInfo, base64url) to
+ * `spkiSha256`.
+ */
+export type DirectRoutes = { port: number; addresses: readonly string[]; spkiSha256: string }
+
 /** The request signature covers the whole body, so it carries no payload signature of its own. */
 export type MachineHeartbeatInput = {
   generation: number
@@ -97,6 +105,8 @@ export type MachineHeartbeatInput = {
   sealingPublicKey?: string
   /** The provider-config revision this machine has STORED; the answer restates it only when it differs. */
   providerConfigRevision?: number
+  /** Absent when nothing listens: the switch is off, or the machine has no private-network address. */
+  directRoutes?: DirectRoutes
 }
 
 export type MachineTransport = {
@@ -123,7 +133,7 @@ export type MachineTransport = {
   watch?: (listener: { onEvent: () => void; onError?: (error: unknown) => void }) => { close: () => void }
 }
 
-export type ConnectorErrorStage = "heartbeat" | "acquire" | "reconcile" | "provider-config" | "events"
+export type ConnectorErrorStage = "heartbeat" | "acquire" | "reconcile" | "provider-config" | "events" | "direct-routes"
 
 /**
  * Where a host stands on the directory a description names.
@@ -247,6 +257,12 @@ export type ConnectorOptions = MachineDirectoryScope & {
    * no way to say it is already configured.
    */
   providerConfigRevision?: number
+  /**
+   * Read before every serving beat, so a beat reports the addresses the
+   * listener holds at that moment. A refusal is reported through `onError`
+   * and that beat reports no routes.
+   */
+  directRoutes?: () => Promise<DirectRoutes | undefined>
 }
 
 /** The deadline for the acquire request, below the transport's own bound. */
@@ -588,10 +604,20 @@ export function createHostConnector(options: ConnectorOptions) {
     return inFlight
   }
 
+  const readDirectRoutes = async (): Promise<DirectRoutes | undefined> => {
+    try {
+      return await options.directRoutes?.()
+    } catch (error) {
+      options.onError?.("direct-routes", error)
+      return undefined
+    }
+  }
+
   const runBeat = async (purpose: "serving" | "drain"): Promise<ConnectorState> => {
     if (state.status !== "enrolled" || generation === undefined) return state
     const startedIn = era
     const enrollment = state.enrollment
+    const directRoutes = purpose === "serving" ? await readDirectRoutes() : undefined
     try {
       const result = await options.transport.heartbeat({
         generation,
@@ -599,6 +625,7 @@ export function createHostConnector(options: ConnectorOptions) {
         ...(options.sessionAuthority ? { sessionAuthority: options.sessionAuthority } : {}),
         ...(options.sealingPublicKey ? { sealingPublicKey: options.sealingPublicKey } : {}),
         ...(providerConfigRevision === undefined ? {} : { providerConfigRevision }),
+        ...(directRoutes ? { directRoutes } : {}),
       })
       // The instance this beat was proving ended while it was in flight —
       // stopped, or superseded by a newer generation. Its answer describes a

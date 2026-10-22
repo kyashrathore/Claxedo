@@ -3,6 +3,7 @@ import { describe, expect, test, vi } from "vitest"
 import {
   createHostConnector,
   type ConnectorErrorStage,
+  type DirectRoutes,
   type HostSessionAuthority,
   type MachineTransport,
 } from "./connector"
@@ -24,6 +25,7 @@ async function machineHost(
   input: {
     sessionAuthority?: HostSessionAuthority
     wrap?: (transport: MachineTransport) => MachineTransport
+    directRoutes?: () => Promise<DirectRoutes | undefined>
   } = {},
 ) {
   // One clock for the fake and the transport: the fake refuses a request
@@ -52,6 +54,7 @@ async function machineHost(
     enrollmentId: enrolled.enrollmentId,
     heartbeatIntervalMs: 25_000,
     ...(input.sessionAuthority ? { sessionAuthority: input.sessionAuthority } : {}),
+    ...(input.directRoutes ? { directRoutes: input.directRoutes } : {}),
     setInterval: (fn) => {
       ticks.push(fn)
       return {
@@ -539,5 +542,40 @@ describe("declared session composition", () => {
 
     expect(h.beats()).toHaveLength(2)
     for (const beat of h.beats()) expect(beat.body).not.toHaveProperty("sessionAuthority")
+  })
+})
+
+describe("direct routes", () => {
+  test("each serving beat reports the routes read just before it, and the drain reports none", async () => {
+    const reads: Array<DirectRoutes | undefined> = [
+      { port: 4433, addresses: ["192.168.1.20"], spkiSha256: "pin" },
+      { port: 4433, addresses: ["100.64.0.7", "192.168.1.20"], spkiSha256: "pin" },
+      undefined,
+    ]
+    const h = await machineHost({ directRoutes: async () => reads.shift() })
+    await h.connector.start()
+    await h.connector.beat()
+    await h.connector.beat()
+    await h.connector.drain()
+
+    expect(h.beats().map((beat) => beat.body.directRoutes)).toEqual([
+      { port: 4433, addresses: ["192.168.1.20"], spkiSha256: "pin" },
+      { port: 4433, addresses: ["100.64.0.7", "192.168.1.20"], spkiSha256: "pin" },
+      undefined,
+      undefined,
+    ])
+  })
+
+  test("a routes read that fails is reported and that beat still renews the lease, reporting no routes", async () => {
+    const h = await machineHost({
+      directRoutes: async () => {
+        throw new Error("no interfaces")
+      },
+    })
+    await h.connector.start()
+
+    expect(h.connector.state().status).toBe("enrolled")
+    expect(h.beats()[0]?.body).not.toHaveProperty("directRoutes")
+    expect(h.errors.map((entry) => entry.stage)).toEqual(["direct-routes"])
   })
 })

@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { createHash, X509Certificate } from "node:crypto"
+import { connect as tlsConnect } from "node:tls"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -158,6 +160,7 @@ async function harness(input: { home?: string; cp?: FakeControlPlane; relay?: Re
       listener = await createHostRuntimeListener({ hostname: "127.0.0.1", port: 0, drainTimeoutMs: 500 })
       return listener
     },
+    directAddresses: () => [],
     setServing: setHostServing,
     servingState: hostServingState,
     stopServing: stopHostServing,
@@ -305,6 +308,47 @@ describe("claxedo connect", () => {
     expect(h.cp.beats()[0]?.body).toMatchObject({ generation: 2, acks: [], sessionAuthority: "managed-private" })
     h.stop()
     expect(await second).toBe(0)
+  })
+
+  test("the direct route listens, reports its port and pin on every beat, keeps both across a restart, and --direct off stops it", async () => {
+    h.deps.host.directAddresses = () => ["127.0.0.1"]
+    const { file } = await invitationFile(h, [h.root])
+    const presentedPin = (port: number) => new Promise<string>((resolve, reject) => {
+      const socket = tlsConnect({ host: "127.0.0.1", port, rejectUnauthorized: false }, () => {
+        const spki = new X509Certificate(socket.getPeerCertificate(true).raw).publicKey.export({ type: "spki", format: "der" })
+        socket.destroy()
+        resolve(createHash("sha256").update(spki).digest("base64url"))
+      })
+      socket.on("error", reject)
+    })
+
+    const first = connect(["--token-file", file], h.deps)
+    await until(() => h.cp.beats().length >= 1, "first beat")
+    const reported = h.cp.beats()[0]?.body.directRoutes as { port: number; addresses: string[]; spkiSha256: string }
+    expect(reported.addresses).toEqual(["127.0.0.1"])
+    expect(await presentedPin(reported.port)).toBe(reported.spkiSha256)
+    const stored = (await h.deps.store.load())?.direct
+    expect(stored).toMatchObject({ enabled: true, port: reported.port })
+    expect(stored?.tls_private_key_jwk?.crv).toBe("P-256")
+    h.stop()
+    expect(await first).toBe(0)
+    expect(h.cp.log.at(-1)?.body.directRoutes).toBeUndefined()
+    await expect(presentedPin(reported.port)).rejects.toThrow()
+
+    const second = connect([], h.deps)
+    await until(() => h.cp.beats().length >= 3, "resumed beat")
+    expect(h.cp.beats().at(-1)?.body.directRoutes).toEqual(reported)
+    h.stop()
+    expect(await second).toBe(0)
+
+    const third = connect(["--direct", "off"], h.deps)
+    await until(() => h.cp.beats().length >= 5, "beat with the direct route off")
+    expect(h.cp.beats().at(-1)?.body.directRoutes).toBeUndefined()
+    expect((await h.deps.store.load())?.direct?.enabled).toBe(false)
+    expect(h.lines).toContain("direct route: off; `claxedo connect --direct on` turns it on")
+    await expect(presentedPin(reported.port)).rejects.toThrow()
+    h.stop()
+    expect(await third).toBe(0)
   })
 
   test("a boot after SIGKILL records its own start, not the dead instance's", async () => {
@@ -1150,6 +1194,9 @@ describe("connect argument parsing", () => {
       resetRoots: false,
     })
     expect(parseConnectArgs(["--reset-roots"]).resetRoots).toBe(true)
+    expect(parseConnectArgs(["--direct", "off"]).direct).toBe(false)
+    expect(parseConnectArgs(["--direct=on"]).direct).toBe(true)
+    expect(parseConnectArgs([]).direct).toBeUndefined()
   })
 
   test("refuses unknown options, missing values, relative roots and contradictory flags", () => {
@@ -1161,6 +1208,8 @@ describe("connect argument parsing", () => {
     expect(() => parseConnectArgs(["--reset", "--alongside-desktop"])).toThrow("--reset takes no other options")
     expect(() => parseConnectArgs(["--reset", "--reset-roots"])).toThrow("--reset takes no other options")
     expect(() => parseConnectArgs(["--reset-roots", "--root", "/srv"])).toThrow("--reset-roots takes no other options")
+    expect(() => parseConnectArgs(["--direct", "maybe"])).toThrow("--direct takes on or off")
+    expect(() => parseConnectArgs(["--reset", "--direct", "off"])).toThrow("--reset takes no other options")
   })
 })
 

@@ -24,6 +24,8 @@ import { Hono, type Context, type MiddlewareHandler } from "hono"
 import { cors } from "hono/cors"
 import { createNodeWebSocket } from "@hono/node-ws"
 import { timingSafeEqual } from "node:crypto"
+import { createServer } from "node:http"
+import { createDirectRouteCarrier } from "../workspace/direct-route"
 import { CLAXEDO_DAEMON_SERVICE, DAEMON_PROTOCOL_HEADER } from "@claxedo/helpers/claxedo-daemon"
 import { isLoopbackLocalRequest, peerAddressStamp } from "@claxedo/server-core/platform/http/peer-address"
 import {
@@ -251,6 +253,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   // is a plain property and is safe to pull off.
   const nodeWebSocket = createNodeWebSocket({ app })
   const { upgradeWebSocket } = nodeWebSocket
+  const directRoute = createDirectRouteCarrier()
   const runtimeProxyOptions = options.runtimeProxyOptions ?? {}
   // The desktop daemon hosts every local runtime in-process and issues no
   // sessions, so it always serves the host aggregate. The bootstrap declares
@@ -483,6 +486,10 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   // Registered before the runtime proxy, which answers `/session` itself.
   app.use(sessionMetaProjectionTap(services.projectionStore))
 
+  app.put("/api/claxedo/direct-routes/:workspaceId", directRoute.register)
+  app.all("/direct/workspaces/:workspaceId", directRoute.route)
+  app.all("/direct/workspaces/:workspaceId/*", directRoute.route)
+
   mountWorkspaceRuntimePtyWebSocketProxy(app, upgradeWebSocket, runtimeProxyOptions)
   // Before the runtime proxy on purpose — both claim `/workspaces/:workspaceId`.
   if (options.workspaceRelayProxy) {
@@ -588,7 +595,15 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     }).routes)
   }
 
-  return { injectWebSocket: (server: Parameters<typeof nodeWebSocket.injectWebSocket>[0]) => nodeWebSocket.injectWebSocket(server) }
+  return {
+    injectWebSocket: (server: Parameters<typeof nodeWebSocket.injectWebSocket>[0]) => {
+      // Never listens: `@hono/node-ws` ends every upgrade it has no socket
+      // handler for, so the direct route's upgrades are kept off it.
+      const others = createServer()
+      nodeWebSocket.injectWebSocket(others)
+      directRoute.injectWebSocket(server, app, others)
+    },
+  }
 }
 
 export function createLocalApp(options: LocalAppOptions) {

@@ -18,7 +18,8 @@
  * map is consulted per request rather than baked into the router.
  */
 
-import { createServer, type Server } from "node:http"
+import { createServer, type IncomingMessage, type Server } from "node:http"
+import type { Duplex } from "node:stream"
 import { Hono } from "hono"
 import { getRequestListener } from "@hono/node-server"
 import {
@@ -30,6 +31,7 @@ import {
 } from "@claxedo/workspace-runtime"
 import { createAuthorityGrants, remoteWorkspaceSessionAccessPolicy, type AuthorityGrants } from "@claxedo/session-core"
 import { relayHostAuthFromEnv } from "@claxedo/workspace-runtime/relay"
+import { runtimeAccessAdmission } from "./direct-admission"
 import { createDocumentHydration, documentHydrationContribution } from "@claxedo/documents/runtime"
 import { isSessionConfigRefusal } from "@claxedo/workspace-runtime/config"
 import { configureAgentConfig } from "@claxedo/server-core/agent-config/index"
@@ -128,6 +130,12 @@ export type HostWorkspaceRuntimeOptions = {
   sessionAuthorityUrl: string
   /** One store for every runtime this host serves, so one ring of the doorbell forgets every reused answer. */
   authorityGrants?: AuthorityGrants
+  /**
+   * The control plane's published key set, present while the direct listener
+   * is on: the owner's Runtime Access Token is then admitted as the relay's
+   * host token is.
+   */
+  runtimeAccessJwksUrl?: string
   /** Per-workspace state root from the persisted host state's `storage_root`. */
   storeRoot: string
   harness?: WorkspaceRuntimeServerOptions["harness"]
@@ -145,14 +153,18 @@ export async function createHostWorkspaceRuntime(options: HostWorkspaceRuntimeOp
   })
   if (!relayHostAuth) throw new Error("Host workspace runtime requires a relay JWKS URL")
   const target = { workspaceId: options.workspaceId, directory: options.directory }
+  const sessionAccessPolicy = remoteWorkspaceSessionAccessPolicy({
+    url: options.sessionAuthorityUrl,
+    ...(options.authorityGrants ? { grants: options.authorityGrants } : {}),
+  })
+  const runtimeAccess = options.runtimeAccessJwksUrl
+    ? runtimeAccessAdmission({ jwksUrl: options.runtimeAccessJwksUrl, policy: sessionAccessPolicy })
+    : undefined
   const runtime = createWorkspaceRuntimeApp({
     target,
     sessionIdWorkspace: options.sessionIdWorkspace,
-    exposure: relayWorkspaceRuntimeExposure(relayHostAuth),
-    sessionAccessPolicy: remoteWorkspaceSessionAccessPolicy({
-      url: options.sessionAuthorityUrl,
-      ...(options.authorityGrants ? { grants: options.authorityGrants } : {}),
-    }),
+    exposure: relayWorkspaceRuntimeExposure({ ...relayHostAuth, ...(runtimeAccess ? { runtimeAccess } : {}) }),
+    sessionAccessPolicy,
     storeRoot: options.storeRoot,
     placement: CONNECTED_HOST_PLACEMENT,
     ...(options.harness ? { harness: options.harness } : {}),
@@ -232,6 +244,10 @@ export class HostRuntimeRetirementUnresolvedError extends Error {
 export type HostRuntimeListener = {
   /** The origin the serving loop's `localBaseUrl` points at. */
   url: string
+  /** A `/workspaces/:id/*` request answered in process, as the listener answers it. */
+  fetch: (request: Request) => Promise<Response>
+  /** A `/workspaces/:id/*` upgrade carried in process, as the listener carries it. */
+  upgrade: (request: IncomingMessage, socket: Duplex, head: Buffer) => void
   /** The runtime for this workspace, created on first call; a changed directory replaces it. */
   ensure: (workspace: Omit<HostWorkspaceRuntimeOptions, "sessionIdWorkspace">) => Promise<WorkspaceRuntimeApp>
   /**
@@ -294,7 +310,7 @@ export async function createHostRuntimeListener(options: HostRuntimeListenerOpti
   })
 
   const server = createServer(getRequestListener(app.fetch))
-  server.on("upgrade", (request, socket, head) => {
+  const upgrade = (request: IncomingMessage, socket: Duplex, head: Buffer) => {
     const url = new URL(request.url ?? "/", "http://localhost")
     const route = servedWorkspaceRoute(url)
     const entry = route && entries.get(route.workspaceId)
@@ -304,7 +320,8 @@ export async function createHostRuntimeListener(options: HostRuntimeListenerOpti
     }
     request.url = route.path
     entry.upgrades.emit("upgrade", request, socket, head)
-  })
+  }
+  server.on("upgrade", upgrade)
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject)
     server.listen(options.port, options.hostname, () => {
@@ -472,6 +489,8 @@ export async function createHostRuntimeListener(options: HostRuntimeListenerOpti
 
   return {
     url,
+    fetch: async (request) => await app.fetch(request),
+    upgrade,
     ensure,
     dispose: retire,
     forgetAuthorityGrants: () => authorityGrants.forget(),

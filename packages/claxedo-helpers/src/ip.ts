@@ -194,6 +194,24 @@ export function isLoopbackIpAddress(ip: IpAddress): boolean {
   return embedded !== undefined && isLoopbackIpv4(embedded)
 }
 
+const V4_PRIVATE_NETWORK: readonly (readonly [number, number])[] = [
+  [0x0a000000, 8], // 10.0.0.0/8
+  [0x64400000, 10], // 100.64.0.0/10, where tailnets number their peers
+  [0xac100000, 12], // 172.16.0.0/12
+  [0xc0a80000, 16], // 192.168.0.0/16
+]
+
+/**
+ * An interface address another machine on the same LAN or tailnet dials
+ * directly: RFC 1918, CGNAT and IPv6 unique-local. Narrower than
+ * {@link isPrivateIpAddress}: loopback, link-local, embedded spellings and
+ * the reserved blocks name no interface a peer reaches.
+ */
+export function isPrivateNetworkAddress(ip: IpAddress): boolean {
+  if (ip.kind === "v4") return V4_PRIVATE_NETWORK.some(([base, bits]) => inCidr(ip.value, base, bits))
+  return (ip.segments[0]! & 0xfe00) === 0xfc00
+}
+
 /**
  * Not a global unicast destination. Any IPv6 whose embedded IPv4 is private
  * is private by the same rule; a public embedded address is public, since the

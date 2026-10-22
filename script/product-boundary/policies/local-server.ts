@@ -227,7 +227,14 @@ export const localServer: Policy = {
   // -1 module: `app/local-documents.ts` (owner: the desktop entry, which
   // composes it as the Documents server plugin) is no longer mounted by the
   // app itself, so this entry stops reaching it. 73/28, no headroom.
-  ceilings: { modules: 73, packages: 28 },
+  // +2 modules, +2 packages (owner: the desktop's direct route to another
+  // machine on its own network): `workspace/direct-route.ts` carries the
+  // renderer's runtime requests and terminal sockets for a remote workspace
+  // to that machine, and `workspace/direct-connection.ts` dials it over TLS,
+  // pinning the key the machine reported. Only this process can pin a key,
+  // which is why they are the daemon's and not the renderer's; `node:tls`
+  // and `node:http` are the dial and the request. 75/30, no headroom.
+  ceilings: { modules: 75, packages: 30 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

@@ -184,6 +184,14 @@ CREATE TABLE host_assignment_readiness (
   ready_at integer not null
 );
 
+CREATE TABLE host_direct_routes (
+  enrollment_id text primary key,
+  port integer not null check (port between 1 and 65535),
+  addresses_json text not null check (json_valid(addresses_json)),
+  spki_sha256 text not null,
+  updated_at integer not null
+);
+
 CREATE TABLE host_enrollment_requests (
   request_id text primary key,
   owner_user_id text not null references users (user_id) deferrable initially deferred,

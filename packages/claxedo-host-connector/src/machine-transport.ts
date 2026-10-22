@@ -378,6 +378,15 @@ export function createMachineSignedTransport(options: MachineSignedTransportOpti
         ...(input.sessionAuthority ? { sessionAuthority: input.sessionAuthority } : {}),
         ...(input.sealingPublicKey ? { sealingPublicKey: input.sealingPublicKey } : {}),
         ...(input.providerConfigRevision === undefined ? {} : { providerConfigRevision: input.providerConfigRevision }),
+        ...(input.directRoutes
+          ? {
+              directRoutes: {
+                port: input.directRoutes.port,
+                addresses: [...input.directRoutes.addresses],
+                spkiSha256: input.directRoutes.spkiSha256,
+              },
+            }
+          : {}),
       })
       return decodeHeartbeatResponse(value)
     },

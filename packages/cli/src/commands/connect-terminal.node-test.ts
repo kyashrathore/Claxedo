@@ -27,6 +27,7 @@ void test("a SIGTERM with a terminal still open retires it, so the process can e
   const host: HostDeps = {
     fetch: cp.fetch,
     createListener: () => createHostRuntimeListener({ hostname: "127.0.0.1", port: 0, drainTimeoutMs: 500 }),
+    directAddresses: () => [],
     setServing: setHostServing,
     servingState: hostServingState,
     stopServing: stopHostServing,

@@ -1,12 +1,13 @@
 import { asArray, asFiniteNumber, asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
 import { isHopErrorPage, toAppError, unansweredRuntime } from "./errors"
-import { workspaceStopped, type RelayConnection, type WorkspaceConnections } from "./wire/connection"
+import { directRoutesOf, workspaceStopped, type RelayConnection, type WorkspaceConnections } from "./wire/connection"
 
 export type Relay = {
   readonly fetch: (workspaceId: string, path: string, init?: RequestInit, sessionId?: string) => Promise<Response>
   readonly webSocket: (workspaceId: string, path: string, sessionId?: string) => Promise<WebSocket>
   readonly preload: (workspaceId: string, path: string, sessionId?: string) => boolean
   readonly adopt: (link: RelayConnection) => void
+  readonly link: (workspaceId: string, renew?: boolean) => Promise<RelayConnection>
 }
 
 export type RelayLinkSiblings = Pick<BroadcastChannel, "postMessage" | "onmessage">
@@ -39,8 +40,8 @@ function linkFrom(value: unknown): RelayConnection | undefined {
   const row = asRecordOrEmpty(value)
   const [workspaceId, relayUrl, runtimeAccessToken, tokenExpiresAt] = [asString(row.workspaceId), asString(row.relayUrl), asString(row.runtimeAccessToken), asFiniteNumber(row.tokenExpiresAt)]
   if (!workspaceId || !relayUrl || !runtimeAccessToken || tokenExpiresAt === undefined) return undefined
-  const [sessionId, region] = [asString(row.sessionId), asString(row.region)]
-  const link: RelayConnection = { workspaceId, relayUrl, runtimeAccessToken, tokenExpiresAt, ...(sessionId ? { sessionId } : {}), ...(region ? { region } : {}) }
+  const [sessionId, region, directRoutes] = [asString(row.sessionId), asString(row.region), directRoutesOf(row.directRoutes)]
+  const link: RelayConnection = { workspaceId, relayUrl, runtimeAccessToken, tokenExpiresAt, ...(sessionId ? { sessionId } : {}), ...(region ? { region } : {}), ...(directRoutes ? { directRoutes } : {}) }
   return usable(link) ? link : undefined
 }
 
@@ -182,5 +183,6 @@ export function createRelay(read: WorkspaceConnections["read"], links?: RelayLin
       return new WebSocket(workspaceUrl(link, path, relayUrl).replace(/^http/, "ws"), [`${RUNTIME_ACCESS_TOKEN_PROTOCOL}${link.runtimeAccessToken}`])
     },
     adopt,
+    link: async (workspaceId, renew) => await connection(workspaceId, undefined, renew),
   }
 }

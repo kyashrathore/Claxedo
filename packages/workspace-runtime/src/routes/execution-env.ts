@@ -38,7 +38,7 @@ const execRequest = z.object({
 
 const executionEnvAccess: MiddlewareHandler<Env> = async (c, next) => {
   const claims = c.get("relayHostAuth")
-  if (claims?.backing !== "cloud-vm") return c.json(errorBody("not_found", "Not found"), 404)
+  if (!claims || !("backing" in claims) || claims.backing !== "cloud-vm") return c.json(errorBody("not_found", "Not found"), 404)
   if (!claims.session_id || claims.role === "viewer" || !("purpose" in claims) || claims.purpose !== "turn-execution") {
     return c.json(errorBody("execution_env_forbidden", "The execution environment serves only a session host's turn-execution token"), 403)
   }

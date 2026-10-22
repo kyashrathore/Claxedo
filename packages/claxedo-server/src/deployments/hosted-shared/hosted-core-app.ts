@@ -41,6 +41,7 @@ import { HostedControlRoutes } from "../../routes/hosted/control"
 import { InternalRelayResolverRoutes, type RelayTargetLookup } from "../shared-routes/internal-relay"
 import { HostedSandboxAdminRoutes } from "../../routes/hosted/sandbox-admin"
 import { RuntimeSessionAuthorityRoutes } from "../../routes/runtime-session-authority"
+import { relayProofVerifier } from "../../session/runtime-session-proofs"
 import type { SandboxPassRegister } from "@claxedo/server-core/platform/auth/sandbox-pass-register"
 import { createOwnerGrantProof } from "../../session/owner-grant"
 import { PrivateSessionRegistrationRoutes } from "../../routes/private-session-registration"
@@ -584,6 +585,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       "/api/runtime-authority",
       RuntimeSessionAuthorityRoutes({
         authority: plane.runtimeSessionAuthority,
+        verifyRelayProof: relayProofVerifier(plane.env, plane.runtimeSessionAuthority),
         ...(options.agentConfigRepository && plane.orgCredentials ? { connectionSecrets: {
           resolveWorkspaceOwner: (workspaceId: string) => services.authority?.resolveWorkspaceOwner?.(workspaceId) ?? Promise.resolve(undefined),
           readConnections: async (userId: string) => (await options.agentConfigRepository!.read(userId)).connections,

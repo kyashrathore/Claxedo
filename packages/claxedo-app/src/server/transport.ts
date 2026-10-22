@@ -2,6 +2,7 @@ import { isLoopbackUrl, resolveServerUrl, type ServerConfig } from "./config"
 import { createHostedAccount, type HostedAccount } from "./account"
 import { responseError, toAppError } from "./errors"
 import { createRelay, type Relay } from "./relay"
+import { createDirectRoute, type DaemonSend, type DirectRoute, type RuntimeRouteKind } from "./direct-route"
 import { followWorkspaceStart, startWorkspace, type StartOptions } from "./workspace-start"
 import { CLOUD_RUNTIME_UNAVAILABLE, connectionAnswerFromWire, startRefused, type ConnectionAnswer, type StartRequest, type WorkspaceConnections } from "./wire/connection"
 import { SESSION_LIST_SORT, sessionHostRootFromListItem } from "./wire/session-row"
@@ -33,6 +34,8 @@ export type Transport = {
   readonly findSessionHost: (workspaceId: string, sessionId: string) => Promise<string | undefined>
   readonly onSessionHost: (listener: SessionHostListener) => () => void
   readonly onRuntimeImage: (listener: (workspaceId: string, outdated: boolean) => void) => () => void
+  readonly runtimeRoute: (workspaceId: string) => RuntimeRouteKind
+  readonly recheckRoutes: () => void
 }
 
 function socketUrl(serverUrl: string, path: string) {
@@ -180,21 +183,50 @@ function sessionRowHost(json: Transport["json"], account: HostedAccount | undefi
   }
 }
 
-function runtimeRoutes(serverUrl: string, request: Transport["request"], relay: Relay, daemonProxy: boolean): Pick<Transport, "runtime" | "runtimeSocket" | "preloadRuntime"> {
+async function throughDirect(direct: DirectRoute, relay: Relay, workspaceId: string, path: string, init?: RequestInit) {
+  const link = await relay.link(workspaceId)
+  direct.learn(link)
+  const answer = await direct.fetch(link, path, init)
+  if (answer?.status !== 401) return answer
+  void answer.body?.cancel()
+  const renewed = await relay.link(workspaceId, true)
+  direct.learn(renewed)
+  return await direct.fetch(renewed, path, init)
+}
+
+async function directSocket(direct: DirectRoute, relay: Relay, workspaceId: string, path: string) {
+  const link = await relay.link(workspaceId)
+  direct.learn(link)
+  return direct.webSocket(link, path)
+}
+
+function runtimeRoutes(serverUrl: string, request: Transport["request"], relay: Relay, daemonProxy: boolean, direct: DirectRoute | undefined): Pick<Transport, "runtime" | "runtimeSocket" | "preloadRuntime"> {
   return {
-    preloadRuntime: (workspaceId, path, sessionId) => !daemonProxy && relay.preload(workspaceId, withoutRouteQuery(path), sessionId),
-    runtime: (route, path, init) => {
+    preloadRuntime: (workspaceId, path, sessionId) => !daemonProxy && direct?.kind(workspaceId) !== "direct" && relay.preload(workspaceId, withoutRouteQuery(path), sessionId),
+    runtime: async (route, path, init) => {
       if (!route.remote) return request(withQuery(path, { directory: route.directory }), init)
       const session = sessionScope(route)
       if (daemonProxy && !session) return request(workspaceProxyPath(route, path), init)
-      return relay.fetch(route.workspaceId, withoutRouteQuery(path), init, session)
+      const answered = direct && !session ? await throughDirect(direct, relay, route.workspaceId, withoutRouteQuery(path), init) : undefined
+      return answered ?? relay.fetch(route.workspaceId, withoutRouteQuery(path), init, session)
     },
     runtimeSocket: async (route, path) => {
       if (!route.remote) return new WebSocket(socketUrl(serverUrl, withQuery(path, { directory: route.directory })))
       const session = sessionScope(route)
       if (daemonProxy && !session) return new WebSocket(socketUrl(serverUrl, workspaceProxyPath(route, path)))
-      return relay.webSocket(route.workspaceId, withoutRouteQuery(path), session)
+      const socket = direct && !session ? await directSocket(direct, relay, route.workspaceId, withoutRouteQuery(path)) : undefined
+      return socket ?? relay.webSocket(route.workspaceId, withoutRouteQuery(path), session)
     },
+  }
+}
+
+function daemonSend(config: ServerConfig, serverUrl: string): DaemonSend {
+  return async (path, init) => {
+    try {
+      return await fetch(`${serverUrl}${path}`, withRequestDefaults(config, init))
+    } catch (error) {
+      throw toAppError(error)
+    }
   }
 }
 
@@ -209,7 +241,8 @@ export function createTransport(config: ServerConfig): Transport {
   const read = connectionReader(connections, hosts, image)
   const relay = createRelay(read, config.relayLinks, config.relayUrl)
   const daemonProxy = loopback && config.account === undefined
-  const { runtime, runtimeSocket, preloadRuntime } = runtimeRoutes(serverUrl, request, relay, daemonProxy)
+  const direct = loopback && config.account !== undefined ? createDirectRoute(daemonSend(config, serverUrl), (path, protocols) => new WebSocket(socketUrl(serverUrl, path), protocols)) : undefined
+  const { runtime, runtimeSocket, preloadRuntime } = runtimeRoutes(serverUrl, request, relay, daemonProxy, direct)
   const label = (path: string, init?: RequestInit) => `${init?.method ?? "GET"} ${path}`
   const json: Transport["json"] = async (path, init) => readJsonResponse(await request(path, init), label(path, init))
   return {
@@ -233,6 +266,8 @@ export function createTransport(config: ServerConfig): Transport {
     findSessionHost: daemonProxy ? async () => undefined : sessionRowHost(json, loopback ? account : undefined),
     onSessionHost: hosts.onSessionHost,
     onRuntimeImage: image.onRuntimeImage,
+    runtimeRoute: (workspaceId) => direct?.kind(workspaceId) ?? "relay",
+    recheckRoutes: () => direct?.recheck(),
   }
 }
 
