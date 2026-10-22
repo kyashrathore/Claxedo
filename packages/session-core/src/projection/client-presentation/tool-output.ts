@@ -68,7 +68,9 @@ export function formatToolOutput(
   if (diff(value)) return { value: "", issues: [] }
 
   if (row) {
-    const body = text(row.content) ?? arrayContentText(row.content) ?? text(row.text) ?? text(row.body) ?? text(row.stdout) ?? text(row.stderr)
+    const content = arrayContentText(row.content)
+    if (content !== undefined) return { value: content, issues: [] }
+    const body = text(row.content) ?? text(row.text) ?? text(row.body) ?? text(row.stdout) ?? text(row.stderr)
     if (body) return { value: body, issues: [] }
     const onlyScalars = Object.values(row).every((item) =>
       item == null || typeof item === "string" || typeof item === "number" || typeof item === "boolean",
