@@ -70,14 +70,15 @@ export function createSandboxStartRecorder(options: {
      * lease as it ends, so a poller reading the lease mid-boot sees how far the
      * start has come. `opened` writes the epoch's `lease_decision` before the
      * driver runs, so a stop that lands mid-boot finds the boot it ends on the
-     * row. A serving lease is not starting. An epoch acquired with a start it
-     * continues has that start and no phase yet; one acquired without begins
-     * its own here.
+     * row. A serving lease is not starting, unless the step is a person's
+     * update, which is a start of its own on the same epoch. An epoch acquired
+     * with a start it continues has that start and no phase yet; one acquired
+     * without begins its own here.
      */
-    observe(lease: SandboxLease, input: { bootMode: SandboxBootMode; enteredAt: number; labels: Record<string, string> }) {
-      if (lease.status === "ready") return undefined
-      let progress = lease.start
-        ?? { requestedAt: input.enteredAt, startedAt: input.enteredAt, bootMode: input.bootMode, markedAt: input.enteredAt, phases: [] }
+    observe(lease: SandboxLease, input: { bootMode: SandboxBootMode; enteredAt: number; labels: Record<string, string>; update?: true }) {
+      if (lease.status === "ready" && !input.update) return undefined
+      const begun: SandboxStartProgress = { requestedAt: input.enteredAt, startedAt: input.enteredAt, bootMode: input.bootMode, markedAt: input.enteredAt, phases: [] }
+      let progress = lease.status === "ready" ? begun : lease.start ?? begun
       const ended: Timing[] = []
       let markedAt = progress.markedAt
       const mark = (phase: SandboxStartPhase) => {

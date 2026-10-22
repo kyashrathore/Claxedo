@@ -119,8 +119,8 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
         if (joined) return joined
         const failed = await this.#heldFailure(request)
         if (failed) return failed
-        const live = request.updateImage ? undefined : await drive(this.env).live(workspaceId)
-        if (live) return live
+        const live = await drive(this.env).live(workspaceId)
+        if (live && !(request.updateImage && live.imageOutdated)) return live
         return this.#begin(workspaceId, request.updateImage)
       })
     }
