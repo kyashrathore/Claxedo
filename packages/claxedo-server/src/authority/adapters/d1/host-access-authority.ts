@@ -12,11 +12,8 @@ import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/ser
 import { hostEnrollmentScope, hostProviderConfigRekeyed, hostSessionAuthority, nextHostProviderConfigRevision, pendingHostProviderConfig, storedHostProviderIds } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { HostAssignmentAck, HostAssignmentDescription, HostEnrollment, HostEnrollmentListRow, HostEnrollmentState, HostInvitationCreateInput, HostInvitationCreateResult, HostInvitationRedeemInput, HostInvitationRedeemResult, HostInvitationRow, HostMachineHeartbeatInput, HostMachineHeartbeatResult, HostProviderConfigPushInput, HostProviderConfigTarget, HostScopeDefinition, HostScopeUpdateResult, MachineAuthAdapter, MachinePrincipal } from "@claxedo/server-core/platform/auth/host-connect-contract"
-import {
-  directoryWithinRoots,
-  normalizePosixDirectory,
-  normalizeStoredDirectory,
-} from "@claxedo/server-core/platform/auth/host-connect-contract"
+import { normalizeStoredDirectory } from "@claxedo/server-core/platform/auth/host-connect-contract"
+import { hostPathWithinRoots, normalizeHostPath } from "@claxedo/account-contract/host-path"
 import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-crypto"
 import { sha256Hex } from "@claxedo/helpers/crypto"
 import { asRecord, parseJson } from "@claxedo/server-core/platform/json/index"
@@ -322,7 +319,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     }
     const directory = requestedDirectory ?? workspace?.remote_directory ?? undefined
     const remoteDirectory = directory === undefined ? undefined : normalizeStoredDirectory(directory)
-    if (scope && !directoryWithinRoots(remoteDirectory ?? "", scope.allowed_roots)) {
+    if (scope && !hostPathWithinRoots(remoteDirectory ?? "", scope.allowed_roots)) {
       throw new D1HostAccessAuthorityError(
         "host_assignment_outside_scope",
         "Workspace directory is outside the roots this machine may serve",
@@ -784,19 +781,28 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     // The assignments of this host whose directory is neither one of the new
     // roots nor under one, read inside the batch against the rows it deletes;
     // binds host_id, owner_actor_id and the roots JSON, in that order. A row
-    // with no directory is outside every root, as in `directoryWithinRoots`.
-    // The prefix clause also admits a row left with a trailing separator
-    // (`/srv/app/` under `/srv/app`); `.` and `..` segments it cannot see are
-    // what every writer normalizes away and migration 0029 removed.
+    // with no directory is outside every root, as in `hostPathWithinRoots`.
+    // A POSIX root compares byte for byte with `/` as the separator; a
+    // Windows root (anything not starting with `/`) compares by `lower()`
+    // with `\`, and a volume root (`C:\`) already ends in its separator.
+    // `.` and `..` segments the prefix cannot see are what every writer
+    // normalizes away. SQLite's `lower()` folds ASCII only, so a non-ASCII
+    // Windows folder name that differs from its root only by case stays
+    // assigned here and is refused by the host's own check at its next ack.
     const outsideRootsSql = `
       select assignment.workspace_id from host_workspace_assignments assignment
       left join workspaces workspace on workspace.workspace_id = assignment.workspace_id
       where assignment.host_id = ? and assignment.owner_actor_id = ?
         and not exists (
           select 1 from json_each(?) root
-          where workspace.remote_directory = root.value
-            or (root.value = '/' and substr(workspace.remote_directory, 1, 1) = '/')
-            or substr(workspace.remote_directory, 1, length(root.value) + 1) = root.value || '/'
+          where case when substr(root.value, 1, 1) = '/'
+            then workspace.remote_directory = root.value
+              or (root.value = '/' and substr(workspace.remote_directory, 1, 1) = '/')
+              or substr(workspace.remote_directory, 1, length(root.value) + 1) = root.value || '/'
+            else lower(workspace.remote_directory) = lower(root.value)
+              or (substr(root.value, -1) = '\\' and lower(substr(workspace.remote_directory, 1, length(root.value))) = lower(root.value))
+              or lower(substr(workspace.remote_directory, 1, length(root.value) + 1)) = lower(root.value || '\\')
+          end
         )`
     const outsideRoots = () => [row.host_id, row.owner_actor_id, rootsJson]
     await batchUnder(this.database, activeGuard(who), [
@@ -1526,7 +1532,7 @@ function requireScope(input: HostScopeDefinition): HostScopeDefinition {
     throw new D1HostAccessAuthorityError("invalid_input", `scope.allowed_roots may name at most ${MAX_SCOPE_ROOTS} roots`)
   }
   const roots = input.allowed_roots.map((root) => {
-    const normalized = normalizePosixDirectory(requireText(root, "scope.allowed_roots", MAX_SCOPE_ROOT_LENGTH))
+    const normalized = normalizeHostPath(requireText(root, "scope.allowed_roots", MAX_SCOPE_ROOT_LENGTH))
     if (!normalized) throw new D1HostAccessAuthorityError("invalid_input", "scope.allowed_roots must be absolute paths")
     return normalized
   })

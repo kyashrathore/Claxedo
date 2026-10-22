@@ -26,6 +26,10 @@
       "types": "./src/machine-seal.ts",
       "default": "./src/machine-seal.ts"
     },
+    "./host-path": {
+      "types": "./src/host-path.ts",
+      "default": "./src/host-path.ts"
+    },
     "./auth": {
       "types": "./src/auth.ts",
       "default": "./src/auth.ts"

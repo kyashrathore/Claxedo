@@ -23,7 +23,8 @@
  * Transport is injected, so the protocol is testable without a control plane.
  */
 
-import { pathWithinRoots, type HostScope } from "./host-state"
+import { hostPathWithinRoots } from "@claxedo/account-contract/host-path"
+import type { HostScope } from "./host-state"
 
 /**
  * How a runtime composed its session access, mirroring
@@ -592,7 +593,7 @@ export function createHostConnector(options: ConnectorOptions) {
         const resolved = await options.resolvePath(current.remoteDirectory).catch((error: unknown) => {
           throw new Error(`assignment ${input.workspaceId}: ${current.remoteDirectory} cannot be resolved: ${String(error)}`)
         })
-        if (!pathWithinRoots(resolved, roots)) {
+        if (!hostPathWithinRoots(resolved, roots)) {
           throw new Error(`assignment ${input.workspaceId}: ${current.remoteDirectory} is outside this host's roots`)
         }
       }

@@ -896,8 +896,10 @@ describe("consent, withdrawal and drain", () => {
   })
 })
 
-// Machine roots are POSIX absolute paths (normalizeAbsolutePath), which a Windows path never is.
-describe.skipIf(process.platform === "win32")("with a real filesystem", () => {
+// A directory symlink on Windows needs a privilege a plain user lacks; a junction is the escape a plain user can make.
+const LINK_TYPE = process.platform === "win32" ? "junction" : undefined
+
+describe("with a real filesystem", () => {
   const dirs: string[] = []
   afterEach(async () => {
     for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true })
@@ -910,8 +912,8 @@ describe.skipIf(process.platform === "win32")("with a real filesystem", () => {
     const outside = path.join(base, "outside")
     await mkdir(path.join(root, "inner"), { recursive: true })
     await mkdir(outside)
-    await symlink(outside, path.join(root, "escape"))
-    await symlink(path.join(root, "inner"), path.join(root, "alias"))
+    await symlink(outside, path.join(root, "escape"), LINK_TYPE)
+    await symlink(path.join(root, "inner"), path.join(root, "alias"), LINK_TYPE)
     const cp = createFakeControlPlane()
     const h = await machineHost(cp, { allowedRoots: [root], resolvePath: (p) => realpath(p) })
     await h.connector.start()
@@ -949,7 +951,7 @@ describe.skipIf(process.platform === "win32")("with a real filesystem", () => {
     const elsewhere = path.join(base, "elsewhere")
     await mkdir(srv)
     await mkdir(path.join(elsewhere, "repo"), { recursive: true })
-    await symlink(elsewhere, path.join(srv, "link"))
+    await symlink(elsewhere, path.join(srv, "link"), LINK_TYPE)
     const cp = createFakeControlPlane()
     const h = await machineHost(cp, {
       allowedRoots: [srv],

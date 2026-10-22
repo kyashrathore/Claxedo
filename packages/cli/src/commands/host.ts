@@ -3,7 +3,7 @@ import path from "node:path"
 import { randomUUID } from "node:crypto"
 import { asFiniteNumber, asRecordOrEmpty } from "@claxedo/helpers/guards"
 import { trimToUndefined } from "@claxedo/helpers/string"
-import { normalizeAbsolutePath } from "@claxedo/host-connector/host-state"
+import { hostPathBasename, hostPathEqual, normalizeHostPath } from "@claxedo/account-contract/host-path"
 import { requireAccessToken } from "../auth/token-store"
 import { config, url } from "../config"
 import { takeValue } from "../connect/args"
@@ -42,6 +42,7 @@ export const hostHelp = `${hostUsage}
 
 Owner commands, run from a signed-in laptop (\`claxedo login\`), never on the host.
   invite    mints a single-use invitation (default 1 h, 5m–24h) scoped to the roots; the token prints ONCE
+            a root is written as the machine writes it: /srv/app on Linux or macOS, C:\\work or \\\\server\\share\\repos on Windows
   list      every enrolled machine: name, enrollment id, host id, key fingerprint, generation, online (yes, no, or paused)
   assign    have a machine serve <dir> (absolute, under its roots); re-points the workspace already assigned to that machine at <dir>, else creates a new one
   unassign  stop serving <dir>; the workspace assigned to that machine at <dir> is retired
@@ -144,8 +145,9 @@ function parseHostArgs(args: string[]): Parsed {
     }
     if (arg === "--root" || arg.startsWith("--root=")) {
       const taken = takeValue(args, i, "--root")
-      if (!taken.value.startsWith("/")) throw new Error(`--root must be an absolute path: ${taken.value}`)
-      parsed.roots.push(taken.value)
+      const root = normalizeHostPath(taken.value)
+      if (root === undefined) throw new Error(`--root must be an absolute path on the machine (/srv/app or C:\\work): ${taken.value}`)
+      parsed.roots.push(root)
       i = taken.next
       continue
     }
@@ -189,15 +191,15 @@ function requireMachineSelector(parsed: Parsed) {
 
 /**
  * The directory in the form the control plane records it (`normalizeStoredDirectory`
- * there, the same rule as `normalizeAbsolutePath`): `/srv/app/` and `/srv/app`
- * are one folder, so the match against the machine's assignments and the
- * value sent are both the normalized one.
+ * there, the same `normalizeHostPath`): `/srv/app/` and `/srv/app`, or
+ * `c:/work/app` and `C:\\work\\app`, are one folder, so the match against the
+ * machine's assignments and the value sent are both the normalized one.
  */
 function requireMachineDirectory(parsed: Parsed) {
   const directory = parsed.positional[0]
   if (!directory) throw new Error(`a directory on the machine is required\n${hostUsage}`)
-  const normalized = normalizeAbsolutePath(directory)
-  if (normalized === undefined) throw new Error(`the directory must be an absolute path on the machine: ${directory}`)
+  const normalized = normalizeHostPath(directory)
+  if (normalized === undefined) throw new Error(`the directory must be an absolute path on the machine (/srv/app or C:\\work\\app): ${directory}`)
   return normalized
 }
 
@@ -220,7 +222,10 @@ async function selectMachine(deps: HostDeps, token: string, selector: string) {
  * and writes nothing.
  */
 function machineWorkspaceAt(machine: Machine, directory: string) {
-  const matches = machine.assignments.filter((assignment) => normalizeAbsolutePath(assignment.remote_directory) === directory)
+  const matches = machine.assignments.filter((assignment) => {
+    const recorded = normalizeHostPath(assignment.remote_directory)
+    return recorded !== undefined && hostPathEqual(recorded, directory)
+  })
   if (matches.length > 1) {
     throw new Error(
       `${machine.display_name || machine.enrollment_id} has ${matches.length} workspaces at ${directory} (${matches.map((match) => match.workspace_id).join(", ")}); this command cannot tell which is meant — retire one at the control plane first`,
@@ -300,14 +305,14 @@ async function assignFolder(deps: HostDeps, parsed: Parsed) {
   const machine = await selectMachine(deps, token, selector)
   const existing = machineWorkspaceAt(machine, directory)
   const workspaceId = existing?.workspace_id ?? `ws_${randomUUID().replaceAll("-", "")}`
-  const displayName = parsed.name ?? existing?.display_name ?? path.posix.basename(directory)
+  const displayName = parsed.name ?? existing?.display_name ?? hostPathBasename(directory)
   await deps.request({
     url: url(deps.controlPlaneUrl, `/api/workspace/${encodeURIComponent(workspaceId)}/host-assignment`),
     token,
     body: {
       hostId: machine.host_id,
       displayName,
-      repoName: path.posix.basename(directory),
+      repoName: hostPathBasename(directory),
       remoteDirectory: directory,
     },
   })

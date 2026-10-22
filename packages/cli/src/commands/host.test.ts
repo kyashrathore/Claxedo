@@ -232,6 +232,42 @@ describe("claxedo host", () => {
     )
   })
 
+  test("a Windows machine is invited with C:\\ or C:/ roots and assigned a folder in either spelling; its folder names keep their own case", async () => {
+    const { deps, lines } = owner(cp)
+    await host(["invite", "--name", "win-box", "--root", "C:\\work", "--root", "D:/repos/", "--root", "\\\\nas\\share\\code"], deps)
+    const minted = cp.log.find((entry) => entry.method === "POST" && entry.path === "/api/claxedo/host/invitations")
+    expect(minted?.body).toMatchObject({ scope: { allowed_roots: ["C:\\work", "D:\\repos", "\\\\nas\\share\\code"] } })
+    expect(lines).toContain("  claxedo connect --token-file <file> --root C:\\work --root D:\\repos --root \\\\nas\\share\\code --install-service")
+    await expect(host(["invite", "--name", "x", "--root", "C:work"], deps)).rejects.toThrow("absolute path on the machine")
+    await expect(host(["invite", "--name", "x", "--root", "\\work"], deps)).rejects.toThrow("absolute path on the machine")
+
+    const machine = await enrolledMachine(cp, "win-box", ["C:\\work"])
+    await host(["assign", "--machine", "win-box", "C:/work/Is/", "--name", "IS"], deps)
+    const assigned = cp.log.filter((entry) => entry.method === "POST" && entry.path.endsWith("/host-assignment"))
+    expect(assigned.at(-1)?.body).toEqual({
+      hostId: machine.hostId,
+      displayName: "IS",
+      repoName: "Is",
+      remoteDirectory: "C:\\work\\Is",
+    })
+    const [workspaceId] = [...cp.assignments.keys()]
+    expect(lines.at(-1)).toBe(`win-box will serve C:\\work\\Is as ${workspaceId} (IS); it acks on its next beat`)
+
+    await host(["assign", "--machine", "win-box", "c:\\WORK\\is"], deps)
+    expect(cp.assignments.size, "the same folder in another case re-points the one workspace").toBe(1)
+    expect(cp.assignments.get(workspaceId)).toMatchObject({ revision: 2, display_name: "IS" })
+
+    for (const outside of ["C:\\other", "C:\\workx", "C:\\work\\..\\Windows", "/work/is"]) {
+      await expect(host(["assign", "--machine", "win-box", outside], deps)).rejects.toThrow("host_assignment_outside_scope")
+    }
+    await expect(host(["assign", "--machine", "win-box", "C:is"], deps)).rejects.toThrow("absolute path on the machine")
+
+    await machine.ackAll()
+    await host(["unassign", "--machine", "win-box", "C:/Work/IS"], deps)
+    expect(cp.assignments.size).toBe(0)
+    expect(lines.at(-1)).toBe(`win-box no longer serves C:\\Work\\IS (${workspaceId} retired)`)
+  })
+
   test("an offline machine assigned the same folder twice has one workspace, and it is unassignable before any ack", async () => {
     const machine = await enrolledMachine(cp, "sleeper")
     const { deps, lines } = owner(cp)

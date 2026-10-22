@@ -37,14 +37,8 @@ import {
   publicKeyJwk,
   machineSealAad,
 } from "@claxedo/account-contract/machine"
-import {
-  createHostStateStore,
-  isPlainRecord,
-  newHostState,
-  normalizeAbsolutePath,
-  pathWithinRoots,
-  type HostStateFs,
-} from "./host-state"
+import { hostPathWithinRoots, normalizeHostPath } from "@claxedo/account-contract/host-path"
+import { createHostStateStore, isPlainRecord, newHostState, type HostStateFs } from "./host-state"
 
 import { sealForMachine } from "@claxedo/account-contract/machine-seal"
 import type { FetchLike } from "./machine-transport"
@@ -594,10 +588,10 @@ export function createFakeControlPlane(
       const enrollment = "hostId" in input ? enrollmentByHostId(input.hostId) : enrollments.get(input.enrollmentId)
       if (!enrollment || enrollment.revoked_at !== undefined) throw new FakeRefusal(404, "host_enrollment_not_found")
       const remoteDirectory =
-        input.remoteDirectory === undefined ? undefined : normalizeAbsolutePath(input.remoteDirectory)
+        input.remoteDirectory === undefined ? undefined : normalizeHostPath(input.remoteDirectory)
       if (input.remoteDirectory !== undefined && remoteDirectory === undefined)
         throw new FakeRefusal(400, "invalid_input")
-      if (enrollment.scope && !pathWithinRoots(remoteDirectory ?? "", enrollment.scope.allowed_roots)) {
+      if (enrollment.scope && !hostPathWithinRoots(remoteDirectory ?? "", enrollment.scope.allowed_roots)) {
         throw new FakeRefusal(400, "host_assignment_outside_scope")
       }
       const existing = assignments.get(input.workspaceId)
@@ -660,7 +654,7 @@ export function createFakeControlPlane(
       enrollment.scope = { ...scope, revision: (enrollment.scope?.revision ?? 0) + 1 }
       for (const [workspaceId, assignment] of assignments) {
         if (assignment.enrollment_id !== enrollmentId) continue
-        if (!pathWithinRoots(assignment.remote_directory ?? "", scope.allowed_roots)) unassign(workspaceId)
+        if (!hostPathWithinRoots(assignment.remote_directory ?? "", scope.allowed_roots)) unassign(workspaceId)
       }
       return enrollment.scope
     },

@@ -44,7 +44,7 @@ export function defaultConnectDeps(): ConnectDeps {
 export const connectHelp = `${connectUsage}
 
   --token-file F        redeem an invitation from F (minted by \`claxedo host invite\`); the file is removed once the enrollment is on disk
-  --root DIR            serve only under DIR (repeatable); the effective roots are the owner's scope ∩ these
+  --root DIR            serve only under DIR (repeatable, absolute as this machine writes it); the effective roots are the owner's scope ∩ these
   --name N              this machine's display name at first enrollment (default: the name this computer answers to)
   --install-service     enroll if --token-file is given, then install and start a user service that runs \`claxedo connect --foreground\`
   --uninstall-service   stop and remove that service
@@ -60,11 +60,15 @@ into it; 1 for anything else, including a control plane unreachable for 5 minute
 during enrollment or acquire.
 
 The service is a systemd --user unit on Linux (Restart=on-failure,
-RestartPreventExitStatus=78) and a LaunchAgent on macOS
+RestartPreventExitStatus=78), a LaunchAgent on macOS
 (KeepAlive/SuccessfulExit=false; exit 78 unloads the agent until the next
-login). On Linux the unit is written and recorded but NOT started, exit 78,
+login) and a per-user scheduled task on Windows (ClaxedoConnect, at logon,
+restarting after any failure; exit 78 disables the task until
+\`schtasks /Change /TN ClaxedoConnect /Enable\`). On Linux the unit is written and recorded but NOT started, exit 78,
 until \`loginctl enable-linger <user>\` is on and XDG_RUNTIME_DIR reaches the
-user manager — the state a cloud-init run without a login session is in. A user service isolates this process from OTHER users
+user manager — the state a cloud-init run without a login session is in. On
+Windows the task runs only while its user is logged on, and an ended task is
+killed without draining. A user service isolates this process from OTHER users
 only. An agent running as the same user can read the key file; what the key can
 do is serve the owner-assigned folders under the roots, nothing about the account.
 

@@ -211,9 +211,7 @@ async function invitationFile(h: Harness, roots: string[]) {
 
 const enrollmentIdOf = (h: Harness) => [...h.cp.enrollments.keys()][0]
 
-// Machine roots are POSIX absolute paths (the control plane's directoryWithinRoots
-// admits nothing else), so a served folder, and the systemd unit that serves it,
-// exist on Linux and macOS only.
+// The fake service deps describe a Linux box, so the systemd unit tests are POSIX-only.
 const posixHost = test.skipIf(process.platform === "win32")
 
 describe("claxedo connect", () => {
@@ -924,13 +922,65 @@ describe("claxedo connect", () => {
     expect((await fs.readFile(file, "utf8")).trim()).toBe(invitation.token)
   })
 
+  test("--install-service on Windows enrolls, writes the task's script, registers and runs the task; --uninstall-service ends and deletes it", async () => {
+    const { file } = await invitationFile(h, [h.root])
+    const home = "C:\\Users\\svc"
+    h.deps.service = () => ({
+      ...serviceDeps(h.home, h.serviceCalls),
+      platform: "win32",
+      homedir: home,
+      command: ["C:\\Program Files\\nodejs\\node.exe", "C:\\Users\\svc\\AppData\\Roaming\\npm\\node_modules\\@claxedo\\cli\\dist\\index.mjs"],
+      claxedoHome: "C:\\Users\\svc\\.claxedo",
+      env: { APPDATA: "C:\\Users\\svc\\AppData\\Roaming", USERDOMAIN: "WIN-BOX" },
+      writeFile: async (file, text) => {
+        h.serviceCalls.push(`write ${file}`)
+        written.set(file, text)
+      },
+      unlink: async (file) => {
+        h.serviceCalls.push(`unlink ${file}`)
+        written.delete(file)
+      },
+    })
+    const written = new Map<string, string>()
+    const script = "C:\\Users\\svc\\AppData\\Roaming\\Claxedo\\claxedo-connect.ps1"
+    const taskXml = "C:\\Users\\svc\\AppData\\Roaming\\Claxedo\\claxedo-connect.xml"
+
+    expect(await connect(["--token-file", file, "--install-service"], h.deps)).toBe(0)
+
+    expect(h.serviceCalls).toEqual([
+      `write ${script}`,
+      `write ${taskXml}`,
+      `schtasks.exe /Create /TN ClaxedoConnect /XML ${taskXml} /F`,
+      `unlink ${taskXml}`,
+      "schtasks.exe /Run /TN ClaxedoConnect",
+    ])
+    expect(written.get(script)).toContain(
+      `& 'C:\\Program Files\\nodejs\\node.exe' 'C:\\Users\\svc\\AppData\\Roaming\\npm\\node_modules\\@claxedo\\cli\\dist\\index.mjs' 'connect' '--foreground' *>> 'C:\\Users\\svc\\AppData\\Roaming\\Claxedo\\claxedo-connect.log'`,
+    )
+    expect(written.get(script)).toContain("$env:CLAXEDO_HOME = 'C:\\Users\\svc\\.claxedo'")
+    expect(written.get(script)).toContain("if ($code -eq 78) { schtasks.exe /Change /TN ClaxedoConnect /Disable | Out-Null; exit 78 }")
+    expect(written.has(taskXml), "the registration input is removed once the task holds it").toBe(false)
+    expect((await h.deps.store.load())?.service).toEqual({ kind: "windows-task", unit: script, installed_at: 1_700_000_000_000 })
+    expect(h.lines.some((line) => line.startsWith("Installed and started the scheduled task ClaxedoConnect"))).toBe(true)
+    expect(h.cp.beats(), "the task's process beats, not this one").toHaveLength(0)
+
+    expect(await connect(["--uninstall-service"], h.deps)).toBe(0)
+    expect(h.serviceCalls.slice(5)).toEqual([
+      "schtasks.exe /End /TN ClaxedoConnect",
+      "schtasks.exe /Delete /TN ClaxedoConnect /F",
+      `unlink ${script}`,
+    ])
+    expect(written.size).toBe(0)
+    expect((await h.deps.store.load())?.service).toBeUndefined()
+  })
+
   test("--install-service where no user service manager exists refuses before redeeming, so the invitation is not spent", async () => {
     const { file, invitation } = await invitationFile(h, [h.root])
-    h.deps.service = () => ({ ...serviceDeps(h.home, h.serviceCalls), platform: "win32" })
+    h.deps.service = () => ({ ...serviceDeps(h.home, h.serviceCalls), platform: "freebsd" })
 
     expect(await connect(["--token-file", file, "--install-service"], h.deps)).toBe(1)
 
-    expect(h.lines.at(-1)).toBe("--install-service supports Linux (systemd --user) and macOS (launchd); this is win32")
+    expect(h.lines.at(-1)).toBe("--install-service supports Linux (systemd --user), macOS (launchd) and Windows (a scheduled task); this is freebsd")
     expect(h.cp.log).toEqual([])
     expect(h.serviceCalls).toEqual([])
     expect(await h.deps.store.load()).toBeUndefined()

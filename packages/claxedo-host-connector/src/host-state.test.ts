@@ -13,7 +13,6 @@ import {
   HostEndpointUrlError,
   newHostState,
   parseHostState,
-  pathWithin,
   resolveRoots,
   type HostState,
 } from "./host-state"
@@ -306,19 +305,6 @@ describe("canonicalControlPlaneUrl", () => {
 })
 
 describe("roots", () => {
-  test.each([
-    ["/srv/api", "/srv", true],
-    ["/srv", "/srv", true],
-    ["/srvx", "/srv", false],
-    ["/srv/../etc", "/srv", false],
-    ["/srv/./api/", "/srv/", true],
-    ["/anything", "/", true],
-    ["relative/api", "/srv", false],
-    ["/srv/api", "srv", false],
-  ])("%s within %s → %s", (inner, outer, expected) => {
-    expect(pathWithin(inner, outer)).toBe(expected)
-  })
-
   /** Lexical identity: every path resolves to itself. */
   const lexical = async (path: string) => path
 
@@ -377,6 +363,70 @@ describe("roots", () => {
   })
 })
 
+describe("roots on a Windows host", () => {
+  const scope = (allowed_roots: string[]) => ({ revision: 1, allowed_roots })
+  /**
+   * What `fs.realpath` answers on Windows: the on-disk spelling of each
+   * segment, a junction followed to its target, ENOENT for anything else.
+   * Written with path.win32 so the case runs on every OS.
+   */
+  const ntfs = (existing: Record<string, string>) => async (target: string) => {
+    const hit = Object.entries(existing).find(([known]) => known.toLowerCase() === target.toLowerCase())
+    if (!hit) throw Object.assign(new Error(`ENOENT: ${target}`), { code: "ENOENT" })
+    return hit[1]
+  }
+  const disk = ntfs({
+    "C:\\": "C:\\",
+    "C:\\Work": "C:\\Work",
+    "C:\\Work\\is": "C:\\Work\\is",
+    "C:\\Work\\link": "D:\\Elsewhere",
+    "D:\\": "D:\\",
+    "D:\\Elsewhere": "D:\\Elsewhere",
+  })
+
+  test("a drive-letter root in either spelling resolves to the volume's own spelling and serves what is under it", async () => {
+    expect(await effectiveRoots({ cli_roots: [], scope: scope(["c:/work", "C:\\work\\is\\"]) }, disk)).toEqual(["C:\\Work", "C:\\Work\\is"])
+    expect(await effectiveRoots({ cli_roots: ["C:/work/is"], scope: scope(["C:\\WORK"]) }, disk)).toEqual(["C:\\Work\\is"])
+    expect(await effectiveRoots({ cli_roots: ["C:\\Work"], scope: scope(["c:\\work\\is"]) }, disk)).toEqual(["C:\\Work\\is"])
+  })
+
+  test("a root that does not exist yet is its nearest existing ancestor's real path plus the rest, down to the drive", async () => {
+    expect(await effectiveRoots({ cli_roots: [], scope: scope(["c:\\work\\new\\deeper"]) }, disk)).toEqual(["C:\\Work\\new\\deeper"])
+    expect(await effectiveRoots({ cli_roots: [], scope: scope(["C:\\nowhere\\yet"]) }, disk)).toEqual(["C:\\nowhere\\yet"])
+    expect(await effectiveRoots({ cli_roots: [], scope: scope(["Z:\\gone"]) }, disk), "a drive that is not there drops the root").toEqual([])
+    expect(await effectiveRoots({ cli_roots: [], scope: scope(["C:\\work"]) }, disk)).toEqual([path.win32.normalize("C:\\Work")])
+  })
+
+  test("a --root that is a junction under the owner's root carries no authority to the junction's target", async () => {
+    expect(await effectiveRoots({ cli_roots: ["C:\\Work\\link"], scope: scope(["C:\\Work"]) }, disk)).toEqual([])
+    expect(await effectiveRoots({ cli_roots: [], scope: scope(["C:\\Work\\link"]) }, disk)).toEqual(["D:\\Elsewhere"])
+  })
+
+  test("a POSIX root and a Windows root never contain one another", async () => {
+    expect(await effectiveRoots({ cli_roots: ["C:\\Work"], scope: scope(["/work"]) }, async (target) => target)).toEqual([])
+  })
+
+  test("a pin recorded in one case is the same folder when the volume answers in another", async () => {
+    const first = await resolveRoots({ cli_roots: [], scope: scope(["C:\\work\\new"]) }, disk)
+    expect(first.canonical).toEqual({ "C:\\work\\new": "C:\\Work\\new" })
+
+    const created = ntfs({ "C:\\": "C:\\", "C:\\Work": "C:\\Work", "C:\\Work\\New": "C:\\Work\\New" })
+    const later = await resolveRoots({ cli_roots: [], scope: scope(["C:\\work\\new"]), roots_canonical: first.canonical }, created)
+
+    expect(later.drifted).toEqual([])
+    expect(later.roots).toEqual(["C:\\Work\\New"])
+  })
+
+  test("a root created as a junction after it was pinned has moved and is refused", async () => {
+    const first = await resolveRoots({ cli_roots: [], scope: scope(["C:\\Work\\new"]) }, disk)
+    const junctioned = ntfs({ "C:\\": "C:\\", "C:\\Work": "C:\\Work", "C:\\Work\\new": "D:\\Elsewhere" })
+    const later = await resolveRoots({ cli_roots: [], scope: scope(["C:\\Work\\new"]), roots_canonical: first.canonical }, junctioned)
+
+    expect(later.roots).toEqual([])
+    expect(later.drifted).toEqual([{ root: "C:\\Work\\new", recorded: "C:\\Work\\new", resolved: "D:\\Elsewhere" }])
+  })
+})
+
 describe("root pinning", () => {
   const scope = (allowed_roots: string[]) => ({ revision: 1, allowed_roots })
   /** A filesystem where `/srv/projects` does not exist yet and can later be made a symlink. */
@@ -427,6 +477,15 @@ describe("root pinning", () => {
     const reset = await resolveRoots({ cli_roots: [], scope: scope(["/srv/projects"]) }, filesystem({ "/srv/projects": "/home/victim" }))
 
     expect(reset).toEqual({ roots: ["/home/victim"], canonical: { "/srv/projects": "/home/victim" }, drifted: [] })
+  })
+
+  test("a recorded service names one of the three managers, or the file does not load", () => {
+    const service = { unit: "C:\\Users\\svc\\AppData\\Roaming\\Claxedo\\claxedo-connect.ps1", installed_at: 1 }
+    expect(parseHostState(JSON.stringify({ ...state(), service: { kind: "windows-task", ...service } })).service).toEqual({
+      kind: "windows-task",
+      ...service,
+    })
+    expect(() => parseHostState(JSON.stringify({ ...state(), service: { kind: "upstart", ...service } }))).toThrow("service.kind")
   })
 
   test("roots_canonical round-trips through the state file and refuses a non-string entry", () => {

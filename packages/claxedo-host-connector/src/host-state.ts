@@ -15,7 +15,25 @@
  * adapter, exported on its own entry.
  */
 
+import {
+  hostPathBasename,
+  hostPathEqual,
+  hostPathJoin,
+  hostPathParent,
+  hostPathWithin,
+  normalizeHostPath,
+} from "@claxedo/account-contract/host-path"
+
+/** `allowed_roots` are absolute paths as the machine writes them (`@claxedo/account-contract/host-path`). */
 export type HostScope = { revision: number; allowed_roots: string[] }
+
+export const SERVICE_KINDS = ["systemd-user", "launchd", "windows-task"] as const
+export type ServiceKind = (typeof SERVICE_KINDS)[number]
+
+function serviceKindOf(value: unknown): ServiceKind {
+  if (typeof value === "string" && (SERVICE_KINDS as readonly string[]).includes(value)) return value as ServiceKind
+  return stateFieldError("service.kind", `must be one of ${SERVICE_KINDS.join(", ")}`)
+}
 
 export type HostState = {
   host_id: string
@@ -63,7 +81,8 @@ export type HostState = {
   roots_canonical?: Record<string, string>
   /** WORKSPACE_RUNTIME_WORKSPACES_DIR for this host's runtimes. */
   storage_root: string
-  service?: { kind: "systemd-user" | "launchd"; unit: string; installed_at: number }
+  /** `unit` is the file the service manager was pointed at; the task name on Windows is a constant. */
+  service?: { kind: ServiceKind; unit: string; installed_at: number }
   run?: {
     pid: number
     started_at: number
@@ -379,7 +398,7 @@ export function parseHostState(text: string): HostState {
   if (value.service !== undefined) {
     const record = stateRecord(value.service, "service")
     state.service = {
-      kind: record.kind === "launchd" ? "launchd" : "systemd-user",
+      kind: serviceKindOf(record.kind),
       unit: stateString(record.unit, "service.unit"),
       installed_at: stateNumber(record.installed_at, "service.installed_at"),
     }
@@ -462,37 +481,6 @@ export function newHostState(input: {
   }
 }
 
-/**
- * Collapse `.`/`..` and trailing slashes on an absolute POSIX path; anything
- * else answers `undefined` and is refused by every caller.
- */
-export function normalizeAbsolutePath(path: string): string | undefined {
-  if (!path.startsWith("/")) return undefined
-  const segments: string[] = []
-  for (const segment of path.split("/")) {
-    if (segment === "" || segment === ".") continue
-    if (segment === "..") {
-      segments.pop()
-      continue
-    }
-    segments.push(segment)
-  }
-  return "/" + segments.join("/")
-}
-
-/** Segment-aware containment: `/srv/api` is under `/srv`; `/srvx` is not. */
-export function pathWithin(path: string, root: string) {
-  const inner = normalizeAbsolutePath(path)
-  const outer = normalizeAbsolutePath(root)
-  if (inner === undefined || outer === undefined) return false
-  if (outer === "/") return true
-  return inner === outer || inner.startsWith(outer + "/")
-}
-
-export function pathWithinRoots(path: string, roots: readonly string[]) {
-  return roots.some((root) => pathWithin(path, root))
-}
-
 export type ResolvePath = (path: string) => Promise<string>
 
 /**
@@ -501,10 +489,10 @@ export type ResolvePath = (path: string) => Promise<string>
  * exist yet, of its nearest existing ancestor with the remaining segments
  * appended. A symlinked ancestor therefore lands the root where the link
  * points, the same place a directory created under it later resolves to.
- * Nothing resolvable at all (not even `/`) drops the root.
+ * Nothing resolvable at all (not even the volume root) drops the root.
  */
 export async function canonicalRoot(root: string, resolve: ResolvePath): Promise<string | undefined> {
-  const normalized = normalizeAbsolutePath(root)
+  const normalized = normalizeHostPath(root)
   if (normalized === undefined) return undefined
   let head = normalized
   const tail: string[] = []
@@ -513,13 +501,13 @@ export async function canonicalRoot(root: string, resolve: ResolvePath): Promise
     try {
       resolved = await resolve(head)
     } catch {
-      if (head === "/") return undefined
-      const cut = head.lastIndexOf("/")
-      tail.unshift(head.slice(cut + 1))
-      head = cut === 0 ? "/" : head.slice(0, cut)
+      const parent = hostPathParent(head)
+      if (parent === undefined) return undefined
+      tail.unshift(hostPathBasename(head))
+      head = parent
       continue
     }
-    return normalizeAbsolutePath([resolved, ...tail].join("/"))
+    return hostPathJoin(resolved, tail)
   }
 }
 
@@ -549,7 +537,7 @@ async function canonicalRoots(roots: readonly string[], resolve: ResolvePath, re
     const resolved = await canonicalRoot(root, resolve)
     if (resolved === undefined) continue
     const pinned = recorded[root]
-    if (pinned !== undefined && pinned !== resolved) {
+    if (pinned !== undefined && !hostPathEqual(pinned, resolved)) {
       record.canonical[root] = pinned
       record.drifted.push({ root, recorded: pinned, resolved })
       continue
@@ -584,8 +572,8 @@ export async function resolveRoots(
   } else {
     for (const local of cli) {
       for (const remote of controlPlane) {
-        if (pathWithin(local, remote)) roots.add(local)
-        else if (pathWithin(remote, local)) roots.add(remote)
+        if (hostPathWithin(local, remote)) roots.add(local)
+        else if (hostPathWithin(remote, local)) roots.add(remote)
       }
     }
   }

@@ -16,6 +16,7 @@ import {
   type CommandResult,
   type ServiceDeps,
 } from "./service"
+import { windowsTaskXml, windowsUserId, windowsWrapperScript } from "./service-windows"
 
 type Box = {
   linger?: CommandResult
@@ -228,11 +229,65 @@ describe("service units", () => {
     })
   })
 
-  test("other platforms are refused before anything is written", async () => {
-    const { deps, files } = fakeDeps("win32")
-    expect(() => serviceKind("win32")).toThrow("this is win32")
-    await expect(writeServiceUnit(deps, { alongsideDesktop: false })).rejects.toThrow("supports Linux (systemd --user) and macOS (launchd)")
+  test("Windows gets a per-user scheduled task whose script restarts connect and disables the task on exit 78", async () => {
+    const { deps, calls, files } = fakeDeps("win32", "C:\\Users\\svc\\.claxedo")
+    deps.homedir = "C:\\Users\\svc"
+    deps.command = ["C:\\Program Files\\nodejs\\node.exe", "C:\\Users\\svc\\cli\\it's.mjs"]
+    deps.env = { USERDOMAIN: "WIN-BOX" }
+    const script = "C:\\Users\\svc\\AppData\\Roaming\\Claxedo\\claxedo-connect.ps1"
+    const taskXml = "C:\\Users\\svc\\AppData\\Roaming\\Claxedo\\claxedo-connect.xml"
+    const service = await writeServiceUnit(deps, { alongsideDesktop: true })
+    expect(service).toEqual({ kind: "windows-task", unit: script, installed_at: 42 })
+    expect(calls, "writing the script starts nothing").toEqual([])
+    expect(files.get(script)).toBe(windowsWrapperScript(deps, { alongsideDesktop: true }))
+    expect(files.get(script)).toContain(
+      `& 'C:\\Program Files\\nodejs\\node.exe' 'C:\\Users\\svc\\cli\\it''s.mjs' 'connect' '--foreground' '--alongside-desktop' *>> 'C:\\Users\\svc\\AppData\\Roaming\\Claxedo\\claxedo-connect.log'`,
+    )
+    expect(files.get(script)).toContain("$env:CLAXEDO_HOME = 'C:\\Users\\svc\\.claxedo'")
+    expect(files.get(script)).toContain("if ($code -eq 78) { schtasks.exe /Change /TN ClaxedoConnect /Disable | Out-Null; exit 78 }")
+    expect(files.get(script)).toContain("if ($code -eq 0) { exit 0 }")
+    expect(files.get(script)).toContain("Start-Sleep -Seconds 5")
+
+    let registered: string | undefined
+    deps.run = async (file, args) => {
+      calls.push([file, ...args].join(" "))
+      if (args[0] === "/Create") registered = files.get(args[4])
+      return { code: 0, stdout: "" }
+    }
+    const { started, lines } = await startService(deps, service)
+    expect(started).toBe(true)
+    expect(calls).toEqual([
+      `schtasks.exe /Create /TN ClaxedoConnect /XML ${taskXml} /F`,
+      "schtasks.exe /Run /TN ClaxedoConnect",
+    ])
+    expect(registered).toBe(windowsTaskXml(deps))
+    expect(registered).toContain("<LogonTrigger><Enabled>true</Enabled><UserId>WIN-BOX\\svc</UserId></LogonTrigger>")
+    expect(registered).toContain("<Principal id=\"Author\"><UserId>WIN-BOX\\svc</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal>")
+    expect(registered).toContain("<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>")
+    expect(registered).toContain(`<Arguments>-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File &quot;${script}&quot;</Arguments>`)
+    expect(files.has(taskXml), "the registration input is removed once the task holds it").toBe(false)
+    expect(lines[0]).toBe(`Installed and started the scheduled task ClaxedoConnect (${script}).`)
+    expect(lines[1]).toContain("exit 78), which disables the task until `schtasks /Change /TN ClaxedoConnect /Enable`")
+
+    expect(await uninstallService(deps, service)).toEqual([`Stopped and removed the scheduled task ClaxedoConnect (${script}).`])
+    expect(calls.slice(2)).toEqual(["schtasks.exe /End /TN ClaxedoConnect", "schtasks.exe /Delete /TN ClaxedoConnect /F"])
     expect(files.size).toBe(0)
-    expect(serviceUnitPath({ platform: "linux", homedir: "/h" })).toBe("/h/.config/systemd/user/claxedo-connect.service")
+  })
+
+  test("the task's user and files follow the environment: APPDATA for the files, COMPUTERNAME when no domain is set", () => {
+    expect(windowsUserId({ username: "svc", env: { COMPUTERNAME: "DESKTOP-1" } })).toBe("DESKTOP-1\\svc")
+    expect(windowsUserId({ username: "svc", env: {} })).toBe("svc")
+    expect(serviceUnitPath({ platform: "win32", homedir: "C:\\Users\\svc", env: { APPDATA: "D:\\Roaming" } })).toBe(
+      "D:\\Roaming\\Claxedo\\claxedo-connect.ps1",
+    )
+    expect(windowsTaskXml({ username: "a&b", homedir: "C:\\Users\\a&b", env: {} })).toContain("<UserId>a&amp;b</UserId>")
+  })
+
+  test("other platforms are refused before anything is written", async () => {
+    const { deps, files } = fakeDeps("freebsd")
+    expect(() => serviceKind("freebsd")).toThrow("this is freebsd")
+    await expect(writeServiceUnit(deps, { alongsideDesktop: false })).rejects.toThrow("supports Linux (systemd --user), macOS (launchd) and Windows (a scheduled task)")
+    expect(files.size).toBe(0)
+    expect(serviceUnitPath({ platform: "linux", homedir: "/h", env: {} })).toBe("/h/.config/systemd/user/claxedo-connect.service")
   })
 })
