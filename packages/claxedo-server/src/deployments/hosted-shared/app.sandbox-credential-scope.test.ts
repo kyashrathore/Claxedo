@@ -379,10 +379,11 @@ const ECHO_ROUTES: readonly string[] = ["GET /path"]
  */
 const UNAVAILABLE_ROUTES: Record<string, number> = {
   // The fixture's authority admits no machine caller and redeems no
-  // invitation; none of these three takes an account credential, and each
-  // says so before it looks at one. The beat is on this list because a
-  // machine is the only caller it has.
+  // invitation; none of these four takes an account credential, and each
+  // says so before it looks at one. The beat and the doorbell stream are on
+  // this list because a machine is the only caller they have.
   "POST /api/claxedo/host/enrollments/acquire": 501,
+  "GET /api/claxedo/host/enrollments/events": 501,
   "POST /api/claxedo/host/enrollments/heartbeat": 501,
   "POST /api/claxedo/host/enrollments/redeem": 501,
 }

@@ -154,7 +154,9 @@ function consumesVerification(pathname: string) {
  *   renew its OAuth token, whose refresh token works once;
  * - the plugin MCP gateway and the egress broker renew vendor credentials;
  * - the relay's resolver checks revocation and serving generations the
- *   moment after they are written.
+ *   moment after they are written;
+ * - a machine's doorbell stream is admitted by its signature, which consumes
+ *   the request's nonce, a write, before the writer holds the stream open.
  * `d1-session-classifier.test.ts` holds every GET route either here or in
  * its reviewed list of replica reads, so a new one is classified on purpose.
  */
@@ -169,6 +171,7 @@ export const PRIMARY_READS = [
   "/api/claxedo/integrations/callback",
   "/api/claxedo/integrations/attempts/",
   "/api/claxedo/integrations/connections/",
+  "/api/claxedo/host/enrollments/events",
   "/api/claxedo/plugins/mcp/",
   "/bindings/",
   "/internal/",

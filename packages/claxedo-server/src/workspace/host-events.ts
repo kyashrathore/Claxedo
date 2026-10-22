@@ -1,13 +1,13 @@
 import type { Context } from "hono"
 import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-runtime-contract"
-import type { ControlPlaneServices } from "../../authority/services"
-import { connectLiveSyncRoom } from "../../deployments/hosted-workerd/live-sync-room.cf"
-import type { LiveSyncMachineSubscriber } from "../../deployments/hosted-workerd/live-sync-subscriber"
-import type { LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
-import { admitMachineCaller, type MachineCallerBudgets } from "./machine-caller"
+import type { ControlPlaneServices } from "../authority/services"
+import { connectLiveSyncRoom } from "../deployments/hosted-workerd/live-sync-room.cf"
+import type { LiveSyncMachineSubscriber } from "../deployments/hosted-workerd/live-sync-subscriber"
+import type { LiveSyncRoomNamespace } from "../platform/http/live-sync-publish"
+import { admitMachineCaller, type MachineCallerBudgets } from "../platform/auth/machine-caller"
 
 /**
- * `GET /api/claxedo/host/enrollments/events`: the machine's doorbell, a
+ * `GET /api/claxedo/host/enrollments/events` (mounted by `routes/hosted/host-enrollment.ts`): the machine's doorbell, a
  * machine-signed `text/event-stream` held in its owner's live-sync room. The
  * host routes ring `host.changed` there whenever the owner changes what the
  * machine serves or holds; the machine answers each ring with a beat, which
