@@ -142,12 +142,17 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
     if ((membership.meta.changes ?? 0) === 0) {
       throw new D1AccessAuthorityError("resource_conflict", "Organization membership changed concurrently")
     }
+    const revokedTokenWorkspaces = (tokens.meta.changes ?? 0) === 0 ? [] : (await this.database
+      .prepare(`select distinct workspace_id from runtime_access_tokens where revoked_at = ? and deployment_id = ? and org_id = ?`)
+      .bind(now, this.context.deploymentId, orgId)
+      .all<{ workspace_id: string }>()).results
     return {
       removed: true,
       team_memberships_revoked: teams.meta.changes ?? 0,
       project_memberships_revoked: projects.meta.changes ?? 0,
       session_shares_revoked: sessionShares.meta.changes ?? 0,
       runtime_tokens_revoked: tokens.meta.changes ?? 0,
+      revokedTokenWorkspaceIds: revokedTokenWorkspaces.map((row) => row.workspace_id),
     }
   }
 

@@ -226,6 +226,19 @@ describe("POST /heartbeat and /pause", () => {
     expect(api.pauseHostEnrollment).toHaveBeenCalledWith(expect.anything(), { paused: true })
   })
 
+  test("pausing or resuming rings each machine it named, or every one of the owner's, so a paused machine stops at once", async () => {
+    const hostChanged = vi.fn(async (_input: { ownerUserId: string; hostId: string }) => undefined)
+    const listHostDevices = vi.fn(async () => [{ host_id: "host_1" }, { host_id: "host_2" }])
+    const { post } = routes({ listHostDevices }, { hostChanged })
+
+    expect((await post("/pause", { paused: true })).status).toBe(200)
+    expect(hostChanged.mock.calls.map(([input]) => input.hostId)).toEqual(["host_1", "host_2"])
+
+    hostChanged.mockClear()
+    expect((await post("/pause", { hostId: "host_2", paused: false })).status).toBe(200)
+    expect(hostChanged.mock.calls.map(([input]) => input.hostId)).toEqual(["host_2"])
+  })
+
   test("pause records which way it went", async () => {
     const { api, post } = routes()
 

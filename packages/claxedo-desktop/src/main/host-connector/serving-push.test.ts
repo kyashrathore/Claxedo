@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 
-import { setupHostServingPush } from "./serving-push"
+import { setupHostAccessChangedPush, setupHostServingDelivery, setupHostServingPush } from "./serving-push"
 import { recordingDaemon } from "../test-support/daemon-fetch"
 
 const JWKS = "https://relay.test/.well-known/jwks.json"
@@ -94,5 +94,34 @@ describe("the serving push", () => {
 
     expect(host.requests).toEqual([])
     expect(host.logged).toEqual(["warn [host-serving] push failed: Error: claxedo-server failed to start"])
+  })
+})
+
+describe("the access-changed push", () => {
+  test("POSTs to the daemon's own access-changed route with main's capability, and only logs a refusal", async () => {
+    const warned: string[] = []
+    const { daemon, requests } = recordingDaemon({ respond: () => new Response(null, { status: 503 }) })
+    await setupHostAccessChangedPush({ daemon, log: { warn: (message) => warned.push(message) } })()
+    expect(requests.map((request) => [request.method, new URL(request.url).pathname, request.capability !== null])).toEqual([
+      ["POST", "/api/claxedo/host-serving/access-changed", true],
+    ])
+    expect(warned).toEqual(["[host-serving] access-changed -> 503"])
+  })
+})
+
+describe("the serving delivery", () => {
+  test("a serving fact that arrived before the daemon was ready is pushed again, the latest one, once it is", async () => {
+    let ready: (value: unknown) => void = () => undefined
+    const { daemon, requests } = recordingDaemon()
+    const delivery = setupHostServingDelivery({
+      daemon,
+      daemonReady: new Promise((resolve) => { ready = resolve }),
+      log: { info: () => undefined, warn: () => undefined },
+    })
+    await delivery.serving({ tunnel: null })
+    await delivery.serving({ tunnel: TUNNEL })
+    ready(undefined)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(requests.map((request) => (request.body as { credential: unknown }).credential)).toEqual([null, TUNNEL, TUNNEL])
   })
 })

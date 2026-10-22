@@ -8,7 +8,8 @@ import {
   type ControlPlaneAuthConfig,
 } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
-import { signedOrError } from "../../workspace/route-support"
+import { signedOrError, type HostChangedInput } from "../../workspace/route-support"
+import { ringMachinesServing } from "../../workspace/host-changed-notice"
 import { readJsonRecord } from "@claxedo/server-core/platform/json/index"
 import {
   notifySessionShareChanged,
@@ -24,6 +25,7 @@ type Options = {
   verifier?: ControlPlaneTokenVerifier
   cliTokenEnv?: Record<string, string | undefined>
   sessionShareChangedSink?: SessionShareChangedSink
+  hostChanged?: (input: HostChangedInput) => Promise<void>
 }
 
 const bodyLimitBytes = 16 * 1024
@@ -126,6 +128,7 @@ export function SessionPeopleControlRoutes(services: ControlPlaneServices, optio
           recipientUserIds: [recipientUserId],
           ...(options.sessionShareChangedSink ? { sink: options.sessionShareChangedSink } : {}),
         })
+        if (options.hostChanged) await ringMachinesServing(authority, options.hostChanged)([workspaceId])
         return c.json(response)
       } catch (err) {
         return peopleErrorResponse(c, err)
@@ -162,6 +165,7 @@ export function SessionPeopleControlRoutes(services: ControlPlaneServices, optio
           recipientUserIds,
           ...(options.sessionShareChangedSink ? { sink: options.sessionShareChangedSink } : {}),
         })
+        if (response.revoked && options.hostChanged) await ringMachinesServing(authority, options.hostChanged)([workspaceId])
         return c.json(response)
       } catch (err) {
         return peopleErrorResponse(c, err)

@@ -92,8 +92,9 @@ describe("hosted organization, team and project access routes on D1", () => {
       .toMatchObject({ status: 400, body: { error: { code: "invalid_input" } } })
     expect(await call(bob.token, "GET", `/api/control/projects/${projectId}/access`)).toMatchObject({ status: 200 })
 
-    expect((await call(alice.token, "DELETE", `/api/control/orgs/${orgId}/members/${bob.userId}`)).body)
-      .toMatchObject({ removed: true, team_memberships_revoked: 0, project_memberships_revoked: 0 })
+    const removal = (await call(alice.token, "DELETE", `/api/control/orgs/${orgId}/members/${bob.userId}`)).body
+    expect(removal).toMatchObject({ removed: true, team_memberships_revoked: 0, project_memberships_revoked: 0 })
+    expect(removal, "the workspaces whose machines are rung stay inside the control plane").not.toHaveProperty("revokedTokenWorkspaceIds")
     expect(await call(bob.token, "GET", `/api/control/projects/${projectId}/access`))
       .toMatchObject({ status: 404, body: { error: { code: "project_not_found" } } })
     expect(await call(bob.token, "GET", `/api/control/orgs/${orgId}/members`)).toMatchObject({ status: 200, body: [] })

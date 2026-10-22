@@ -184,6 +184,7 @@ describe("D1 organization members", () => {
       project_memberships_revoked: 1,
       session_shares_revoked: 0,
       runtime_tokens_revoked: 0,
+      revokedTokenWorkspaceIds: [],
     })
 
     expect(await authority.projectRole(bob, { projectId: projectId as never })).toEqual({ ok: false })

@@ -336,6 +336,31 @@ describe("a workspace token revoked while the socket is open", () => {
     ])
   }, 10_000)
 
+  test("a revocation ring renews the lease at once and closes the stream, long before its deadline", async () => {
+    const terminal = pty()
+    const { policy, state } = authority({ leaseMs: 15_000 })
+    const listeners = new Set<() => void>()
+    policy.onAuthorityChange = (listener) => {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    }
+
+    const { socket } = await attach(policy, relayed())
+    expect(terminal.connected).toBe(1)
+    expect(listeners.size).toBe(1)
+
+    state.active = false
+    for (const listener of listeners) listener()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(socket!.closes).toEqual([{ code: 1008, reason: "Terminal access denied" }])
+    expect(state.calls).toEqual([
+      { hostAccess: "read" },
+      { hostAccess: "read", lease: "host-lease-1" },
+    ])
+    expect(listeners.size, "a closed stream stops listening").toBe(0)
+  })
+
   test("output stops at the deadline even while the renewal is still in flight", async () => {
     const terminal = pty()
     const { policy } = authority()

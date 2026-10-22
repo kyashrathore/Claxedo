@@ -34,6 +34,8 @@ export type IngressActor = RuntimeActor & {
   role: "viewer" | "editor" | "admin" | "owner"
   /** The one session the relayed token reaches, when it is a share holder's. */
   sessionId?: string
+  /** The runtime access token the verified relay host token was minted from. */
+  parentTokenId?: string
 }
 
 export type IngressProvenance =

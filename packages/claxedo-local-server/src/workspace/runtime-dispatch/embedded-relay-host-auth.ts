@@ -32,12 +32,15 @@ export type EmbeddedRelayHostAuth = {
   session_id?: string
   host_id?: string
   backing?: "cloud-vm" | "local-worktree"
+  /** The runtime access token the verified relay host token was minted from. */
+  parent_jti?: string
 }
 
 type EmbeddedActor = RuntimeActor & {
   orgId: string
   role: "viewer" | "editor" | "admin" | "owner"
   sessionId?: string
+  parentTokenId?: string
 }
 
 export function embeddedRelayHostAuthFromActor(
@@ -61,6 +64,7 @@ export function embeddedRelayHostAuthFromActor(
     org_id: actor.orgId,
     role: actor.role,
     ...(actor.sessionId ? { session_id: actor.sessionId } : {}),
+    ...(actor.parentTokenId ? { parent_jti: actor.parentTokenId } : {}),
   }
 }
 
@@ -107,6 +111,7 @@ export function parseEmbeddedRelayHostAuthHeader(value: string | undefined): Emb
       role,
       ...(session_id ? { session_id } : {}),
       ...(stringClaim(row, "host_id") ? { host_id: stringClaim(row, "host_id") } : {}),
+      ...(stringClaim(row, "parent_jti") ? { parent_jti: stringClaim(row, "parent_jti") } : {}),
     }
   } catch {
     return undefined

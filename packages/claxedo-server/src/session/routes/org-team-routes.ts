@@ -15,14 +15,16 @@ import {
   type TeamMemberSelector,
 } from "@claxedo/server-core/platform/auth/org-access-authority"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
-import { apiError, signedOrError, txt } from "../../workspace/route-support"
+import { apiError, signedOrError, txt, type HostChangedInput } from "../../workspace/route-support"
 import { readJsonRecord } from "@claxedo/server-core/platform/json/index"
+import { ringMachinesServing } from "../../workspace/host-changed-notice"
 
 type Options = {
   authentication?: RequestAuthenticationAdapter
   authConfig?: ControlPlaneAuthConfig
   verifier?: ControlPlaneTokenVerifier
   cliTokenEnv?: Record<string, string | undefined>
+  hostChanged?: (input: HostChangedInput) => Promise<void>
 }
 
 const bodyLimitBytes = 16 * 1024
@@ -143,7 +145,9 @@ export function OrgTeamControlRoutes(services: ControlPlaneServices, options: Op
     .delete("/orgs/:orgId/members/:userPublicId", authorized(async (auth, c) => {
       const remove = authority().removeOrgMember
       if (!remove) return unavailable(c, "Organization members unavailable")
-      return c.json(await remove(auth, { orgId: c.req.param("orgId")!, userPublicId: c.req.param("userPublicId")! }))
+      const { revokedTokenWorkspaceIds, ...removal } = await remove(auth, { orgId: c.req.param("orgId")!, userPublicId: c.req.param("userPublicId")! })
+      if (options.hostChanged) await ringMachinesServing(authority(), options.hostChanged)(revokedTokenWorkspaceIds)
+      return c.json(removal)
     }))
     .get("/teams/:teamId/members", authorized(async (auth, c) => {
       const list = authority().listTeamMembers

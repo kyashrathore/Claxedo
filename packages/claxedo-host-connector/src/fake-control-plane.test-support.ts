@@ -691,6 +691,7 @@ export function createFakeControlPlane(
       if (!enrollment) throw new FakeRefusal(404, "host_enrollment_not_found")
       if (paused) enrollment.paused_at = now()
       else delete enrollment.paused_at
+      ring(enrollment)
     },
     replaceKey: (enrollmentId: string, publicKey: JsonWebKey) => {
       const enrollment = enrollments.get(enrollmentId)

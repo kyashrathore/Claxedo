@@ -4,7 +4,7 @@
   "packages/claxedo-app/src/transcript/markdown-inline-code-kind.ts": 1924,
   "packages/claxedo-app/src/transcript/message-part.tsx": 2029,
   "packages/claxedo-desktop/src/browser-preload/index.ts": 949,
-  "packages/claxedo-desktop/src/main/index.ts": 938,
+  "packages/claxedo-desktop/src/main/index.ts": 920,
   "packages/claxedo-documents/src/host/backends/local/managed.ts": 1060,
   "packages/claxedo-local-server/src/app/local-daemon-lifecycle.ts": 1178,
   "packages/claxedo-local-server/src/deployments/local/embedded-workspace-runtime.ts": 847,

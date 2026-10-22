@@ -56,6 +56,8 @@ let admitted = new Set<string>()
  * because the level narrows the share and not the person.
  */
 let shareLevels = new Map<string, "follow" | "send">()
+/** Whether the fake control plane lets this host reuse its answers, and the relay names the token each bearer was minted from. */
+let reusable = false
 
 /** `startLocalServer` reports the port it was GIVEN, so the port is chosen here. */
 async function freePort() {
@@ -130,7 +132,7 @@ function fakeAuthority() {
         }))
         return
       }
-      response.end(JSON.stringify({ allowed: true, lease: "stream_lease", expiresAt: Date.now() + 60_000 }))
+      response.end(JSON.stringify({ allowed: true, lease: "stream_lease", expiresAt: Date.now() + 60_000, ...(reusable ? { grantTtlMs: 60_000 } : {}) }))
     })
   })
 }
@@ -147,6 +149,7 @@ beforeEach(async () => {
   authorityCalls.length = 0
   admitted = new Set([OWNER.actorId])
   shareLevels = new Map()
+  reusable = false
 
   authority = fakeAuthority()
   authorityUrl = `${await listen(authority)}/api/runtime-authority/session-authorize`
@@ -173,6 +176,7 @@ beforeEach(async () => {
           actorName: actor.actorName,
           orgId: "org_1",
           role: "editor" as const,
+          ...(reusable ? { parentTokenId: `rat_${bearer}` } : {}),
         }
       },
     },
@@ -493,4 +497,33 @@ describe("the composition's own relay actor", () => {
     })
     await new Promise<void>((resolve) => { keySet.close(() => resolve()) })
   }, 60_000)
+})
+
+describe("a serving desktop reuses the answers the authority lets it reuse", () => {
+  test("a repeated relayed read asks the authority once, and a ring of the doorbell makes it ask again and hear the revocation", async () => {
+    reusable = true
+    const workspace = await resolveWorkspace()
+    const url = `${origin}/workspaces/${workspace}/session/ses_private`
+
+    expect((await status(url, relayed("owner-token"))).code).toBe(404)
+    expect((await status(url, relayed("owner-token"))).code).toBe(404)
+    expect(authorityCalls.map((call) => `${call.action}:${call.actorId}`)).toEqual([`read:${OWNER.actorId}`])
+
+    admitted = new Set()
+    const rung = await identity.call(`${origin}/api/claxedo/host-serving/access-changed`, { method: "POST" })
+    expect(rung.status).toBe(204)
+
+    const afterRing = await status(url, relayed("owner-token"))
+    expect(afterRing.code).toBe(403)
+    expect(afterRing.error).toBe("workspace_authorization_denied")
+    expect(authorityCalls.map((call) => `${call.action}:${call.actorId}`)).toEqual([`read:${OWNER.actorId}`, `read:${OWNER.actorId}`])
+  })
+
+  test("a relayed caller cannot ring the doorbell for the machine: the route is the daemon's own", async () => {
+    const workspace = await resolveWorkspace()
+    const relayedRing = await fetch(`${origin}/workspaces/${workspace}/api/claxedo/host-serving/access-changed`, { method: "POST", headers: relayed("owner-token") })
+    const bareRing = await fetch(`${origin}/api/claxedo/host-serving/access-changed`, { method: "POST" })
+    expect(relayedRing.status).not.toBe(204)
+    expect(bareRing.status).not.toBe(204)
+  })
 })

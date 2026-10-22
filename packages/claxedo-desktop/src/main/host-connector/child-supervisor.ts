@@ -170,6 +170,8 @@ export function setupHostConnectorChild(input: {
    * addresses a relayed caller is admitted by — for the tunnel owner.
    */
   onServing?: (serving: HostConnectorServing) => void
+  /** Each ring of the machine's doorbell, for the daemon whose runtimes reuse the control plane's authority answers. */
+  onHostChanged?: () => void
   /**
    * One opened provider-configuration revision, for the daemon. Main forwards
    * the text and never parses it: the plaintext exists in this process only
@@ -317,6 +319,10 @@ export function setupHostConnectorChild(input: {
     }
     if (message.type === "serving") {
       input.onServing?.({ tunnel: message.tunnel, ...(message.endpoints ? { endpoints: message.endpoints } : {}) })
+      return
+    }
+    if (message.type === "host-changed") {
+      input.onHostChanged?.()
       return
     }
     if (message.type === "provider-config-ready") {

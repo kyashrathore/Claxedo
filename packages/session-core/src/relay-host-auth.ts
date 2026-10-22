@@ -66,6 +66,8 @@ export type EmbeddedRelayHostIdentity = {
   session_id?: string
   host_id?: string
   backing?: "cloud-vm" | "local-worktree"
+  /** The runtime access token the relay host token the boundary verified was minted from. */
+  parent_jti?: string
 }
 
 export type RelayHostAuthAuditEvent = {

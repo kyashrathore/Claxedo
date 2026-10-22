@@ -379,6 +379,7 @@ export async function runHost(input: HostRunInput): Promise<number> {
     roots: canonicalRoots,
     resolvePath: deps.resolvePath,
     setInterval: deps.setInterval,
+    onHostChanged: () => listener.forgetAuthorityGrants(),
     onScope: (scope: HostScope) => {
       // The connector only hands over a revision newer than the one stored
       // here, so a delivery is always the owner re-declaring the roots: the

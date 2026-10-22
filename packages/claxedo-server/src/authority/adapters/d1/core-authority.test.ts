@@ -180,7 +180,7 @@ describe("composed Better Auth + D1 authority", () => {
         workspaceId: "ws_bob",
         hostId: "host_bob",
       }),
-    ).toEqual({ active: true })
+    ).toMatchObject({ active: true })
   })
 
   test("shares a session with a person, never a team or an organization, and revokes the person's live authority", async () => {
@@ -493,7 +493,7 @@ describe("composed Better Auth + D1 authority", () => {
         workspaceId: "ws_services",
         hostId: "host_service",
       }),
-    ).toEqual({ active: true })
+    ).toMatchObject({ active: true })
     await expect(
       authority.recordRuntimeAccessTokenForService({
         jti: "jti_service",

@@ -140,6 +140,7 @@ function harness(options?: {
   let spawns = 0
   let shareLoads = 0
   let storedName: string | undefined
+  let hostChanges = 0
   const shareStores: Array<readonly HostConnectorSharedWorkspace[]> = []
   let shareStoreFails = false
   const connector = setupHostConnectorChild({
@@ -221,6 +222,7 @@ function harness(options?: {
     onError: (stage, error) => errors.push({ stage, error }),
     onStatusChange: (status) => statuses.push(status),
     onServing: (serving) => servings.push(serving),
+    onHostChanged: () => { hostChanges += 1 },
     onProviderConfig: (config) => providerReady.push(config),
     displayName: () => storedName ?? "Work laptop",
     storeDisplayName: (name: string) => { storedName = name },
@@ -234,6 +236,7 @@ function harness(options?: {
     errors,
     statuses,
     servings,
+    hostChanges: () => hostChanges,
     providerConfigs,
     providerReady,
     identity: () => identity,
@@ -318,6 +321,19 @@ describe("what an ack tells the daemon", () => {
       sessionAuthorityUrl: SESSION_AUTHORITY_URL,
       sessionRowsUrl: SESSION_ROWS_URL,
     })
+  })
+
+  test("a ring of the machine's doorbell reaches main, which tells the daemon to stop reusing authority answers", async () => {
+    const host = harness({
+      describeWorkspace: async () => ({ displayName: "Claxedo", directory: "/Users/me/test/opencode" }),
+    })
+    await host.connector.start()
+    await until(() => host.servings.length > 0, "the first serving push")
+    const before = host.hostChanges()
+
+    await host.connector.shareWorkspace({ workspaceId: "ws_1" })
+
+    await until(() => host.hostChanges() > before, "the ring the owner's assignment made")
   })
 
   // The daemon declares the machine to its own clients out of this credential,

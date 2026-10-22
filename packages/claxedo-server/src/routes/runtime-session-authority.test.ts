@@ -563,7 +563,7 @@ describe("the owner grant as a session proof", () => {
       authorizeRuntimeSessionStart: vi.fn(async () => {}),
       registerRuntimeSession: vi.fn(async () => ({})),
       authorizeRuntimeSession: vi.fn(input.authorize ?? (async () => {})),
-      runtimeAccessTokenActive: vi.fn(async (): Promise<{ active: boolean; code?: string; reason?: string }> => ({ active: true })),
+      runtimeAccessTokenActive: vi.fn(async (): Promise<{ active: boolean; code?: string; reason?: string; expiresAt?: number }> => ({ active: true })),
       ...(input.reserve === false ? {} : {
         reserveRuntimeSession: vi.fn(async (_principal: PrivateSessionRuntimePrincipal, intent: ReservePrivateSessionInput) => ({
           changed: true,
@@ -782,6 +782,26 @@ describe("the owner grant as a session proof", () => {
     expect(ended.status).toBe(401)
     expect(await ended.json()).toMatchObject({ error: { code: "runtime_access_token_revoked" } })
     expect((await request(target, undefined, { action: "host_read", lease: sessionLease })).status).toBe(401)
+  })
+
+  test("an allowed answer says how long the host may reuse it: a minute at most, never past the access token behind it", async () => {
+    const { target, authority, relay } = await fixture()
+    const ttl = async (body: Record<string, unknown>) => {
+      const answered = await request(target, await relay(), body)
+      expect(answered.status).toBe(200)
+      return (await answered.json() as { grantTtlMs?: number }).grantTtlMs
+    }
+    expect(await ttl({ action: "host_read" })).toBe(60_000)
+    expect(await ttl({ action: "host_admin" })).toBe(60_000)
+    expect(await ttl({ action: "read", sessionId: "ses_child" })).toBe(60_000)
+    authority.runtimeAccessTokenActive.mockResolvedValueOnce({ active: true, expiresAt: Date.now() + 20_000 })
+    const bounded = await ttl({ action: "host_read" })
+    expect(bounded).toBeLessThanOrEqual(20_000)
+    expect(bounded).toBeGreaterThan(19_000)
+    authority.runtimeAccessTokenActive.mockResolvedValueOnce({ active: true, expiresAt: Date.now() + 20_000 })
+    expect(await ttl({ action: "host_admin" })).toBeLessThanOrEqual(20_000)
+    const streamed = await request(target, await relay(), { action: "read", sessionId: "ses_child", stream: true })
+    expect(await streamed.json()).not.toHaveProperty("grantTtlMs")
   })
 })
 

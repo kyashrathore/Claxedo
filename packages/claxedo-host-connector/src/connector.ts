@@ -223,6 +223,13 @@ export type ConnectorOptions = MachineDirectoryScope & {
   scopeRevision?: number
   onEndpoints?: (endpoints: HostEndpoints) => void | Promise<void>
   /**
+   * Each ring of the machine's doorbell, before the beat it asks for. The
+   * control plane rings whenever someone's access to what this machine
+   * serves may have narrowed, so the host forgets the authority answers its
+   * runtimes reuse here, not when they lapse.
+   */
+  onHostChanged?: () => void
+  /**
    * A provider-config revision the control plane holds and this machine does
    * not. The revision is acked on the next beat ONLY if this resolves: a host
    * that could not write the blob must keep asking for it, because an ack is
@@ -271,6 +278,11 @@ export function transientHeartbeatFailure(error: unknown) {
   const status = error && typeof error === "object" && "status" in error ? error.status : undefined
   if (typeof status !== "number") return true
   return !new Set([400, 401, 403, 404, 409, 410]).has(status)
+}
+
+/** The owner paused this machine: the one decision that same owner undoes from anywhere, so the connector waits it out. */
+export function pausedByOwner(error: unknown) {
+  return !!error && typeof error === "object" && "status" in error && error.status === 403 && "code" in error && error.code === "enrollment_paused"
 }
 
 export function createHostConnector(options: ConnectorOptions) {
@@ -345,6 +357,10 @@ export function createHostConnector(options: ConnectorOptions) {
   let draining = false
   /** The doorbell held for this instance; closed with it. */
   let watch: { close: () => void } | undefined
+  /** The control plane refused the doorbell (a paused machine may not hold one); the next good beat reopens it. */
+  let watchRefused = false
+  /** Serving withdrawn because the owner paused the machine, until a beat succeeds again. */
+  let paused = false
 
   const closeWatch = () => {
     watch?.close()
@@ -361,6 +377,21 @@ export function createHostConnector(options: ConnectorOptions) {
     pending.clear()
     refused.clear()
     state = { status: "stopped", reason, detail }
+  }
+
+  const openWatch = () => {
+    closeWatch()
+    watchRefused = false
+    watch = options.transport.watch?.({
+      onEvent: () => {
+        options.onHostChanged?.()
+        void requestBeat()
+      },
+      onError: (error) => {
+        if (!transientHeartbeatFailure(error)) watchRefused = true
+        options.onError?.("events", error)
+      },
+    })
   }
 
   const installTimer = () => {
@@ -380,15 +411,22 @@ export function createHostConnector(options: ConnectorOptions) {
     // path applies to a late answer.
     if (startedIn !== era) return
     options.onError?.("heartbeat", error)
-    // A decision (revoked, paused past expiry, enrolled elsewhere, a newer
-    // instance holds the generation) stops the connector: acquiring again
-    // would overrule the user. A disruption keeps the enrollment for the next
-    // beat to retry: a control plane mid-deploy answers
-    // `503 deployment_candidate_unavailable` for the seconds between the
-    // upload and the phase opening, and stopping on that would leave a
-    // machine with a live lease and open relay sockets permanently offline.
-    // If the control plane really is gone, the lease expires there on its own.
+    // A disruption keeps the enrollment for the next beat to retry: a control
+    // plane mid-deploy answers `503 deployment_candidate_unavailable` for the
+    // seconds between the upload and the phase opening, and stopping on that
+    // would leave a machine with a live lease and open relay sockets
+    // permanently offline. If the control plane really is gone, the lease
+    // expires there on its own.
     if (transientHeartbeatFailure(error)) return
+    // A pause closes the tunnels now and keeps beating, so the owner's resume,
+    // made from any device, is heard at the next beat. Every other decision
+    // (revoked, enrolled elsewhere, a newer instance holds the generation)
+    // stops the connector: acquiring again would overrule the owner.
+    if (pausedByOwner(error)) {
+      if (!paused) options.onServing?.(undefined)
+      paused = true
+      return
+    }
     stop("revoked", String(error))
   }
 
@@ -556,6 +594,8 @@ export function createHostConnector(options: ConnectorOptions) {
         options.onError?.("reconcile", error)
       }
       if (startedIn !== era || draining) return state
+      paused = false
+      if (watchRefused) openWatch()
       options.onServing?.(result.hostTunnel)
       options.onLeaseRenewed?.(state)
     } catch (error) {
@@ -684,15 +724,9 @@ export function createHostConnector(options: ConnectorOptions) {
       }
       installTimer()
       // Opened before the first beat so a change made while that beat is in
-      // flight rings the queued one. A ring is a request for a beat, nothing
-      // more: the answer is applied by the same reconciliation as the timer's.
-      closeWatch()
-      watch = options.transport.watch?.({
-        onEvent: () => {
-          void requestBeat()
-        },
-        onError: (error) => options.onError?.("events", error),
-      })
+      // flight rings the queued one. The answer to a ring's beat is applied by
+      // the same reconciliation as the timer's.
+      openWatch()
       // The first beat is part of starting: it is what turns a claimed
       // generation into a live lease and delivers the assignments, and a
       // decision there (revoked between redeem and now) belongs to `start`.

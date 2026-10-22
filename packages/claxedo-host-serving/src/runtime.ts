@@ -28,7 +28,7 @@ import {
   type WorkspaceRuntimeApp,
   type WorkspaceRuntimeServerOptions,
 } from "@claxedo/workspace-runtime"
-import { remoteWorkspaceSessionAccessPolicy } from "@claxedo/session-core"
+import { createAuthorityGrants, remoteWorkspaceSessionAccessPolicy, type AuthorityGrants } from "@claxedo/session-core"
 import { relayHostAuthFromEnv } from "@claxedo/workspace-runtime/relay"
 import { createDocumentHydration, documentHydrationContribution } from "@claxedo/documents/runtime"
 import { isSessionConfigRefusal } from "@claxedo/workspace-runtime/config"
@@ -103,8 +103,10 @@ export type HostWorkspaceRuntimeOptions = {
     /** The relay's published key set; Relay Host Tokens are verified against it by `kid`. */
     jwksUrl: string
   }
-  /** The control plane's session authority, consulted for every private-session decision. */
+  /** The control plane's session authority, consulted for every private-session decision it has not let this host reuse. */
   sessionAuthorityUrl: string
+  /** One store for every runtime this host serves, so one ring of the doorbell forgets every reused answer. */
+  authorityGrants?: AuthorityGrants
   /** Per-workspace state root from the persisted host state's `storage_root`. */
   storeRoot: string
   harness?: WorkspaceRuntimeServerOptions["harness"]
@@ -126,7 +128,10 @@ export async function createHostWorkspaceRuntime(options: HostWorkspaceRuntimeOp
     target,
     sessionIdWorkspace: options.sessionIdWorkspace,
     exposure: relayWorkspaceRuntimeExposure(relayHostAuth),
-    sessionAccessPolicy: remoteWorkspaceSessionAccessPolicy({ url: options.sessionAuthorityUrl }),
+    sessionAccessPolicy: remoteWorkspaceSessionAccessPolicy({
+      url: options.sessionAuthorityUrl,
+      ...(options.authorityGrants ? { grants: options.authorityGrants } : {}),
+    }),
     storeRoot: options.storeRoot,
     placement: CONNECTED_HOST_PLACEMENT,
     ...(options.harness ? { harness: options.harness } : {}),
@@ -222,6 +227,8 @@ export type HostRuntimeListener = {
    * the rest; the failures are then reported together.
    */
   applyRuntimeConfig: () => Promise<void>
+  /** Drop every authority answer the runtimes reuse, when the control plane rings that someone's access may have narrowed. */
+  forgetAuthorityGrants: () => void
   /** Retire every runtime and stop listening; a failed owner is reported, not lost. */
   close: () => Promise<{ ok: boolean; results: HostRuntimeRetirementResult[] }>
 }
@@ -252,6 +259,7 @@ function workspaceNotServed(workspaceId: string | undefined) {
 export async function createHostRuntimeListener(options: HostRuntimeListenerOptions): Promise<HostRuntimeListener> {
   const entries = new Map<string, Entry>()
   const drainTimeoutMs = options.drainTimeoutMs ?? 10_000
+  const authorityGrants = createAuthorityGrants()
 
   const app = new Hono()
   app.all("*", (c) => {
@@ -418,6 +426,7 @@ export async function createHostRuntimeListener(options: HostRuntimeListenerOpti
     }
     const runtime = await createHostWorkspaceRuntime({
       ...workspace,
+      authorityGrants,
       sessionIdWorkspace: (sessionId) => {
         for (const entry of entries.values()) {
           const binding = entry.runtime.host.store().getExecutionBinding(sessionId)
@@ -444,6 +453,7 @@ export async function createHostRuntimeListener(options: HostRuntimeListenerOpti
     url,
     ensure,
     dispose: retire,
+    forgetAuthorityGrants: () => authorityGrants.forget(),
     owners: () => [
       ...[...entries.keys()].map((workspaceId) => ({ workspaceId, state: "serving" as const, attempt: 0 })),
       ...[...retirements.values()].map((record) => ({

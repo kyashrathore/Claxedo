@@ -39,6 +39,7 @@ export const D1_WORKSPACE_AUTHORITY_METHODS = [
   "createRuntimeCloudWorkspace",
   "deleteWorkspace",
   "setWorkspaceMachineClass",
+  "machinesServingWorkspaces",
 ] as const satisfies readonly (keyof WorkspaceAuthority)[]
 
 export type D1WorkspaceAuthorityCore = Pick<WorkspaceAuthority, (typeof D1_WORKSPACE_AUTHORITY_METHODS)[number]>
@@ -477,6 +478,15 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       .first<{ machine_class: SandboxMachineClass | null }>()
     if (!row) throw new D1WorkspaceAuthorityError("invalid_input", "Only a cloud workspace names the machine its sandboxes run on")
     return { machine_class: row.machine_class }
+  }
+
+  async machinesServingWorkspaces(workspaceIds: readonly string[]) {
+    if (workspaceIds.length === 0) return []
+    const rows = await this.database
+      .prepare("select distinct host_id, owner_user_id from host_workspace_assignments where workspace_id in (select value from json_each(?))")
+      .bind(JSON.stringify([...new Set(workspaceIds)]))
+      .all<{ host_id: string; owner_user_id: string }>()
+    return rows.results.map((row) => ({ hostId: row.host_id, ownerUserId: row.owner_user_id }))
   }
 
   private async deleteWorkspaceAs(who: Principal, args: { workspaceId: string }) {

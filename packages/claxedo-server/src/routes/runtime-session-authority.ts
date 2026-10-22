@@ -280,7 +280,8 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         401,
       )
     }
-    if (action !== "host_read") return context.json({ allowed: true })
+    const grantTtlMs = runtimeAuthorityGrantTtlMs(active.expiresAt)
+    if (action !== "host_read") return context.json({ allowed: true, grantTtlMs })
     const minter = streamLeaseMinter(env)
     const minted = await minter({
       ...sessionLeasePrincipal(proof),
@@ -296,7 +297,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
       code: "session_stream_authority_unavailable",
       message: "Workspace stream lease could not be issued",
     } }, 503)
-    return context.json({ allowed: true, ...minted })
+    return context.json({ allowed: true, ...minted, grantTtlMs })
   }
 
   const resolveWorkspaceOwner = options.ownerGrants?.resolveWorkspaceOwner
@@ -649,12 +650,24 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         action,
         ...(request.writeClass ? { writeClass: request.writeClass } : {}),
       })
-      return context.json({ allowed: true })
+      return context.json({ allowed: true, grantTtlMs: RUNTIME_AUTHORITY_GRANT_TTL_MS })
     } catch (error) {
       const answer = sessionAuthorityErrorAnswer(error, action)
       return context.json(answer.body, answer.status)
     }
   })
+}
+
+/**
+ * How long a host may answer the same question from an allowed answer. The
+ * owner accepted a minute as the bound on a revocation whose ring the host
+ * never heard; a ring makes the host forget sooner (`ringMachinesServing`).
+ */
+const RUNTIME_AUTHORITY_GRANT_TTL_MS = 60_000
+
+function runtimeAuthorityGrantTtlMs(tokenExpiresAt: unknown) {
+  if (typeof tokenExpiresAt !== "number") return RUNTIME_AUTHORITY_GRANT_TTL_MS
+  return Math.max(0, Math.min(RUNTIME_AUTHORITY_GRANT_TTL_MS, tokenExpiresAt - Date.now()))
 }
 
 function sessionHostRefusal(context: Context) {

@@ -553,6 +553,11 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
           action: body.paused ? "host_enrollment.paused" : "host_enrollment.resumed",
           metadata: (body.hostId ? { hostId: body.hostId } : {}),
         })
+        if (options.hostChanged) {
+          for (const device of await authority.listHostDevices(auth)) {
+            if (!body.hostId || device.host_id === body.hostId) await options.hostChanged({ ownerUserId: auth.user.subject, hostId: device.host_id })
+          }
+        }
         return result
       }, "POST", {
         limiter: controlPlaneRateLimiter,

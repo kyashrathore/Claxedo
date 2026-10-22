@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { createAuthorityGrants } from "./authority-grants"
 import { remoteWorkspaceSessionAccessPolicy, remoteWorkspaceSessionAccessPolicyFromEnv } from "./remote-session-authority"
 import { asRecord } from "@claxedo/helpers/guards"
 
@@ -542,5 +543,117 @@ describe("deferred turn grant", () => {
     expect(await policy.grantTurn!({ ...unproven, operation: "prompt", intent: "queued_prompt", turnId: "msg_queued" }))
       .toMatchObject({ allowed: false, status: 503, code: "session_authority_unavailable" })
     expect(requests).toEqual([])
+  })
+})
+
+describe("answers the authority lets a host reuse", () => {
+  const owned = { ...input, authority: { ...input.authority, parentTokenId: "rat_1" } }
+  const lease = (expiresAt: number) => Response.json({ allowed: true, lease: `lease-${expiresAt}`, expiresAt, grantTtlMs: 60_000 })
+
+  function counted(answer: () => Response) {
+    const bodies: unknown[] = []
+    const policy = remoteWorkspaceSessionAccessPolicy({
+      url: "https://control.test/api/runtime-authority/session-authorize",
+      fetch: async (_url, init) => {
+        bodies.push(sentJson(init))
+        return answer()
+      },
+    })
+    return { policy, bodies }
+  }
+
+  test("a read the authority granted for a while is answered again without asking, for the same token, session and action only", async () => {
+    const { policy, bodies } = counted(() => Response.json({ allowed: true, grantTtlMs: 60_000 }))
+    expect(await policy.authorize({ ...owned, operation: "message_read" })).toEqual({ allowed: true })
+    expect(await policy.authorize({ ...owned, operation: "message_read" })).toEqual({ allowed: true })
+    expect(bodies).toHaveLength(1)
+    await policy.authorize({ ...owned, sessionId: "ses_other", operation: "message_read" })
+    await policy.authorize({ ...owned, authority: { ...owned.authority, parentTokenId: "rat_2" }, operation: "message_read" })
+    await policy.authorize({ ...owned, operation: "permission_response" })
+    await policy.authorize({ ...owned, operation: "session_meta_write" })
+    expect(bodies).toHaveLength(5)
+  })
+
+  test("an answer without a grant, or a caller whose proof names no parent token, is asked every time", async () => {
+    const plain = counted(() => Response.json({ allowed: true }))
+    await plain.policy.authorize({ ...owned, operation: "message_read" })
+    await plain.policy.authorize({ ...owned, operation: "message_read" })
+    expect(plain.bodies).toHaveLength(2)
+    const unkeyed = counted(() => Response.json({ allowed: true, grantTtlMs: 60_000 }))
+    await unkeyed.policy.authorize({ ...input, operation: "message_read" })
+    await unkeyed.policy.authorize({ ...input, operation: "message_read" })
+    expect(unkeyed.bodies).toHaveLength(2)
+  })
+
+  test("a refusal is never reused, and forgetting drops every answer at once", async () => {
+    const answers = [Response.json({ error: { code: "session_private" } }, { status: 403 }), Response.json({ allowed: true, grantTtlMs: 60_000 })]
+    const { policy, bodies } = counted(() => answers.shift() ?? Response.json({ allowed: true, grantTtlMs: 60_000 }))
+    expect((await policy.authorize({ ...owned, operation: "message_read" })).allowed).toBe(false)
+    expect((await policy.authorize({ ...owned, operation: "message_read" })).allowed).toBe(true)
+    expect(bodies).toHaveLength(2)
+    let forgotten = 0
+    policy.onAuthorityChange!(() => { forgotten += 1 })
+    const grants = createAuthorityGrants()
+    expect(grants.generation()).toBe(0)
+    const shared = remoteWorkspaceSessionAccessPolicy({
+      url: "https://control.test/authorize",
+      grants,
+      fetch: async (_url, init) => {
+        bodies.push(sentJson(init))
+        return Response.json({ allowed: true, grantTtlMs: 60_000 })
+      },
+    })
+    shared.onAuthorityChange!(() => { forgotten += 1 })
+    await shared.authorize({ ...owned, operation: "message_read" })
+    await shared.authorize({ ...owned, operation: "message_read" })
+    expect(bodies).toHaveLength(3)
+    grants.forget()
+    expect(forgotten).toBe(1)
+    await shared.authorize({ ...owned, operation: "message_read" })
+    expect(bodies).toHaveLength(4)
+  })
+
+  test("an answer to a question asked before a forget is not held after it", async () => {
+    const grants = createAuthorityGrants()
+    let release: (response: Response) => void = () => undefined
+    let asked = 0
+    const policy = remoteWorkspaceSessionAccessPolicy({
+      url: "https://control.test/authorize",
+      grants,
+      fetch: async () => {
+        asked += 1
+        return asked === 1 ? new Promise<Response>((resolve) => { release = resolve }) : Response.json({ allowed: true, grantTtlMs: 60_000 })
+      },
+    })
+    const inFlight = policy.authorize({ ...owned, operation: "message_read" })
+    await Bun.sleep(0)
+    grants.forget()
+    release(Response.json({ allowed: true, grantTtlMs: 60_000 }))
+    expect(await inFlight).toEqual({ allowed: true })
+    await policy.authorize({ ...owned, operation: "message_read" })
+    expect(asked).toBe(2)
+  })
+
+  test("a terminal reuses a held workspace lease until it would have to renew it, and a renewal always asks", async () => {
+    let expiresAt = Date.now() + 15_000
+    const { policy, bodies } = counted(() => lease(expiresAt))
+    const host = (extra: { lease?: string } = {}) => policy.authorizeHost!({ ...owned, operation: "pty_write", hostAccess: "read", ...extra })
+    expect(await host()).toEqual({ allowed: true, lease: `lease-${expiresAt}`, expiresAt })
+    expect(await host()).toEqual({ allowed: true, lease: `lease-${expiresAt}`, expiresAt })
+    expect(bodies).toEqual([{ action: "host_read" }])
+    await host({ lease: `lease-${expiresAt}` })
+    expect(bodies).toHaveLength(2)
+    const nearDeadline = counted(() => lease(Date.now() + 5_200))
+    const near = () => nearDeadline.policy.authorizeHost!({ ...owned, operation: "pty_write", hostAccess: "read" })
+    await near()
+    await near()
+    expect(nearDeadline.bodies).toHaveLength(1)
+    await Bun.sleep(300)
+    await near()
+    expect(nearDeadline.bodies).toHaveLength(2)
+    const admin = () => policy.authorizeHost!({ ...owned, operation: "agent_setup_write", hostAccess: "admin" })
+    await admin()
+    await admin()
+    expect(bodies.filter((body) => asRecord(body)?.action === "host_admin")).toHaveLength(1)
   })
 })

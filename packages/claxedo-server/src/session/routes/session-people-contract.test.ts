@@ -167,3 +167,32 @@ describe("share level on the grant route", () => {
     })
   }
 })
+
+describe("the machine serving a shared session's workspace", () => {
+  const share = (method: "POST" | "DELETE") => ({
+    method,
+    headers: { authorization: "Bearer token", "content-type": "application/json" },
+    body: JSON.stringify({ workspaceId: "ws_1", level: "follow", grantedToTokenIdentifier: "https://auth.example.test|user_bob" }),
+  })
+
+  test("is rung after a grant, which may lower a level, and after a revoke that revoked something, and not after one that revoked nothing", async () => {
+    const hostChanged = vi.fn(async (_input: { ownerUserId: string; hostId: string }) => undefined)
+    const machinesServingWorkspaces = vi.fn(async (_workspaceIds: readonly string[]) => [{ hostId: "host_1", ownerUserId: "user_alice" }])
+    const revoked = { revoked: true, runtime_tokens_revoked: 1, recipientUserIds: ["usr_bob"] }
+    const revokeSessionShare = vi.fn(async () => revoked)
+    const routes = SessionPeopleControlRoutes(services({
+      grantSessionShare: vi.fn(async () => ({ grant_id: "ssg_1", level: "follow" as const, recipientUserId: "usr_bob" })),
+      revokeSessionShare,
+      machinesServingWorkspaces,
+    }), { ...signedOptions, hostChanged })
+
+    expect((await routes.request("https://control.example.test/sessions/ses_1/shares", share("POST"))).status).toBe(200)
+    expect((await routes.request("https://control.example.test/sessions/ses_1/shares", share("DELETE"))).status).toBe(200)
+    expect(machinesServingWorkspaces.mock.calls).toEqual([[["ws_1"]], [["ws_1"]]])
+    expect(hostChanged.mock.calls).toEqual([[{ hostId: "host_1", ownerUserId: "user_alice" }], [{ hostId: "host_1", ownerUserId: "user_alice" }]])
+
+    revokeSessionShare.mockResolvedValueOnce({ revoked: false, runtime_tokens_revoked: 0, recipientUserIds: [] })
+    expect((await routes.request("https://control.example.test/sessions/ses_1/shares", share("DELETE"))).status).toBe(200)
+    expect(hostChanged).toHaveBeenCalledTimes(2)
+  })
+})

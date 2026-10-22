@@ -287,7 +287,7 @@ describe("one authorization owner", () => {
       jti: "jti_alice", workspaceId, hostId: "host_alice", ...runtime(alice), role: "owner", expiresAt: 1_900_000_000_000,
     })
     expect(await authority.runtimeAccessTokenActive({ jti: "jti_alice", workspaceId, hostId: "host_alice" }))
-      .toEqual({ active: true })
+      .toMatchObject({ active: true })
     expect(await authority.resolveRuntimeMachineAccess(alice.principal!.actorId, workspaceId)).toMatchObject({ role: "owner" })
     await authority.reserveRuntimeSession(runtime(alice), {
       operationId: "op_fork_alice", sessionId: "ses_fork_alice", workspaceId, kind: "fork", parentSessionId: "ses_alice",
@@ -359,7 +359,7 @@ describe("one authorization owner", () => {
     await expect(token(sender, "jti_before_share", { sessionId: "ses_alice" })).rejects.toMatchObject({ status: 403 })
     await authority.grantSessionShare!(alice, { sessionId: "ses_alice", workspaceId, grantedToUserId: id(sender), level: "send" })
     await token(sender, "jti_share", { sessionId: "ses_alice" })
-    expect(await active("jti_share")).toEqual({ active: true })
+    expect(await active("jti_share")).toMatchObject({ active: true })
     await expect(token(sender, "jti_other_session", { sessionId: "ses_alice_other" })).rejects.toMatchObject({ status: 403 })
     await expect(token(sender, "jti_workspace")).rejects.toMatchObject({ status: 403 })
     await expect(token(sender, "jti_share_owner", { sessionId: "ses_alice", role: "owner" })).rejects.toMatchObject({ status: 403 })
@@ -371,7 +371,7 @@ describe("one authorization owner", () => {
     expect(await active("jti_share")).toMatchObject({ active: false, code: "runtime_access_token_revoked" })
     expect(await active("jti_share_again")).toMatchObject({ active: false, code: "runtime_access_token_revoked" })
     await expect(token(sender, "jti_after_revoke", { sessionId: "ses_alice" })).rejects.toMatchObject({ status: 403 })
-    expect(await active("jti_owner")).toEqual({ active: true })
+    expect(await active("jti_owner")).toMatchObject({ active: true })
   })
 
   test("the connection signs a session token for either holder and refuses sibling, workspace and non-holder access", async () => {
@@ -419,7 +419,7 @@ describe("one authorization owner", () => {
       .toMatchObject({ revoked: true, runtime_tokens_revoked: 1 })
     expect(await revokedAt("jti_editor")).toEqual(expect.any(Number))
     expect(await revokedAt("jti_sender")).toBeNull()
-    expect(await authority.runtimeAccessTokenActive({ jti: "jti_sender", workspaceId, hostId: "host_alice" })).toEqual({ active: true })
+    expect(await authority.runtimeAccessTokenActive({ jti: "jti_sender", workspaceId, hostId: "host_alice" })).toMatchObject({ active: true })
   })
 
   test("a share lives on its owner's standing: suspending the owner stops it, and removing them revokes it and its tokens", async () => {
@@ -449,8 +449,15 @@ describe("one authorization owner", () => {
     await suspended("active")
     await reads()
 
+    await database.prepare(`
+      insert into host_workspace_assignments (workspace_id, host_id, org_id, owner_user_id, owner_actor_id, assigned_at, updated_at)
+      values (?, 'host_admin', 'org_acme', ?, ?, 1, 1)
+    `).bind(workspaceId, id(owner), owner.principal!.actorId).run()
     expect(await authority.removeOrgMember!(alice, { orgId: "org_acme", userPublicId: id(owner) }))
-      .toMatchObject({ removed: true, session_shares_revoked: 1, runtime_tokens_revoked: 1 })
+      .toMatchObject({ removed: true, session_shares_revoked: 1, runtime_tokens_revoked: 1, revokedTokenWorkspaceIds: [workspaceId] })
+    expect(await authority.machinesServingWorkspaces!([workspaceId, workspaceId, "ws_unassigned"]))
+      .toEqual([{ hostId: "host_admin", ownerUserId: id(owner) }])
+    expect(await authority.machinesServingWorkspaces!([])).toEqual([])
     await expect(reads()).rejects.toMatchObject({ status: 403 })
     expect(await active()).toMatchObject({ active: false, code: "runtime_access_token_revoked" })
     expect(await database.prepare(`select count(*) as live from session_share_grants where session_id = 'ses_admin' and revoked_at is null`)

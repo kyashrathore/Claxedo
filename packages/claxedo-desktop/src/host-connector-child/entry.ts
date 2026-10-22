@@ -277,6 +277,7 @@ export function runHostConnectorChild(
       // undeclared machine rather than a guessed one.
       ...(message.sessionAuthority ? { sessionAuthority: message.sessionAuthority } : {}),
       onAssignments: reconcileAssignments,
+      onHostChanged: () => send({ type: "host-changed" }),
       onError: (stage, error) => {
         // A stage the connector recovered from leaves the status unchanged, so
         // the reason would otherwise exist only in this process. A sealed

@@ -44,6 +44,8 @@ export type OrgMemberRemoval = {
   project_memberships_revoked: number
   session_shares_revoked: number
   runtime_tokens_revoked: number
+  /** The workspaces the revoked runtime access tokens reached; the route rings their machines and never returns it. */
+  revokedTokenWorkspaceIds: string[]
 }
 
 export type ProjectMemberGrant = { project_id: string; user_id: string; role: ProjectGrantRole }

@@ -205,16 +205,15 @@ describe("heartbeat", () => {
     expect(h.acquires()).toHaveLength(1)
   })
 
-  test("a paused enrollment is a decision too", async () => {
+  test("a paused enrollment is the owner's to undo: the loop stays, and the beat after the resume renews the lease", async () => {
     const h = await machineHost()
     await h.connector.start()
     h.cp.pause(h.enrollmentId, true)
 
-    expect(await h.connector.beat()).toMatchObject({
-      status: "stopped",
-      reason: "revoked",
-      detail: expect.stringContaining("enrollment_paused"),
-    })
+    expect(await h.connector.beat()).toMatchObject({ status: "enrolled" })
+    h.cp.pause(h.enrollmentId, false)
+    const resumed = await h.connector.beat()
+    expect(resumed).toMatchObject({ status: "enrolled" })
   })
 
   /**

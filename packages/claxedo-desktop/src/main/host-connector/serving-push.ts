@@ -43,3 +43,52 @@ export function setupHostServingPush(input: {
     }
   }
 }
+
+/**
+ * Tells the daemon the control plane rang this machine: someone's access to
+ * what it serves may have narrowed, so its runtimes stop reusing authority
+ * answers now. A push that fails leaves those answers to lapse on their own,
+ * within a minute.
+ */
+export function setupHostAccessChangedPush(input: {
+  daemon: DaemonFetch
+  log: { warn(message: string): void }
+}): () => Promise<void> {
+  return async () => {
+    try {
+      const response = await input.daemon("/api/claxedo/host-serving/access-changed", { method: "POST" })
+      if (!response.ok) input.log.warn(`[host-serving] access-changed -> ${String(response.status)}`)
+    } catch (error) {
+      input.log.warn(`[host-serving] access-changed push failed: ${String(error)}`)
+    }
+  }
+}
+
+/**
+ * Everything main hands the daemon about serving. The last ack's serving facts
+ * are retained so a daemon that becomes ready AFTER the first ack still starts
+ * serving immediately, with the addresses that ack named, not just its
+ * credential.
+ */
+export function setupHostServingDelivery(input: {
+  daemon: DaemonFetch
+  daemonReady: Promise<unknown>
+  log: { info(message: string): void; warn(message: string): void }
+}) {
+  const send = setupHostServingPush(input)
+  let last: HostConnectorServing | undefined
+  const serving = async (next: HostConnectorServing) => {
+    last = next
+    await send(next)
+  }
+  void input.daemonReady.then(
+    () => {
+      if (last) void serving(last)
+    },
+    // A daemon that never became reachable is already reported by the startup
+    // path; this retry has nothing left to push and must not become an
+    // unhandled rejection on the way to saying so.
+    () => {},
+  )
+  return { serving, accessChanged: setupHostAccessChangedPush(input) }
+}

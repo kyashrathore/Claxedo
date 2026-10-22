@@ -1,6 +1,7 @@
 import { parseTurnDelivery } from "@claxedo/harness/contract"
 import { withDeadlineSignal } from "@claxedo/helpers/deadline"
 import { asBoolean, asNumber, asRecord, asString } from "@claxedo/helpers/guards"
+import { createAuthorityGrants, type AuthorityGrant, type AuthorityGrants } from "./authority-grants"
 import {
   managedWorkspaceSessionAccessPolicy,
   type SessionAccessDecision,
@@ -75,9 +76,12 @@ export function remoteWorkspaceSessionAccessPolicy(
     requireActor?: boolean
     adoptRefusedSession?: AdoptRefusedSession
     log?: AuthorityLog
+    /** Shared by every runtime one host serves, so one revocation ring forgets them all. */
+    grants?: AuthorityGrants
   } = {},
 ) {
   const log = options.log ?? consoleAuthorityLog
+  const grants = options.grants ?? createAuthorityGrants()
   const authorityUrl = () => (typeof options.url === "function" ? options.url() : options.url)?.trim()
   /**
    * The authority calls in flight, by endpoint, credential and body: a call
@@ -169,11 +173,17 @@ export function remoteWorkspaceSessionAccessPolicy(
       reauthorize: ask,
     })
   }
-  const authorize = (input: SessionAuthorityInput): Promise<SessionAccessDecision> => {
+  const authorize = async (input: SessionAuthorityInput): Promise<SessionAccessDecision> => {
     const writeClass = sessionAccessWriteClass(input)
     const action = writeClass ? "write" : "read"
     const classified = writeClass ? { writeClass } : undefined
-    return adoptable(input, () => request(input, action, decodeAllowed, classified))
+    const key = sessionGrantKey(input, action, writeClass)
+    if (key && grants.held(key)) return { allowed: true }
+    const askedAt = grants.generation()
+    const decision = await adoptable(input, () => request(input, action, decodeGranted, classified))
+    if (!decision.allowed) return decision
+    if (key && decision.grantTtlMs !== undefined) grants.hold(key, { allowed: true }, decision.grantTtlMs, askedAt)
+    return { allowed: true }
   }
   const policy = managedWorkspaceSessionAccessPolicy({
     requireActor: options.requireActor ?? true,
@@ -213,6 +223,10 @@ export function remoteWorkspaceSessionAccessPolicy(
     const url = authorityUrl()
     if (!url || (!input.credential && !input.lease)) return denied(503, "session_authority_unavailable")
     const action: HostAuthorityAction = input.hostAccess === "admin" ? "host_admin" : "host_read"
+    const key = hostGrantKey(input, action)
+    const held = key && !input.lease ? grants.held(key) : undefined
+    if (held && hostGrantUsable(held, action)) return held
+    const generation = grants.generation()
     const askedAt = Date.now()
     try {
       return await withDeadlineSignal(options.timeoutMs ?? 5_000, async (signal) => {
@@ -229,7 +243,10 @@ export function remoteWorkspaceSessionAccessPolicy(
           const body = await jsonBody(response)
           const lease = asString(body?.lease)
           const expiresAt = typeof body?.expiresAt === "number" ? body.expiresAt : undefined
-          return lease && expiresAt !== undefined ? { allowed: true, lease, expiresAt } : { allowed: true }
+          const grant: AuthorityGrant = lease && expiresAt !== undefined ? { allowed: true, lease, expiresAt } : { allowed: true }
+          const ttlMs = hostGrantTtlMs(grant, asNumber(body?.grantTtlMs))
+          if (key && ttlMs !== undefined) grants.hold(key, grant, ttlMs, generation)
+          return grant
         }
         const error = asRecord((await jsonBody(response))?.error)
         // Only the authority's own refusal is a refusal; anything else it
@@ -247,6 +264,7 @@ export function remoteWorkspaceSessionAccessPolicy(
       return denied(503, "session_authority_unavailable")
     }
   }
+  policy.onAuthorityChange = (listener) => grants.onForget(listener)
   policy.reserveSession = (input) =>
     request(input, "reserve", decodeReservation, { parentSessionId: input.parentSessionId })
   policy.grantTurn = (input) =>
@@ -305,6 +323,42 @@ async function jsonBody(response: Response): Promise<Record<string, unknown> | u
 /** A plain grant: the action succeeded and carries no payload. */
 function decodeAllowed(): { allowed: true } {
   return { allowed: true }
+}
+
+/** An allowed read or write, with how long the authority lets the same question be answered from this answer. */
+function decodeGranted(body: Record<string, unknown> | undefined): { allowed: true; grantTtlMs?: number } {
+  const grantTtlMs = asNumber(body?.grantTtlMs)
+  return grantTtlMs === undefined ? { allowed: true } : { allowed: true, grantTtlMs }
+}
+
+/**
+ * How long a read lease is reused for another request: never past the point
+ * where its holder would have to renew it, which a terminal starts to do
+ * `HOST_LEASE_RENEW_MARGIN_MS` before its deadline.
+ */
+const HOST_LEASE_RENEW_MARGIN_MS = 5_000
+
+function sessionGrantKey(input: SessionAuthorityInput, action: "read" | "write", writeClass: SessionWriteClass | undefined) {
+  const token = input.authority.parentTokenId
+  if (!token) return undefined
+  return ["session", token, input.actor.actorId, input.authority.workspaceId, input.sessionId, action, writeClass ?? ""].join("\0")
+}
+
+function hostGrantKey(input: SessionAccessPolicyInput, action: HostAuthorityAction) {
+  const token = input.authority?.parentTokenId
+  if (!token || !input.actor) return undefined
+  return ["host", token, input.actor.actorId, input.authority?.workspaceId ?? "", action].join("\0")
+}
+
+function hostGrantUsable(grant: AuthorityGrant, action: HostAuthorityAction) {
+  if (action === "host_admin") return true
+  return grant.expiresAt !== undefined && grant.expiresAt - Date.now() > HOST_LEASE_RENEW_MARGIN_MS
+}
+
+function hostGrantTtlMs(grant: AuthorityGrant, grantTtlMs: number | undefined) {
+  if (grantTtlMs === undefined) return undefined
+  if (grant.expiresAt === undefined) return grantTtlMs
+  return Math.min(grantTtlMs, grant.expiresAt - Date.now() - HOST_LEASE_RENEW_MARGIN_MS)
 }
 
 function decodeReservation(body: Record<string, unknown> | undefined): SessionReservationDecision {

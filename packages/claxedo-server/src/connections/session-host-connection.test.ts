@@ -48,7 +48,7 @@ describe("connecting to a session served by its own host", () => {
     expect(token).toMatchObject({ host_id: sessionHostId(RESERVED), role: "editor", scope: "session", session_id: RESERVED, workspace_id: WORKSPACE_ID })
     expect(token.routing_id).toBeUndefined()
     expect(token.purpose).toBeUndefined()
-    expect(await plane.store.runtimeAccessTokenActive({ jti: String(token.jti), workspaceId: WORKSPACE_ID, hostId: sessionHostId(RESERVED) })).toEqual({ active: true })
+    expect(await plane.store.runtimeAccessTokenActive({ jti: String(token.jti), workspaceId: WORKSPACE_ID, hostId: sessionHostId(RESERVED) })).toMatchObject({ active: true })
   })
 
   test("refuses a session the reservation placed in the workspace's runtime, an unreserved one, and a person who cannot create sessions", async () => {

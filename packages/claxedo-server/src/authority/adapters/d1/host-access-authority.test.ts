@@ -731,7 +731,7 @@ describe("D1 host access authority", () => {
         workspaceId: "ws_admin",
         hostId: "host-a",
       }),
-    ).toEqual({ active: true })
+    ).toMatchObject({ active: true })
     await expect(
       input.runtimeTokens.recordRuntimeAccessToken(admin, {
         jti: "jti-admin",
@@ -798,7 +798,7 @@ describe("D1 host access authority", () => {
         workspaceId: "ws_local",
         hostId: "host-a",
       }),
-    ).toEqual({ active: true })
+    ).toMatchObject({ active: true })
     await input.runtimeTokens.revokeRuntimeAccessToken(alice, { jti: "jti-alice", workspaceId: "ws_local" })
     expect(
       await input.runtimeTokens.runtimeAccessTokenActive({

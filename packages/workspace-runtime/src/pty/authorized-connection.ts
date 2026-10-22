@@ -109,6 +109,7 @@ export function createAuthorizedPtyConnection(input: {
   let lease: string | undefined
   let expiresAt: number | undefined
   let poll: ReturnType<typeof setInterval> | undefined
+  let unsubscribe: (() => void) | undefined
   let work = Promise.resolve()
 
   const live = () => streaming && !closed && (expiresAt === undefined || now() < expiresAt)
@@ -119,6 +120,7 @@ export function createAuthorizedPtyConnection(input: {
     streaming = false
     if (poll) clearInterval(poll)
     poll = undefined
+    unsubscribe?.()
     handler?.onClose()
     socket?.close(1008, reason)
   }
@@ -163,6 +165,7 @@ export function createAuthorizedPtyConnection(input: {
     if (expiresAt === undefined) return
     poll = setInterval(tick, AUTHORIZATION_POLL_MS)
     ;(poll as { unref?: () => void }).unref?.()
+    unsubscribe = input.policy?.onAuthorityChange?.(() => void renew())
   }
 
   const renew = async () => {
@@ -227,6 +230,7 @@ export function createAuthorizedPtyConnection(input: {
       streaming = false
       if (poll) clearInterval(poll)
       poll = undefined
+      unsubscribe?.()
       handler?.onClose()
     },
   }

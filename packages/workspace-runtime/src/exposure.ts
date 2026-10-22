@@ -236,6 +236,7 @@ function parseEmbeddedRelayHostAuth(value: string | undefined): RelayHostAuthCon
       ...(session_id ? { session_id } : {}),
       ...(trimToUndefined(row.host_id) ? { host_id: trimToUndefined(row.host_id) } : {}),
       ...(row.backing === "cloud-vm" || row.backing === "local-worktree" ? { backing: row.backing } : {}),
+      ...(trimToUndefined(row.parent_jti) ? { parent_jti: trimToUndefined(row.parent_jti) } : {}),
     }
   } catch {
     return undefined

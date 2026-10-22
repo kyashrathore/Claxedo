@@ -90,8 +90,7 @@ import { setupElectronHostConnector } from "./host-connector/electron-child"
 import { remoteAccessFollow } from "./host-connector/account-follow"
 import { describeLocalWorkspace } from "./host-connector/local-workspace-description"
 import { registerHostConnectorIpc } from "./host-connector/ipc"
-import type { HostConnectorServing } from "./host-connector/child-protocol"
-import { setupHostServingPush } from "./host-connector/serving-push"
+import { setupHostServingDelivery } from "./host-connector/serving-push"
 import { setupHostProviderConfigPush } from "./host-connector/provider-config-push"
 import { publishHostConnectorStatus } from "./host-connector/status-channel"
 import { initLogging, openServerLogFile } from "./logging"
@@ -653,29 +652,11 @@ const account = setupLazyAccount({
   },
 })
 
-/**
- * The last ack's serving facts, retained so a daemon that becomes ready AFTER
- * the first ack still starts serving immediately — with the addresses that ack
- * named, not just its credential.
- */
-let lastServing: HostConnectorServing | undefined
-const sendServing = setupHostServingPush({
+const hostServingDelivery = setupHostServingDelivery({
   daemon,
+  daemonReady: daemonEndpoint.promise,
   log: { info: (message) => logger.info(message), warn: (message) => logger.warn(message) },
 })
-const pushServing = async (serving: HostConnectorServing) => {
-  lastServing = serving
-  await sendServing(serving)
-}
-void daemonEndpoint.promise.then(
-  () => {
-    if (lastServing) void pushServing(lastServing)
-  },
-  // A daemon that never became reachable is already reported by the startup
-  // path; this retry has nothing left to push and must not become an unhandled
-  // rejection on the way to saying so.
-  () => {},
-)
 /**
  * Recovery reaches a live daemon over the authenticated fetch main already
  * holds, and falls back to the launch result when there is no daemon to ask.
@@ -777,13 +758,14 @@ hostConnector = setupElectronHostConnector({
   onStatusChange: (state) =>
     publishHostConnectorStatus(mainWindow ?? undefined, state, hostConnectorContext()),
   onServing: (serving) => {
-    void pushServing(serving)
+    void hostServingDelivery.serving(serving)
     // Every serving beat is also when main re-checks that the daemon still
     // holds the pushed rows: it keeps them in memory alone, so a daemon that
     // restarted mid-session serves turns with no provider credentials while
     // the control plane still shows the revision acked.
     void providerConfigPush.reconcile()
   },
+  onHostChanged: () => void hostServingDelivery.accessChanged(),
   onProviderConfig: (config) => void providerConfigPush.push(config),
   // The daemon composed this machine's workspace runtimes, so the daemon is
   // the only process that knows how they admit sessions. Read it from the

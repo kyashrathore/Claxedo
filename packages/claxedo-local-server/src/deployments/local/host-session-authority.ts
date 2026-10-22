@@ -21,7 +21,7 @@
  * they land. The loopback arm never asks.
  */
 
-import { remoteWorkspaceSessionAccessPolicy, type AdoptRefusedSession, type SessionAccessDecision } from "@claxedo/session-core"
+import { createAuthorityGrants, remoteWorkspaceSessionAccessPolicy, type AdoptRefusedSession, type SessionAccessDecision } from "@claxedo/session-core"
 import { createRelayHostTokenVerifier } from "@claxedo/session-core/relay-host"
 import { hostServingIdentity } from "@claxedo/host-serving/serving"
 import type { RuntimeProxyOptions } from "../../workspace/runtime-dispatch/internals"
@@ -39,8 +39,22 @@ export type LocalHostEndpoints = {
 
 let endpoints: LocalHostEndpoints = {}
 
+const authorityGrants = createAuthorityGrants()
+
+/**
+ * An answer reused from one authority or owner is no answer from the next, so
+ * serving ending or moving to another authority forgets them all.
+ */
 export function setLocalHostEndpoints(next: LocalHostEndpoints | undefined) {
+  if (!next || next.sessionAuthorityUrl !== endpoints.sessionAuthorityUrl || next.ownerActorId !== endpoints.ownerActorId) {
+    authorityGrants.forget()
+  }
   endpoints = next ?? {}
+}
+
+/** The control plane rang this machine's doorbell: someone's access to what it serves may have narrowed. */
+export function forgetLocalHostAuthorityGrants() {
+  authorityGrants.forget()
 }
 
 export function localHostOwnerActorId() {
@@ -103,6 +117,7 @@ export const localHostRelayActor: NonNullable<RuntimeProxyOptions["resolveRelayA
     orgId: claims.org_id,
     role: claims.role,
     ...(claims.session_id ? { sessionId: claims.session_id } : {}),
+    parentTokenId: claims.parent_jti,
   }
 }
 
@@ -151,6 +166,7 @@ export const localHostSessionAccessPolicy = remoteWorkspaceSessionAccessPolicy({
   url: () => endpoints.sessionAuthorityUrl,
   requireActor: false,
   adoptRefusedSession,
+  grants: authorityGrants,
 })
 
 /** Forgets what this process has already tried to adopt; a fresh machine state is a fresh attempt. */

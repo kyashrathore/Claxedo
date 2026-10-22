@@ -484,6 +484,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       authentication: options.authentication,
       authConfig,
       cliTokenEnv: plane.env,
+      hostChanged,
     }),
   )
   app.route(
@@ -492,6 +493,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       authentication: options.authentication,
       authConfig,
       cliTokenEnv: plane.env,
+      hostChanged,
       sessionShareChangedSink: (event) =>
         nudgeLiveSyncRoom(
           options.liveSyncRoom,

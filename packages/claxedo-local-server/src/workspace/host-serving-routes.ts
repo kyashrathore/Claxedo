@@ -26,7 +26,7 @@ import { Hono } from "hono"
 import { z } from "zod"
 import { setHostServing, hostServingState } from "@claxedo/host-serving/serving"
 import { embeddedWorkspaceRuntimeSessionAuthority, syncEmbeddedWorkspaceRuntimes } from "../deployments/local/embedded-workspace-runtime"
-import { setLocalHostEndpoints } from "../deployments/local/host-session-authority"
+import { forgetLocalHostAuthorityGrants, setLocalHostEndpoints } from "../deployments/local/host-session-authority"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { adoptEnrolledOwner, hostServingUpdates } from "./host-provider-config"
 
@@ -88,6 +88,10 @@ export function HostServingRoutes() {
         return c.json({ error: { code: "invalid_request_body", message: "serving credential failed validation" } }, 400)
       }
       return c.json(await hostServingUpdates.run("serving", () => applyServing(parsed.data, new URL(c.req.url).origin)))
+    })
+    .post("/access-changed", (c) => {
+      forgetLocalHostAuthorityGrants()
+      return c.body(null, 204)
     })
 }
 

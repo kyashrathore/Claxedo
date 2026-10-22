@@ -103,6 +103,7 @@ export function setupElectronHostConnector(input: {
   onError?: (stage: string, error: unknown) => void
   onStatusChange?: Parameters<typeof setupHostConnectorChild>[0]["onStatusChange"]
   onServing?: Parameters<typeof setupHostConnectorChild>[0]["onServing"]
+  onHostChanged?: Parameters<typeof setupHostConnectorChild>[0]["onHostChanged"]
   onProviderConfig?: Parameters<typeof setupHostConnectorChild>[0]["onProviderConfig"]
   sessionAuthority?: Parameters<typeof setupHostConnectorChild>[0]["sessionAuthority"]
 }) {
@@ -158,6 +159,7 @@ export function setupElectronHostConnector(input: {
     ...(input.onError ? { onError: input.onError } : {}),
     ...(input.onStatusChange ? { onStatusChange: input.onStatusChange } : {}),
     ...(input.onServing ? { onServing: input.onServing } : {}),
+    ...(input.onHostChanged ? { onHostChanged: input.onHostChanged } : {}),
     ...(input.onProviderConfig ? { onProviderConfig: input.onProviderConfig } : {}),
     ...(input.sessionAuthority ? { sessionAuthority: input.sessionAuthority } : {}),
   })

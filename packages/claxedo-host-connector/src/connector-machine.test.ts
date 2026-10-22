@@ -67,6 +67,7 @@ async function machineHost(
   const errors: Array<{ stage: ConnectorErrorStage; error: unknown }> = []
   const ackFailures: unknown[] = []
   const providerConfigs: ProviderConfigRevision[] = []
+  const rings: number[] = []
   let tick: (() => void) | undefined
   const connector = createHostConnector({
     mode: "machine",
@@ -97,6 +98,7 @@ async function machineHost(
       else for (const d of descriptions) await ack(d)
     },
     onServing: (tunnel) => tunnels.push(tunnel),
+    onHostChanged: () => rings.push(beats().length),
     onError: (stage, error) => errors.push({ stage, error }),
     ...(input.sealingPublicKey ? { sealingPublicKey: input.sealingPublicKey } : {}),
     onProviderConfig: async (config) => {
@@ -104,10 +106,13 @@ async function machineHost(
       await input.onProviderConfig?.(config)
     },
   })
-  const beats = () => cp.log.filter((entry) => entry.path === "/api/claxedo/host/enrollments/heartbeat")
+  function beats() {
+    return cp.log.filter((entry) => entry.path === "/api/claxedo/host/enrollments/heartbeat")
+  }
   return {
     cp,
     enrolled,
+    rings,
     connector,
     seen,
     scopes,
@@ -244,12 +249,55 @@ describe("assignment discovery", () => {
 
     expect(h.beats().length - before, "one rung beat learns the assignment, the ack's beat publishes it").toBe(2)
     expect(h.connector.acked()).toEqual([{ workspaceId: "ws_1", revision }])
+    expect(h.rings, "the host hears the ring before the beat it asks for, so it drops its reused authority answers first").toEqual([before])
     expect(h.errors).toEqual([])
 
     cp.unassign("ws_1")
     await vi.waitFor(() => expect(h.connector.acked()).toEqual([]))
     expect(cp.routable(h.enrolled.enrollmentId)).toEqual([])
   })
+
+  test("a paused machine closes its tunnels at once and keeps beating, and its owner's resume serves it again", async () => {
+    const cp = createFakeControlPlane()
+    const h = await machineHost(cp)
+    const id = h.enrolled.enrollmentId
+    await h.connector.start()
+    await h.doorbell()
+    cp.assign({ enrollmentId: id, workspaceId: "ws_1", remoteDirectory: "/srv/api" })
+    await vi.waitFor(() => expect(h.tunnels.at(-1)).toMatchObject({ workspaceIds: ["ws_1"] }))
+
+    const servedBeforePause = h.tunnels.length
+    cp.pause(id, true)
+    await vi.waitFor(() => expect(h.tunnels.at(-1), "the rung beat is refused and serving is withdrawn").toBeUndefined())
+    const beatsWhilePaused = h.beats().length
+    h.tick()
+    await vi.waitFor(() => expect(h.beats().length).toBeGreaterThan(beatsWhilePaused))
+    expect(h.connector.state().status, "a pause is not a revocation: the loop stays").toBe("enrolled")
+    expect(h.tunnels.slice(servedBeforePause), "serving is withdrawn once, not on every refused beat").toEqual([undefined])
+
+    cp.pause(id, false)
+    await vi.waitFor(() => expect(h.tunnels.at(-1), "the resume ring is heard on the doorbell still open").toMatchObject({ workspaceIds: ["ws_1"] }))
+  })
+
+  test("a doorbell refused while the machine was paused reopens on the first good beat after the resume", async () => {
+    const cp = createFakeControlPlane()
+    const h = await machineHost(cp)
+    const id = h.enrolled.enrollmentId
+    await h.connector.start()
+    await h.doorbell()
+
+    cp.pause(id, true)
+    cp.dropEventStreams(id)
+    await vi.waitFor(() => expect(h.errors.some((entry) => entry.stage === "events")).toBe(true))
+    await new Promise((resolve) => setTimeout(resolve, 2_500))
+    expect(cp.eventStreams(id), "a paused machine holds no doorbell").toBe(0)
+
+    cp.pause(id, false)
+    h.tick()
+    await vi.waitFor(() => expect(cp.eventStreams(id)).toBe(1), { timeout: 5_000 })
+    cp.assign({ enrollmentId: id, workspaceId: "ws_1", remoteDirectory: "/srv/api" })
+    await vi.waitFor(() => expect(cp.routable(id)).toEqual(["ws_1"]))
+  }, 15_000)
 
   test("a doorbell stream the control plane dropped is reopened, and the machine still hears the next ring", async () => {
     const cp = createFakeControlPlane()

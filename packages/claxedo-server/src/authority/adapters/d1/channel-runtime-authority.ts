@@ -395,7 +395,7 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
         || row.minted_for_user_id !== null
         || !await this.workspaceExists(row.workspace_id)
       ) return inactive("runtime_access_token_revoked", "Runtime Access Token service authority has been revoked")
-      return { active: true }
+      return { active: true, expiresAt: row.expires_at }
     }
     if (!row.minted_for_user_id || row.actor_kind !== "human") {
       return inactive("runtime_access_token_revoked", "Runtime Access Token actor is invalid")
@@ -403,7 +403,7 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
     if (!(await this.holderMayUse({ userId: row.minted_for_user_id, actorId: row.actor_id }, row.workspace_id, row.session_id, row.role))) {
       return inactive("runtime_access_token_revoked", "Runtime Access Token authority has been revoked")
     }
-    return { active: true }
+    return { active: true, expiresAt: row.expires_at }
   }
 
   async revokeRuntimeAccessToken(

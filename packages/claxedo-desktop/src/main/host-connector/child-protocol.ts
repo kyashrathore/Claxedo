@@ -156,6 +156,8 @@ export type HostConnectorChildMessage =
    * every message and the parent never has to remember an earlier one.
    */
   | ({ type: "serving" } & HostConnectorServing)
+  /** The control plane rang this machine's doorbell; main tells the daemon to stop reusing authority answers. */
+  | { type: "host-changed" }
   | { type: "identity-created"; requestId: string; identity: HostConnectorBootstrapIdentity }
   | { type: "sealing-key-created"; requestId: string; sealingPrivateKeyJwk: JsonWebKey }
   /** A delivered revision, still sealed, for main to persist before the child acks it. */
@@ -382,6 +384,7 @@ export function parseHostConnectorChildMessage(value: unknown): HostConnectorChi
   const input = asRecord(value)
   if (!input || !isNonEmptyString(input.type)) return undefined
   if (input.type === "ready") return { type: "ready" }
+  if (input.type === "host-changed") return { type: "host-changed" }
 
   if (input.type === "serving") {
     const endpoints = servingEndpoints(input.endpoints)
