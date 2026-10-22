@@ -38,6 +38,7 @@ export function isLikelyTui(input: { command?: string; title?: string }): boolea
 
 export type ResizePublisher = {
   readonly onOpen: () => void
+  readonly onClose: () => void
   readonly dispose: () => void
 }
 
@@ -51,6 +52,7 @@ type ResizePublisherInput = {
 
 type ResizePublisherState = {
   readonly input: ResizePublisherInput
+  open: boolean
   debounce: number | undefined
   settle: number | undefined
   pending: TerminalSize | undefined
@@ -67,7 +69,10 @@ function backendSize(backend: TerminalBackend): TerminalSize {
 function publishSize(state: ResizePublisherState, size: TerminalSize, force = false): void {
   if (!force && state.last && state.last.cols === size.cols && state.last.rows === size.rows) return
   state.last = size
-  state.input.publish(size).catch(state.input.onPublishFailed)
+  state.input.publish(size).catch((error: unknown) => {
+    if (state.last === size) state.last = undefined
+    state.input.onPublishFailed(error)
+  })
 }
 
 function recoverDesync(state: ResizePublisherState): void {
@@ -118,6 +123,7 @@ function publishResized(state: ResizePublisherState): void {
 
 function debounceResize(state: ResizePublisherState, size: TerminalSize): void {
   state.pending = size
+  if (!state.open) return
   clearDebounce(state)
   state.debounce = window.setTimeout(() => publishResized(state), RESIZE_DEBOUNCE_MS)
 }
@@ -141,6 +147,7 @@ function openTui(state: ResizePublisherState): void {
 export function createResizePublisher(input: ResizePublisherInput): ResizePublisher {
   const state: ResizePublisherState = {
     input,
+    open: false,
     debounce: undefined,
     settle: undefined,
     pending: undefined,
@@ -152,9 +159,15 @@ export function createResizePublisher(input: ResizePublisherInput): ResizePublis
   const disposeResize = input.backend.onResize((size) => debounceResize(state, size))
   return {
     onOpen: () => {
+      state.open = true
       input.backend.fit()
       if (input.likelyTui) openTui(state)
       else openShell(state)
+    },
+    onClose: () => {
+      state.open = false
+      clearDebounce(state)
+      clearSettle(state)
     },
     dispose: () => {
       disposeResize()

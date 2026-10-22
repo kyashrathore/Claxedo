@@ -121,6 +121,7 @@ function recover(state: AttachState, close: TerminalStreamClose): void {
 function handleClose(state: AttachState, close: TerminalStreamClose): void {
   if (state.disposed) return
   state.stream = undefined
+  state.resize.onClose()
   if (close.code === NORMAL_CLOSE) return emit(state, { type: "ended" })
   if (close.code === POLICY_CLOSE) return emit(state, { type: "ended" })
   if (close.code === OVERLOAD_CLOSE) return

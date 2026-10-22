@@ -203,3 +203,33 @@ test("dispose stops listening and clears both timers", () => {
   advance(1000)
   expect(published).toEqual([])
 })
+
+test("a closed socket publishes no size, and the next open publishes the size the pane settled at meanwhile", () => {
+  const { publisher, published, resized } = harness({ likelyTui: false })
+  publisher.onOpen()
+  advance(220)
+  publisher.onClose()
+  resized({ cols: 100, rows: 30 })
+  advance(1000)
+  expect(published).toEqual([{ cols: 80, rows: 24 }])
+  publisher.onOpen()
+  advance(220)
+  expect(published).toEqual([
+    { cols: 80, rows: 24 },
+    { cols: 100, rows: 30 },
+  ])
+})
+
+test("a size whose publish failed is published again on the next open", async () => {
+  const { publisher, published } = harness({ likelyTui: false, fail: true })
+  publisher.onOpen()
+  advance(220)
+  await Promise.resolve()
+  await Promise.resolve()
+  publisher.onOpen()
+  advance(220)
+  expect(published).toEqual([
+    { cols: 80, rows: 24 },
+    { cols: 80, rows: 24 },
+  ])
+})
