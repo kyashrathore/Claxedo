@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { RelayHostVerifierClaims } from "@claxedo/workspace-relay-protocol"
 import { Hono } from "hono"
 import { SignJWT, exportJWK, exportSPKI, generateKeyPair } from "jose"
-import { mintRelayHostToken, mintRuntimeAccessToken, relayHostTokenAudience, relayHostTokenIssuer } from "@claxedo/workspace-relay"
+import { deriveRelayHostKid, mintRelayHostToken, mintRuntimeAccessToken, relayHostTokenAudience, relayHostTokenIssuer, type RelayKey } from "@claxedo/workspace-relay"
 import { createServer } from "node:http"
 import {
   createRelayHostAuthMiddleware,
@@ -360,14 +360,88 @@ describe("loadRelayHostVerificationKeyOrJwks", () => {
     expect(typeof result).toBe("object")
   })
 
-  test("JWKS URL takes precedence when both set", async () => {
-    const pair = await generateKeyPair("EdDSA", { extractable: true })
-    const spki = await exportSPKI(pair.publicKey)
-    const result = await loadRelayHostVerificationKeyOrJwks({
-      WORKSPACE_RUNTIME_RELAY_JWKS_URL: "https://relay.example.test/.well-known/jwks.json",
-      WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM: spki,
+  async function publishedKeys(publicKey: CryptoKey) {
+    const jwk = { ...(await exportJWK(publicKey)), kid: await deriveRelayHostKid(publicKey), alg: "EdDSA", use: "sig" }
+    let fetches = 0
+    const server = createServer((_request, response) => {
+      fetches += 1
+      response.setHeader("content-type", "application/json")
+      response.end(JSON.stringify({ keys: [jwk] }))
     })
-    expect(typeof result).toBe("function")
+    const url = await new Promise<string>((resolve) => {
+      server.listen(0, "127.0.0.1", () => {
+        const address = server.address()
+        if (!address || typeof address === "string") throw new Error("no port")
+        resolve(`http://127.0.0.1:${address.port}/.well-known/jwks.json`)
+      })
+    })
+    return { url, fetches: () => fetches, close: () => new Promise<void>((resolve) => server.close(() => resolve())) }
+  }
+
+  async function healthWith(key: RelayKey, token: string) {
+    const app = new Hono<{ Variables: RelayHostAuthContext }>()
+    app.use("*", createRelayHostAuthMiddleware({ key, workspaceId: "ws_1", hostId: "host_1" }))
+    app.get("/api/wr/health", (c) => c.json({ auth: c.get("relayHostAuth")?.workspace_id }))
+    return app.request("http://localhost/api/wr/health", {
+      headers: { authorization: `Bearer ${token}`, "x-workspace-id": "ws_1", "x-forwarded-by": "workspace-relay" },
+    })
+  }
+
+  const signed = async (pair: CryptoKeyPair) =>
+    mintRelayHostToken({ ...tokenInput, backing: "cloud-vm", kid: await deriveRelayHostKid(pair.publicKey) }, pair.privateKey, "EdDSA")
+
+  test("the first token under the delivered key verifies without fetching the relay's key set", async () => {
+    const pair = await generateKeyPair("EdDSA", { extractable: true })
+    const relay = await publishedKeys(pair.publicKey)
+    try {
+      const key = await loadRelayHostVerificationKeyOrJwks({
+        WORKSPACE_RUNTIME_RELAY_JWKS_URL: relay.url,
+        WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM: await exportSPKI(pair.publicKey),
+      })
+      const res = await healthWith(key, await signed(pair))
+
+      expect(res.status).toBe(200)
+      await expect(res.json()).resolves.toEqual({ auth: "ws_1" })
+      expect(relay.fetches()).toBe(0)
+    } finally {
+      await relay.close()
+    }
+  })
+
+  test("a token under a key the delivered PEM is not reloads the relay's key set at once", async () => {
+    const delivered = await generateKeyPair("EdDSA", { extractable: true })
+    const rotated = await generateKeyPair("EdDSA", { extractable: true })
+    const relay = await publishedKeys(rotated.publicKey)
+    try {
+      const key = await loadRelayHostVerificationKeyOrJwks({
+        WORKSPACE_RUNTIME_RELAY_JWKS_URL: relay.url,
+        WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM: await exportSPKI(delivered.publicKey),
+      })
+      const res = await healthWith(key, await signed(rotated))
+
+      expect(res.status).toBe(200)
+      expect(relay.fetches()).toBe(1)
+    } finally {
+      await relay.close()
+    }
+  })
+
+  test("a token under neither the delivered nor the published key is refused", async () => {
+    const delivered = await generateKeyPair("EdDSA", { extractable: true })
+    const published = await generateKeyPair("EdDSA", { extractable: true })
+    const stranger = await generateKeyPair("EdDSA", { extractable: true })
+    const relay = await publishedKeys(published.publicKey)
+    try {
+      const key = await loadRelayHostVerificationKeyOrJwks({
+        WORKSPACE_RUNTIME_RELAY_JWKS_URL: relay.url,
+        WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM: await exportSPKI(delivered.publicKey),
+      })
+      const res = await healthWith(key, await signed(stranger))
+
+      expect(res.status).toBe(401)
+    } finally {
+      await relay.close()
+    }
   })
 
   test("rejects when neither env var is set (fail closed)", async () => {
