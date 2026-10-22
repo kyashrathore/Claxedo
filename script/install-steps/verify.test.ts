@@ -6,19 +6,16 @@ import { bunStore, installStep, installSteps, type Lock, type Manifest } from ".
 const repository = path.resolve(import.meta.dirname, "../..")
 
 /**
- * Every install step a person's `npm install` of the CLI runs. A step that
+ * Every install step a plain `npm install -g` of the CLI runs. A step that
  * compiles needs Python and a C++ toolchain on that person's machine (MSVC on
  * Windows), which nobody installing a CLI has; tree-sitter-powershell, which
- * OpenCode reads only as `.wasm`, and better-sqlite3, whose bundled prebuilds
- * npm ignores because its `binding.gyp` makes npm run `node-gyp rebuild`, are
- * the two that do today. A change to this list is a change to what installing
- * the CLI requires, and is reviewed as one.
+ * OpenCode reads only as `.wasm`, is the one that does today. A change to this
+ * list is a change to what installing the CLI requires, and is reviewed as one.
  */
 const REVIEWED_INSTALL_STEPS: Record<string, string> = {
   "@claxedo/workspace-runtime": "postinstall: node scripts/install-opencode-node.mjs",
   "@google/genai": "preinstall: echo 'preinstall: no-op'",
   "@parcel/watcher": "install: node scripts/build-from-source.js",
-  "better-sqlite3": "install: node-gyp rebuild (implicit, binding.gyp), compiles on every platform",
   esbuild: "postinstall: node install.js",
   koffi: "install: node ./cnoke.cjs -P . -D src/koffi --prebuild --release",
   "msgpackr-extract": "install: node-gyp-build-optional-packages",
