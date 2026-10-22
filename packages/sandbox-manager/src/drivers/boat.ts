@@ -17,6 +17,18 @@ import { sandboxDriverCatalog } from "../driver-catalog"
 import { BoatApiError, createBoatClient, type BoatFetch, type BoatSandboxState } from "./boat-client"
 import { isTransientDriverError, TRANSIENT_DRIVER_RETRY_MS } from "./transient-error"
 import { record } from "../json"
+import {
+  bootedImage,
+  CONTAINER_START_TIMEOUT_SECONDS,
+  DEFAULT_CONTAINER_NAME,
+  holdingBootLock,
+  IMAGE_PREPARATION_TIMEOUT_SECONDS,
+  machineBootScripts,
+  REGISTRY_PASSWORD_PATH,
+  RUNTIME_ENV_PATH,
+  bootedImageFile,
+  type StagedFiles,
+} from "./boat-machine"
 
 // Boat (https://boat.dev) runs persistent Linux microVMs with Docker on the
 // VM's own kernel but no workspace-runtime baked in, so the canonical sandbox
@@ -83,7 +95,6 @@ export type BoatSandboxDriverOptions = {
 
 const DEFAULT_RUNTIME_COMMAND = "/usr/local/bin/workspace-runtime"
 const DEFAULT_WORKSPACE_DIR = "/workspace"
-const DEFAULT_CONTAINER_NAME = "claxedo-runtime"
 const DEFAULT_PROVISION_TIMEOUT_MS = 120_000
 // Boat's stop has no blocking form or stream (docs.boat.dev/snapshots/stop),
 // and an archive took 13–27 s (2026-10-15), so a stop under way is read
@@ -104,10 +115,6 @@ const HEALTH_PROBE_MARGIN_SECONDS = 10
 // Boat pauses a new sandbox's containers for about a second while it takes the
 // sandbox's first snapshot, 2 s into the runtime's start; the runtime resumes on its own.
 const BOOTING_CONTAINER_STATES: ReadonlySet<string> = new Set(["running", "paused"])
-// An image pull and the seed need Boat's documented command maximum.
-const IMAGE_PREPARATION_TIMEOUT_SECONDS = 600
-// The image is local by then; creating the container is seconds.
-const CONTAINER_START_TIMEOUT_SECONDS = 120
 const HOST_PUBLISH_TIMEOUT_SECONDS = 120
 // Boat's auto-stop is a deadline counted from the create or resume, not from
 // use (docs.boat.dev/long-running-tasks/auto-stop), so a serving sandbox
@@ -116,91 +123,6 @@ const HOST_PUBLISH_TIMEOUT_SECONDS = 120
 // archived by Boat at this deadline instead, which outlasts the longest boot
 // (two minutes to provision, ten to pull and start, ten to turn healthy).
 const BOOT_TTL_SECONDS = 30 * 60
-const DOCKER_DAEMON_WAIT_SECONDS = 120
-// Written via PUT /sandboxes/{id}/files — the provider's file channel — so env
-// and registry credentials never appear in a /commands body, which Boat
-// executes and can log. Paths are relative to the sandbox work directory,
-// where commands also start; the container reads the env through a read-only
-// bind mount.
-const RUNTIME_ENV_PATH = ".claxedo-runtime-env"
-const REGISTRY_PASSWORD_PATH = ".claxedo-registry-password"
-// Two boots of one machine can run at once: a start's Durable Object alarm is
-// re-run on another machine while the first run still boots (staging,
-// 2026-10-15), and a retried epoch resumes the same VM. So a boot stages its
-// files under names of its own, and its preparation, container start and port
-// publish each hold one lock on the machine, which a second boot waits for and
-// then finds the work done. The kernel drops a flock lock with its holder, and
-// Boat ends a timed-out command (the next boot took the lock at once; a command
-// whose caller went away ran to its end, measured 2026-10-15). /run/lock is a
-// tmpfs the VM user writes, so no snapshot carries a lock.
-const BOOT_LOCK_PATH = "/run/lock/claxedo-boot.lock"
-// A boot's own work after another's is seconds; the rest of its command's limit waits for the other boot.
-const BOOT_LOCK_HEADROOM_SECONDS = 60
-const CONTAINER_ENV_PATH = "/run/claxedo-runtime.env"
-// Everything the runtime keeps lives under one root on the VM's disk, which
-// Boat's snapshot saves (docs.boat.dev/snapshots/whats-saved): the workspace,
-// the two home directories the image's runtime writes its stores, harness
-// homes and state to (`~/.claxedo`, `~/.workspace-runtime`; the image runs as
-// root), and the image's own writable trees. The workspace bind source is
-// never created by the start command, which runs as the VM user: Docker
-// creates a missing `-v` source as root, the container's user, and git refuses
-// a workspace another uid owns.
-const PERSISTENT_ROOT = "claxedo-persistent"
-const PERSISTENT_HOME_MOUNTS = [["claxedo", "/root/.claxedo"], ["workspace-runtime", "/root/.workspace-runtime"]] as const
-// A container's writable layer is not part of a Boat snapshot, and Boat's own
-// resume creates every container again from its image (docs.boat.dev/snapshots/whats-saved,
-// "Docker"; measured 2026-10-14: a file written into the layer after the start
-// was gone after one stop and resume). So the trees a Boat VM itself keeps
-// across a stop are copied out of the image once per image, into bind sources
-// the snapshot saves, and mounted over the image's: what a person or a harness
-// installs or writes anywhere on the machine (apt, npm -g, pip, dotfiles) is
-// there after a resume. An image update starts from the new image's trees and
-// drops the old image's. Docker named volumes would seed themselves, but a stop
-// with 3.7 GB of them did not finish within ten minutes, while the same bytes
-// under the work directory archived in 27 s. Boat leaves ~/.cache out of its
-// snapshots; so does the seed, with npm's cache beside it (0.9 GB of the image).
-const IMAGE_TREES = ["root", "usr", "etc", "var", "opt", "home", "srv"] as const
-const IMAGE_TREE_SEED_EXCLUDES = ["root/.cache", "root/.npm/_cacache"] as const
-const IMAGE_TREES_COMPLETE_MARKER = ".complete"
-const SEED_CONTAINER_NAME = "claxedo-seed"
-// With every tree mounted, the container needs only the image's top-level
-// entries and its config, so it runs from a stub of 67 kB saved beside the
-// trees, which a start loads when Docker lacks it (0.3 s), where pulling the
-// image takes 47–67 s and fails when ghcr resets the connection (measured
-// 2026-10-15). The stub's label names the image it stands for; the container
-// inherits it, which tells this driver's container from another.
-const STUB_IMAGE = "claxedo-runtime-stub"
-const STUB_IMAGE_ARCHIVE = "stub.tar"
-const IMAGE_LABEL = "claxedo.image"
-// The image's env, one entry per line, for `docker run --env-file`, which
-// takes each line as it is; an import's ENV change would expand `$` and quotes.
-const IMAGE_ENV_FILE = "image.env"
-// The image's top level outside its trees: Debian's merged-/usr links and its
-// empty directories (/workspace, the image's only other entry, is mounted).
-// It is written on the VM, not read out of a started container of the image:
-// Boat recorded a container the seed ran for a second, and a later restore
-// recreated it as soon as the image was back, so the next seed could not
-// remove the image (2026-10-15).
-const ROOT_LINKS = ["bin", "lib", "lib64", "sbin"] as const
-const ROOT_DIRECTORIES = ["boot", "dev", "media", "mnt", "proc", "run", "sys", "tmp", ...IMAGE_TREES] as const
-// Boat keeps an archive of an image a container used at a snapshot here, named
-// by the image's id, and loads it again at every resume (16–19 s for this
-// image, measured 2026-10-15); removing the image leaves the archive behind.
-const BOAT_SAVED_IMAGES = "/var/lib/ascii-docker-images"
-// Boat's record of the containers a restore creates again (a JSON array, one
-// entry per container with its create settings, hostname among them). Removing
-// a container leaves its entry for at least 20 s, and a deploy from a template
-// saved a second after the removal created the builder's container again
-// (2026-10-16).
-const BOAT_CONTAINER_RECORD = "/etc/ascii-docker.json"
-const DOCKER_NAME_IN_USE = "is already in use by container"
-const CONTAINER_CREATE_ATTEMPTS = 5
-const CONTAINER_SECURITY_OPTIONS = "--security-opt seccomp=unconfined --security-opt apparmor=unconfined"
-// `--init` mounts Docker's init at /sbin/docker-init, which the image's merged
-// /usr resolves into the bind-mounted /usr, where it does not exist; the VM's
-// binary is mounted at a path of its own instead.
-const VM_DOCKER_INIT = "/usr/libexec/docker/docker-init"
-const CONTAINER_INIT_PATH = "/claxedo-init"
 // Boat gives a container 30 s to exit at its own stop (docs.boat.dev/snapshots/stop).
 const CONTAINER_STOP_GRACE_SECONDS = 30
 
@@ -232,29 +154,6 @@ const NOT_RUNNING_CODES: ReadonlySet<string> = new Set(["machine_not_running", "
  */
 const TEMPLATE_UNREADABLE_CODES: ReadonlySet<string> = new Set(["snapshot_not_found", "api_key_action_forbidden", "api_key_sandbox_forbidden"])
 
-/**
- * Turns a booted machine into one any workspace can start from: it keeps what
- * every machine of the image shares (the image's trees, stub archive and env,
- * and Boat's ~/.ascii/playbook.json) and removes what this machine's boot made
- * (the runtime container and Boat's record and image archive of it, the
- * workspace, the runtime's state, the boot's env). Nothing the runtime wrote
- * into the image's trees was found there (Boat, 2026-10-16: the trees held only
- * the image's own entries after two boots); what else differs on the machine
- * is Boat's own, and a machine created from the template gets its own
- * machine-id, SSH host keys, hostname and no hosted port.
- */
-export function boatTemplateResetCommand() {
-  const bootFiles = [
-    `${PERSISTENT_ROOT}/workspace`,
-    ...PERSISTENT_HOME_MOUNTS.map(([source]) => `${PERSISTENT_ROOT}/${source}`),
-    RUNTIME_ENV_PATH,
-    `${RUNTIME_ENV_PATH}.*`,
-    `${REGISTRY_PASSWORD_PATH}.*`,
-  ]
-  return `{ docker rm -f ${DEFAULT_CONTAINER_NAME} >/dev/null 2>&1 || true; } && sudo rm -rf ${bootFiles.join(" ")} `
-    + `&& [ -z "$(docker ps -aq)" ] && echo '[]' | sudo tee ${BOAT_CONTAINER_RECORD} >/dev/null && sudo find ${BOAT_SAVED_IMAGES} -mindepth 1 -delete `
-    + `&& ls -d ${PERSISTENT_ROOT}/image-*/${IMAGE_TREES_COMPLETE_MARKER}`
-}
 
 function hostGoneOrThrow(err: unknown): never {
   if (err instanceof BoatApiError && GONE_CODES.has(err.code)) throw new SandboxHostGoneError(err.message)
@@ -272,12 +171,6 @@ function archivedOrThrow(err: unknown): void {
   hostGoneOrThrow(err)
 }
 
-type StagedFiles = { env: string; password?: string }
-
-function holdingBootLock(commandTimeoutSeconds: number, script: string) {
-  const wait = commandTimeoutSeconds - BOOT_LOCK_HEADROOM_SECONDS
-  return `exec 9>>${BOOT_LOCK_PATH} && { flock -w ${wait} 9 || { echo "another boot of this machine held ${BOOT_LOCK_PATH} for ${wait} s" >&2; exit 1; }; } && ${script}`
-}
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -297,15 +190,6 @@ function scrubbedTail(text: string, secrets: readonly string[]) {
   return scrubbed(text, secrets).trim().slice(-STDERR_TAIL_CHARS)
 }
 
-/** A directory name an image reference maps to, one per image; references differ in characters the mapping keeps. */
-function imageTreesDirectory(image: string) {
-  return `image-${image.replace(/[^A-Za-z0-9._-]/g, "-")}`
-}
-
-/** The container's hostname: the workspace id as a DNS label, so a shell prompt names the workspace and a resume keeps it. */
-function containerHostname(workspaceId: string) {
-  return workspaceId.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/^-+|-+$/g, "").slice(0, 63) || "claxedo"
-}
 
 class BoatDriverError extends Error {
   constructor(message: string) {
@@ -410,121 +294,6 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
   }
 
   /**
-   * The command carries only paths: env arrives through the staged file
-   * (mounted read-only, sourced by the entrypoint at every container start so
-   * multi-line values like PEMs survive — `docker run --env-file` cannot
-   * express them), and the registry password is piped to `docker login` from a
-   * file that is removed whatever the outcome; a failed login aborts the chain.
-   *
-   * Two commands. `prepare` changes nothing a running container serves from:
-   * it waits for the daemon (a resume reboots the VM, and Docker comes up as a
-   * systemd service after Boat reports the sandbox ready), logs in, and, when
-   * the image's trees, stub or env are missing, pulls it and seeds what is
-   * missing; it loads the stub when Docker does not hold this image's, and
-   * removes other images' trees. A failure there leaves a runtime of the
-   * previous image serving. `start` then replaces another image's container
-   * with one of this image, or starts this image's container that is already
-   * there: the one the stop kept, which Boat's restore creates again stopped,
-   * or one Boat recreated after a stop that was not this driver's; then it
-   * removes the image if a seed left it. A failure there leaves nothing
-   * serving.
-   */
-  function containerScripts(input: SandboxDriverEnsureInput, staged: StagedFiles): { prepare: string; start: string } {
-    const port = runtimePort(input)
-    const directory = workspaceDirectory(input)
-    const reference = resolveImage(input)
-    const image = shell(reference)
-    const trees = `"$(pwd)/${PERSISTENT_ROOT}/${imageTreesDirectory(reference)}"`
-    const labelledWithImage = (object: "image" | "container", name: string) =>
-      `[ "$(docker ${object} inspect --format '{{index .Config.Labels "${IMAGE_LABEL}"}}' ${name} 2>/dev/null)" = ${image} ]`
-    const bootScript = [
-      `. ${CONTAINER_ENV_PATH}`,
-      `mkdir -p ${shell(directory)}`,
-      `cd ${shell(directory)}`,
-      `exec ${runtimeCommand}`,
-    ].join(" && ")
-    const mounts = [["workspace", directory], ...PERSISTENT_HOME_MOUNTS]
-    // Without an init the runtime is PID 1 and reaps no orphan, so an exited
-    // git child stays a zombie and keeps a retired harness's process group alive.
-    // Codex sandboxes each command with bubblewrap (--unshare-user, --proc,
-    // --dev inside the new namespace); Docker's default seccomp profile refuses
-    // unshare to a container without CAP_SYS_ADMIN and its AppArmor profile
-    // refuses mount, so under them every Codex command failed to start and fell
-    // back to an approval prompt (staging, 2026-10-15). The VM is single-tenant
-    // and is the isolation boundary, so the container runs unconfined.
-    const run = `docker run -d --name ${containerName} --hostname ${shell(containerHostname(input.workspaceId))} -p ${port}:${port} `
-      + `-v ${VM_DOCKER_INIT}:${CONTAINER_INIT_PATH}:ro `
-      + `-v "$(pwd)/${RUNTIME_ENV_PATH}:${CONTAINER_ENV_PATH}:ro" `
-      + `--env-file ${trees}/${IMAGE_ENV_FILE} `
-      + IMAGE_TREES.map((tree) => `-v ${trees}/${tree}:/${tree} `).join("")
-      + mounts.map(([source, target]) => `-v "$(pwd)/${PERSISTENT_ROOT}/${source}":${shell(target)} `).join("")
-      + `${CONTAINER_SECURITY_OPTIONS} --entrypoint ${CONTAINER_INIT_PATH} ${STUB_IMAGE} -- sh -lc ${shell(bootScript)}`
-    // Streamed out of a created container of the image and unpacked as root so
-    // the image's owners and setuid bits survive the copy (the command runs as
-    // the VM user). The persistent root is made as root too: Docker made it as
-    // root on every sandbox that booted before the trees existed, and the VM
-    // user cannot create inside it. A stream that broke leaves no tree and
-    // ends the seed before it is marked complete.
-    const seedTrees = `sudo rm -rf ${trees} && sudo mkdir -p ${trees} `
-      + `&& { docker rm -f ${SEED_CONTAINER_NAME} >/dev/null 2>&1 || true; } `
-      + `&& docker create --name ${SEED_CONTAINER_NAME} ${image} true >/dev/null `
-      + `&& for tree in ${IMAGE_TREES.join(" ")}; do `
-      + `docker cp ${SEED_CONTAINER_NAME}:/$tree - | sudo tar -xf - -C ${trees} ${IMAGE_TREE_SEED_EXCLUDES.map((exclude) => `--exclude=${exclude}`).join(" ")} `
-      + `&& [ -d ${trees}/$tree ] || exit 1; done `
-      + `&& docker rm ${SEED_CONTAINER_NAME} >/dev/null && sudo touch ${trees}/${IMAGE_TREES_COMPLETE_MARKER}`
-    const seedStub = `stub=$(mktemp -d) `
-      + `&& docker image inspect --format '{{range .Config.Env}}{{println .}}{{end}}' ${image} > "$stub/${IMAGE_ENV_FILE}" `
-      + `&& workdir=$(docker image inspect --format '{{or .Config.WorkingDir "/"}}' ${image}) `
-      + `&& mkdir "$stub/root" ${ROOT_DIRECTORIES.map((directory) => `"$stub/root/${directory}"`).join(" ")} `
-      + `&& ${ROOT_LINKS.map((link) => `ln -s usr/${link} "$stub/root/${link}"`).join(" && ")} && chmod 1777 "$stub/root/tmp" `
-      + `&& tar --owner=0 --group=0 --numeric-owner -cf "$stub/skeleton.tar" -C "$stub/root" . `
-      + `&& docker import --change "WORKDIR $workdir" --change ${shell(`LABEL ${IMAGE_LABEL}=${reference}`)} "$stub/skeleton.tar" ${STUB_IMAGE} >/dev/null `
-      + `&& docker save -o "$stub/${STUB_IMAGE_ARCHIVE}" ${STUB_IMAGE} `
-      + `&& sudo mv "$stub/${IMAGE_ENV_FILE}" "$stub/${STUB_IMAGE_ARCHIVE}" ${trees}/ && rm -rf "$stub"`
-    // Run by the start once the runtime container is this image's stub's: until
-    // then it may be one of the image itself (an earlier driver ran the image),
-    // and any other container of the image is a leftover, such as a seed
-    // container Boat created again.
-    const removeImage = `if docker image inspect ${image} >/dev/null 2>&1; then `
-      + `leftovers=$(docker ps -aq --filter ancestor=${image}) && { [ -z "$leftovers" ] || docker rm -f $leftovers >/dev/null; } `
-      + `&& id=$(docker image inspect --format '{{.Id}}' ${image}) && docker rmi ${image} >/dev/null `
-      + `&& sudo rm -f ${BOAT_SAVED_IMAGES}/"\${id#sha256:}".tar; fi`
-    const seeded = [IMAGE_TREES_COMPLETE_MARKER, STUB_IMAGE_ARCHIVE, IMAGE_ENV_FILE].map((file) => `[ -f ${trees}/${file} ]`).join(" && ")
-    const prepare = [
-      `chmod 600 ${staged.env}`,
-      `find . -maxdepth 1 \\( -name '${RUNTIME_ENV_PATH}.*' -o -name '${REGISTRY_PASSWORD_PATH}.*' \\) -mmin +${BOOT_TTL_SECONDS / 60} -exec rm -f {} +`,
-      `timeout ${DOCKER_DAEMON_WAIT_SECONDS} sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'`,
-      `[ -x ${VM_DOCKER_INIT} ]`,
-      ...(options.registryAuth && staged.password
-        ? [`{ chmod 600 ${staged.password}; docker login ${shell(options.registryAuth.server)} `
-          + `--username ${shell(options.registryAuth.username)} --password-stdin < ${staged.password}; `
-          + `rc=$?; rm -f ${staged.password}; (exit $rc); }`]
-        : []),
-      // Trees an earlier start marked complete hold what a person or a harness
-      // changed since, so a seed missing only its stub or env builds those alone.
-      `if ! { ${seeded}; }; then { docker image inspect ${image} >/dev/null 2>&1 || docker pull ${image} >/dev/null; } `
-        + `&& { [ -f ${trees}/${IMAGE_TREES_COMPLETE_MARKER} ] || { ${seedTrees}; }; } && ${seedStub}; fi`,
-      `{ ${labelledWithImage("image", STUB_IMAGE)} || docker load -i ${trees}/${STUB_IMAGE_ARCHIVE} >/dev/null; }`,
-      `sudo find "$(pwd)/${PERSISTENT_ROOT}" -mindepth 1 -maxdepth 1 -name 'image-*' ! -path ${trees} -exec rm -rf {} +`,
-    ]
-    // Boat's restore creates the containers its snapshot recorded 2 s after
-    // Docker answers, and creates them again after a removal (2026-10-15), so
-    // a start that looked before it finds the name taken by the container the
-    // stop kept. Docker holds the name from the start of that create, so each
-    // retry waits out the 0.8 s it takes, then starts the container when it is
-    // this image's and replaces it when it is another's.
-    const start = `mv -f ${staged.env} ${RUNTIME_ENV_PATH} && up=; for attempt in $(seq ${CONTAINER_CREATE_ATTEMPTS}); do [ "$attempt" = 1 ] || sleep 1; `
-      + `if ${labelledWithImage("container", containerName)}; then failure=$(docker start ${containerName} 2>&1 >/dev/null) && { up=1; break; }; `
-      + `else docker rm -f ${containerName} >/dev/null 2>&1; failure=$(${run} 2>&1 >/dev/null) && { up=1; break; }; fi; `
-      + `case "$failure" in *${shell(DOCKER_NAME_IN_USE)}*) ;; *) break ;; esac; done; `
-      + `[ -n "$up" ] || { echo "$failure" >&2; false; } && ${removeImage}`
-    return {
-      prepare: holdingBootLock(IMAGE_PREPARATION_TIMEOUT_SECONDS, prepare.join(" && ")),
-      start: holdingBootLock(CONTAINER_START_TIMEOUT_SECONDS, start),
-    }
-  }
-
-  /**
    * Probes inside the VM until the runtime answers, its container leaves the
    * booting states, or the probe's window ends, then prints the last health
    * code and container state: the wait ends within one probe interval of the
@@ -570,22 +339,37 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     throw new SandboxRuntimeBootError(`Boat ${sandboxId} runtime did not become healthy: ${last}; ${diagnostic}`)
   }
 
-  async function startContainer(sandboxId: string, input: SandboxDriverEnsureInput, hostId: string) {
+  async function startContainer(sandboxId: string, input: SandboxDriverEnsureInput, hostId: string, keepPreviousImage: boolean) {
     const env = { ...bootEnv(input, hostId), ...(await options.env?.(input, { id: hostId })) }
     const boot = crypto.randomUUID()
     const staged: StagedFiles = {
       env: `${RUNTIME_ENV_PATH}.${boot}`,
       ...(options.registryAuth ? { password: `${REGISTRY_PASSWORD_PATH}.${boot}` } : {}),
     }
-    const scripts = containerScripts(input, staged)
+    const image = resolveImage(input)
+    const scripts = machineBootScripts({
+      image,
+      keepPreviousImage: keepPreviousImage && image === options.image,
+      workspaceId: input.workspaceId,
+      directory: workspaceDirectory(input),
+      port: runtimePort(input),
+      runtimeCommand,
+      containerName,
+      ...(options.registryAuth ? { registry: { server: options.registryAuth.server, username: options.registryAuth.username } } : {}),
+      staged,
+      staleStagedMinutes: BOOT_TTL_SECONDS / 60,
+    })
     await client.writeFile(sandboxId, { path: staged.env, content: envFile(env) })
     if (options.registryAuth && staged.password) {
       await client.writeFile(sandboxId, { path: staged.password, content: options.registryAuth.password })
     }
     const secrets = [...workspaceRuntimeBootSecrets(env), ...(options.registryAuth ? [options.registryAuth.password] : [])]
     let failure: unknown
+    let booted: string | undefined
     try {
-      await execOrThrow(sandboxId, scripts.prepare, "runtime image preparation", { timeoutSeconds: IMAGE_PREPARATION_TIMEOUT_SECONDS, secrets })
+      const prepared = await execOrThrow(sandboxId, scripts.prepare, "runtime image preparation", { timeoutSeconds: IMAGE_PREPARATION_TIMEOUT_SECONDS, secrets })
+      booted = bootedImage(prepared.stdout)
+      if (!booted) throw new BoatDriverError(`Boat ${sandboxId} runtime image preparation named no image it booted`)
       try {
         await execOrThrow(sandboxId, scripts.start, "container start", { timeoutSeconds: CONTAINER_START_TIMEOUT_SECONDS, secrets })
       } catch (error) {
@@ -603,20 +387,20 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     // which keeps its kind and is the text the lease records.
     try {
       if (options.registryAuth || failure !== undefined) {
-        await execOrThrow(sandboxId, `rm -f ${[staged.env, staged.password].filter(Boolean).join(" ")}`, "staged file cleanup", { secrets })
+        await execOrThrow(sandboxId, `rm -f ${[staged.env, staged.password, bootedImageFile(staged)].filter(Boolean).join(" ")}`, "staged file cleanup", { secrets })
       }
     } catch (cleanupFailure) {
       if (failure === undefined) throw cleanupFailure
       if (failure instanceof Error) failure.message = `${failure.message}; ${cleanupFailure instanceof Error ? cleanupFailure.message : String(cleanupFailure)}`
     }
-    if (failure !== undefined) throw failure
-    return secrets
+    if (failure !== undefined || !booted) throw failure
+    return { secrets, booted }
   }
 
-  async function boot(sandboxId: string, input: SandboxDriverEnsureInput, hostId: string): Promise<SandboxTarget> {
+  async function boot(sandboxId: string, input: SandboxDriverEnsureInput, hostId: string, keepPreviousImage: boolean): Promise<SandboxTarget> {
     await input.onMachineReady?.()
     const port = runtimePort(input)
-    const secrets = await startContainer(sandboxId, input, hostId)
+    const { secrets, booted } = await startContainer(sandboxId, input, hostId, keepPreviousImage)
     await input.onImageReady?.()
     // Boat gates a hosted port behind a `_token` query, and `host url` prints
     // the gated URL again unless it also carries `--public`. The relay joins
@@ -645,7 +429,7 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
       hostId,
       driverResourceId: sandboxId,
       driver: { id: "boat", resourceId: sandboxId },
-      labels: { ...input.labels, ...(resolveImage(input) === options.image ? { [SANDBOX_IMAGE_LABEL]: options.image } : {}) },
+      labels: { ...input.labels, ...(resolveImage(input) === options.image ? { [SANDBOX_IMAGE_LABEL]: booted } : {}) },
     }
   }
 
@@ -704,7 +488,7 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     // The step itself waited the whole provisioning window, so the next one begins its wait at once.
     const ready = await waitUntilReady(created.id)
     if (!ready) return { provisioning: true as const, retryAfterMs: 0 }
-    return boot(created.id, input, hostId)
+    return boot(created.id, input, hostId, false)
   }
 
   async function resumeHost(input: { lease: SandboxLease; ensure: SandboxDriverEnsureInput }) {
@@ -730,7 +514,7 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     }
     const ready = await waitUntilReady(sandboxId)
     if (!ready) return { provisioning: true as const, retryAfterMs: 0 }
-    return boot(sandboxId, input.ensure, hostId)
+    return boot(sandboxId, input.ensure, hostId, !input.ensure.updateImage)
   }
 
   /**

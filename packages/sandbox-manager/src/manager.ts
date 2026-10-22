@@ -124,6 +124,7 @@ function ensureHostInput(input: {
     // as "preserve what you have".
     ...(input.managerInput?.secrets ? { secrets: input.managerInput.secrets } : {}),
     source: input.managerInput?.source,
+    ...(input.managerInput?.updateImage ? { updateImage: true } : {}),
     ...(input.lease.machineClass ?? input.managerInput?.machineClass
       ? { machineClass: input.lease.machineClass ?? input.managerInput?.machineClass }
       : {}),

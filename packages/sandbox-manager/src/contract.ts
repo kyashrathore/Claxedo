@@ -418,6 +418,13 @@ export type SandboxDriverEnsureInput = {
   net?: SandboxNetworkPolicy
   /** Optional snapshot/image to boot from (user-supplied or pre-built). */
   snapshot?: string
+  /**
+   * The person asked for the deployment's image. Without it, a resume of a
+   * machine that holds only an older image may keep serving that one and
+   * report it, so the workspace reads as outdated instead of waiting on the
+   * new image's preparation.
+   */
+  updateImage?: true
 }
 
 export type SandboxTarget = {
@@ -570,6 +577,8 @@ export type SandboxManagerInput = {
    */
   net?: SandboxNetworkPolicy
   snapshot?: string
+  /** @see SandboxDriverEnsureInput.updateImage */
+  updateImage?: true
   /**
    * Called by the one ensure whose acquire created the workspace's first
    * lease, before its driver is asked for anything; a concurrent start that
@@ -620,6 +629,8 @@ export type SandboxEnsureResult =
        * delivered — the provider edge still holds the previous set.
        */
       stale?: true
+      /** @see SandboxTargetResult */
+      imageOutdated?: true
     })
   | { status: "provisioning"; retryAfterMs: number; epoch: number; homeRegion: SandboxRegion; bootMode?: SandboxBootMode }
   | {
@@ -637,7 +648,7 @@ export type SandboxTargetResult =
       epoch: number
       routingId?: string
       homeRegion: SandboxRegion
-      /** The runtime booted from an image other than the driver's current one; its next ensure boots the current one. */
+      /** The runtime booted from an image other than the driver's current one; an ensure asked to `updateImage` boots the current one. */
       imageOutdated?: true
       /** The start that brought this epoch up, as observed; the run still delivering its settings is timed from it. */
       start?: SandboxEpochStart

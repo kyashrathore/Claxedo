@@ -1,5 +1,5 @@
 import { onCleanup } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createStore, reconcile } from "solid-js/store"
 import { sleep } from "@claxedo/helpers"
 import type { CloudWorkspaceStatus, WorkspaceRuntime, WorkspaceStartProgress } from "./cloud-types"
 import { ServerError, toAppError } from "./errors"
@@ -8,7 +8,7 @@ import { placementId, type PlacementId } from "./ids"
 import { isStartingCloud, isStoppedCloud } from "./placement-runtime"
 import { jsonInit, type Transport } from "./transport"
 import type { Placement } from "./types"
-import { WAKE_IDLE, wakeTransition, type WakeEvent, type WakeState } from "./wake-machine"
+import { isRestart, WAKE_IDLE, wakeTransition, type WakeEvent, type WakeState } from "./wake-machine"
 import type { Workspaces } from "./workspaces"
 import { isCheckpointUnusable, startRetryAfterMs, WORKSPACE_CHECKPOINT_UNUSABLE } from "./wire/connection"
 
@@ -26,7 +26,7 @@ const CHECKPOINT_SETTLE_MS = 5_000
 function runtimeOf(wake: WakeState, placement: Placement | undefined): WorkspaceRuntime {
   const asleep = isStoppedCloud(placement)
   if (wake.kind === "waking") {
-    const { restart: _restart, ...waking } = wake
+    const { restart: _restart, outdated: _outdated, ...waking } = wake
     return waking
   }
   if (wake.kind === "outdated" && !asleep) return { kind: "outdated" }
@@ -38,6 +38,7 @@ function runtimeOf(wake: WakeState, placement: Placement | undefined): Workspace
     const error = new ServerError({ class: "conflict", message: placement.failure ?? START_FAILED, ...(placement.checkpointUnusable ? { code: WORKSPACE_CHECKPOINT_UNUSABLE } : {}) })
     return { kind: "wakeFailed", error, ...(placement.checkpointUnusable ? { checkpointUnusable: true } : {}) }
   }
+  if (placement?.kind === "cloud" && placement.imageOutdated) return { kind: "outdated" }
   if (!asleep) return { kind: "live" }
   return placement?.kind === "cloud" && placement.stopReason ? { kind: "asleep", reason: placement.stopReason } : { kind: "asleep" }
 }
@@ -77,9 +78,13 @@ async function driveWake(run: Run, followed: boolean, workspaces: Workspaces, id
   }
 }
 
+function startRun(transport: Transport, updateImage: boolean): Run {
+  return (workspaceId, options) => transport.startRuntime(workspaceId, updateImage ? { ...options, updateImage: true } : options)
+}
+
 export function createWorkspaceWakes(transport: Transport, workspaces: Workspaces, events: ServerEvents, wait: (ms: number) => Promise<void> = sleep, now: () => number = Date.now): WorkspaceWakes {
   const [wakes, setWakes] = createStore<Record<string, WakeState>>({})
-  const send = (id: PlacementId, event: WakeEvent) => setWakes(id, (state) => wakeTransition(state ?? WAKE_IDLE, event))
+  const send = (id: PlacementId, event: WakeEvent) => setWakes(id, reconcile(wakeTransition(wakes[id] ?? WAKE_IDLE, event)))
   const running = new Map<string, Promise<void>>()
   onCleanup(transport.onRuntimeImage((workspaceId, outdated) => send(placementId(workspaceId), { type: outdated ? "imageOutdated" : "imageCurrent" })))
   const drive = (id: PlacementId, run: Run, followed: boolean) => {
@@ -89,7 +94,7 @@ export function createWorkspaceWakes(transport: Transport, workspaces: Workspace
     running.set(id, next)
     return next
   }
-  const start = (id: PlacementId) => drive(id, transport.startRuntime, false)
+  const start = (id: PlacementId) => drive(id, startRun(transport, isRestart(wakes[id] ?? WAKE_IDLE)), false)
   const startFresh = (id: PlacementId) => drive(id, async (workspaceId, options) => {
     await transport.json(`/api/workspace/${encodeURIComponent(workspaceId)}/lifecycle/start-fresh`, jsonInit("POST", { approved: true }))
     await workspaces.refresh()

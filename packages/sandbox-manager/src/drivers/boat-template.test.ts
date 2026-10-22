@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto"
 import { describe, expect, test } from "vitest"
-import { boatTemplateResetCommand, formatBoatRuntimeTemplate, parseBoatRuntimeTemplate } from "./boat"
+import { formatBoatRuntimeTemplate, parseBoatRuntimeTemplate } from "./boat"
+import { boatTemplateResetCommand } from "./boat-machine"
 import { boatRuntimeTemplateName, ensureBoatRuntimeTemplate, pruneBoatRuntimeTemplates, revokeBoatRuntimeTemplateShares, shareBoatRuntimeTemplate, type BoatRuntimeTemplateOptions } from "./boat-template"
+import { preparedImageOutput } from "./boat-preparation.test-support"
 
 const API = "https://boat.dev/api/v1"
 const IMAGE = "ghcr.io/test/sandbox:workspace-runtime-0-10-0-5eed1d-agent-plugins-v8"
@@ -67,7 +69,7 @@ function fakeBoat(options: { snapshots?: NamedSnapshot[]; saveSettlesAs?: "ready
     if (path === `/sandboxes/${BUILDER}/commands`) {
       const command: string = body.command
       const failed = options.resetFails && command.includes(RESET_MARK)
-      const stdout = command.includes("/global/health") ? "200\nrunning" : command.startsWith("host url") ? "https://builder-2593.on.boat.dev\n" : ""
+      const stdout = command.includes("/global/health") ? "200\nrunning" : command.startsWith("host url") ? "https://builder-2593.on.boat.dev\n" : command.includes("docker info") ? preparedImageOutput(command) : ""
       return json({ type: "command.finished", success: !failed, exitCode: failed ? 1 : 0, stdout, stderr: "", timedOut: false })
     }
     if (path === "/named-snapshots" && method === "POST") {

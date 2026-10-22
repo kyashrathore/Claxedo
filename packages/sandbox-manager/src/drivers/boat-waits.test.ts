@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { createBoatSandboxDriver, type BoatFetch } from "./boat"
 import type { SandboxDriverEnsureInput } from "../contract"
 import { sandboxLease } from "../stores/memory"
+import { preparedImageOutput } from "./boat-preparation.test-support"
 
 const ID = "bx_23456789"
 const API = "https://boat.dev/api/v1"
@@ -58,6 +59,7 @@ function clockedBoat(input: { readyAt: number; archivedAt?: number }) {
       }
       if (body.command.includes("/global/health")) return finished("200\nrunning\n")
       if (body.command.startsWith("host url")) return finished("https://machine-2593.on.boat.dev\n")
+      if (body.command.includes("docker info")) return finished(preparedImageOutput(body.command))
       return finished()
     }
     return Response.json({ ok: false, code: "unhandled", message: `${method} ${path}` }, { status: 404 })

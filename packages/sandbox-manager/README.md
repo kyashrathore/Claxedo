@@ -152,9 +152,15 @@ the container leaves `running`/`paused`. A sandbox still archiving from a stop,
 which Boat offers no wait for, is read again after 250 ms, doubling to 2 s.
 
 A wake that pulled (before the stub) took 57–77 s, and failed when ghcr reset
-the connection. An image update re-seeds:
-the new image is pulled and seeded as above, its stub replaces the old one, and
-the old image's trees are removed.
+the connection. A wake whose machine holds only an older image keeps serving
+that image: its trees, stub and env are there, and the runtime in them is no
+older than `MINIMUM_RESTORABLE_WORKSPACE_RUNTIME_VERSION`. The wake answers
+with that image's label, so the workspace reads as outdated, instead of waiting
+60–100 s on the new image's pull and seed (staging, 2026-10-21). The update
+runs only when a start asks for it with `updateImage` (a person's Restart to
+update): the new image is pulled and seeded as above, its stub replaces the
+old one, and the old image's trees are removed. A cold start, and a wake whose
+older runtime is below the floor, takes the new image at once.
 
 A start runs as two commands: the preparation (daemon, login, seed, stub)
 changes nothing a running container serves from, so its failure leaves a

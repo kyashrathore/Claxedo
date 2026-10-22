@@ -3,7 +3,7 @@ import { createHostedAccount, type HostedAccount } from "./account"
 import { responseError, toAppError } from "./errors"
 import { createRelay, type Relay } from "./relay"
 import { followWorkspaceStart, startWorkspace, type StartOptions } from "./workspace-start"
-import { CLOUD_RUNTIME_UNAVAILABLE, connectionAnswerFromWire, isImageOutdated, startRefused, type ConnectionAnswer, type StartRequest, type WorkspaceConnections } from "./wire/connection"
+import { CLOUD_RUNTIME_UNAVAILABLE, connectionAnswerFromWire, startRefused, type ConnectionAnswer, type StartRequest, type WorkspaceConnections } from "./wire/connection"
 import { SESSION_LIST_SORT, sessionHostRootFromListItem } from "./wire/session-row"
 import { asArray, asRecordOrEmpty } from "@claxedo/helpers/guards"
 import { ServerError } from "./errors"
@@ -146,15 +146,9 @@ function sessionHostSignals() {
 function runtimeImageSignals() {
   const listeners = new Set<(workspaceId: string, outdated: boolean) => void>()
   return {
-    answered: (workspaceId: string, sessionId: string | undefined, answer: ConnectionAnswer) => {
-      if (!sessionId && answer.kind === "ready") for (const listener of listeners) listener(workspaceId, false)
+    answered: <Answer extends ConnectionAnswer>(workspaceId: string, sessionId: string | undefined, answer: Answer) => {
+      if (!sessionId && answer.kind === "ready") for (const listener of listeners) listener(workspaceId, answer.imageOutdated === true)
       return answer
-    },
-    started: (workspaceId: string) => {
-      for (const listener of listeners) listener(workspaceId, false)
-    },
-    refused: (workspaceId: string, error: unknown) => {
-      if (isImageOutdated(error)) for (const listener of listeners) listener(workspaceId, true)
     },
     onRuntimeImage: (listener: (workspaceId: string, outdated: boolean) => void) => {
       listeners.add(listener)
@@ -164,14 +158,7 @@ function runtimeImageSignals() {
 }
 
 function connectionReader(connections: WorkspaceConnections, hosts: ReturnType<typeof sessionHostSignals>, image: ReturnType<typeof runtimeImageSignals>): WorkspaceConnections["read"] {
-  return async (workspaceId, sessionId) => {
-    try {
-      return hosts.learned(workspaceId, sessionId, image.answered(workspaceId, sessionId, await connections.read(workspaceId, sessionId)))
-    } catch (error) {
-      image.refused(workspaceId, error)
-      throw error
-    }
-  }
+  return async (workspaceId, sessionId) => hosts.learned(workspaceId, sessionId, image.answered(workspaceId, sessionId, await connections.read(workspaceId, sessionId)))
 }
 
 function sessionHostConnector(connections: WorkspaceConnections, relay: Relay, hosts: ReturnType<typeof sessionHostSignals>): Transport["connectSession"] {
@@ -235,13 +222,12 @@ export function createTransport(config: ServerConfig): Transport {
     json,
     runtimeJson: async (route, path, init) => readJsonResponse(await runtime(route, path, init), label(path, init)),
     startRuntime: async (workspaceId, options) => {
-      const link = await startWorkspace(connections.start, workspaceId, options)
-      if (!daemonProxy) relay.adopt(link)
-      image.started(workspaceId)
+      const ready = image.answered(workspaceId, undefined, await startWorkspace(connections.start, workspaceId, options))
+      if (!daemonProxy) relay.adopt(ready.link)
     },
     followRuntime: async (workspaceId, options) => {
-      const link = await followWorkspaceStart((id) => read(id), workspaceId, options)
-      if (link && !daemonProxy) relay.adopt(link)
+      const ready = await followWorkspaceStart((id) => read(id), workspaceId, options)
+      if (ready && !daemonProxy) relay.adopt(ready.link)
     },
     connectSession: sessionHostConnector(connections, relay, hosts),
     findSessionHost: daemonProxy ? async () => undefined : sessionRowHost(json, loopback ? account : undefined),

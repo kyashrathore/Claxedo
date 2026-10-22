@@ -14,7 +14,8 @@ export function placementName(row: Record<string, unknown>, id: string, kind: Pl
     const failure = lifecycle === "failed" ? nonEmptyString(row.error) : undefined
     const unusable = lifecycle === "failed" && isCheckpointUnusableRow(row)
     const stopReason = lifecycle === "asleep" ? nonEmptyString(row.stopReason) : undefined
-    return { kind, lifecycle, ...(own ? { label: own } : {}), ...(failure ? { failure } : {}), ...(unusable ? { checkpointUnusable: true } : {}), ...(stopReason ? { stopReason } : {}) }
+    const imageOutdated = lifecycle === "live" && row.imageOutdated === true
+    return { kind, lifecycle, ...(own ? { label: own } : {}), ...(failure ? { failure } : {}), ...(unusable ? { checkpointUnusable: true } : {}), ...(stopReason ? { stopReason } : {}), ...(imageOutdated ? { imageOutdated: true } : {}) }
   }
   return { kind, label: own ?? path?.split("/").filter(Boolean).pop() ?? path ?? id }
 }

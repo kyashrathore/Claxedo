@@ -545,6 +545,23 @@ describe("hosted connection", () => {
     expect(sandboxStart.mock.calls).toEqual([["ws_1", { retry: true }], ["ws_1", undefined]])
   })
 
+  test("a person's Restart to update reaches the start as a request for the deployment's image, and a POST of a workspace on an older image says so", async () => {
+    const authority = fakeAuthority({
+      openWorkspace: vi.fn(async () => ({ allowed: true, role: "owner", workspace: { workspace_id: "ws_1", project_id: "proj_1", backing: "cloud-vm", home_region: "us-east" } })),
+    })
+    const sandboxManager = {
+      target: vi.fn(async () => ({ status: "ready" as const, hostId: "host_1", epoch: 1, imageOutdated: true as const })),
+    } as unknown as SandboxManager
+    const sandboxStart = vi.fn(async () => ({ status: "ready" as const, hostId: "host_1", epoch: 1, homeRegion: "us-east", sandboxId: "sb_1", url: "https://sandbox.test", imageOutdated: true as const }))
+    const { app } = buildApp({ authority, sandboxManager, options: { sandboxStart } })
+
+    const kept = await app.fetch(post("/ws_1/connection", { retry: true }))
+    expect(await kept.json()).toMatchObject({ runtimeAccessToken: "rat-token", imageOutdated: true })
+    expect((await app.fetch(post("/ws_1/connection", { retry: true, updateImage: true }))).status).toBe(200)
+    expect((await app.fetch(post("/ws_1/connection", { updateImage: false }))).status).toBe(400)
+    expect(sandboxStart.mock.calls).toEqual([["ws_1", { retry: true }], ["ws_1", { retry: true, updateImage: true }]])
+  })
+
   test("GET reports an in-flight start as provisioning without provisioning itself", async () => {
     const authority = fakeAuthority({
       openWorkspace: vi.fn(async () => ({
@@ -600,7 +617,7 @@ describe("hosted connection", () => {
     expect(ensure).not.toHaveBeenCalled()
   })
 
-  test("GET refuses a running workspace booted from an older image with a typed answer, and mints nothing", async () => {
+  test("GET mints for a running workspace booted from an older image and says it is outdated, starting nothing", async () => {
     const authority = fakeAuthority({ openWorkspace: async () => ({
       allowed: true, role: "owner", workspace: { workspace_id: "ws_1", org_id: "org_1", backing: "cloud-vm" },
     }) })
@@ -609,10 +626,20 @@ describe("hosted connection", () => {
       target: async () => ({ status: "ready", hostId: "host_1", epoch: 1, imageOutdated: true }), ensure,
     } as unknown as SandboxManager })
     const res = await app.fetch(get("/ws_1/connection"))
-    expect(res.status).toBe(409)
-    expect(await res.json()).toMatchObject({ error: { code: "cloud_runtime_image_outdated", message: "This cloud workspace runs an older version. Restart it to update." } })
-    expect(authority.recordRuntimeAccessToken).not.toHaveBeenCalled()
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ runtimeAccessToken: "rat-token", hostId: "host_1", imageOutdated: true })
+    expect(authority.recordRuntimeAccessToken).toHaveBeenCalledTimes(1)
     expect(ensure).not.toHaveBeenCalled()
+  })
+
+  test("GET of a workspace on the deployment's image says nothing about its image", async () => {
+    const authority = fakeAuthority({ openWorkspace: async () => ({
+      allowed: true, role: "owner", workspace: { workspace_id: "ws_1", org_id: "org_1", backing: "cloud-vm" },
+    }) })
+    const { app } = buildApp({ authority, sandboxManager: {
+      target: async () => ({ status: "ready", hostId: "host_1", epoch: 1 }), ensure: vi.fn(),
+    } as unknown as SandboxManager })
+    expect(await (await app.fetch(get("/ws_1/connection"))).json()).not.toHaveProperty("imageOutdated")
   })
 
   test("GET reports a stopped cloud workspace without provisioning it", async () => {
