@@ -56,7 +56,15 @@ export type MachineAuthResult = { ok: true; machine: MachinePrincipal } | Machin
 const MAX_ENROLLMENT_ID_LENGTH = 200
 const MAX_SIGNATURE_LENGTH = 200
 
-export async function verifyMachineRequest(request: MachineRequest, deps: MachineAuthDeps): Promise<MachineAuthResult> {
+/**
+ * `admitPaused` is for the doorbell alone: it carries nothing a machine acts
+ * on, and a paused machine that holds it hears its owner's resume at once.
+ */
+export async function verifyMachineRequest(
+  request: MachineRequest,
+  deps: MachineAuthDeps,
+  options: { admitPaused?: boolean } = {},
+): Promise<MachineAuthResult> {
   const url = URL.canParse(request.url) ? new URL(request.url) : undefined
   if (!url || url.search) return machineRefusal(400, "machine_query_unsigned")
   const headers = machineHeaders(request.headers)
@@ -90,7 +98,7 @@ export async function verifyMachineRequest(request: MachineRequest, deps: Machin
   if (!verified) return machineRefusal(401, "machine_request_denied")
 
   if (row.revoked_at !== null) return machineRefusal(403, "enrollment_revoked")
-  if (row.paused_at !== null) return machineRefusal(403, "enrollment_paused")
+  if (row.paused_at !== null && !options.admitPaused) return machineRefusal(403, "enrollment_paused")
   if (!row.ownerEligible) return machineRefusal(403, "enrollment_owner_ineligible")
   if (body.keyVersion !== undefined && body.keyVersion !== row.key_version) {
     return machineRefusal(403, "enrollment_key_version_mismatch")

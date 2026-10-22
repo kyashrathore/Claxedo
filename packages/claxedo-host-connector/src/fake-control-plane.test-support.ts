@@ -179,6 +179,8 @@ export function createFakeControlPlane(
     dropRedeemResponse: false,
     /** Answer every machine route with this status instead (a deploy window). */
     unavailable: undefined as number | undefined,
+    /** Refuse the doorbell with this status, as a plane without the stream does. */
+    refuseEvents: undefined as number | undefined,
   }
 
   const routable = (enrollment: FakeEnrollment) =>
@@ -238,7 +240,7 @@ export function createFakeControlPlane(
     headers: Headers
     bodyText: string
     body: Record<string, unknown>
-  }) => {
+  }, admission: { admitPaused?: boolean } = {}) => {
     const enrollmentId = request.headers.get(MACHINE_REQUEST_HEADERS.enrollmentId)
     const tsHeader = request.headers.get(MACHINE_REQUEST_HEADERS.ts)
     const nonce = request.headers.get(MACHINE_REQUEST_HEADERS.nonce)
@@ -273,7 +275,7 @@ export function createFakeControlPlane(
     if (nonces.has(nonceKey)) throw new FakeRefusal(401, "machine_nonce_replayed")
     nonces.set(nonceKey, ts + NONCE_TTL_MS)
     if (enrollment.revoked_at !== undefined) throw new FakeRefusal(403, "enrollment_revoked")
-    if (enrollment.paused_at !== undefined) throw new FakeRefusal(403, "enrollment_paused")
+    if (enrollment.paused_at !== undefined && !admission.admitPaused) throw new FakeRefusal(403, "enrollment_paused")
     if (request.body.keyVersion !== undefined && request.body.keyVersion !== enrollment.key_version) {
       throw new FakeRefusal(403, "enrollment_key_version_mismatch")
     }
@@ -456,7 +458,8 @@ export function createFakeControlPlane(
       }
       const request = { method, pathname: target.pathname, headers, bodyText, body }
       if (target.pathname === "/api/claxedo/host/enrollments/events") {
-        return doorbell.open(await verifyMachine(request), init?.signal ?? undefined)
+        if (faults.refuseEvents !== undefined) throw new FakeRefusal(faults.refuseEvents, "not_found")
+        return doorbell.open(await verifyMachine(request, { admitPaused: true }), init?.signal ?? undefined)
       }
       if (target.pathname === "/api/claxedo/host/enrollments/acquire") {
         return json(200, acquire(await verifyMachine(request)))
@@ -497,6 +500,9 @@ export function createFakeControlPlane(
     eventStreams: (enrollmentId: string) => doorbell.held(enrollmentId),
     /** End every stream the enrollment holds, as a deploy or an idle proxy would, without deciding anything. */
     dropEventStreams: (enrollmentId: string) => doorbell.drop(enrollmentId),
+    refuseEvents: (status: number | undefined) => {
+      faults.refuseEvents = status
+    },
     /** What the relay would be told is routable right now, per enrollment. */
     routable: (enrollmentId: string) => {
       const enrollment = enrollments.get(enrollmentId)

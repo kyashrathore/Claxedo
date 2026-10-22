@@ -275,8 +275,8 @@ export function createHostConnector(options: ConnectorOptions) {
   let watchRefused = false
   /** Serving withdrawn because the owner paused the machine, until a beat succeeds again. */
   let paused = false
-  /** Ends a paused start's wait for its next acquire when the connector stops. */
-  let wakePausedStart: (() => void) | undefined
+  /** Ends a paused start's wait for its next acquire: true asks again now (the doorbell rang), false gives up (the connector stopped). */
+  let settlePausedStart: ((askAgain: boolean) => void) | undefined
 
   const closeWatch = () => {
     watch?.close()
@@ -287,7 +287,7 @@ export function createHostConnector(options: ConnectorOptions) {
     era++
     timer?.cancel()
     timer = undefined
-    wakePausedStart?.()
+    settlePausedStart?.(false)
     closeWatch()
     descriptions.clear()
     acked.clear()
@@ -298,15 +298,11 @@ export function createHostConnector(options: ConnectorOptions) {
 
   const untilNextAcquire = () =>
     new Promise<boolean>((resolve) => {
-      const next = options.setInterval(() => {
+      const next = options.setInterval(() => settlePausedStart?.(state.status !== "stopped"), options.heartbeatIntervalMs)
+      settlePausedStart = (askAgain) => {
         next.cancel()
-        wakePausedStart = undefined
-        resolve(state.status !== "stopped")
-      }, options.heartbeatIntervalMs)
-      wakePausedStart = () => {
-        next.cancel()
-        wakePausedStart = undefined
-        resolve(false)
+        settlePausedStart = undefined
+        resolve(askAgain)
       }
     })
 
@@ -316,7 +312,8 @@ export function createHostConnector(options: ConnectorOptions) {
     watch = options.transport.watch?.({
       onEvent: () => {
         options.onHostChanged?.()
-        void requestBeat()
+        if (settlePausedStart) settlePausedStart(true)
+        else void requestBeat()
       },
       onError: (error) => {
         if (!transientHeartbeatFailure(error)) watchRefused = true
@@ -672,12 +669,14 @@ export function createHostConnector(options: ConnectorOptions) {
           break
         } catch (error) {
           // A machine that starts while its owner has it paused (a reboot, a
-          // restart, an upgrade) waits for the resume and asks again each
-          // interval, rather than exiting with a decision its service manager
-          // would never restart, which would make the pause permanent.
+          // restart, an upgrade) holds its doorbell, asks again when the
+          // resume rings it and each interval regardless, rather than exiting
+          // with a decision its service manager would never restart, which
+          // would make the pause permanent.
           if (pausedByOwner(error) && state.status !== "stopped") {
             if (!paused) options.onPaused?.(true)
             paused = true
+            if (!watch) openWatch()
             if (await untilNextAcquire()) continue
             return state
           }

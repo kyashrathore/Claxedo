@@ -38,6 +38,7 @@ export async function admitMachineCaller(
   services: ControlPlaneServices,
   budgets: MachineCallerBudgets,
   key: string,
+  options: { admitPaused?: boolean } = {},
 ): Promise<{ machine: MachinePrincipal; bodyText: string } | Response> {
   const limited = clientBudget(c, budgets.clientRateLimiter, `client:${key}`)
   if (limited) return limited
@@ -49,6 +50,7 @@ export async function admitMachineCaller(
   const verified = await verifyMachineRequest(
     { method: c.req.method, url: c.req.url, headers: c.req.raw.headers, bodyText },
     { ...authority.machineAuth, now: budgets.now },
+    options,
   )
   if (!verified.ok) {
     return c.json({ error: { code: verified.code, message: "Machine request refused" } }, verified.status)

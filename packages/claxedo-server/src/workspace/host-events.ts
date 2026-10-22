@@ -22,7 +22,7 @@ export type HostEventsOptions = MachineCallerBudgets & {
 
 export function machineEventsHandler(services: ControlPlaneServices, options: HostEventsOptions) {
   return async (c: Context) => {
-    const admitted = await admitMachineCaller(c, services, options, "host.enrollments.events")
+    const admitted = await admitMachineCaller(c, services, options, "host.enrollments.events", { admitPaused: true })
     if (admitted instanceof Response) return admitted
     const room = options.liveSyncRoom
     if (!room) {
@@ -30,9 +30,11 @@ export function machineEventsHandler(services: ControlPlaneServices, options: Ho
     }
     const machine = admitted.machine
     const subscriber: LiveSyncMachineSubscriber = { machine: { hostId: machine.hostId, ownerUserId: machine.ownerUserId } }
-    // No reauthorization timer: the stream carries nothing the machine may act
-    // on, and a revoked or paused enrollment is refused at the machine's next
-    // beat, which stops the connector and closes this stream with it.
+    // A paused machine is admitted, so its owner's resume reaches it at once
+    // rather than at its next beat. No reauthorization timer: the stream
+    // carries nothing the machine may act on, and a revoked enrollment is
+    // refused at the machine's next beat, which stops the connector and closes
+    // this stream with it.
     return await connectLiveSyncRoom(
       room,
       subscriber,

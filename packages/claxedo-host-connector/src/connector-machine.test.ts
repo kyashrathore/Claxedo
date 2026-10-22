@@ -285,7 +285,7 @@ describe("assignment discovery", () => {
     expect(h.pauses).toEqual([true, false])
   })
 
-  test("a machine that starts while paused waits for its owner's resume instead of exiting, and serves once resumed", async () => {
+  test("a machine that starts while paused waits for its owner's resume instead of exiting, holding its doorbell, and serves the moment the resume rings", async () => {
     const cp = createFakeControlPlane()
     const h = await machineHost(cp)
     const id = h.enrolled.enrollmentId
@@ -298,14 +298,14 @@ describe("assignment discovery", () => {
       return state
     })
     await vi.waitFor(() => expect(h.pauses).toEqual([true]))
+    await vi.waitFor(() => expect(cp.eventStreams(id), "a paused start holds its doorbell").toBe(1))
     h.tick()
-    await vi.waitFor(() => expect(acquires()).toBe(2))
+    await vi.waitFor(() => expect(acquires(), "and still asks each interval").toBe(2))
     expect(settled, "a paused start neither stops nor serves").toBeUndefined()
     expect(h.errors, "the owner's pause is not a failed acquire").toEqual([])
 
     cp.pause(id, false)
-    h.tick()
-    expect((await starting).status).toBe("enrolled")
+    expect((await starting).status, "the resume's ring, not a timer, starts it").toBe("enrolled")
     await vi.waitFor(() => expect(h.tunnels.at(-1)).toMatchObject({ workspaceIds: ["ws_1"] }))
     expect(h.pauses).toEqual([true, false])
   })
@@ -320,20 +320,34 @@ describe("assignment discovery", () => {
     expect(await starting).toMatchObject({ status: "stopped", reason: "closed" })
   })
 
-  test("a doorbell refused while the machine was paused reopens on the first good beat after the resume", async () => {
+  test("a paused machine whose doorbell dropped holds it again, and hears its owner's resume without waiting for a beat", async () => {
     const cp = createFakeControlPlane()
     const h = await machineHost(cp)
     const id = h.enrolled.enrollmentId
     await h.connector.start()
     await h.doorbell()
+    cp.assign({ enrollmentId: id, workspaceId: "ws_1", remoteDirectory: "/srv/api" })
+    await vi.waitFor(() => expect(h.tunnels.at(-1)).toMatchObject({ workspaceIds: ["ws_1"] }))
 
     cp.pause(id, true)
+    await vi.waitFor(() => expect(h.tunnels.at(-1)).toBeUndefined())
     cp.dropEventStreams(id)
-    await vi.waitFor(() => expect(h.errors.some((entry) => entry.stage === "events")).toBe(true))
-    await new Promise((resolve) => setTimeout(resolve, 2_500))
-    expect(cp.eventStreams(id), "a paused machine holds no doorbell").toBe(0)
+    await vi.waitFor(() => expect(cp.eventStreams(id), "the paused machine's doorbell is admitted again").toBe(1), { timeout: 5_000 })
 
     cp.pause(id, false)
+    await vi.waitFor(() => expect(h.tunnels.at(-1), "no tick: the resume rang").toMatchObject({ workspaceIds: ["ws_1"] }))
+  }, 15_000)
+
+  test("a doorbell the control plane refuses, as a plane without the stream does, is opened again on the first good beat", async () => {
+    const cp = createFakeControlPlane()
+    cp.refuseEvents(404)
+    const h = await machineHost(cp)
+    const id = h.enrolled.enrollmentId
+    await h.connector.start()
+    await vi.waitFor(() => expect(h.errors.some((entry) => entry.stage === "events")).toBe(true))
+    expect(cp.eventStreams(id)).toBe(0)
+
+    cp.refuseEvents(undefined)
     h.tick()
     await vi.waitFor(() => expect(cp.eventStreams(id)).toBe(1), { timeout: 5_000 })
     cp.assign({ enrollmentId: id, workspaceId: "ws_1", remoteDirectory: "/srv/api" })

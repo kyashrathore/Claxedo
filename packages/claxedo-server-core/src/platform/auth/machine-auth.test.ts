@@ -293,6 +293,13 @@ describe("verifyMachineRequest", () => {
       const d = deps({ row: row({ revoked_at: NOW - 1, paused_at: NOW - 1 }) })
       expect(await verifyMachineRequest(await signedRequest({}), d.deps)).toMatchObject({ code: "enrollment_revoked" })
     })
+
+    test("the doorbell's admission lets a paused machine in, and nothing past it: a revoked one is still refused", async () => {
+      const paused = deps({ row: row({ paused_at: NOW - 1 }) })
+      expect(await verifyMachineRequest(await signedRequest({}), paused.deps, { admitPaused: true })).toMatchObject({ ok: true })
+      const revoked = deps({ row: row({ revoked_at: NOW - 1, paused_at: NOW - 1 }) })
+      expect(await verifyMachineRequest(await signedRequest({}), revoked.deps, { admitPaused: true })).toMatchObject({ code: "enrollment_revoked" })
+    })
   })
 
   describe("key version", () => {

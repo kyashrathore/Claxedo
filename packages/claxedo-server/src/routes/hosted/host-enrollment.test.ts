@@ -1405,6 +1405,24 @@ describe("GET /events, the machine's doorbell", () => {
     await reader.cancel()
   })
 
+  test("holds a paused machine too, so its owner's resume rings it at once, and refuses a revoked one", async () => {
+    const key = await machineKey()
+    const liveSyncRoom = fakeLiveSyncNamespace()
+    const paused = await mountedRoutes(machineAuthority(enrollmentRow(key, { paused_at: NOW - 1 })), { liveSyncRoom, eventsHeartbeatMs: 60_000 })
+    const held = await signedGet(paused.app, key)
+    expect(held.status).toBe(200)
+    const reader = held.body!.getReader()
+    expect(await readSseFrame(reader)).toEqual({ type: "heartbeat" })
+    await nudgeLiveSyncRoom(liveSyncRoom, "owner:usr_owner", { type: "host.changed", hostId: "host_1", ownerUserId: "usr_owner", ts: NOW })
+    expect(await readSseFrame(reader)).toMatchObject({ type: "host.changed", hostId: "host_1" })
+    await reader.cancel()
+
+    const revoked = await mountedRoutes(machineAuthority(enrollmentRow(key, { revoked_at: NOW - 1, paused_at: NOW - 1 })), { liveSyncRoom: fakeLiveSyncNamespace() })
+    const refused = await signedGet(revoked.app, key)
+    expect(refused.status).toBe(403)
+    expect(await refused.json()).toMatchObject({ error: { code: "enrollment_revoked" } })
+  })
+
   test("refuses an unsigned caller, a forged signature and a query, like every machine route", async () => {
     const key = await machineKey()
     const forger = await machineKey()
