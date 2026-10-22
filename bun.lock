@@ -767,7 +767,7 @@
     },
     "packages/workspace-runtime": {
       "name": "@claxedo/workspace-runtime",
-      "version": "0.10.1",
+      "version": "0.10.5",
       "bin": {
         "workspace-runtime": "./dist/cli.mjs",
       },
