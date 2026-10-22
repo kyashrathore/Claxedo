@@ -344,6 +344,8 @@ describe("moveToRepository", () => {
     const first = move(firstRequest)
     await entered.promise
     const second = move(secondRequest)
+    // It can reject while `first` is awaited below, before `rejects` attaches.
+    second.catch(() => undefined)
     await Promise.resolve()
 
     expect(repositories.has(secondRequest.relativePath)).toBe(false)
