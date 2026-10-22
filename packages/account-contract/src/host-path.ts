@@ -23,7 +23,7 @@ export function hostPathKind(path: string): HostPathKind | undefined {
 }
 
 /** `..` above the volume stays at the volume, as both kernels resolve it. */
-function collapse(segments: readonly string[]) {
+function collapseDotSegments(segments: readonly string[]) {
   const kept: string[] = []
   for (const segment of segments) {
     if (segment === "" || segment === ".") continue
@@ -46,12 +46,12 @@ function collapse(segments: readonly string[]) {
  */
 export function normalizeHostPath(path: string): string | undefined {
   const kind = hostPathKind(path)
-  if (kind === "posix") return `/${collapse(path.split("/")).join("/")}`
+  if (kind === "posix") return `/${collapseDotSegments(path.split("/")).join("/")}`
   if (kind === undefined) return undefined
   const unified = path.replaceAll("/", "\\")
   const unc = WINDOWS_UNC.exec(unified)
-  const volume = unc ? `\\\\${unc[1]}\\${unc[2]}` : `${unified[0].toUpperCase()}:`
-  const rest = collapse(unified.slice(volume.length).split("\\"))
+  const volume = unc ? `\\\\${unc[1]}\\${unc[2]}` : `${unified.slice(0, 1).toUpperCase()}:`
+  const rest = collapseDotSegments(unified.slice(volume.length).split("\\"))
   return rest.length === 0 ? `${volume}\\` : `${volume}\\${rest.join("\\")}`
 }
 

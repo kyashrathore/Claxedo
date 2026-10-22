@@ -31,8 +31,8 @@ export const SERVICE_KINDS = ["systemd-user", "launchd", "windows-task"] as cons
 export type ServiceKind = (typeof SERVICE_KINDS)[number]
 
 function serviceKindOf(value: unknown): ServiceKind {
-  if (typeof value === "string" && (SERVICE_KINDS as readonly string[]).includes(value)) return value as ServiceKind
-  return stateFieldError("service.kind", `must be one of ${SERVICE_KINDS.join(", ")}`)
+  const kind = SERVICE_KINDS.find((candidate) => candidate === value)
+  return kind ?? stateFieldError("service.kind", `must be one of ${SERVICE_KINDS.join(", ")}`)
 }
 
 export type HostState = {
