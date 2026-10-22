@@ -291,8 +291,8 @@ export type HostInvitationCreateInput = {
 
 export type HostInvitationCreateResult = {
   invitationId: string
-  /** `chx_inv_1.<invitation_id>.<secret>`; the secret is never stored, only its hash. */
-  token: string
+  /** Never stored, only its hash; the route hands it out once, inside the token. */
+  secret: string
   expiresAt: number
 }
 

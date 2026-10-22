@@ -21,6 +21,7 @@ import { HOST_ENROLLMENT_EVENTS_PATH as EVENTS_PATH, HostedHttpError, HostedRequ
 import { HostEndpointUrlError, newHostState } from "@claxedo/host-connector/host-state"
 import { HostConnectDecisionError } from "@claxedo/host-connector/bootstrap"
 import { createHostKeyPair } from "@claxedo/host-connector/host-identity"
+import { invitationToken } from "@claxedo/account-contract/machine"
 import { freePort } from "@claxedo/helpers/net"
 import { connect, type ConnectDeps } from "./connect"
 import { hostOnline, statusLines } from "./status"
@@ -374,18 +375,20 @@ describe("claxedo connect", () => {
     expect((await h.deps.store.load())?.control_plane_url).toBe("https://app.claxedo.com")
   })
 
-  test("a cleartext CLAXEDO_CONTROL_PLANE_URL exits 78 with what to change, before any state or request", async () => {
-    const { file } = await invitationFile(h, [h.root])
+  test("an invitation naming a cleartext control plane exits 78 with what to change, before any state or request", async () => {
+    const { file, invitation } = await invitationFile(h, [h.root])
+    const cleartext = invitationToken({ controlPlaneUrl: "http://cp.example.test", invitationId: invitation.invitationId, secret: invitation.secret })
+    await fs.writeFile(file, `${cleartext}\n`)
     const requests = h.cp.log.length
 
-    expect(await connect(["--token-file", file], { ...h.deps, controlPlaneUrl: "http://cp.example.test" })).toBe(78)
+    expect(await connect(["--token-file", file], h.deps)).toBe(78)
 
     expect(h.lines.at(-1)).toBe(
-      "control plane http://cp.example.test must be https:// (http:// only for localhost, 127.0.0.1 or ::1); set CLAXEDO_CONTROL_PLANE_URL to an https:// origin",
+      "control plane http://cp.example.test must be https:// (http:// only for localhost, 127.0.0.1 or ::1); the invitation names it, so mint one on an https:// control plane",
     )
     expect(await h.deps.store.load(), "no host id, no key, no pending enrollment").toBeUndefined()
     expect(h.cp.log).toHaveLength(requests)
-    expect(await fs.readFile(file, "utf8")).toContain("chx_inv_1.")
+    expect((await fs.readFile(file, "utf8")).trim()).toBe(cleartext)
   })
 
   test("a state file that names a cleartext control plane does not run, and says how to leave it", async () => {
@@ -738,7 +741,7 @@ describe("claxedo connect", () => {
       )
       expect(h.cp.log, "refused before any request").toHaveLength(0)
       expect(daemon.requests.at(-1)).toEqual({ path: "/api/claxedo/daemon", authorization: "Bearer secret" })
-      expect(await fs.readFile(file, "utf8")).toContain("chx_inv_1.")
+      expect(await fs.readFile(file, "utf8")).toContain("chx_inv_2.")
       expect(await connect(["--token-file", file, "--install-service"], h.deps)).toBe(78)
       expect(h.serviceCalls).toEqual([])
 
@@ -918,6 +921,25 @@ describe("claxedo connect", () => {
     const again = await invitationFile(h, [h.root])
     expect(await connect(["--token-file", again.file], h.deps)).toBe(78)
     expect(h.lines.at(-1)).toContain("already enrolled")
+  })
+
+  test("an invitation enrolls at the control plane that minted it, whatever plane this machine defaults to", async () => {
+    const { file } = await invitationFile(h, [h.root])
+    const origins = new Set<string>()
+    const fetch = h.deps.host.fetch
+    h.deps.host = { ...h.deps.host, fetch: async (input, init) => {
+      origins.add(new URL(String(input)).origin)
+      return fetch(input, init)
+    } }
+
+    const running = connect(["--token-file", file, "--root", h.root], { ...h.deps, controlPlaneUrl: "https://app.claxedo.com" })
+    await until(() => h.cp.beats().length >= 1, "first beat")
+    h.stop()
+
+    expect(await running).toBe(0)
+    expect([...origins]).toEqual([h.cp.url])
+    const state = JSON.parse(await fs.readFile(h.deps.paths.stateFile, "utf8")) as { control_plane_url: string }
+    expect(state.control_plane_url).toBe(h.cp.url)
   })
 
   test("a redeem answered 405 by an origin without the route exits 78 after one request and keeps the token file", async () => {

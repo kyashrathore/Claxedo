@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from "vitest"
 import type { ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
 import type { MachineEnrollmentRow } from "@claxedo/server-core/platform/auth/host-connect-contract"
-import { MACHINE_REQUEST_HEADERS, decodeMachineSeal, machineRequestPayload, machineSealAad } from "@claxedo/account-contract/machine"
+import { MACHINE_REQUEST_HEADERS, decodeInvitationToken, decodeMachineSeal, machineRequestPayload, machineSealAad } from "@claxedo/account-contract/machine"
 import { machineSealContentKey } from "@claxedo/account-contract/machine-seal"
 import type { HostTunnelTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { sha256Hex } from "@claxedo/helpers/crypto"
@@ -1116,13 +1116,13 @@ describe("POST /:id/provider-config", () => {
 describe("host invitations", () => {
   function invitationRoutes(overrides: Record<string, unknown> = {}) {
     const api = authority({
-      createHostInvitation: vi.fn(async () => ({ invitationId: "invitation_1", token: "chx_inv_1.invitation_1.secret", expiresAt: 9_999 })),
+      createHostInvitation: vi.fn(async () => ({ invitationId: "invitation_1", secret: "secret", expiresAt: 9_999 })),
       listHostInvitations: vi.fn(async () => [{ invitation_id: "invitation_1", scope: { allowed_roots: ["/srv"] }, org_id: "org_1", created_at: 1, expires_at: 9_999 }]),
       revokeHostInvitation: vi.fn(async () => ({ revoked: true })),
       ...overrides,
     })
     const services = { authority: api } as unknown as ControlPlaneServices
-    const app = HostInvitationRoutes(services, { authConfig, verifier } as never)
+    const app = HostInvitationRoutes(services, { authConfig, verifier, controlPlaneOrigin: "https://app.claxedo.dev" } as never)
     const call = (path: string, init: RequestInit = {}) =>
       app.request(`http://control.test${path}`, {
         headers: {
@@ -1135,7 +1135,7 @@ describe("host invitations", () => {
     return { api, call }
   }
 
-  test("creates an invitation for the signed owner and returns the one-time token", async () => {
+  test("creates an invitation for the signed owner and returns the one-time token, which names this control plane", async () => {
     const { api, call } = invitationRoutes()
     const response = await call("/", {
       method: "POST",
@@ -1147,11 +1147,9 @@ describe("host invitations", () => {
       displayName: "VPS",
       expiresInMs: 600_000,
     })
-    expect(await response.json()).toEqual({
-      invitation_id: "invitation_1",
-      token: "chx_inv_1.invitation_1.secret",
-      expires_at: 9_999,
-    })
+    const body = await response.json() as { invitation_id: string; token: string; expires_at: number }
+    expect(body).toEqual({ invitation_id: "invitation_1", token: expect.any(String), expires_at: 9_999 })
+    expect(decodeInvitationToken(body.token)).toEqual({ controlPlaneUrl: "https://app.claxedo.dev", invitationId: "invitation_1", secret: "secret" })
     expect(api.auditAllow).toHaveBeenCalledWith(expect.anything(), {
       action: "host_invitation.created",
       metadata: { invitationId: "invitation_1", expiresAt: 9_999 },

@@ -8,7 +8,6 @@ import type { D1PreparedStatement } from "@cloudflare/workers-types"
 import type { MachinePrincipal } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import {
   invitationRedeemPayload,
-  decodeInvitationToken,
   publicKeyFingerprint,
   enrollmentPayload,
 } from "@claxedo/account-contract/machine"
@@ -846,10 +845,7 @@ describe("D1 host access authority", () => {
  */
 describe("host-connect: machine heartbeat, readiness, invitations, scope", () => {
   async function invite(input: Input, owner: SignedControlPlaneAuth, roots: string[]) {
-    const created = await input.hostAccess.createHostInvitation(owner, { scope: { allowed_roots: roots } })
-    const parts = decodeInvitationToken(created.token)
-    if (!parts) throw new Error(`token not parseable: ${created.token}`)
-    return { ...created, ...parts }
+    return await input.hostAccess.createHostInvitation(owner, { scope: { allowed_roots: roots } })
   }
 
   async function redeem(
@@ -1150,7 +1146,6 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
     const { alice } = await fixture(input)
     const owner = await signed(input.workspace, "alice", "org_acme")
     const invitation = await invite(input, owner, ["/srv"])
-    expect(invitation.token.startsWith(`chx_inv_1.${invitation.invitationId}.`)).toBe(true)
     expect(invitation.expiresAt).toBe(input.now() + 60 * 60_000)
     const stored = await input.database
       .prepare("select secret_hash, org_id from host_invitations where invitation_id = ?")

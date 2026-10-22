@@ -19,7 +19,7 @@
  * does.
  */
 
-import { redeemInvitation } from "./bootstrap"
+import { readInvitation, redeemInvitation } from "./bootstrap"
 import {
   base64url,
   base64urlDecode,
@@ -581,7 +581,7 @@ export function createFakeControlPlane(
       return {
         invitationId,
         secret,
-        token: invitationToken({ invitationId, secret }),
+        token: invitationToken({ controlPlaneUrl: url, invitationId, secret }),
         expiresAt: invitation.expires_at,
         invitation,
       }
@@ -765,6 +765,7 @@ export async function enrollFakeHost(
   })
   const outcome = await redeemInvitation({
     tokenFile,
+    invitation: await readInvitation(memory.fs, tokenFile),
     store,
     state: fresh,
     keys,

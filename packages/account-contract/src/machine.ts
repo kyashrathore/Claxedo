@@ -2,7 +2,7 @@ import { base64UrlDecode, base64UrlEncode } from "@claxedo/helpers/crypto"
 
 export const MACHINE_REQUEST_DOMAIN = "claxedo.machine-request.v1"
 export const INVITATION_REDEEM_DOMAIN = "claxedo.host-enrollment.redeem.v1"
-export const INVITATION_TOKEN_PREFIX = "chx_inv_1"
+export const INVITATION_TOKEN_PREFIX = "chx_inv_2"
 
 export const MACHINE_REQUEST_HEADERS = {
   enrollmentId: "x-claxedo-enrollment-id",
@@ -60,15 +60,26 @@ export async function publicKeyFingerprint(input: JsonWebKey | string) {
   return base64UrlEncode(await crypto.subtle.digest("SHA-256", material))
 }
 
-export function invitationToken(input: { invitationId: string; secret: string }) {
-  return `${INVITATION_TOKEN_PREFIX}.${input.invitationId}.${input.secret}`
+/**
+ * Only the control plane that minted an invitation can redeem it, so its URL
+ * travels inside the token; the plane a machine would otherwise default to
+ * may be another one.
+ */
+export function invitationToken(input: { controlPlaneUrl: string; invitationId: string; secret: string }) {
+  const plane = base64UrlEncode(new TextEncoder().encode(input.controlPlaneUrl))
+  return `${INVITATION_TOKEN_PREFIX}.${plane}.${input.invitationId}.${input.secret}`
 }
 
-export function decodeInvitationToken(token: string): { invitationId: string; secret: string } | undefined {
-  const [prefix, invitationId, secret, ...rest] = token.split(".")
-  if (rest.length > 0 || invitationId === undefined || secret === undefined) return undefined
-  if (prefix !== INVITATION_TOKEN_PREFIX || !isBase64Url(invitationId) || !isBase64Url(secret)) return undefined
-  return { invitationId, secret }
+export function decodeInvitationToken(
+  token: string,
+): { controlPlaneUrl: string; invitationId: string; secret: string } | undefined {
+  const [prefix, plane, invitationId, secret, ...rest] = token.split(".")
+  if (rest.length > 0 || plane === undefined || invitationId === undefined || secret === undefined) return undefined
+  if (prefix !== INVITATION_TOKEN_PREFIX || !isBase64Url(plane) || !isBase64Url(invitationId) || !isBase64Url(secret)) return undefined
+  const controlPlaneUrl = new TextDecoder().decode(base64UrlDecode(plane))
+  if (!URL.canParse(controlPlaneUrl)) return undefined
+  const protocol = new URL(controlPlaneUrl).protocol
+  return protocol === "https:" || protocol === "http:" ? { controlPlaneUrl, invitationId, secret } : undefined
 }
 
 export function enrollmentPayload(input: { hostId: string; requestId: string; nonce: string }) {

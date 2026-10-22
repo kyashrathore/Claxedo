@@ -2,7 +2,6 @@ import { createRequireText } from "@claxedo/helpers"
 import {
   enrollmentPayload,
   invitationRedeemPayload,
-  invitationToken,
   publicKeyFingerprint,
   MACHINE_SEAL_VERSION,
   publicKeyJwk,
@@ -968,7 +967,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       who.actorId,
       now,
     )])
-    return { invitationId, token: invitationToken({ invitationId, secret }), expiresAt }
+    return { invitationId, secret, expiresAt }
   }
 
   async listHostInvitations(auth: SignedControlPlaneAuth): Promise<HostInvitationRow[]> {

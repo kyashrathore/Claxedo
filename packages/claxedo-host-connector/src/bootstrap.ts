@@ -90,8 +90,28 @@ export function asDecision(error: unknown, controlPlaneUrl?: string): HostConnec
 
 export type RedeemOutcome = { state: HostState; resumed: boolean }
 
+export type HostInvitation = { controlPlaneUrl: string; invitationId: string; secret: string }
+
+/** The invitation in a token file, with the control plane that minted it in canonical form. */
+export async function readInvitation(fs: HostStateStore["fs"], tokenFile: string): Promise<HostInvitation> {
+  const tokenText = await fs.readFile(tokenFile)
+  if (tokenText === null) {
+    throw new HostConnectDecisionError(`invitation token file not found: ${tokenFile}`, {})
+  }
+  const token = decodeInvitationToken(tokenText.trim())
+  if (!token)
+    throw new Error("invitation token is not of the form chx_inv_2.<control plane>.<invitation_id>.<secret> with base64url parts")
+  try {
+    return { ...token, controlPlaneUrl: canonicalControlPlaneUrl(token.controlPlaneUrl) }
+  } catch (error) {
+    if (!(error instanceof ControlPlaneUrlError)) throw error
+    throw new HostConnectDecisionError(`${error.message}; the invitation names it, so mint one on an https:// control plane`, { cause: error })
+  }
+}
+
 export async function redeemInvitation(input: {
   tokenFile: string
+  invitation: HostInvitation
   store: HostStateStore
   /** Key, `control_plane_url`, roots and storage root; no enrollment yet. */
   state: HostState
@@ -107,9 +127,9 @@ export async function redeemInvitation(input: {
       {},
     )
   }
-  // Before the token is even read: the pending marker below is the first thing
-  // that reaches disk, and a state file naming an endpoint this machine may
-  // not talk to is a redeem the next boot would resume against it.
+  // Before anything reaches disk: the pending marker below is the first write,
+  // and a state file naming an endpoint this machine may not talk to is a
+  // redeem the next boot would resume against it.
   let controlPlaneUrl: string
   try {
     controlPlaneUrl = canonicalControlPlaneUrl(input.state.control_plane_url)
@@ -119,13 +139,7 @@ export async function redeemInvitation(input: {
       cause: error,
     })
   }
-  const tokenText = await input.store.fs.readFile(input.tokenFile)
-  if (tokenText === null) {
-    throw new HostConnectDecisionError(`invitation token file not found: ${input.tokenFile}`, {})
-  }
-  const token = decodeInvitationToken(tokenText.trim())
-  if (!token)
-    throw new Error("invitation token is not of the form chx_inv_1.<invitation_id>.<secret> with base64url parts")
+  const token = input.invitation
   if (input.state.bootstrap && input.state.bootstrap.invitation_id !== token.invitationId) {
     // "resume" applies only to the invitation that created the enrollment;
     // a different invitation while the first is unresolved would enroll the

@@ -435,7 +435,10 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
         }
       : {}),
   }))
-  app.route("/api/claxedo/host/invitations", HostInvitationRoutes(services, workspaceOptions))
+  app.route("/api/claxedo/host/invitations", HostInvitationRoutes(services, {
+    ...workspaceOptions,
+    controlPlaneOrigin: options.authentication.descriptor.native.cli.controlPlaneOrigin,
+  }))
   app.route("/api/claxedo/remote-access", RemoteAccessOwnerRoutes({
     deviceLoginConfigured: true,
     relayConfigured: !!services.relay.provider,

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest"
+import { invitationToken } from "@claxedo/account-contract/machine"
 
-import { HostConnectDecisionError, redeemInvitation } from "./bootstrap"
+import { HostConnectDecisionError, readInvitation, redeemInvitation } from "./bootstrap"
 import { createFakeControlPlane, memoryHostStateFs } from "./fake-control-plane.test-support"
 import { createHostKeyPair, hostKeyPairFromJwk, newHostId } from "./host-identity"
 import { createHostStateStore, newHostState, parseHostState } from "./host-state"
@@ -31,8 +32,11 @@ async function freshHost(cp = createFakeControlPlane(), input: { hostId?: string
   })
   const invitation = await cp.createInvitation({ scope: { revision: 1, allowed_roots: ["/srv"] } })
   memory.files.set(TOKEN_FILE, { text: invitation.token + "\n", mode: 0o600 })
-  const redeem = (overrides: Partial<Parameters<typeof redeemInvitation>[0]> = {}) =>
-    redeemInvitation({ tokenFile: TOKEN_FILE, store, state, keys, fetch: cp.fetch, displayName: "build box", ...overrides })
+  const redeem = async (overrides: Partial<Parameters<typeof redeemInvitation>[0]> = {}) => {
+    const tokenFile = overrides.tokenFile ?? TOKEN_FILE
+    const read = overrides.invitation ?? await readInvitation(memory.fs, tokenFile)
+    return redeemInvitation({ store, state, keys, fetch: cp.fetch, displayName: "build box", ...overrides, tokenFile, invitation: read })
+  }
   const stored = () => {
     const text = memory.files.get(STATE_FILE)?.text
     return text === undefined ? undefined : parseHostState(text)
@@ -146,7 +150,7 @@ describe("recovery", () => {
 describe("decisions", () => {
   test("a wrong secret is invitation_invalid and says nothing else", async () => {
     const h = await freshHost()
-    h.memory.files.set(TOKEN_FILE, { text: `chx_inv_1.${h.invitation.invitationId}.wrongsecret`, mode: 0o600 })
+    h.memory.files.set(TOKEN_FILE, { text: invitationToken({ controlPlaneUrl: h.cp.url, invitationId: h.invitation.invitationId, secret: "wrongsecret" }), mode: 0o600 })
 
     const error = await h.redeem().catch((e: unknown) => e)
 
@@ -184,7 +188,7 @@ describe("decisions", () => {
     const h = await freshHost()
     h.memory.files.set(TOKEN_FILE, { text: "chx_inv_0.a.b", mode: 0o600 })
 
-    await expect(h.redeem()).rejects.toThrow(/chx_inv_1/)
+    await expect(h.redeem()).rejects.toThrow(/chx_inv_2/)
     expect(h.cp.log).toEqual([])
   })
 
@@ -199,10 +203,11 @@ describe("decisions", () => {
 
   test("an already enrolled state refuses to redeem", async () => {
     const h = await freshHost()
+    const invitation = await readInvitation(h.memory.fs, TOKEN_FILE)
     const { state } = await h.redeem()
     const requests = h.cp.log.length
 
-    const error = await h.redeem({ state }).catch((e: unknown) => e)
+    const error = await h.redeem({ state, invitation }).catch((e: unknown) => e)
 
     expect(error).toMatchObject({ exitCode: 78 })
     expect(String(error)).toContain("already enrolled")

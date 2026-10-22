@@ -43,7 +43,7 @@ import {
 } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority, type WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { MachinePrincipal } from "@claxedo/server-core/platform/auth/host-connect-contract"
-import { machineSealAad } from "@claxedo/account-contract/machine"
+import { invitationToken, machineSealAad } from "@claxedo/account-contract/machine"
 import { sealForMachine } from "@claxedo/account-contract/machine-seal"
 import type { HostTunnelTokenSignerInput } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { serializeHostProviderConfig } from "@claxedo/server-core/credentials/host-provider-config"
@@ -664,7 +664,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
  * `/api/claxedo/host/invitations`. Creating one mints the secret this
  * response is the only place to read; the store keeps its hash.
  */
-export function HostInvitationRoutes(services: ControlPlaneServices, options: HostEnrollmentRouteOptions) {
+export function HostInvitationRoutes(services: ControlPlaneServices, options: HostEnrollmentRouteOptions & { controlPlaneOrigin: string }) {
   const app = new Hono()
   const createRateLimiter =
     options.enrollmentRequestRateLimiter ??
@@ -724,7 +724,8 @@ export function HostInvitationRoutes(services: ControlPlaneServices, options: Ho
           action: "host_invitation.created",
           metadata: { invitationId: created.invitationId, expiresAt: created.expiresAt },
         })
-        return { invitation_id: created.invitationId, token: created.token, expires_at: created.expiresAt }
+        const token = invitationToken({ controlPlaneUrl: options.controlPlaneOrigin, invitationId: created.invitationId, secret: created.secret })
+        return { invitation_id: created.invitationId, token, expires_at: created.expiresAt }
       }, "POST", {
         limiter: createRateLimiter,
         key: "host.invitations.create",

@@ -34,21 +34,27 @@ test("machine signing strings preserve their domains and field order", () => {
   )
 })
 
-test("invitation encoding is exact and decoding refuses malformed parts", () => {
-  expect(invitationToken({ invitationId: "inv_AbC-_1", secret: "s3cr3t-_x" })).toBe("chx_inv_1.inv_AbC-_1.s3cr3t-_x")
-  expect(decodeInvitationToken("chx_inv_1.inv_AbC-_1.s3cr3t-_x")).toEqual({
+test("an invitation carries the control plane that minted it, and decoding refuses malformed parts", () => {
+  const plane = "https://app.claxedo.dev"
+  const encoded = Buffer.from(plane).toString("base64url")
+  expect(invitationToken({ controlPlaneUrl: plane, invitationId: "inv_AbC-_1", secret: "s3cr3t-_x" })).toBe(`chx_inv_2.${encoded}.inv_AbC-_1.s3cr3t-_x`)
+  expect(decodeInvitationToken(`chx_inv_2.${encoded}.inv_AbC-_1.s3cr3t-_x`)).toEqual({
+    controlPlaneUrl: plane,
     invitationId: "inv_AbC-_1",
     secret: "s3cr3t-_x",
   })
+  const notUrl = Buffer.from("app.claxedo.dev").toString("base64url")
+  const ftp = Buffer.from("ftp://app.claxedo.dev").toString("base64url")
   for (const raw of [
-    "chx_inv_2.a.b",
-    "chx_inv_1.a",
-    "chx_inv_1.a.b.c",
-    "chx_inv_1..b",
-    "chx_inv_1.a.b=",
-    " chx_inv_1.a.b",
-    "chx_inv_1.a.",
-    "chx_inv_1.a b.c",
+    "chx_inv_1.inv_AbC-_1.s3cr3t-_x",
+    `chx_inv_2.${encoded}.a`,
+    `chx_inv_2.${encoded}.a.b.c`,
+    `chx_inv_2.${encoded}..b`,
+    `chx_inv_2.${encoded}.a.b=`,
+    ` chx_inv_2.${encoded}.a.b`,
+    `chx_inv_2.${notUrl}.a.b`,
+    `chx_inv_2.${ftp}.a.b`,
+    "chx_inv_2..a.b",
     "",
   ])
     expect(decodeInvitationToken(raw)).toBeUndefined()

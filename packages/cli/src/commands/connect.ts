@@ -2,9 +2,9 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import { CLAXEDO_DAEMON_PROTOCOL } from "@claxedo/helpers/claxedo-daemon"
 import { machineDisplayName } from "@claxedo/helpers/machine-name"
-import { DECISION_EXIT_CODE, HostConnectDecisionError, redeemInvitation } from "@claxedo/host-connector/bootstrap"
+import { DECISION_EXIT_CODE, HostConnectDecisionError, readInvitation, redeemInvitation } from "@claxedo/host-connector/bootstrap"
 import { createHostKeyPair, hostKeyPairFromJwk, newHostId } from "@claxedo/host-connector/host-identity"
-import { canonicalControlPlaneUrl, ControlPlaneUrlError, HostEndpointUrlError, newHostState, type HostState, type HostStateStore } from "@claxedo/host-connector/host-state"
+import { ControlPlaneUrlError, HostEndpointUrlError, newHostState, type HostState, type HostStateStore } from "@claxedo/host-connector/host-state"
 import { REDEEM_REQUEST_TIMEOUT_MS } from "@claxedo/host-connector/machine-transport"
 import { CLAXEDO_MIGRATION_JOURNAL, configureClaxedoSchema } from "@claxedo/server-core/platform/db/index"
 import { config } from "../config"
@@ -147,30 +147,22 @@ async function resetRoots(deps: ConnectDeps, log: (line: string) => void) {
   return 0
 }
 
-function controlPlaneUrlOf(deps: ConnectDeps): string {
-  try {
-    return canonicalControlPlaneUrl(deps.controlPlaneUrl)
-  } catch (error) {
-    if (!(error instanceof ControlPlaneUrlError)) throw error
-    throw new HostConnectDecisionError(`${errorMessage(error)}; set CLAXEDO_CONTROL_PLANE_URL to an https:// origin`, { cause: error })
-  }
-}
-
 async function enroll(deps: ConnectDeps, args: ConnectArgs, existing: HostState | undefined, log: (line: string) => void) {
   const tokenFile = args.tokenFile ?? existing?.bootstrap?.token_file
   if (!tokenFile) {
     log(mintHint(deps.controlPlaneUrl))
     return undefined
   }
+  const invitation = await readInvitation(deps.store.fs, tokenFile)
   let state = existing
   let keys
   if (state) {
-    // The state's URL is the one the pending redeem resumes against, whatever
-    // the environment says now; a person who pointed the first attempt at the
-    // wrong control plane would otherwise retry it there without a word.
-    if (controlPlaneUrlOf(deps) !== state.control_plane_url) {
+    // The state's URL is the one the pending redeem resumes against; a state
+    // recorded against another control plane would send this invitation's
+    // secret where it cannot be redeemed.
+    if (invitation.controlPlaneUrl !== state.control_plane_url) {
       throw new HostConnectDecisionError(
-        `a redeem against ${state.control_plane_url} is still pending; run \`claxedo connect --reset\` to enroll against ${deps.controlPlaneUrl} instead`,
+        `a redeem against ${state.control_plane_url} is still pending; run \`claxedo connect --reset\` to enroll against ${invitation.controlPlaneUrl} instead`,
         {},
       )
     }
@@ -178,25 +170,19 @@ async function enroll(deps: ConnectDeps, args: ConnectArgs, existing: HostState 
   } else {
     const created = await createHostKeyPair()
     keys = created
-    try {
-      state = newHostState({
-        hostId: newHostId(),
-        privateKeyJwk: created.privateKeyJwk,
-        controlPlaneUrl: deps.controlPlaneUrl,
-        cliRoots: args.roots,
-        storageRoot: deps.paths.storageRoot,
-      })
-    } catch (error) {
-      if (!(error instanceof ControlPlaneUrlError)) throw error
-      // Exit 78, not 1: a service manager restarting into this would redeem
-      // nothing until CLAXEDO_CONTROL_PLANE_URL is changed.
-      throw new HostConnectDecisionError(`${errorMessage(error)}; set CLAXEDO_CONTROL_PLANE_URL to an https:// origin`, { cause: error })
-    }
+    state = newHostState({
+      hostId: newHostId(),
+      privateKeyJwk: created.privateKeyJwk,
+      controlPlaneUrl: invitation.controlPlaneUrl,
+      cliRoots: args.roots,
+      storageRoot: deps.paths.storageRoot,
+    })
   }
   const pending = state
   const outcome = await withBootstrapRetry(deps.host, "redeem", ({ timeoutMs }) =>
     redeemInvitation({
       tokenFile,
+      invitation,
       store: deps.store,
       state: pending,
       keys,

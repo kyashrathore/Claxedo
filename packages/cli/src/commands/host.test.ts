@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { redeemInvitation } from "@claxedo/host-connector/bootstrap"
+import { readInvitation, redeemInvitation } from "@claxedo/host-connector/bootstrap"
 import { createHostKeyPair, hostKeyPairFromJwk, newHostId } from "@claxedo/host-connector/host-identity"
 import { createMachineSealingKeyPair, openMachineSeal } from "@claxedo/host-connector/machine-seal"
 import { machineSealAad } from "@claxedo/account-contract/machine"
@@ -47,9 +47,11 @@ async function enrolledMachine(cp: FakeControlPlane, name: string, roots = ["/sr
     cliRoots: [],
     storageRoot: path.join(home, "ws"),
   })
+  const store = connectStateStore(home)
   const outcome = await redeemInvitation({
     tokenFile,
-    store: connectStateStore(home),
+    invitation: await readInvitation(store.fs, tokenFile),
+    store,
     state,
     keys,
     fetch: cp.fetch,
@@ -115,7 +117,7 @@ describe("claxedo host", () => {
       scope: { allowed_roots: ["/srv", "/opt/repos"] },
       expiresInMs: 30 * 60_000,
     })
-    const token = lines.find((line) => line.startsWith("chx_inv_1."))
+    const token = lines.find((line) => line.startsWith("chx_inv_2."))
     expect(token).toBeDefined()
     expect(lines.filter((line) => line.includes(token!))).toHaveLength(1)
     expect(lines).toContain("Invitation for build-box (roots: /srv, /opt/repos)")
