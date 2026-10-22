@@ -182,11 +182,11 @@ const ENTRIES = [
   // (`authority/adapters/d1/host-scope-rules.ts`); the contract package was
   // already in the Worker.
   // Every entry holds a machine's doorbell: the machine-signed event stream
-  // (`routes/hosted/host-events.ts`) bridged into the owner's live-sync room
+  // (`workspace/host-events.ts`) bridged into the owner's live-sync room
   // as a machine subscriber (`hosted-workerd/live-sync-subscriber.ts`, the
   // subscriber identity split out of the room), the machine caller's
   // admission the stream shares with the heartbeat
-  // (`routes/hosted/machine-caller.ts`), the ring the host routes publish
+  // (`platform/auth/machine-caller.ts`), the ring the host routes publish
   // (`workspace/host-changed-notice.ts`), and the attestation encodings split
   // out of the D1 host authority (`authority/adapters/d1/host-attestation-codec.ts`).
   { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 186, packages: 23 },

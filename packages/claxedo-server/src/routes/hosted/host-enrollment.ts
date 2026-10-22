@@ -53,8 +53,8 @@ import { providerProjectionRecord } from "@claxedo/agent-runtime-contract"
 import type { ControlPlaneServices } from "../../authority/services"
 import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import type { LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
-import { machineEventsHandler } from "./host-events"
-import { admitMachineCaller, budgetExceeded, clientBudget } from "./machine-caller"
+import { admitMachineCaller, budgetExceeded, clientBudget } from "../../platform/auth/machine-caller"
+import { machineEventsHandler } from "../../workspace/host-events"
 import { contentfulStatus } from "../../platform/http/status"
 import { controlPlaneRateLimitError } from "../../workspace/runtime-token-guards"
 import {
@@ -240,7 +240,7 @@ export type HostEnrollmentRouteOptions = WorkspaceRouteOptions & {
   now?: () => number
   /** The owner's Pi accounts as secrets, sealed beside their pushed rows; absent where the plane stores no accounts. */
   ownerPiDirectRows?: (auth: SignedControlPlaneAuth) => Promise<Record<string, ProviderDirect>>
-  /** Where a machine's doorbell stream is held (`./host-events`); absent, the stream route answers 503. */
+  /** Where a machine's doorbell stream is held (`workspace/host-events.ts`); absent, the stream route answers 503. */
   liveSyncRoom?: LiveSyncRoomNamespace
   /** The doorbell stream's heartbeat cadence (tests shrink it). */
   eventsHeartbeatMs?: number

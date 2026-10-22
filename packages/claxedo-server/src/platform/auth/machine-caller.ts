@@ -3,8 +3,8 @@ import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { MachinePrincipal } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { verifyMachineRequest } from "@claxedo/server-core/platform/auth/machine-auth"
 import type { ControlPlaneServices } from "../../authority/services"
-import type { ConnectionRateLimiter } from "../../platform/auth/rate-limit"
-import { requestClientKey } from "../../platform/auth/request-guard"
+import type { ConnectionRateLimiter } from "./rate-limit"
+import { requestClientKey } from "./request-guard"
 
 export type MachineCallerBudgets = {
   /** Spent per client address before any body is parsed or any row is read. */

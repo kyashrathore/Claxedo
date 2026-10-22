@@ -286,11 +286,11 @@ export const serverWorkerd: Policy = {
   // (`authority/adapters/d1/host-scope-rules.ts`). It adds no package edge:
   // `@claxedo/account-contract` was already in the Worker.
   // +5 modules (owner: the host routes and the live-sync room), the machine's
-  // doorbell: a machine-signed event stream (`routes/hosted/host-events.ts`)
+  // doorbell: a machine-signed event stream (`workspace/host-events.ts`)
   // bridged into the owner's room as a machine subscriber
   // (`deployments/hosted-workerd/live-sync-subscriber.ts`, the subscriber
   // identity split out of the room), the machine caller's admission shared by
-  // it and the heartbeat (`routes/hosted/machine-caller.ts`), the ring the
+  // it and the heartbeat (`platform/auth/machine-caller.ts`), the ring the
   // host routes publish (`workspace/host-changed-notice.ts`), and the
   // attestation encodings split out of the D1 host authority
   // (`authority/adapters/d1/host-attestation-codec.ts`). It adds no package

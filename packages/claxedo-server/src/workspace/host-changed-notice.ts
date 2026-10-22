@@ -3,7 +3,7 @@ import type { HostChangedInput } from "./route-support"
 
 /**
  * Rings one of the owner's machines through the owner's live-sync room, where
- * the machine holds its doorbell stream (`routes/hosted/host-events.ts`). A
+ * the machine holds its doorbell stream (`workspace/host-events.ts`). A
  * ring that fails is logged, not surfaced: the change is already recorded and
  * the machine's heartbeat interval still delivers it.
  */
