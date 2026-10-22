@@ -36,6 +36,8 @@ outputs:
     value: ${{ steps.detect.outputs.sandbox_image }}
   app_checks:
     value: ${{ steps.detect.outputs.app_checks }}
+  runtime_skew:
+    value: ${{ steps.detect.outputs.runtime_skew }}
   reason:
     value: ${{ steps.detect.outputs.reason }}
 

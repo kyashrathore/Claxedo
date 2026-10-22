@@ -5,6 +5,7 @@ export {
   assertSandboxImageReference,
   defaultSandboxImage,
 } from "./image-name"
+export { SERVED_WORKSPACE_RUNTIME_FLOOR } from "./runtime-version"
 import { defaultSandboxImage, sandboxImageRepository } from "./image-name"
 
 export const SANDBOX_IMAGE_REPOSITORY = sandboxImageRepository()

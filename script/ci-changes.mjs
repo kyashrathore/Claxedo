@@ -91,6 +91,18 @@ const SANDBOX_IMAGE_PREFIXES = [
 ]
 const SANDBOX_IMAGE_WORKFLOWS = [".github/workflows/deploy-cloudflare-sandbox-worker.yml"]
 
+// The version-skew suite runs the current control plane and relay against the
+// oldest runtime image they serve, so it runs for every change on either side
+// of the wire between them: a control-plane or relay change is exactly the one
+// that can break a runtime already in the field.
+const RUNTIME_SKEW_PREFIXES = [
+  ...SERVER_DEPENDENCY_PREFIXES,
+  "packages/account-contract/",
+  "packages/egress-broker/",
+  "packages/session-core/",
+  "packages/session-host/",
+]
+
 // The app's rule checks (packages/claxedo-app/scripts/checks) read the app and,
 // for slot hooks and kit imports, the kit's source.
 const APP_CHECKS_PREFIXES = ["packages/claxedo-app/", "packages/ui/"]
@@ -165,6 +177,7 @@ function resultFor(files, forceFull, reason) {
     boundary_server: boundaryServer,
     sandbox_image: full || codeFiles.some(isSandboxImageRelevant),
     app_checks: full || codeFiles.some((file) => startsWithAny(file, APP_CHECKS_PREFIXES)),
+    runtime_skew: full || codeFiles.some((file) => startsWithAny(file, RUNTIME_SKEW_PREFIXES)),
     reason,
     files,
   }
@@ -202,6 +215,7 @@ function writeGitHubOutputs(result, outputFile) {
     "boundary_server",
     "sandbox_image",
     "app_checks",
+    "runtime_skew",
   ]
   const lines = scalarKeys.map((key) => `${key}=${result[key]}`)
   // Keep the matrix structurally valid even when the job-level `if` skips the
