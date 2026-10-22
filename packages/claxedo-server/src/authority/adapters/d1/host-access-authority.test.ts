@@ -1930,9 +1930,11 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
       workspaceId: "ws_win",
       hostId: "laptop-n",
       orgId: "org_acme",
-      remoteDirectory: "c:/Users/dev/app/",
+      remoteDirectory: "C:\\Users\\dev\\app\\",
     })
     expect(await directory("ws_win"), "a Windows directory is normalized by the same contract").toBe("C:\\Users\\dev\\app")
+    await input.hostAccess.assignWorkspaceHost(owner, { workspaceId: "ws_win", hostId: "laptop-n", remoteDirectory: "c:/Users/dev/app/" })
+    expect(await directory("ws_win"), "forward slashes and a lower-case drive name the same folder").toBe("C:\\Users\\dev\\app")
   })
 
   test("hostEnrollmentByHost answers the caller's live machine by host id and nothing for a revoked, foreign or unknown one", async () => {
