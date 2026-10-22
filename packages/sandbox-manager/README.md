@@ -160,9 +160,11 @@ with that image's label, so the workspace reads as outdated, instead of waiting
 runs only when a start asks for it with `updateImage` (a person's Restart to
 update): the new image is pulled and seeded as above, its stub replaces the
 old one, and the old image's trees are removed. That step is a start of its
-own on the serving lease's epoch, whose phases are timed from the update, and
-a start asking for the update of a workspace already serving the deployment's
-image answers it as it is. A cold start, and a wake whose older runtime is
+own on the serving lease's epoch, whose phases are timed from the update. An
+update whose step fails leaves the lease serving its image and answers the
+start with the driver's reason, which the manager logs, and a start asking for
+the update of a workspace already serving the deployment's image answers it as
+it is. A cold start, and a wake whose older runtime is
 below the floor, takes the new image at once. On staging (2026-10-22, 0.10.1
 to 0.10.2) the wake that kept the image answered in 22 s and the update's step
 ran 92.7 s.
