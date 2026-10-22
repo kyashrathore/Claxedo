@@ -12,7 +12,8 @@ beforeAll(async () => {
   const bundled = await build({
     stdin: {
       contents: `
-        import { LiveSyncRoom, connectLiveSyncRoom, nudgeLiveSyncRoom } from ${JSON.stringify(fileURLToPath(new URL("./live-sync-room.cf.ts", import.meta.url)))}
+        import { LiveSyncRoom, connectLiveSyncRoom } from ${JSON.stringify(fileURLToPath(new URL("./live-sync-room.cf.ts", import.meta.url)))}
+        import { nudgeLiveSyncRoom } from ${JSON.stringify(fileURLToPath(new URL("../../platform/http/live-sync-publish.ts", import.meta.url)))}
         export { LiveSyncRoom }
         // Subjects are parameterised, the org is the room key. Two subjects in
         // ONE org share a room and therefore ONE retention ring — the
@@ -34,13 +35,13 @@ beforeAll(async () => {
           fetch(request, env) {
             const url = new URL(request.url)
             const org = url.searchParams.get("org") ?? "acme"
-            if (url.pathname === "/abnormal-close") {
+            if (url.pathname === "/peer-close") {
               const pair = new WebSocketPair()
               pair[0].accept()
               pair[1].accept()
               try {
-                new LiveSyncRoom({}, {}).webSocketClose(pair[1], 1006, "")
-                return new Response(null, { status: 204 })
+                new LiveSyncRoom({}, {}).webSocketClose(pair[1], Number(url.searchParams.get("code")), "")
+                return new Response(String(pair[1].readyState), { status: 200 })
               } catch (error) {
                 return new Response(error.message, { status: 500 })
               } finally {
@@ -168,9 +169,12 @@ function room(org: string) {
 }
 
 describe("LiveSyncRoom workerd integration", () => {
-  test("an abnormal close is not echoed with its reserved 1006 code, which workerd refuses", async () => {
-    const response = await miniflare.dispatchFetch("https://live-sync.test/abnormal-close")
-    expect(response.status, await response.text()).toBe(204)
+  test("a peer's close without a sendable code is closed back, never echoed with the reserved code workerd refuses", async () => {
+    for (const code of [1005, 1006]) {
+      const response = await miniflare.dispatchFetch(`https://live-sync.test/peer-close?code=${code}`)
+      expect(response.status, `${code}: ${await response.clone().text()}`).toBe(200)
+      expect(await response.text(), `${code}: readyState once the close is sent back (CLOSING)`).toBe("2")
+    }
   })
 
   test("bridges a real hibernatable Durable Object socket to SSE and fans a nudge", async () => {

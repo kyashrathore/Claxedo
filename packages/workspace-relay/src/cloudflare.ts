@@ -11,6 +11,7 @@ import {
 } from "./auth"
 import { bearerToken, errorBody, hostIdFromTunnelPath, workspaceIdsFromSearch } from "./http"
 import {
+  closeCode,
   closeReason,
   makeTunnelPong,
   TUNNEL_PROTOCOL_VERSION,
@@ -561,12 +562,6 @@ async function readRequestBodyCapped(request: Request, maxBytes: number) {
     chunks.push(value)
   }
   return concatBytes(chunks)
-}
-
-function safeCloseCode(code: number | undefined, fallback = 1011) {
-  if (code === undefined) return fallback
-  if (code >= 1000 && code <= 4999 && ![1004, 1005, 1006].includes(code)) return code
-  return fallback
 }
 
 export function workspaceRelayDurableObjectRoomName(workspaceId: string) {
@@ -1613,7 +1608,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       if (!channel) return
       tunnel.channels.delete(message.channel_id)
       clients.delete(channel)
-      closeSocket(channel.socket, safeCloseCode(message.code), message.reason ?? "")
+      closeSocket(channel.socket, closeCode(message.code), message.reason ?? "")
       return
     }
     if (parsed.message.type === "error" && parsed.message.channel_id) {
@@ -1662,7 +1657,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
         type: "ws.close",
         protocol: TUNNEL_PROTOCOL_VERSION,
         channel_id: channelId,
-        code: safeCloseCode(event?.code, 1000),
+        code: closeCode(event?.code, 1000),
         reason: event?.reason ?? "Client WebSocket closed",
       }))
       return
@@ -1799,14 +1794,14 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       closed = true
       if (activeTokenTimer) clearInterval(activeTokenTimer)
       clients.delete(client)
-      closeSocket(upstream, safeCloseCode(event?.code, 1000), event?.reason ?? "Client WebSocket closed")
+      closeSocket(upstream, closeCode(event?.code, 1000), event?.reason ?? "Client WebSocket closed")
     }
     const cleanupUpstream = (event?: WorkspaceRelayDurableObjectSocketEvent) => {
       if (closed) return
       closed = true
       if (activeTokenTimer) clearInterval(activeTokenTimer)
       clients.delete(client)
-      closeSocket(pair.server, safeCloseCode(event?.code), event?.reason ?? "")
+      closeSocket(pair.server, closeCode(event?.code), event?.reason ?? "")
     }
     const flushQueue = () => {
       upstreamOpen = true
@@ -2121,7 +2116,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       // (workerd 1.20260730.1 at 2026-07-30). Unanswered, the peer waits out
       // its own close timeout: 30 s in Node's `ws`, which held `claxedo
       // connect` open after SIGTERM. relay-workerd-close.test.ts proves it.
-      closeSocket(socket, safeCloseCode(code, 1000), reason)
+      closeSocket(socket, closeCode(code, 1000), reason)
       const attachment = socketAttachment(socket)
       if (!attachment) return
       if (attachment.kind === "host-tunnel") {

@@ -4,14 +4,12 @@ import {
   LiveSyncRoom,
   connectLiveSyncRoom,
   liveSyncRoomName,
-  liveSyncRoomNameForPrincipal,
-  nudgeLiveSyncRoom,
   roomPrincipalFromHeaders,
-  type LiveSyncRoomNamespace,
   type LiveSyncRoomState,
   type LiveSyncSocket,
   type LiveSyncSubscriber,
 } from "./live-sync-room.cf"
+import { liveSyncRoomNameForPrincipal, nudgeLiveSyncRoom, type LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
 import type { ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import type { D1Database } from "@cloudflare/workers-types"
 import { inD1Scope, requestSessionD1 } from "../../platform/db/d1-sessions"

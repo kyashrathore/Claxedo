@@ -13,6 +13,17 @@ export const SESSION_TURN_LEASE_TTL_MS = 60_000
  */
 export const CURRENT_CHANNEL_IDENTITY_VERSION = 1
 
+/**
+ * A close code a server may send: 1000–4999 except 1004, 1005 and 1006, which
+ * only ever describe a close and which workerd's `close()` refuses; anything
+ * else becomes `fallback`.
+ */
+export function closeCode(code: number | undefined, fallback = 1011) {
+  if (code === undefined) return fallback
+  if (code >= 1000 && code <= 4999 && ![1004, 1005, 1006].includes(code)) return code
+  return fallback
+}
+
 const CLOSE_REASON_MAX_BYTES = 123
 
 /**

@@ -44,6 +44,7 @@
  */
 
 import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-runtime-contract"
+import { closeCode, closeReason } from "@claxedo/workspace-relay-protocol"
 import { createSseReplayBuffer } from "@claxedo/helpers/sse"
 import { eventVisibleTo, type EventScopePrincipal } from "@claxedo/server-core/platform/http/event-visibility"
 import { isRetainedControlPlaneEvent, supersededControlPlaneEventKey } from "@claxedo/server-core/platform/http/event-retention"
@@ -52,6 +53,7 @@ import { liveSyncRoomNameForPrincipal, type LiveSyncRoomNamespace } from "../../
 import { liveSyncEvents } from "./live-sync-admission"
 import { cursorAhead, replayGapEvent, type LiveSyncStreamGapEvent } from "./live-sync-replay-gap"
 import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
+import { asRecord } from "@claxedo/server-core/platform/json/index"
 
 /**
  * Held connections one room admits, across both hold mechanisms.
@@ -686,7 +688,7 @@ export class LiveSyncRoom {
 
   webSocketClose(socket: LiveSyncSocket, code: number, reason: string) {
     const principal = socket.deserializeAttachment?.()?.principal
-    if (code !== 1006) socket.close(code, reason)
+    socket.close(closeCode(code, 1000), closeReason(reason))
     if (principal) this.releaseReplay(principal, socket)
   }
 
@@ -860,14 +862,3 @@ export function connectLiveSyncRoom(
       return new Response(body, { headers: SSE_HEADERS })
     })
 }
-
-// The publisher-side helpers live in platform/ so hosts and domains can ring
-// the doorbell without importing a deployment. Re-exported here because this
-// module is where the room itself is defined.
-export {
-  liveSyncRoomNameForPrincipal,
-  nudgeLiveSyncRoom,
-  type LiveSyncRoomNamespace,
-  type LiveSyncRoomStub,
-} from "../../platform/http/live-sync-publish"
-import { asRecord } from "@claxedo/server-core/platform/json/index"

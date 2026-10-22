@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   SESSION_HOST_PREFIX,
+  closeCode,
   closeReason,
   TUNNEL_PROTOCOL_VERSION,
   sessionHostId,
@@ -308,5 +309,15 @@ describe("closeReason", () => {
     expect(closeReason(accented)).toBe("é".repeat(61))
     expect(closeReason(`${"x".repeat(121)}😀`)).toBe("x".repeat(121))
     expect(closeReason(undefined)).toBe("")
+  })
+})
+
+describe("closeCode", () => {
+  test("passes a sendable code and maps the codes that only describe a close to the fallback", () => {
+    expect(closeCode(1000)).toBe(1000)
+    expect(closeCode(1008)).toBe(1008)
+    expect(closeCode(4001)).toBe(4001)
+    for (const code of [1004, 1005, 1006, 999, 5000]) expect(closeCode(code, 1000)).toBe(1000)
+    expect(closeCode(undefined)).toBe(1011)
   })
 })
