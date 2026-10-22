@@ -232,14 +232,37 @@ describe("claxedo host", () => {
     )
   })
 
+  test("a POSIX machine's roots, directories and refusals read exactly as they did before Windows paths were admitted", async () => {
+    const machine = await enrolledMachine(cp, "build-box", ["/srv/app"])
+    const { deps, lines } = owner(cp)
+    await host(["invite", "--name", "vps", "--root", "/srv/app/", "--root", "/srv/./tmp/../other"], deps)
+    const minted = cp.log.find((entry) => entry.method === "POST" && entry.path === "/api/claxedo/host/invitations")
+    expect(minted?.body).toMatchObject({ scope: { allowed_roots: ["/srv/app", "/srv/other"] } })
+    expect(lines).toContain("  claxedo connect --token-file <file> --root /srv/app --root /srv/other --install-service")
+    await expect(host(["invite", "--name", "x", "--root", "srv"], deps)).rejects.toThrow("--root must be an absolute path: srv")
+    await expect(host(["invite", "--name", "x", "--root", "~/srv"], deps)).rejects.toThrow("--root must be an absolute path: ~/srv")
+
+    await host(["assign", "--machine", "build-box", "/srv/app/api/"], deps)
+    const assigned = cp.log.filter((entry) => entry.method === "POST" && entry.path.endsWith("/host-assignment"))
+    expect(assigned.at(-1)?.body).toEqual({ hostId: machine.hostId, displayName: "api", repoName: "api", remoteDirectory: "/srv/app/api" })
+    await expect(host(["assign", "--machine", "build-box", "srv/app"], deps)).rejects.toThrow(
+      "the directory must be an absolute path on the machine: srv/app",
+    )
+    await expect(host(["assign", "--machine", "build-box", "/srv/APP/api"], deps), "POSIX stays case-sensitive").rejects.toThrow(
+      "host_assignment_outside_scope",
+    )
+    await expect(host(["assign", "--machine", "build-box", "/srv/appx"], deps)).rejects.toThrow("host_assignment_outside_scope")
+    await expect(host(["assign", "--machine", "build-box", "C:\\srv\\app"], deps)).rejects.toThrow("host_assignment_outside_scope")
+  })
+
   test("a Windows machine is invited with C:\\ or C:/ roots and assigned a folder in either spelling; its folder names keep their own case", async () => {
     const { deps, lines } = owner(cp)
     await host(["invite", "--name", "win-box", "--root", "C:\\work", "--root", "D:/repos/", "--root", "\\\\nas\\share\\code"], deps)
     const minted = cp.log.find((entry) => entry.method === "POST" && entry.path === "/api/claxedo/host/invitations")
     expect(minted?.body).toMatchObject({ scope: { allowed_roots: ["C:\\work", "D:\\repos", "\\\\nas\\share\\code"] } })
     expect(lines).toContain("  claxedo connect --token-file <file> --root C:\\work --root D:\\repos --root \\\\nas\\share\\code --install-service")
-    await expect(host(["invite", "--name", "x", "--root", "C:work"], deps)).rejects.toThrow("absolute path on the machine")
-    await expect(host(["invite", "--name", "x", "--root", "\\work"], deps)).rejects.toThrow("absolute path on the machine")
+    await expect(host(["invite", "--name", "x", "--root", "C:work"], deps)).rejects.toThrow("--root must be an absolute path: C:work")
+    await expect(host(["invite", "--name", "x", "--root", "\\work"], deps)).rejects.toThrow("--root must be an absolute path: \\work")
 
     const machine = await enrolledMachine(cp, "win-box", ["C:\\work"])
     await host(["assign", "--machine", "win-box", "C:/work/Is/", "--name", "IS"], deps)
