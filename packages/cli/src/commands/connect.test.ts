@@ -960,7 +960,7 @@ describe("claxedo connect", () => {
       "schtasks.exe /Run /TN ClaxedoConnect",
     ])
     expect(written.get(script)).toContain(
-      `& 'C:\\Program Files\\nodejs\\node.exe' 'C:\\Users\\svc\\AppData\\Roaming\\npm\\node_modules\\@claxedo\\cli\\dist\\index.mjs' 'connect' '--foreground' *>> 'C:\\Users\\svc\\AppData\\Roaming\\Claxedo\\claxedo-connect.log'`,
+      `& 'C:\\Program Files\\nodejs\\node.exe' 'C:\\Users\\svc\\AppData\\Roaming\\npm\\node_modules\\@claxedo\\cli\\dist\\index.mjs' 'connect' '--foreground' 2>&1 | ForEach-Object { $_.ToString() } | Out-File -Append -Encoding utf8 'C:\\Users\\svc\\AppData\\Roaming\\Claxedo\\claxedo-connect.log'`,
     )
     expect(written.get(script)).toContain("$env:CLAXEDO_HOME = 'C:\\Users\\svc\\.claxedo'")
     expect(written.get(script)).toContain("if ($code -eq 78) { schtasks.exe /Change /TN ClaxedoConnect /Disable | Out-Null; exit 78 }")

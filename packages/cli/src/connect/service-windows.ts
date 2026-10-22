@@ -31,7 +31,9 @@ function powershellQuoted(value: string) {
  * would, and a control-plane decision (78) disables the task so it is not
  * beaten against until the operator enables it again. Windows delivers no
  * SIGTERM, so an ended task is killed where it stands and never drains; the
- * lease then lapses at the control plane.
+ * lease then lapses at the control plane. Windows PowerShell 5.1 wraps each
+ * line a native command writes to stderr in an error record, which `*>>`
+ * would print as a six-line block; `ToString()` keeps the line itself.
  */
 export function windowsWrapperScript(
   deps: Pick<ServiceDeps, "command" | "claxedoHome" | "homedir" | "env">,
@@ -43,7 +45,7 @@ export function windowsWrapperScript(
     `$ErrorActionPreference = 'Continue'`,
     ...(deps.claxedoHome ? [`$env:CLAXEDO_HOME = ${powershellQuoted(deps.claxedoHome)}`] : []),
     `while ($true) {`,
-    `  & ${connect.map(powershellQuoted).join(" ")} *>> ${powershellQuoted(log)}`,
+    `  & ${connect.map(powershellQuoted).join(" ")} 2>&1 | ForEach-Object { $_.ToString() } | Out-File -Append -Encoding utf8 ${powershellQuoted(log)}`,
     `  $code = $LASTEXITCODE`,
     `  if ($code -eq 78) { schtasks.exe /Change /TN ${WINDOWS_TASK} /Disable | Out-Null; exit 78 }`,
     `  if ($code -eq 0) { exit 0 }`,
