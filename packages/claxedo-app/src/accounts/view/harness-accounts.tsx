@@ -40,7 +40,7 @@ export function MachineScanStatus(props: { readonly accounts: Accounts }) {
   const t = useAccountsText()
   const label = useScannedLabel(props.accounts)
   return (
-    <p class="flex items-center gap-1.5 text-12-regular text-text-weak">
+    <p class="flex min-h-8 items-center gap-1.5 text-12-regular text-text-weak">
       <span>{label()}</span>
       <Show when={!props.accounts.scanning()}>
         <span aria-hidden="true">·</span>

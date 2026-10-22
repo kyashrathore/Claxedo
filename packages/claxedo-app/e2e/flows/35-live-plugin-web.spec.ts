@@ -13,6 +13,7 @@ import {
   registerLivePlugin,
   sessionRoute,
   test,
+  toggleSwitch,
   UI,
   writeFixturePlugin,
   writeLivePlugin,
@@ -133,9 +134,9 @@ test("35 a live plugin on the web asks again when its code changes, keeps its la
   await app.getByRole("button", { name: "Leave safe mode" }).click()
   await expect(appPluginRow(app, "Fixture")).toContainText("On")
 
-  await appPluginRow(app, "Fixture").getByRole("switch", { name: "Fixture on" }).click({ force: true })
+  await toggleSwitch(appPluginRow(app, "Fixture").getByRole("switch", { name: "Fixture on" }))
   await expect(appPluginRow(app, "Fixture")).toContainText("Off")
-  await appPluginRow(app, "Fixture").getByRole("switch", { name: "Fixture on" }).click({ force: true })
+  await toggleSwitch(appPluginRow(app, "Fixture").getByRole("switch", { name: "Fixture on" }))
   await expect(appPluginRow(app, "Fixture")).toContainText("On")
 
   await appPluginRow(app, "Fixture").getByRole("button", { name: "Remove" }).click()

@@ -56,6 +56,7 @@ export { type ScriptedModelRequest, type ScriptedModelServer, type ScriptedToolC
 export { expectWithinBaseline, settled, type Surface } from "./a11y"
 export { expectNothingAnimating } from "./animations"
 export { sessionRoute, UI } from "./ui-names"
+export { toggleSwitch } from "./switches"
 export { sendPrompt, showHarnesses, type SendOptions } from "./composer"
 export { apiRequests, holdEveryRequest, holdResponse } from "./requests"
 export { recordStillness, sinceFirstReady, stillnessAfter, type Stillness } from "./stillness"
