@@ -1,6 +1,6 @@
 import path from "node:path"
 import type { Page } from "@playwright/test"
-import { acpScriptToken, appPluginRow, expect, listLivePlugins, registerLivePlugin, SCRIPTED_ACP_HARNESS, sessionRoute, test, writeLivePlugin, type ClaxedoApi, type Stack } from "../harness"
+import { acpScriptToken, appPluginRow, expect, listLivePlugins, registerLivePlugin, SCRIPTED_ACP_HARNESS, sessionRoute, test, toggleSwitch, writeLivePlugin, type ClaxedoApi, type Stack } from "../harness"
 
 type CreatedTask = { readonly id: string; readonly title: string }
 
@@ -39,7 +39,7 @@ async function openTaskRow(app: Page, url: string) {
 async function switchTasks(app: Page, stack: Stack, on: boolean) {
   await app.goto(`${stack.url}/settings/app-plugins`)
   const row = appPluginRow(app, "Tasks")
-  await row.getByRole("switch", { name: "Tasks on" }).click({ force: true })
+  await toggleSwitch(row.getByRole("switch", { name: "Tasks on" }))
   await expect(row).toContainText(on ? "On" : "Off")
 }
 

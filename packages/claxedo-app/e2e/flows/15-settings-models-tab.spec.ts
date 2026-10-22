@@ -1,5 +1,5 @@
-import type { Page } from "@playwright/test"
-import { apiRequests, expect, sessionRoute, test, type Stack } from "../harness"
+import type { Page, Route } from "@playwright/test"
+import { apiRequests, expect, sessionRoute, test, toggleSwitch, type Stack } from "../harness"
 import { harnessSection, openSection, openSettings } from "./15-settings.navigation"
 
 const CLOUD_WORDS = /cloud workspace|sandbox/i
@@ -93,6 +93,22 @@ async function openClaudeModelsTab(stack: Stack, app: Page) {
   return claude
 }
 
+test("15 settings: a machine scan that finishes while Models is open moves nothing below its status line", async ({ stack, app }) => {
+  await stack.daemon.makeWorkspace("scan", "Scan")
+  const held: Route[] = []
+  await app.route("**/api/claxedo/credentials/machine-logins*", (route) => void held.push(route))
+  const claude = await openClaudeModelsTab(stack, app)
+  const haiku = claude.getByRole("switch", { name: "Haiku" })
+  await expect(haiku).toBeChecked()
+  await expect.poll(() => held.length).toBeGreaterThan(0)
+  const scanning = await haiku.boundingBox()
+
+  for (const route of held.splice(0)) await route.continue()
+  await expect(app.getByText("Scanned just now", { exact: true })).toBeVisible()
+
+  expect(await haiku.boundingBox()).toEqual(scanning)
+})
+
 test("15 settings: a model switched off in Models leaves the composer's picker", async ({ stack, app }) => {
   const workspace = await stack.daemon.makeWorkspace("picker", "Picker")
   const draft = `${stack.url}${sessionRoute(workspace.id)}`
@@ -100,7 +116,7 @@ test("15 settings: a model switched off in Models leaves the composer's picker",
   let claude = await openClaudeModelsTab(stack, app)
   const haiku = claude.getByRole("switch", { name: "Haiku" })
   await expect(haiku).toBeChecked()
-  await haiku.click({ force: true })
+  await toggleSwitch(haiku)
   await expect(haiku).not.toBeChecked()
 
   await app.goto(draft)
@@ -110,7 +126,7 @@ test("15 settings: a model switched off in Models leaves the composer's picker",
   await app.keyboard.press("Escape")
 
   claude = await openClaudeModelsTab(stack, app)
-  await haiku.click({ force: true })
+  await toggleSwitch(haiku)
   await expect(haiku).toBeChecked()
   await app.goto(draft)
   picker = await claudeModels(app)
@@ -144,7 +160,7 @@ test("15 settings: a Pi model switched off in Models leaves the composer's picke
   const name = "Claude Haiku 4.5"
   const haiku = anthropic.getByRole("switch", { name, exact: true })
   await expect(haiku).toBeChecked()
-  await haiku.click({ force: true })
+  await toggleSwitch(haiku)
   await expect(haiku).not.toBeChecked()
 
   await app.goto(draft)
@@ -154,7 +170,7 @@ test("15 settings: a Pi model switched off in Models leaves the composer's picke
 
   await app.goto(`${stack.url}/settings/models`)
   await harnessSection(app, "Pi").getByRole("tab", { name: "Models" }).click()
-  await harnessSection(app, "Pi").getByRole("region", { name: "Anthropic", exact: true }).getByRole("switch", { name, exact: true }).click({ force: true })
+  await toggleSwitch(harnessSection(app, "Pi").getByRole("region", { name: "Anthropic", exact: true }).getByRole("switch", { name, exact: true }))
   await app.goto(draft)
   await expect((await harnessModels(app, "Pi")).getByText(name, { exact: true }).first()).toBeVisible()
 })
