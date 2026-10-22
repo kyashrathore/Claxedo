@@ -18,9 +18,9 @@ const COMPATIBILITY_DATE = relayCompatibilityDate()
 
 /**
  * The session-host Worker's place in the relay's world, and nothing more: a
- * `SessionDO` that reports what it was sent, streams an event stream, and
- * names the object the relay addressed. The relay under test is the real
- * bundled `worker.ts`.
+ * `SessionDO` that reports what it was sent, streams an event stream whose
+ * second event waits for the test to release it, and names the object the
+ * relay addressed. The relay under test is the real bundled `worker.ts`.
  */
 const SESSION_HOST_SCRIPT = `
 export class SessionDO {
@@ -29,15 +29,20 @@ export class SessionDO {
     const url = new URL(request.url)
     if (url.pathname === "/session/${ROOT}/events") {
       const encoder = new TextEncoder()
+      const released = new Promise((resolve) => { this.releaseSecond = resolve })
       const stream = new ReadableStream({
         async start(controller) {
           controller.enqueue(encoder.encode("event: first\\ndata: 1\\n\\n"))
-          await new Promise((resolve) => setTimeout(resolve, 50))
+          await released
           controller.enqueue(encoder.encode("event: second\\ndata: 2\\n\\n"))
           controller.close()
         },
       })
       return new Response(stream, { headers: { "content-type": "text/event-stream" } })
+    }
+    if (url.pathname === "/session/${ROOT}/events/release") {
+      this.releaseSecond?.()
+      return new Response(null, { status: 204 })
     }
     return Response.json({
       object: this.state.id.name ?? null,
@@ -184,6 +189,11 @@ describe("relay durable-object target on workerd", () => {
     const first = new TextDecoder().decode((await reader.read()).value)
     expect(first).toContain("event: first")
     expect(first).not.toContain("event: second")
+    const release = await mf.dispatchFetch(relayUrl(`/session/${ROOT}/events/release`), {
+      method: "POST",
+      headers: { authorization: `Bearer ${await signRat({ sessionId: ROOT })}` },
+    })
+    expect(release.status).toBe(204)
     let rest = ""
     for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) rest += new TextDecoder().decode(chunk.value)
     expect(rest).toContain("event: second")
