@@ -32,9 +32,35 @@ function sandbox(options: Parameters<typeof fakeContainer>[0] = {}, env: Record<
   return { object, container, state, storage, egress }
 }
 
+const BOOT_ENV = { WORKSPACE_RUNTIME_DIRECTORY: "/workspace", HOME: "/home/claxedo" }
+
 async function ensure(object: InstanceType<typeof WorkspaceSandbox>, restore?: string, more: { minimumRuntimeVersion?: string; reuseRunning?: boolean } = {}) {
   await object.configureWorkspaceIdle(IDLE)
-  return await object.ensureWorkspace({ command: COMMAND, env: {}, port: 2593, reuseRunning: more.reuseRunning ?? true, ...(restore ? { restore } : {}), ...more })
+  return await object.ensureWorkspace({ command: COMMAND, env: BOOT_ENV, port: 2593, reuseRunning: more.reuseRunning ?? true, ...(restore ? { restore } : {}), ...more })
+}
+
+const NEW_DIGEST = "a".repeat(64)
+
+/** The same sandbox after a deploy whose image carries runtime 0.6.0. */
+function redeployed(s: ReturnType<typeof sandbox>) {
+  s.state.imageDigest = NEW_DIGEST
+  return new WorkspaceSandbox({
+    container: s.container,
+    storage: s.storage,
+    blockConcurrencyWhile: async (run: () => Promise<void>) => await run(),
+    exports: { CredentialEgress: ({ props }: { props: unknown }) => ({ props }) },
+  } as never, { CONTROL_PLANE_URL: "https://control.test", IDLE_STOP_TOKEN: "idle", RUNTIME_BUILD_ID: "build-2", RUNTIME_VERSION: "0.6.0", RUNTIME_DIGEST: NEW_DIGEST } as never)
+}
+
+/** A workspace that ran under runtime 0.5.2 and left files in its repository, HOME and a system directory before it was saved. */
+async function savedWithFiles(s: ReturnType<typeof sandbox>) {
+  await ensure(s.object)
+  s.state.files.set("/workspace/src/edit.ts", "the person's edit")
+  s.state.files.set("/home/claxedo/.workspace-runtime/store.db", "sessions")
+  s.state.files.set("/usr/local/lib/node_modules/cowsay/cli.js", "a global install")
+  const { snapshotId } = await s.object.snapshotWorkspace()
+  await s.object.stopWorkspace(IDLE.epoch)
+  return snapshotId
 }
 
 /** A workspace that ran, was captured and was stopped, as an idle stop leaves it. */
@@ -122,12 +148,84 @@ describe("workspace sandbox container", () => {
     expect(s.state.starts).toHaveLength(1)
   })
 
-  test("a snapshot whose runtime is older than the control plane's minimum is refused before it starts", async () => {
+  test("a checkpoint saved below the control plane's minimum runtime keeps the repository and HOME in a container from the current image, which runs the current runtime", async () => {
     const s = sandbox()
+    const snapshotId = await savedWithFiles(s)
+    const object = redeployed(s)
+    expect(await ensure(object, snapshotId, { minimumRuntimeVersion: "0.6.0" })).toEqual({ state: "ready" })
+    const [carry, image] = s.state.starts.slice(-2)
+    expect(carry).toEqual({ containerSnapshot: { id: snapshotId }, env: { PATH: "/root/.local/bin:/usr/local/bin:/usr/bin", AMP_SKIP_UPDATE_CHECK: "1" }, entrypoint: INIT, enableInternet: false, instance: "standard-1" })
+    expect(image).toMatchObject({ image: "registry.cloudflare.com/acct/claxedo-runtime@sha256:abc", entrypoint: INIT, enableInternet: true })
+    expect(s.state.directorySnapshotsTaken).toEqual(["/workspace", "/home/claxedo"])
+    expect(Object.fromEntries(s.state.files)).toEqual({
+      "/workspace/src/edit.ts": "the person's edit",
+      "/home/claxedo/.workspace-runtime/store.db": "sessions",
+    })
+    expect(s.state.runtimeDigest).toBe(NEW_DIGEST)
+    expect(s.state.launches.size).toBe(1)
+    expect((await object.snapshotWorkspace()).runtimeBuild).toBe("build-2")
+  })
+
+  test("the checkpoint a carried workspace saves next restores as it was saved, with no second carry", async () => {
+    const s = sandbox()
+    const saved = await savedWithFiles(s)
+    const object = redeployed(s)
+    await ensure(object, saved, { minimumRuntimeVersion: "0.6.0" })
+    const { snapshotId } = await object.snapshotWorkspace()
+    await object.stopWorkspace(IDLE.epoch)
+    const taken = s.state.directorySnapshotsTaken.length
+    expect(await ensure(object, snapshotId, { minimumRuntimeVersion: "0.6.0" })).toEqual({ state: "ready" })
+    expect(s.state.starts.at(-1)).toMatchObject({ containerSnapshot: { id: snapshotId }, enableInternet: true })
+    expect(s.state.directorySnapshotsTaken).toHaveLength(taken)
+    expect(s.state.files.get("/workspace/src/edit.ts")).toBe("the person's edit")
+  })
+
+  test("polls of a carried restore keep the container the carry started", async () => {
+    const s = sandbox()
+    const snapshotId = await savedWithFiles(s)
+    const object = redeployed(s)
+    await ensure(object, snapshotId, { minimumRuntimeVersion: "0.6.0" })
+    const starts = s.state.starts.length
+    expect(await ensure(object, snapshotId, { minimumRuntimeVersion: "0.6.0" })).toEqual({ state: "ready" })
+    expect(s.state.starts).toHaveLength(starts)
+  })
+
+  test("a carry that cannot copy the files fails the start with its reason and leaves the checkpoint as it was, so the next ensure carries it again", async () => {
+    const s = sandbox()
+    const snapshotId = await savedWithFiles(s)
+    const object = redeployed(s)
+    s.state.placeFails = true
+    await expect(ensure(object, snapshotId, { minimumRuntimeVersion: "0.6.0" })).rejects.toThrow("The workspace's /workspace could not be carried into the current image: cp: No space left on device")
+    expect(s.container.running).toBe(false)
+    s.state.placeFails = false
+    expect(await ensure(object, snapshotId, { minimumRuntimeVersion: "0.6.0" })).toEqual({ state: "ready" })
+    expect(s.state.files.get("/workspace/src/edit.ts")).toBe("the person's edit")
+  })
+
+  test("a below-minimum checkpoint whose runtime was changed inside the machine is carried too, since nothing of it runs", async () => {
+    const s = sandbox()
+    await ensure(s.object)
+    s.state.runtimeDigest = "e".repeat(64)
+    const { snapshotId } = await s.object.snapshotWorkspace()
+    await s.object.stopWorkspace(IDLE.epoch)
+    expect(await ensure(redeployed(s), snapshotId, { minimumRuntimeVersion: "0.6.0" })).toEqual({ state: "ready" })
+    expect(s.state.runtimeDigest).toBe(NEW_DIGEST)
+  })
+
+  test("a below-minimum checkpoint the platform no longer holds is refused as expired", async () => {
+    const s = sandbox({ missingSnapshots: ["snap-1"] })
     const snapshotId = await saved(s)
-    expect(await ensure(s.object, snapshotId, { minimumRuntimeVersion: "0.5.3" })).toEqual({ state: "checkpoint-unusable", cause: "runtime_outdated" })
-    expect(s.state.starts).toHaveLength(1)
+    expect(await ensure(redeployed(s), snapshotId, { minimumRuntimeVersion: "0.6.0" })).toEqual({ state: "checkpoint-unusable", cause: "expired" })
+    expect(s.container.running).toBe(false)
+    expect(s.state.directorySnapshotsTaken).toEqual([])
+  })
+
+  test("a checkpoint at the minimum restores whole, system files and its own runtime included", async () => {
+    const s = sandbox()
+    const snapshotId = await savedWithFiles(s)
     expect(await ensure(s.object, snapshotId, { minimumRuntimeVersion: "0.5.2" })).toEqual({ state: "ready" })
+    expect(s.state.files.get("/usr/local/lib/node_modules/cowsay/cli.js")).toBe("a global install")
+    expect(s.state.directorySnapshotsTaken).toEqual([])
   })
 
   test("a snapshot whose runtime files were changed inside the machine is destroyed unlaunched", async () => {
