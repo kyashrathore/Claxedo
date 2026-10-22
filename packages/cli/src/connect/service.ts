@@ -295,9 +295,14 @@ export async function startService(deps: ServiceDeps, service: InstalledService)
       ],
     }
   }
+  // `USERDOMAIN` reads WORKGROUP on a workgroup machine, where the account's
+  // domain is the computer's name; whoami answers the form the task takes.
+  const whoami = await deps.run("whoami.exe", [])
+  const userId = whoami.stdout.trim()
+  if (whoami.code !== 0 || !userId) throw new Error("whoami.exe did not answer this user's account name")
   // The XML is the registration's input only; the task holds its own copy.
   const taskXml = windowsTaskXmlPath(deps)
-  await deps.writeFile(taskXml, windowsTaskXml(deps))
+  await deps.writeFile(taskXml, windowsTaskXml(deps, userId))
   try {
     await must(deps, "schtasks.exe", ["/Create", "/TN", WINDOWS_TASK, "/XML", taskXml, "/F"])
   } finally {

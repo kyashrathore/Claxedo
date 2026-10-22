@@ -20,12 +20,6 @@ export function windowsTaskXmlPath(deps: Pick<ServiceDeps, "homedir" | "env">) {
   return path.win32.join(windowsServiceDir(deps), "claxedo-connect.xml")
 }
 
-/** `DOMAIN\user`, the form a task's `UserId` takes; a workgroup machine's domain is its own name. */
-export function windowsUserId(deps: Pick<ServiceDeps, "username" | "env">) {
-  const domain = deps.env.USERDOMAIN?.trim() || deps.env.COMPUTERNAME?.trim()
-  return domain ? `${domain}\\${deps.username}` : deps.username
-}
-
 function powershellQuoted(value: string) {
   return `'${value.replaceAll("'", "''")}'`
 }
@@ -66,23 +60,25 @@ export function xmlTextNode(value: string) {
 
 /**
  * Registered with `schtasks /Create /XML`, which takes no `/RU` password and
- * no administrator: the task runs as this user, in this user's session, at
- * this user's logon (`InteractiveToken`), and so only while someone is
- * logged on. `ExecutionTimeLimit` PT0S lifts the three-day default that
- * would otherwise kill the host mid-serve.
+ * no administrator: the task runs as `userId` (`DOMAIN\user`, what
+ * `whoami.exe` answers), in that user's session, at that user's logon
+ * (`InteractiveToken`), and so only while someone is logged on.
+ * `ExecutionTimeLimit` PT0S lifts the three-day default that would otherwise
+ * kill the host mid-serve. No XML declaration: schtasks reads a declared
+ * UTF-8 file as UTF-16 and refuses it ("unable to switch the encoding"), and
+ * takes an undeclared ASCII one.
  */
-export function windowsTaskXml(deps: Pick<ServiceDeps, "username" | "homedir" | "env">) {
-  const userId = xmlTextNode(windowsUserId(deps))
+export function windowsTaskXml(deps: Pick<ServiceDeps, "homedir" | "env">, userId: string) {
+  const user = xmlTextNode(userId)
   const script = xmlTextNode(windowsScriptPath(deps))
   return [
-    `<?xml version="1.0" encoding="UTF-8"?>`,
     `<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">`,
     `  <RegistrationInfo><Description>Claxedo connect host</Description></RegistrationInfo>`,
     `  <Triggers>`,
-    `    <LogonTrigger><Enabled>true</Enabled><UserId>${userId}</UserId></LogonTrigger>`,
+    `    <LogonTrigger><Enabled>true</Enabled><UserId>${user}</UserId></LogonTrigger>`,
     `  </Triggers>`,
     `  <Principals>`,
-    `    <Principal id="Author"><UserId>${userId}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal>`,
+    `    <Principal id="Author"><UserId>${user}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal>`,
     `  </Principals>`,
     `  <Settings>`,
     `    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>`,
