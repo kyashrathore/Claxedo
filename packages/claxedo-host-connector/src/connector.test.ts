@@ -189,6 +189,9 @@ describe("heartbeat", () => {
     // like a working one on a status screen.
     const h = await machineHost()
     await h.connector.start()
+    // The doorbell stream opens beside the first beat; revoking before it is
+    // held would refuse its open, a second report of the same decision.
+    await vi.waitFor(() => expect(h.cp.eventStreams(h.enrollmentId)).toBe(1))
     h.cp.revoke(h.enrollmentId)
 
     const state = await h.connector.beat()

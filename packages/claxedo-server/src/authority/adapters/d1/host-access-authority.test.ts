@@ -22,7 +22,8 @@ import { D1HostAccessAuthority } from "./host-access-authority"
 import { D1ChannelRuntimeAuthority } from "./channel-runtime-authority"
 import { D1SessionAuthority } from "./session-authority"
 import { publishD1HostSessionRows } from "./host-session-rows"
-import { LiveSyncRoom, liveSyncRoomConnectHeaders } from "../../../deployments/hosted-workerd/live-sync-room.cf"
+import { LiveSyncRoom } from "../../../deployments/hosted-workerd/live-sync-room.cf"
+import { liveSyncRoomConnectHeaders } from "../../../deployments/hosted-workerd/live-sync-subscriber"
 import { controlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 import type { HostSessionRow, HostSessionRowsPublication } from "@claxedo/server-core/platform/auth/host-session-rows"
 import { buildSessionListResponse, parseSessionListQuery } from "@claxedo/server-core/session/navigation-list"
@@ -423,6 +424,7 @@ describe("D1 host access authority", () => {
 
     await expect(input.hostAccess.unassignWorkspaceHost(alice, { workspaceId: "ws_shared" })).resolves.toEqual({
       unassigned: true,
+      host_id: "machine-l",
     })
     expect(await listed()).toEqual(["ws_cloud", "ws_local"])
     await expect(input.workspace.openWorkspace(alice, { workspaceId: "ws_shared" })).rejects.toBeDefined()
@@ -1573,7 +1575,7 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
       enrollmentId: enrollment.enrollment_id,
       scope: { allowed_roots: ["/srv/web/"] },
     })
-    expect(updated).toEqual({ scope: { allowed_roots: ["/srv/web"], revision: 2 }, retired_workspace_ids: ["ws_api"] })
+    expect(updated).toEqual({ host_id: "vps-t", scope: { allowed_roots: ["/srv/web"], revision: 2 }, retired_workspace_ids: ["ws_api"] })
     expect(await input.database.prepare("select count(*) as n from host_workspace_assignments where workspace_id = 'ws_api'").first())
       .toEqual({ n: 0 })
     expect(await readiness(input, "ws_api")).toBeNull()

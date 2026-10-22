@@ -49,10 +49,19 @@ import { createSseReplayBuffer } from "@claxedo/helpers/sse"
 import { eventVisibleTo, type EventScopePrincipal } from "@claxedo/server-core/platform/http/event-visibility"
 import { isRetainedControlPlaneEvent, supersededControlPlaneEventKey } from "@claxedo/server-core/platform/http/event-retention"
 import type { ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
-import { liveSyncRoomNameForPrincipal, type LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
+import type { LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
 import { liveSyncEvents } from "./live-sync-admission"
+import {
+  HEADER_HEARTBEAT_MS,
+  HEADER_LAST_EVENT_ID,
+  liveSyncRoomConnectHeaders,
+  liveSyncRoomName,
+  replayPrincipalKey,
+  roomPrincipalFromHeaders,
+  sameSubscriber,
+  type LiveSyncSubscriber,
+} from "./live-sync-subscriber"
 import { cursorAhead, replayGapEvent, type LiveSyncStreamGapEvent } from "./live-sync-replay-gap"
-import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 import { asRecord } from "@claxedo/server-core/platform/json/index"
 
 /**
@@ -95,18 +104,6 @@ const SSE_QUEUE_LIMIT = 32
 const MAX_SOCKET_BUFFER_BYTES = 256 * 1024
 const HEARTBEAT: { type: "heartbeat" } = { type: "heartbeat" }
 
-// The room receives the resolved caller identity from the Worker (a trusted
-// internal DO fetch — DOs are unreachable from outside the Worker), so it can
-// apply `eventVisibleTo` per held connection without re-verifying the bearer.
-// `x-livesync-org` carries the authority-internal org id resolved at connect
-// (`authority.resolveOrgId`), matching the namespace events are stamped
-// with — never the raw identity-provider org claim (see `EventScopePrincipal`).
-const HEADER_MODE = "x-livesync-mode"
-const HEADER_SUBJECT = "x-livesync-subject"
-const HEADER_ORG = "x-livesync-org"
-const HEADER_HEARTBEAT_MS = "x-livesync-heartbeat-ms"
-/** The client's SSE `Last-Event-ID`, forwarded on the internal connect fetch. */
-const HEADER_LAST_EVENT_ID = "x-livesync-last-event-id"
 /**
  * Response header on the room's `/connect` reply carrying the cursor this
  * connection resumes from. The bridge cannot compute it: for a cursor-less
@@ -159,101 +156,6 @@ type LiveSyncSocketAttachment = {
   principal: EventScopePrincipal
 }
 
-/**
- * The resolved subscriber a live-sync connection is held for. `auth` is the
- * verified control-plane context (the identity provider claims — used only for heartbeat
- * reauthorization comparisons); `orgId` is the authority-internal org id
- * resolved via `authority.resolveOrgId(auth)` at connect time, the identity
- * rooms are named with and `eventVisibleTo` scopes on. Absent `orgId` (no
- * authority composed) degrades to the subject-keyed owner room, where
- * org-scoped events stay invisible fail-closed.
- */
-export type LiveSyncSubscriber = {
-  auth: ControlPlaneAuthContext
-  orgId?: string
-}
-
-/** Build the per-connection scope principal from the trusted internal headers. */
-export function roomPrincipalFromHeaders(headers: Headers): EventScopePrincipal {
-  const mode = headers.get(HEADER_MODE)
-  if (mode !== "signed") return { mode: "unsigned-local" }
-  const orgId = headers.get(HEADER_ORG) ?? undefined
-  return {
-    mode: "signed",
-    subject: headers.get(HEADER_SUBJECT) ?? "",
-    ...(orgId ? { orgId } : {}),
-  }
-}
-
-function replayPrincipalKey(principal: EventScopePrincipal) {
-  if (principal.mode === "unsigned-local") return "local"
-  return `signed:${principal.orgId ?? ""}:${principal.subject}`
-}
-
-/**
- * Derive the DO room name from a resolved subscriber. A subscriber joins the
- * room of their active org — named by the authority-internal org id resolved
- * at connect — where a share publisher with that org nudges; the
- * per-connection `eventVisibleTo` filter narrows each notice to its
- * recipient. Signed callers with no resolved org, and unsigned-local/loopback,
- * key by subject.
- */
-export function liveSyncRoomName(subscriber: LiveSyncSubscriber): string {
-  if (subscriber.auth.mode !== "signed") return "owner:local"
-  return liveSyncRoomNameForPrincipal({
-    ownerUserId: subscriber.auth.user.subject,
-    orgId: subscriber.orgId,
-  })
-}
-
-/**
- * The one publisher-side room-name derivation, applying the same
- * org-first/owner-fallback policy as `liveSyncRoomName` (which delegates here,
- * so subscriber and publisher cannot drift). A publisher that composes the
- * string by hand (`` `org:${orgId}` ``) silently disagrees with the subscriber
- * whenever its org field is absent or from the wrong namespace, and its events
- * strand in a room nobody is held in.
- *
- * Room names live in the authority-internal namespace —
- * `orgId` must be the internal org id (SQLite `org_id`, i.e.
- * `authority.resolveOrgId` output, which is also what runtime-token claims and
- * share notices carry) and `ownerUserId` the auth subject,
- * because that is the material `connectLiveSyncRoom` keys the subscriber's room
- * with. Issuer org claims (`org_...`,
- * `ControlPlaneAuthContext.user.orgId`) are a different namespace: passing one
- * as `orgId` names a room no subscriber ever joins.
- *
- * Throws when the material cannot name a real room (absent, empty, or a
- * literal "undefined"/"null" from stringifying a missing field), so a broken
- * publisher fails loudly at the publish site instead of quietly dropping the
- * frame.
- */
-
-/** Serialize the resolved identity into the trusted internal-fetch headers. */
-export function liveSyncRoomConnectHeaders(
-  subscriber: LiveSyncSubscriber,
-  heartbeatMs?: number,
-  lastEventId?: string,
-): Record<string, string> {
-  const headers: Record<string, string> = { accept: "text/event-stream" }
-  if (subscriber.auth.mode === "signed") {
-    headers[HEADER_MODE] = "signed"
-    headers[HEADER_SUBJECT] = subscriber.auth.user.subject
-    if (subscriber.orgId) headers[HEADER_ORG] = subscriber.orgId
-  } else {
-    headers[HEADER_MODE] = "unsigned-local"
-  }
-  if (heartbeatMs && Number.isFinite(heartbeatMs) && heartbeatMs > 0) {
-    headers[HEADER_HEARTBEAT_MS] = String(Math.floor(heartbeatMs))
-  }
-  // The header value is forwarded unchanged. The bearer is not re-verified
-  // inside the room, but the cursor is not an authorization input: every
-  // replayed frame still clears `eventVisibleTo` against the identity in the
-  // headers above, so a forged cursor can only change which of the caller's
-  // own frames it receives.
-  if (lastEventId) headers[HEADER_LAST_EVENT_ID] = lastEventId
-  return headers
-}
 
 const SSE_HEADERS = {
   "Content-Type": "text/event-stream",
@@ -293,13 +195,6 @@ function defaultUpgradeResponse(client: LiveSyncSocket, headers?: Record<string,
 
 function socketFromResponse(response: Response) {
   return (response as Response & { webSocket?: LiveSyncSocket }).webSocket
-}
-
-function sameSubscriber(left: LiveSyncSubscriber, right: LiveSyncSubscriber) {
-  if (left.auth.mode !== right.auth.mode) return false
-  if (left.auth.mode === "unsigned-local" || right.auth.mode === "unsigned-local") return true
-  if (left.auth.user.subject !== right.auth.user.subject) return false
-  return left.auth.user.orgId === right.auth.user.orgId && left.orgId === right.orgId
 }
 
 export class LiveSyncRoom {

@@ -19,6 +19,7 @@ const ROOT = path.resolve(import.meta.dirname, "..")
 const ENTRIES: readonly { readonly entry: string; readonly target: "browser" | "node" }[] = [
   { entry: "index", target: "browser" },
   { entry: "api-error", target: "browser" },
+  { entry: "backoff", target: "browser" },
   { entry: "crypto", target: "browser" },
   { entry: "deadline", target: "browser" },
   { entry: "guards", target: "browser" },

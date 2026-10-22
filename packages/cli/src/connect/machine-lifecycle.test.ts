@@ -4,6 +4,7 @@ import http from "node:http"
 import os from "node:os"
 import path from "node:path"
 import type { HostStateStore } from "@claxedo/host-connector/host-state"
+import { HOST_ENROLLMENT_EVENTS_PATH as EVENTS_PATH } from "@claxedo/host-connector/machine-transport"
 import { publicKeyJwk } from "@claxedo/account-contract/machine"
 import { createHostRuntimeListener, type HostRuntimeListener } from "@claxedo/host-serving/runtime"
 import {
@@ -256,7 +257,7 @@ linuxMachine("claxedo connect on a simulated machine", () => {
     expect(first).toMatchObject({ enabled: true, running: true, state: "active/running", restarts: 0 })
     expect(first.pid).toBe(m.manager.child()!.pid)
     await beating(m, INSTALLED_AT)
-    expect(m.cp.log.map((entry) => entry.path).slice(0, 3)).toEqual([
+    expect(m.cp.log.map((entry) => entry.path).filter((path) => path !== EVENTS_PATH).slice(0, 3)).toEqual([
       "/api/claxedo/host/enrollments/redeem",
       "/api/claxedo/host/enrollments/acquire",
       "/api/claxedo/host/enrollments/heartbeat",
@@ -294,7 +295,7 @@ linuxMachine("claxedo connect on a simulated machine", () => {
     timing("boot → readiness + tunnel, unattended", { elapsedMs: resumedAt - bootedAt, beatMs: BEAT_MS })
     const afterReboot = m.cp.log.slice(requestsBeforeReboot).map((entry) => entry.path)
     expect(afterReboot[0]).toBe("/api/claxedo/host/enrollments/acquire")
-    expect(afterReboot.filter((entry) => !entry.endsWith("/heartbeat"))).toEqual([
+    expect(afterReboot.filter((entry) => !entry.endsWith("/heartbeat") && entry !== EVENTS_PATH)).toEqual([
       "/api/claxedo/host/enrollments/acquire",
     ])
     const resumedState = await m.state()
@@ -589,7 +590,8 @@ linuxMachine("provider configuration on a running claxedo connect host", () => {
 
     const second = await h.cp.pushProviderConfig(id, providerConfig(`${SECRET}-rotated`))
     h.faults.failSaveOfRevision = second
-    await h.beat()
+    // The push rang the machine; the rung beat delivers the revision the store refuses.
+    await until(() => h.lines.some((line) => line.startsWith("provider-config failed: ")), "the refused write")
     expect(h.faults.failSaveOfRevision, "the failing write was the provider-config one").toBeUndefined()
     expect(
       (await h.beat()).providerConfigRevision,

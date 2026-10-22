@@ -42,6 +42,7 @@ import { RemoteAccessOwnerRoutes } from "../../routes/remote-access"
 import { hostedRemoteAccessService } from "./hosted-remote-access-service"
 import { hostedWorkspaceIdleStop, WorkspaceCheckpointRoutes } from "../../workspace/routes/checkpoints"
 import { hostConnectEndpointOptions, missingBearerBody, routeAuth, signedOrError } from "../../workspace/route-support"
+import { liveSyncHostChanged } from "../../workspace/host-changed-notice"
 import { HostedControlRoutes } from "../../routes/hosted/control"
 import { InternalRelayResolverRoutes, type RelayTargetLookup } from "../shared-routes/internal-relay"
 import { HostedSandboxAdminRoutes } from "../../routes/hosted/sandbox-admin"
@@ -289,9 +290,11 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
   )
 
   const approvedPrivateRepoHosts = privateRepoHosts(plane.env)
+  const hostChanged = liveSyncHostChanged(options.liveSyncRoom)
   const workspaceOptions: HostedWorkspaceRouteOptions = {
     privateRepoHosts: approvedPrivateRepoHosts,
     authentication: options.authentication,
+    hostChanged,
     requireCloudWorkspaceEntitlement: options.cloudWorkspaceAdmission,
     ...options.productWorkspace,
     authConfig,
@@ -414,6 +417,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
   const orgCredentials = plane.orgCredentials
   app.route("/api/claxedo/host/enrollments", HostEnrollmentRoutes(services, {
     ...workspaceOptions,
+    liveSyncRoom: options.liveSyncRoom,
     ...(orgCredentials ? {
       ownerPiDirectRows: async (auth) => (await ownerDirectDelivery(orgCredentials(await requireAuthority(services).resolveOrgId(auth)), auth.user.subject, { providers: PI_DIRECT_PROVIDERS })).direct,
     } : {}),
@@ -441,7 +445,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       if (!result.auth) return Response.json({ error: { code: "UNAUTHORIZED", message: "Signed auth is required" } }, { status: 401 })
       return result.auth
     },
-    service: hostedRemoteAccessService(requireAuthority(services)),
+    service: hostedRemoteAccessService(requireAuthority(services), { hostChanged }),
   }))
   app.route(
     "/api/workspace",

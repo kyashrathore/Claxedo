@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 
 import { createFakeControlPlane } from "@claxedo/host-connector/test-support"
 import { hostKeyPairFromJwk } from "@claxedo/host-connector/host-identity"
+import { HOST_ENROLLMENT_EVENTS_PATH as EVENTS_PATH } from "@claxedo/host-connector/machine-transport"
 import { publicKeyJwk } from "@claxedo/account-contract/machine"
 
 import { runHostConnectorChild } from "./entry"
@@ -308,10 +309,11 @@ describe("the private bootstrap protocol", () => {
     const enrollmentId = child.enrollmentId()
     // The acquire and the beat are signed by the key the enrollment recorded:
     // the fake verifies every one of them and refuses anything else.
-    expect(child.cp.log.map((entry) => entry.path)).toEqual([
+    expect(child.cp.log.map((entry) => entry.path).filter((path) => path !== EVENTS_PATH)).toEqual([
       "/api/claxedo/host/enrollments/acquire",
       "/api/claxedo/host/enrollments/heartbeat",
     ])
+    expect(child.cp.eventStreams(enrollmentId), "the doorbell is held open from the first beat").toBe(1)
     expect(child.beats()[0]?.body).toMatchObject({ generation: 1, acks: [], sessionAuthority: "local" })
 
     child.cp.assign({ enrollmentId, workspaceId: "ws_1", remoteDirectory: "/Users/me/project" })

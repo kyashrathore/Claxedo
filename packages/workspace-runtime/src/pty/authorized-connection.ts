@@ -13,9 +13,10 @@
  * Two rules the authority alone cannot state:
  *
  * - Output waits for the stream decision. `Pty.connect` replays scrollback
- *   synchronously, so connecting first and authorizing after hands the
- *   transcript to a caller who was about to be refused; a connection cannot be
- *   built without the admission `admitTerminal` answered before the upgrade.
+ *   synchronously, so it runs only once the admission `admitTerminal` asked
+ *   for has answered `allowed`; the socket may already be open by then (the
+ *   relayed upgrade's round trip runs while the authority answers), and a
+ *   refusal closes it before any byte or keystroke crosses.
  * - The deadline is the authority's. A lease's `expiresAt` is checked at every
  *   send and every keystroke, not only on the poll, so a decision that has run
  *   out cannot release a byte through a callback that resolved late.
@@ -27,6 +28,7 @@ import type { RelayHostAuthContext } from "@claxedo/session-core/relay-host"
 import type { WebSocketBackpressureSocket } from "./websocket-backpressure"
 import {
   authorizeTerminal,
+  READ_RENEW_WINDOW_MS,
   terminalLease,
   type PtyAccessRefusal,
   type TerminalAccess,
@@ -35,8 +37,6 @@ import {
 
 /** How often an open stream re-checks its own deadline. */
 const AUTHORIZATION_POLL_MS = 1_000
-/** How long before a read deadline renewal is attempted. */
-const READ_RENEW_WINDOW_MS = 5_000
 
 export type PtyStreamSocket = WebSocketBackpressureSocket
 
@@ -95,7 +95,8 @@ export function createAuthorizedPtyConnection(input: {
   ptyId: string
   policy: SessionAccessPolicy
   access: TerminalAccess
-  admission: TerminalAdmission
+  /** The authority's answer, or the request for it still open. */
+  admission: TerminalAdmission | Promise<TerminalAdmission | PtyAccessRefusal>
   cursor?: number
   now?: () => number
 }): AuthorizedPtyConnection {
@@ -105,8 +106,8 @@ export function createAuthorizedPtyConnection(input: {
   let closed = false
   let streaming = false
   let renewing = false
-  let lease = input.admission.lease
-  let expiresAt = input.admission.expiresAt
+  let lease: string | undefined
+  let expiresAt: number | undefined
   let poll: ReturnType<typeof setInterval> | undefined
   let work = Promise.resolve()
 
@@ -138,7 +139,14 @@ export function createAuthorizedPtyConnection(input: {
   }
 
   const attach = async () => {
+    const decision = await input.admission
     if (closed) return
+    if (!decision.allowed) {
+      stop("Terminal access denied")
+      return
+    }
+    lease = decision.lease
+    expiresAt = decision.expiresAt
     if (expiresAt !== undefined && now() >= expiresAt) {
       stop("Terminal access expired")
       return

@@ -23,6 +23,7 @@ import { Hono } from "hono"
 import { getRequestListener } from "@hono/node-server"
 import {
   createWorkspaceRuntimeApp,
+  Pty,
   relayWorkspaceRuntimeExposure,
   type WorkspaceRuntimeApp,
   type WorkspaceRuntimeServerOptions,
@@ -435,6 +436,7 @@ export async function createHostRuntimeListener(options: HostRuntimeListenerOpti
     runtime.injectWebSocket(upgrades)
     entries.set(workspace.workspaceId, { workspaceId: workspace.workspaceId, directory: workspace.directory, runtime, upgrades })
     log.info("host runtime started", { workspaceId: workspace.workspaceId, directory: workspace.directory })
+    Pty.warm()
     return runtime
   }
 

@@ -276,6 +276,22 @@ describe("host assignment (POST /:id/host-assignment)", () => {
     expect(json).not.toHaveProperty("hostTunnel")
   })
 
+  test("rings the machine once the assignment is recorded, so its next beat is now rather than an interval away", async () => {
+    const hostChanged = vi.fn(async () => {})
+    const { app } = buildApp({ options: { hostChanged } })
+    expect((await app.fetch(post("/ws_1/host-assignment", { hostId: "host_1" }))).status).toBe(200)
+    expect(hostChanged).toHaveBeenCalledWith({ ownerUserId: "user_1", hostId: "host_1" })
+
+    const refused = fakeAuthority({
+      assignWorkspaceHost: vi.fn(async () => {
+        throw new ClaxedoError({ code: "host_enrollment_not_found", message: "no", status: 404 })
+      }),
+    })
+    const rung = vi.fn(async () => {})
+    expect((await buildApp({ authority: refused, options: { hostChanged: rung } }).app.fetch(post("/ws_1/host-assignment", { hostId: "host_1" }))).status).toBe(404)
+    expect(rung, "nothing changed, so nothing rings").not.toHaveBeenCalled()
+  })
+
   test("an unknown enrollment or workspace is the authority's 404, not a server fault", async () => {
     for (const code of ["host_enrollment_not_found", "workspace_not_found"] as const) {
       const authority = fakeAuthority({
@@ -395,6 +411,19 @@ describe("host unassignment (DELETE /:id/host-assignment)", () => {
       expect.anything(),
       expect.objectContaining({ action: "host_workspace_assignment.unassigned", workspaceId: "ws_1" }),
     )
+  })
+
+  test("rings the machine the row pointed at, and no machine when there was no row", async () => {
+    const hostChanged = vi.fn(async () => {})
+    const pointed = fakeAuthority({ unassignWorkspaceHost: vi.fn(async () => ({ unassigned: true, host_id: "host_9" })) })
+    const res = await buildApp({ authority: pointed, options: { hostChanged } }).app.fetch(del("/ws_1/host-assignment"))
+    expect(await res.json()).toEqual({ unassigned: true })
+    expect(hostChanged).toHaveBeenCalledWith({ ownerUserId: "user_1", hostId: "host_9" })
+
+    const empty = fakeAuthority({ unassignWorkspaceHost: vi.fn(async () => ({ unassigned: false })) })
+    const rung = vi.fn(async () => {})
+    await buildApp({ authority: empty, options: { hostChanged: rung } }).app.fetch(del("/ws_1/host-assignment"))
+    expect(rung).not.toHaveBeenCalled()
   })
 
   test("requires a signed bearer token", async () => {

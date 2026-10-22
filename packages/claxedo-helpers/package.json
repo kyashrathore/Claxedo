@@ -32,6 +32,13 @@
       "import": "./dist/index.mjs",
       "default": "./dist/index.mjs"
     },
+    "./backoff": {
+      "development": "./src/backoff.ts",
+      "bun": "./src/backoff.ts",
+      "types": "./dist/backoff.d.ts",
+      "import": "./dist/backoff.mjs",
+      "default": "./dist/backoff.mjs"
+    },
     "./deadline": {
       "development": "./src/deadline.ts",
       "bun": "./src/deadline.ts",

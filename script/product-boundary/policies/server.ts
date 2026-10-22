@@ -285,8 +285,18 @@ export const serverWorkerd: Policy = {
   // its roots, by the host-path contract for POSIX and Windows paths alike
   // (`authority/adapters/d1/host-scope-rules.ts`). It adds no package edge:
   // `@claxedo/account-contract` was already in the Worker.
-  // 181/23, no headroom.
-  ceilings: { modules: 181, packages: 23 },
+  // +5 modules (owner: the host routes and the live-sync room), the machine's
+  // doorbell: a machine-signed event stream (`routes/hosted/host-events.ts`)
+  // bridged into the owner's room as a machine subscriber
+  // (`deployments/hosted-workerd/live-sync-subscriber.ts`, the subscriber
+  // identity split out of the room), the machine caller's admission shared by
+  // it and the heartbeat (`routes/hosted/machine-caller.ts`), the ring the
+  // host routes publish (`workspace/host-changed-notice.ts`), and the
+  // attestation encodings split out of the D1 host authority
+  // (`authority/adapters/d1/host-attestation-codec.ts`). It adds no package
+  // edge.
+  // 186/23, no headroom.
+  ceilings: { modules: 186, packages: 23 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

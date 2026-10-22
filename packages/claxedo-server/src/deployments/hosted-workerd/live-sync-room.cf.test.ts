@@ -3,13 +3,11 @@ import {
   DEFAULT_MAX_CONNECTIONS,
   LiveSyncRoom,
   connectLiveSyncRoom,
-  liveSyncRoomName,
-  roomPrincipalFromHeaders,
   type LiveSyncRoomState,
   type LiveSyncSocket,
-  type LiveSyncSubscriber,
 } from "./live-sync-room.cf"
 import { liveSyncRoomNameForPrincipal, nudgeLiveSyncRoom, type LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
+import { liveSyncRoomName, roomPrincipalFromHeaders, type LiveSyncSubscriber } from "./live-sync-subscriber"
 import type { ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import type { D1Database } from "@cloudflare/workers-types"
 import { inD1Scope, requestSessionD1 } from "../../platform/db/d1-sessions"
@@ -527,6 +525,53 @@ describe("LiveSyncRoom — fan-out core", () => {
     // room, even when the issuer claim is present.
     expect(liveSyncRoomName({ auth: signedAuth("alice", "org_2orgabc") })).toBe("owner:alice")
   })
+})
+
+const hostChanged = (ownerUserId: string, hostId: string): ControlPlaneEvent => ({
+  type: "host.changed",
+  hostId,
+  ownerUserId,
+  ts: 11,
+})
+
+describe("LiveSyncRoom — a machine's doorbell", () => {
+  test("a machine held in its owner's room hears its own host.changed and nothing else; the owner's own connection hears no doorbell", async () => {
+    const namespace = createFakeNamespace()
+    const machine = (await connectLiveSyncRoom(namespace, { machine: { hostId: "host_a", ownerUserId: "alice" } }, 60_000)).body!.getReader()
+    const other = (await connectLiveSyncRoom(namespace, { machine: { hostId: "host_b", ownerUserId: "alice" } }, 60_000)).body!.getReader()
+    const owner = (await connectLiveSyncRoom(namespace, subscriber("alice"), 60_000)).body!.getReader()
+    for (const reader of [machine, other, owner]) expect(await readFrame(reader)).toEqual({ type: "heartbeat" })
+
+    const room = liveSyncRoomNameForPrincipal({ ownerUserId: "alice" })
+    expect(room).toBe("owner:alice")
+    expect(await nudgeLiveSyncRoom(namespace, room, hostChanged("alice", "host_a"))).toEqual({ delivered: 1, held: 3 })
+    expect(await readFrame(machine)).toEqual({ type: "host.changed", hostId: "host_a", ownerUserId: "alice", ts: 11 })
+
+    // A person's notice in the same room reaches the person, never the machines.
+    expect(await nudgeLiveSyncRoom(namespace, room, sessionShareChanged("alice"))).toMatchObject({ delivered: 1 })
+    expect(await readFrame(owner)).toMatchObject({ type: "session.share.changed" })
+    expect(await nudgeLiveSyncRoom(namespace, room, hostChanged("alice", "host_b"))).toMatchObject({ delivered: 1 })
+    expect(await readFrame(other)).toMatchObject({ type: "host.changed", hostId: "host_b" })
+  })
+
+  test("a doorbell rung while the machine's stream was down is replayed on its next connect", async () => {
+    const namespace = createFakeNamespace()
+    const room = liveSyncRoomNameForPrincipal({ ownerUserId: "alice" })
+    const first = (await connectLiveSyncRoom(namespace, { machine: { hostId: "host_a", ownerUserId: "alice" } }, 60_000)).body!.getReader()
+    const bootstrap = await readSseFrame(first)
+    await first.cancel()
+    await nudgeLiveSyncRoom(namespace, room, hostChanged("alice", "host_a"))
+
+    const again = (await connectLiveSyncRoom(namespace, { machine: { hostId: "host_a", ownerUserId: "alice" } }, 60_000, undefined, bootstrap.id)).body!.getReader()
+    expect(await readFrame(again)).toEqual({ type: "heartbeat" })
+    expect(await readFrame(again)).toMatchObject({ type: "host.changed", hostId: "host_a" })
+  })
+
+  test("the room reads a machine principal off the trusted headers and keys its replay by host", () => {
+    expect(roomPrincipalFromHeaders(new Headers({ "x-livesync-mode": "machine", "x-livesync-host": "host_a" }))).toEqual({ mode: "machine", hostId: "host_a" })
+    expect(liveSyncRoomName({ machine: { hostId: "host_a", ownerUserId: "alice" } })).toBe("owner:alice")
+  })
+
 })
 
 describe("live-sync room-name derivation — publisher/subscriber agreement", () => {

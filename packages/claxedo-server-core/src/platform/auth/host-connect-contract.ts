@@ -334,6 +334,7 @@ export type HostInvitationRedeemResult = {
 }
 
 export type HostScopeUpdateResult = {
+  host_id: string
   scope: HostEnrollmentScope
   /** Assignments deleted because their directory fell outside the new roots. */
   retired_workspace_ids: string[]

@@ -23,6 +23,8 @@ import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth
 export type EventScopePrincipal =
   | { mode: "unsigned-local" }
   | { mode: "signed"; subject: string; orgId?: string }
+  /** A machine holding its doorbell stream with its own key; it hears its own `host.changed` and nothing else. */
+  | { mode: "machine"; hostId: string }
 
 /**
  * The ONE constructor of a signed subscriber principal from a resolved auth
@@ -53,6 +55,7 @@ export function eventScopePrincipal(
 export function eventVisibleTo(principal: EventScopePrincipal, event: ControlPlaneEvent): boolean {
   // Single-user modes: the whole bus belongs to this caller.
   if (principal.mode === "unsigned-local") return true
+  if (principal.mode === "machine") return event.type === "host.changed" && event.hostId === principal.hostId
 
   switch (event.type) {
     case "session.share.changed":
@@ -74,9 +77,10 @@ export function eventVisibleTo(principal: EventScopePrincipal, event: ControlPla
       return true
     default:
       // A Page notice names a Page its creator may not have shared; an
-      // inventory notice is about one person's workspace; and
-      // worktree.* is a local daemon's notice about its own checkout. None
-      // reaches a signed subscriber, only the unsigned machine's single user.
+      // inventory notice is about one person's workspace; worktree.* is a
+      // local daemon's notice about its own checkout; and a machine's
+      // doorbell is the machine's alone. None reaches a signed subscriber,
+      // only the unsigned machine's single user.
       return false
   }
 }

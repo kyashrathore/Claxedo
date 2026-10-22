@@ -291,10 +291,11 @@ export type WorkspaceAuthority = OrgAccessAuthority & SessionShareAuthority & Pa
       homeRegion?: string
     },
   ) => Promise<{ assigned: true; workspace_id: string; host_id: string }>
+  /** `host_id` names the machine the row pointed at, so the caller can ring it; absent when there was no row. */
   unassignWorkspaceHost: (
     auth: SignedControlPlaneAuth,
     args: { workspaceId: string },
-  ) => Promise<{ unassigned: boolean }>
+  ) => Promise<{ unassigned: boolean; host_id?: string }>
   /**
    * The routable host for a workspace: owner-assigned AND inside the host's
    * last-acked served set AND the enrollment lease is live. The single

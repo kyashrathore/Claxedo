@@ -19,6 +19,10 @@ describe("control-plane event retention", () => {
     expect(isRetainedControlPlaneEvent({ type: "session.share.changed", phase: "revoked", ownerUserId: "user_a", sessionId: "ses_1", workspaceId: "ws_1", ts: 1 })).toBe(true)
   })
 
+  test("a machine's doorbell is kept for the machine to replay", () => {
+    expect(isRetainedControlPlaneEvent({ type: "host.changed", hostId: "host_a", ownerUserId: "user_a", ts: 1 })).toBe(true)
+  })
+
   test("a status notice supersedes the earlier one for the same reader and session only", () => {
     expect(supersededControlPlaneEventKey(status("user_a", "ses_1"))).toBe(supersededControlPlaneEventKey(status("user_a", "ses_1")))
     expect(supersededControlPlaneEventKey(status("user_a", "ses_1"))).not.toBe(supersededControlPlaneEventKey(status("user_b", "ses_1")))

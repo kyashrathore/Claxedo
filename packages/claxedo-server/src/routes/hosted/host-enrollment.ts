@@ -43,7 +43,6 @@ import {
 } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority, type WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { MachinePrincipal } from "@claxedo/server-core/platform/auth/host-connect-contract"
-import { verifyMachineRequest } from "@claxedo/server-core/platform/auth/machine-auth"
 import { machineSealAad } from "@claxedo/account-contract/machine"
 import { sealForMachine } from "@claxedo/account-contract/machine-seal"
 import type { HostTunnelTokenSignerInput } from "@claxedo/server-core/platform/auth/runtime-access-token"
@@ -53,7 +52,9 @@ import { asRecord } from "@claxedo/server-core/platform/json/index"
 import { providerProjectionRecord } from "@claxedo/agent-runtime-contract"
 import type { ControlPlaneServices } from "../../authority/services"
 import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../platform/auth/rate-limit"
-import { requestClientKey } from "../../platform/auth/request-guard"
+import type { LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
+import { machineEventsHandler } from "./host-events"
+import { admitMachineCaller, budgetExceeded, clientBudget } from "./machine-caller"
 import { contentfulStatus } from "../../platform/http/status"
 import { controlPlaneRateLimitError } from "../../workspace/runtime-token-guards"
 import {
@@ -239,6 +240,10 @@ export type HostEnrollmentRouteOptions = WorkspaceRouteOptions & {
   now?: () => number
   /** The owner's Pi accounts as secrets, sealed beside their pushed rows; absent where the plane stores no accounts. */
   ownerPiDirectRows?: (auth: SignedControlPlaneAuth) => Promise<Record<string, ProviderDirect>>
+  /** Where a machine's doorbell stream is held (`./host-events`); absent, the stream route answers 503. */
+  liveSyncRoom?: LiveSyncRoomNamespace
+  /** The doorbell stream's heartbeat cadence (tests shrink it). */
+  eventsHeartbeatMs?: number
 }
 
 type Budget = { limiter: ConnectionRateLimiter; key: string; action: string }
@@ -257,18 +262,6 @@ function tooLarge(limit: number) {
     onError: (c) =>
       c.json({ error: { code: "request_body_too_large", message: `Request body exceeds the ${limit}-byte limit` } }, 413),
   })
-}
-
-function budgetExceeded(c: Context, retryAfterMs: number) {
-  return c.json(
-    { error: { code: "control_plane_rate_limited", message: "Control Plane request limit exceeded", retryAfterMs } },
-    429,
-  )
-}
-
-function clientBudget(c: Context, limiter: ConnectionRateLimiter, key: string) {
-  const result = limiter.check({ userId: requestClientKey(c), workspaceId: key })
-  return result.allowed ? undefined : budgetExceeded(c, result.retryAfterMs)
 }
 
 /**
@@ -384,11 +377,9 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
       }
     }
 
-  /**
-   * The machine caller's path, in the P1.1 order: body cap (route middleware,
-   * applied before this runs) → client-address budget → the verifier over the
-   * exact body text → per-enrollment budget → schema → authority.
-   */
+  const budgets = { clientRateLimiter, machineRateLimiter, now }
+
+  /** The machine caller's path: `admitMachineCaller` (budget, verifier, budget) → schema → authority. */
   const machine = <Schema extends z.ZodTypeAny>(
     schema: Schema,
     run: (input: {
@@ -400,27 +391,12 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
     key: string,
   ) =>
     async (c: Context) => {
-      const limited = clientBudget(c, clientRateLimiter, `client:${key}`)
-      if (limited) return limited
-      const authority = requireAuthority(services)
-      if (!authority.machineAuth) return unsupported(c, "Machine-signed enrollment")
-      const bodyText = await c.req.text()
-      const verified = await verifyMachineRequest(
-        { method: c.req.method, url: c.req.url, headers: c.req.raw.headers, bodyText },
-        { ...authority.machineAuth, now },
-      )
-      if (!verified.ok) {
-        return c.json({ error: { code: verified.code, message: "Machine request refused" } }, verified.status)
-      }
-      const perEnrollment = machineRateLimiter.check({
-        userId: `machine:${verified.machine.enrollmentId}`,
-        workspaceId: key,
-      })
-      if (!perEnrollment.allowed) return budgetExceeded(c, perEnrollment.retryAfterMs)
-      const parsed = parsedBody(schema, parseJsonText(bodyText))
+      const admitted = await admitMachineCaller(c, services, budgets, key)
+      if (admitted instanceof Response) return admitted
+      const parsed = parsedBody(schema, parseJsonText(admitted.bodyText))
       if (!parsed.ok) return c.json({ error: parsed.error }, parsed.status)
       try {
-        return c.json(await run({ body: parsed.body, machine: verified.machine, authority, c }))
+        return c.json(await run({ body: parsed.body, machine: admitted.machine, authority: requireAuthority(services), c }))
       } catch (err) {
         return claxedoErrorResponse(c, err) ?? Promise.reject(err)
       }
@@ -529,6 +505,11 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
       }),
     )
     .post("/heartbeat", tooLarge(MACHINE_BODY_LIMIT_BYTES), machineHeartbeat)
+    .get("/events", machineEventsHandler(services, {
+      ...budgets,
+      ...(options.liveSyncRoom ? { liveSyncRoom: options.liveSyncRoom } : {}),
+      ...(options.eventsHeartbeatMs === undefined ? {} : { heartbeatMs: options.eventsHeartbeatMs }),
+    }))
     .post("/acquire", tooLarge(MACHINE_BODY_LIMIT_BYTES), machine(acquireBody, async ({ machine: caller, authority }) => {
       if (!authority.acquireHostServingGeneration) throw unsupportedError("Serving generation acquisition")
       const result = await authority.acquireHostServingGeneration(caller)
@@ -583,10 +564,12 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
       "/:id/scope",
       handle(scopeBody, async ({ body, auth, authority, c }) => {
         if (!authority.updateHostEnrollmentScope) throw unsupportedError("Enrollment scope")
-        return await authority.updateHostEnrollmentScope(auth, {
+        const result = await authority.updateHostEnrollmentScope(auth, {
           enrollmentId: routeParam(c, "id"),
           scope: { allowed_roots: body.allowed_roots },
         })
+        await options.hostChanged?.({ ownerUserId: auth.user.subject, hostId: result.host_id })
+        return result
       }, "PATCH", {
         limiter: controlPlaneRateLimiter,
         key: "host.enrollments.scope",
@@ -655,6 +638,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
           action: "host_provider_config.pushed",
           metadata: { enrollmentId, revision: result.revision, providerIds },
         })
+        await options.hostChanged?.({ ownerUserId: auth.user.subject, hostId: target.host_id })
         return { enrollment_id: result.enrollment_id, revision: result.revision, sealed: result.sealed }
       }, "POST", {
         limiter: controlPlaneRateLimiter,

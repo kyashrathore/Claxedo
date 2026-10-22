@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest"
+import { describe, expect, test, vi } from "vitest"
 
 import { transientHeartbeatFailure } from "./connector"
 import { createFakeControlPlane, decodeFakeTunnelToken, enrollFakeHost } from "./fake-control-plane.test-support"
@@ -51,6 +51,35 @@ describe("acquire", () => {
       "x-claxedo-host-signature": expect.stringMatching(/^[A-Za-z0-9_-]+$/),
     })
     expect(request?.body).toEqual({ enrollmentId: enrolled.enrollmentId, hostId: enrolled.state.host_id, keyVersion: 1 })
+  })
+})
+
+describe("watch", () => {
+  test("holds a signed GET open and reopens it with a fresh nonce when the stream ends", async () => {
+    const { cp, enrolled, transport } = await host()
+    const rings: number[] = []
+    const watch = transport.watch!({ onEvent: () => rings.push(Date.now()) })
+    await vi.waitFor(() => expect(cp.eventStreams(enrolled.enrollmentId)).toBe(1))
+    const first = cp.log.find((entry) => entry.path === "/api/claxedo/host/enrollments/events")
+    expect(first).toMatchObject({ method: "GET", body: {} })
+    expect(first?.headers).toMatchObject({
+      accept: "text/event-stream",
+      "x-claxedo-enrollment-id": enrolled.enrollmentId,
+      "x-claxedo-host-nonce": expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
+      "x-claxedo-host-signature": expect.stringMatching(/^[A-Za-z0-9_-]+$/),
+    })
+
+    cp.assign({ enrollmentId: enrolled.enrollmentId, workspaceId: "ws_1", remoteDirectory: "/srv/app" })
+    await vi.waitFor(() => expect(rings).toHaveLength(1))
+
+    cp.dropEventStreams(enrolled.enrollmentId)
+    await vi.waitFor(() => expect(cp.eventStreams(enrolled.enrollmentId)).toBe(1), { timeout: 5_000 })
+    const opens = cp.log.filter((entry) => entry.path === "/api/claxedo/host/enrollments/events")
+    expect(opens).toHaveLength(2)
+    expect(opens[1]?.headers["x-claxedo-host-nonce"]).not.toBe(opens[0]?.headers["x-claxedo-host-nonce"])
+    expect(opens[1]?.headers["last-event-id"], "resumes from the ring it last read").toBeDefined()
+    watch.close()
+    await vi.waitFor(() => expect(cp.eventStreams(enrolled.enrollmentId)).toBe(0))
   })
 })
 
