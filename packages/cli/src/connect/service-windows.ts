@@ -59,8 +59,9 @@ export function windowsWrapperScript(
   ].join("\r\n")
 }
 
-function xml(value: string) {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+/** Text content of an XML element, for the task definition and the launchd plist alike. */
+export function xmlTextNode(value: string) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
 }
 
 /**
@@ -71,8 +72,8 @@ function xml(value: string) {
  * would otherwise kill the host mid-serve.
  */
 export function windowsTaskXml(deps: Pick<ServiceDeps, "username" | "homedir" | "env">) {
-  const userId = xml(windowsUserId(deps))
-  const script = xml(windowsScriptPath(deps))
+  const userId = xmlTextNode(windowsUserId(deps))
+  const script = xmlTextNode(windowsScriptPath(deps))
   return [
     `<?xml version="1.0" encoding="UTF-8"?>`,
     `<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">`,

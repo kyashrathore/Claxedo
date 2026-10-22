@@ -5,7 +5,7 @@ import path from "node:path"
 import { promisify } from "node:util"
 import type { HostState } from "@claxedo/host-connector/host-state"
 import { EXIT_TIMEOUT_S } from "./paths"
-import { WINDOWS_TASK, windowsScriptPath, windowsTaskXml, windowsTaskXmlPath, windowsWrapperScript } from "./service-windows"
+import { WINDOWS_TASK, windowsScriptPath, windowsTaskXml, windowsTaskXmlPath, windowsWrapperScript, xmlTextNode } from "./service-windows"
 
 const execFileAsync = promisify(execFile)
 
@@ -118,10 +118,6 @@ export function systemdUnit(deps: Pick<ServiceDeps, "command" | "claxedoHome">, 
   ].join("\n")
 }
 
-function xml(value: string) {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-}
-
 function singleQuoted(value: string) {
   return `'${value.replace(/'/g, `'\\''`)}'`
 }
@@ -174,7 +170,7 @@ export function launchdPlist(deps: Pick<ServiceDeps, "command" | "claxedoHome">,
     `  <array>`,
     `    <string>/bin/sh</string>`,
     `    <string>-c</string>`,
-    `    <string>${xml(script)}</string>`,
+    `    <string>${xmlTextNode(script)}</string>`,
     `  </array>`,
     `  <key>RunAtLoad</key><true/>`,
     `  <key>KeepAlive</key>`,
@@ -184,7 +180,7 @@ export function launchdPlist(deps: Pick<ServiceDeps, "command" | "claxedoHome">,
     ...(deps.claxedoHome
       ? [
           `  <key>EnvironmentVariables</key>`,
-          `  <dict><key>CLAXEDO_HOME</key><string>${xml(deps.claxedoHome)}</string></dict>`,
+          `  <dict><key>CLAXEDO_HOME</key><string>${xmlTextNode(deps.claxedoHome)}</string></dict>`,
         ]
       : []),
     `</dict>`,
