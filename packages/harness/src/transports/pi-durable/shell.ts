@@ -18,23 +18,10 @@ export type PiShellServices = Pick<HarnessServices, "spawn" | "clock" | "log">
 
 export type LiveProcesses = { add(owned: OwnedProcess): unknown; delete(owned: OwnedProcess): unknown }
 
-export type PiShellHost = { sessionId: string; services: PiShellServices; env: Readonly<Record<string, string>>; live: LiveProcesses;
-  /** From `piShell`; absent on a Windows box without Git for Windows, where every command fails with `NO_SHELL_MESSAGE`. */
-  shell: string | undefined }
+export type PiShellHost = { sessionId: string; services: PiShellServices; env: Readonly<Record<string, string>>; live: LiveProcesses; shell: string | undefined }
 
 export const NO_SHELL_MESSAGE = "Shell commands need Git for Windows (git-scm.com) on this machine; install it and restart claxedo connect"
 
-/**
- * The bash the tool's script runs in, resolved as pi-durable's own
- * `NodeExecutionEnv` resolves it (`getShellConfig` in its env/node, which it
- * does not export): on Windows, Git for Windows' bash.exe under ProgramFiles
- * or ProgramFiles(x86), then a bash.exe on PATH; elsewhere /bin/bash, then
- * bash on PATH. Two departures: a bash.exe on PATH is also looked for beside
- * the git on PATH, since the installer puts only Git\cmd there and a person
- * who installed Git elsewhere has git on PATH but not bash; and WSL's
- * System32\bash.exe is never taken, because the tool's script passes the
- * command as an argument, which that launcher does not accept.
- */
 export function piShell(input: { platform: NodeJS.Platform; env: Readonly<Record<string, string | undefined>>; exists: (file: string) => boolean }): string | undefined {
   if (input.platform !== "win32") return input.exists("/bin/bash") ? "/bin/bash" : "bash"
   const variable = (name: string) => Object.entries(input.env).find(([key]) => key.toUpperCase() === name)?.[1]
@@ -47,7 +34,6 @@ export function piShell(input: { platform: NodeJS.Platform; env: Readonly<Record
   return candidates.find((file) => input.exists(file))
 }
 
-/** `piShell` for the process the tools run in. */
 export function resolvedPiShell(env: Readonly<Record<string, string | undefined>>): string | undefined {
   return piShell({ platform: process.platform, env, exists: existsSync })
 }
