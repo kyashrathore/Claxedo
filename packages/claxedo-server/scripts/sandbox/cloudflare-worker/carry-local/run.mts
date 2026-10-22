@@ -132,6 +132,8 @@ try {
   await current.miniflare.dispose()
   console.log("carry-local: every check passed")
 } finally {
+  const left = docker("ps", "-aq", "--filter", "name=workerd--RigSandbox-").split("\n").filter(Boolean)
+  if (left.length) execFileSync("docker", ["rm", "-f", ...left], { stdio: "ignore" })
   for (const id of snapshots) execFileSync("docker", ["rmi", "-f", `workerd-container-snap-${id}`], { stdio: "ignore" })
   const created = docker("volume", "ls", "-q", "--filter", "name=workerd-snap-").split("\n").filter((name) => name && !volumesBefore.has(name))
   if (created.length) execFileSync("docker", ["volume", "rm", "-f", ...created], { stdio: "ignore" })
