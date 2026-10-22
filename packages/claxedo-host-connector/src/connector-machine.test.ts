@@ -384,11 +384,15 @@ describe("assignment discovery", () => {
     await h.connector.start()
     await h.doorbell()
     cp.assign({ enrollmentId: h.enrolled.enrollmentId, workspaceId: "ws_1", remoteDirectory: "/srv/api" })
-    // The assignment's ring is the first delivery; the timer's beats are counted from there.
-    await vi.waitFor(() => expect(h.seen).toHaveLength(1))
+    // The assignment's ring is the first delivery; the timer's beats are
+    // counted from there. Each wait covers a signed beat's round trip through
+    // the fake (two Web Crypto operations), so the budget is well above the
+    // default second this suite's twenty-four beats exceed on a loaded machine.
+    const beatBudget = { timeout: 5_000 }
+    await vi.waitFor(() => expect(h.seen).toHaveLength(1), beatBudget)
     const deliveriesAfter = async () => {
       h.tick()
-      await vi.waitFor(() => expect(h.beats().length).toBe(beatsBefore + 1))
+      await vi.waitFor(() => expect(h.beats().length).toBe(beatsBefore + 1), beatBudget)
       beatsBefore = h.beats().length
       return h.seen.length
     }
@@ -406,7 +410,7 @@ describe("assignment discovery", () => {
     exists = true
     for (let beat = 1; beat <= 8; beat++) expect(await deliveriesAfter()).toBe(6)
     h.tick()
-    await vi.waitFor(() => expect(cp.routable(h.enrolled.enrollmentId)).toEqual(["ws_1"]))
+    await vi.waitFor(() => expect(cp.routable(h.enrolled.enrollmentId)).toEqual(["ws_1"]), beatBudget)
 
     expect(h.seen).toHaveLength(7)
     expect(h.connector.acked()).toEqual([{ workspaceId: "ws_1", revision: 1 }])
