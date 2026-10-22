@@ -7,6 +7,7 @@ import { createBoatSandboxDriver, formatBoatRuntimeTemplate, parseBoatRuntimeTem
 import { boatTemplateResetCommand } from "./boat-machine"
 import { createSandboxManager, isSandboxHostGone, isSandboxProviderKeyRefused, isSandboxProviderRateLimited, isSandboxRuntimeBootFailure, sandboxRuntimeBootFailure, type SandboxDriverEnsureInput } from ".."
 import { createMemoryLeaseStore, sandboxLease } from "../stores/memory"
+import { MINIMUM_SERVED_WORKSPACE_RUNTIME_VERSION } from "../runtime-version"
 import { preparedImageOutput } from "./boat-preparation.test-support"
 
 type Call = { path: string; method: string; headers: Record<string, string>; body?: any }
@@ -823,7 +824,7 @@ describe("boat sandbox driver", () => {
 
   onVm("a wake whose named image is not seeded keeps serving the image the machine last booted, with no pull and no seed", async () => {
     const previous = "ghcr.io/test/sandbox:0"
-    const run = runStartCommand(await resumeCommands(), { existingImage: previous, seededImages: [previous], stubLoaded: previous, seededRuntimeVersion: "0.10.0" })
+    const run = runStartCommand(await resumeCommands(), { existingImage: previous, seededImages: [previous], stubLoaded: previous, seededRuntimeVersion: MINIMUM_SERVED_WORKSPACE_RUNTIME_VERSION })
     expect(run.prepared).toBe(0)
     expect(run.started).toBe(0)
     expect(run.booted).toBe(previous)
@@ -849,7 +850,7 @@ describe("boat sandbox driver", () => {
     const previous = "ghcr.io/test/sandbox:0"
     const commands = await resumeCommands({ updateImage: true })
     expect(commands.prepare).not.toContain("previous=")
-    const run = runStartCommand(commands, { existingImage: previous, seededImages: [previous], stubLoaded: previous, seededRuntimeVersion: "0.10.0" })
+    const run = runStartCommand(commands, { existingImage: previous, seededImages: [previous], stubLoaded: previous, seededRuntimeVersion: MINIMUM_SERVED_WORKSPACE_RUNTIME_VERSION })
     expect(run.started).toBe(0)
     expect(run.booted).toBe(IMAGE)
     expect(run.calls).toContain(`pull ${IMAGE}`)
