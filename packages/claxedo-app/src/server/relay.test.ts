@@ -268,3 +268,19 @@ test("relay: a client whose origin fronts the relay sends every room request and
   }
   expect(sockets).toEqual(["wss://app.test/relay/workspaces/ws_1/pty?region=us-east"])
 })
+
+test("relay: a request made while a connection read is still in flight uses the link a start just adopted instead of waiting on that read", async () => {
+  let answerRead: (answer: Awaited<ReturnType<Parameters<typeof createRelay>[0]>>) => void = () => {}
+  const read = () => new Promise<Awaited<ReturnType<Parameters<typeof createRelay>[0]>>>((resolve) => { answerRead = resolve })
+  runtimeFetch.mockResolvedValue(Response.json([]))
+  const relay = createRelay(read)
+  const stream = relay.fetch("ws_1", "/api/wr/events")
+  relay.adopt({ ...link, workspaceId: "ws_1", runtimeAccessToken: "started" })
+
+  await relay.fetch("ws_1", "/api/wr/pty", { method: "POST", body: "{}" })
+
+  expect(runtimeFetch.mock.calls.map((call) => call[0])).toEqual(["https://relay.test/workspaces/ws_1/api/wr/pty"])
+  expect(new Headers(runtimeFetch.mock.calls[0]?.[1]?.headers).get("Authorization")).toBe("Bearer started")
+  answerRead({ kind: "ready", link: { ...link, workspaceId: "ws_1", runtimeAccessToken: "read" } })
+  await stream
+})

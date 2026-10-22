@@ -126,7 +126,7 @@ function relayConnections(read: WorkspaceConnections["read"], links: RelayLinkSt
   return {
     connection: (workspaceId: string, sessionId?: string, force = false) => {
       const at = key(workspaceId, sessionId)
-      return minting.get(at) ?? (force ? undefined : kept(at)) ?? mint(at, workspaceId, sessionId)
+      return (force ? undefined : kept(at)) ?? minting.get(at) ?? mint(at, workspaceId, sessionId)
     },
     held: (workspaceId: string, sessionId?: string) => (minting.has(key(workspaceId, sessionId)) ? undefined : kept(key(workspaceId, sessionId))),
     adopt: (link: RelayConnection) => void settle(key(link.workspaceId, link.sessionId), link, true),
