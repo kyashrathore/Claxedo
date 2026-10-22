@@ -146,7 +146,7 @@ function parseHostArgs(args: string[]): Parsed {
     if (arg === "--root" || arg.startsWith("--root=")) {
       const taken = takeValue(args, i, "--root")
       const root = normalizeHostPath(taken.value)
-      if (root === undefined) throw new Error(`--root must be an absolute path on the machine (/srv/app or C:\\work): ${taken.value}`)
+      if (root === undefined) throw new Error(`--root must be an absolute path: ${taken.value}`)
       parsed.roots.push(root)
       i = taken.next
       continue
@@ -199,7 +199,7 @@ function requireMachineDirectory(parsed: Parsed) {
   const directory = parsed.positional[0]
   if (!directory) throw new Error(`a directory on the machine is required\n${hostUsage}`)
   const normalized = normalizeHostPath(directory)
-  if (normalized === undefined) throw new Error(`the directory must be an absolute path on the machine (/srv/app or C:\\work\\app): ${directory}`)
+  if (normalized === undefined) throw new Error(`the directory must be an absolute path on the machine: ${directory}`)
   return normalized
 }
 
