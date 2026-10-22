@@ -290,7 +290,7 @@ export const serverWorkerd: Policy = {
   // bridged into the owner's room as a machine subscriber
   // (`deployments/hosted-workerd/live-sync-subscriber.ts`, the subscriber
   // identity split out of the room), the machine caller's admission shared by
-  // it and the heartbeat (`platform/auth/machine-caller.ts`), the ring the
+  // it and the heartbeat (`workspace/machine-caller.ts`), the ring the
   // host routes publish (`workspace/host-changed-notice.ts`), and the
   // attestation encodings split out of the D1 host authority
   // (`authority/adapters/d1/host-attestation-codec.ts`). It adds no package
