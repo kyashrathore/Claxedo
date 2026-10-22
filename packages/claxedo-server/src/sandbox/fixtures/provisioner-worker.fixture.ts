@@ -1,5 +1,5 @@
 import type { D1Database } from "@cloudflare/workers-types"
-import { createSandboxManager, liftSandboxRetryWait, SandboxProviderKeyRefusedError, SandboxProviderRateLimitedError, SandboxRuntimeBootError, type SandboxDriver, type SandboxDriverEnsureInput } from "@claxedo/sandbox-manager"
+import { createSandboxManager, liftSandboxRetryWait, SANDBOX_IMAGE_LABEL, SandboxProviderKeyRefusedError, SandboxProviderRateLimitedError, SandboxRuntimeBootError, type SandboxDriver, type SandboxDriverEnsureInput } from "@claxedo/sandbox-manager"
 import { createD1SandboxLeaseStore } from "../stores/d1"
 import { sandboxProvisionerClass } from "../provisioner.cf"
 import { FIXTURE_OUTCOME_HELD_MS } from "./provisioner-outcome-held"
@@ -50,15 +50,21 @@ async function fixKey(database: D1Database, workspaceId: string) {
  * `ws_day_limited_<n>` is refused at its provider's daily start limit n times,
  * `ws_hour_limited` at its hourly one every time, `ws_step_throws` throws out of the start step once the lease is ready (its
  * runtime is not provisioned until a second step), `ws_stopped_under` has its
- * lease stopped while the driver runs its first boot, and a workspace named
- * `asleep` has a runtime that never answers a ready lease.
+ * lease stopped while the driver runs its first boot, a workspace named
+ * `asleep` has a runtime that never answers a ready lease, and one ending
+ * `_update` serves the previous image until a step asks for the deployment's.
  */
+const DEPLOYED_IMAGE = "ghcr.io/test/sandbox:deployed"
+const PREVIOUS_IMAGE = "ghcr.io/test/sandbox:previous"
+
 function scriptedDriver(database: D1Database): SandboxDriver {
   const ready = (input: SandboxDriverEnsureInput) => ({
     sandboxId: `sandbox_${input.workspaceId}`,
     url: `https://runtime.test/${input.workspaceId}`,
     hostId: `host_${input.workspaceId}`,
-    labels: input.labels,
+    labels: input.workspaceId.endsWith("_update")
+      ? { ...input.labels, [SANDBOX_IMAGE_LABEL]: input.updateImage ? DEPLOYED_IMAGE : PREVIOUS_IMAGE }
+      : input.labels,
   })
   const ensureHost = async (input: SandboxDriverEnsureInput) => {
     const calls = await recordCall(database, input.workspaceId)
@@ -87,6 +93,7 @@ function scriptedDriver(database: D1Database): SandboxDriver {
   }
   return {
     id: "scripted",
+    image: DEPLOYED_IMAGE,
     ensureHost,
     resumeHost: (input) => ensureHost(input.ensure),
     metadata: {
