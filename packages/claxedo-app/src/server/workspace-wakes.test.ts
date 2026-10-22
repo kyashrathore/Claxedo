@@ -224,3 +224,8 @@ test("wakes: after a reload, a workspace whose start failed reads failed with th
   expect(runtime.kind).toBe("wakeFailed")
   expect(runtime.kind === "wakeFailed" && runtime.error.message).toBe("Boat's daily start limit (200) is used up; try again later.")
 })
+
+test("wakes: a running workspace the catalog reads on an older image reads outdated after a reload, before any connection read says so", () => {
+  const { wakes } = fixture({ value: true }, { imageOutdated: true })
+  expect(wakes.runtime(cloud)).toEqual({ kind: "outdated" })
+})

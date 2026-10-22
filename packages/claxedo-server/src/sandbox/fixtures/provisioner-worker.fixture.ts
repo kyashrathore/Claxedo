@@ -215,8 +215,9 @@ function drive(env: Env): SandboxStartDrive {
       }
       return sandboxes.acquire(workspaceId, input)
     },
-    provision: async (workspaceId, epoch, capabilities) => {
-      const answer = await sandboxes.provision(workspaceId, epoch, input)
+    provision: async (workspaceId, epoch, capabilities, updateImage) => {
+      const answer = await sandboxes.provision(workspaceId, epoch, { ...input, ...(updateImage ? { updateImage } : {}) })
+      if (workspaceId.endsWith("_update")) await recordRootStep(env.CONTROL_PLANE_DB, workspaceId, updateImage ? "provision for the deployment's image" : "provision", undefined)
       if (taskRoot(workspaceId)) {
         await recordRootStep(env.CONTROL_PLANE_DB, workspaceId, "provision", capabilities)
         return answer.status === "ready" ? { ...answer, renewAt: Date.now() + RENEWAL_DUE_MS } : answer
@@ -278,6 +279,7 @@ export default {
       const plugin = url.searchParams.get("plugin")
       return Response.json(await sandboxProvisioner(env.SANDBOX_PROVISIONER, workspaceId).start(workspaceId, {
         ...(url.searchParams.has("retry") ? { retry: true } : {}),
+        ...(url.searchParams.has("update") ? { updateImage: true } : {}),
         ...(plugin ? { capabilities: { plugins: [{ sourceId: "src", pluginName: plugin }], skills: [] } } : {}),
       }))
     }

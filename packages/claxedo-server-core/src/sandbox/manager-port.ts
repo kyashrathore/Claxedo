@@ -24,6 +24,8 @@ export type SandboxReadyTarget = {
   epoch: number
   routingId?: string
   homeRegion: string
+  /** The runtime booted from an image other than the deployment's: it serves, and reads as outdated until a Restart to update. */
+  imageOutdated?: true
 }
 
 export type SandboxEnsureResult =

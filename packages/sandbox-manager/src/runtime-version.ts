@@ -20,11 +20,15 @@ export function workspaceRuntimeVersion() {
 }
 
 /**
- * The oldest workspace-runtime version a driver may restore a workspace's
- * snapshot into running again. A filesystem snapshot carries the runtime it
- * was taken with, so a fix to the runtime reaches a workspace that keeps
- * waking only when this rises. Raise it, together with the runtime version,
- * for a security-relevant runtime change alone: every snapshot below it is
- * refused and its person must start the workspace fresh.
+ * The oldest workspace-runtime version a driver may bring back into service:
+ * a workspace's snapshot restored, or the older image a Boat wake keeps
+ * serving instead of waiting on the deployment's. A filesystem snapshot
+ * carries the runtime it was taken with, and a kept image the runtime it
+ * shipped, so a fix to the runtime reaches a workspace that keeps waking only
+ * when this rises. Raise it, together with the runtime version, for a
+ * security-relevant runtime change or a control-plane protocol an older
+ * runtime cannot serve: every snapshot below it is refused and its person
+ * must start the workspace fresh, and every Boat wake below it boots the
+ * deployment's image.
  */
 export const MINIMUM_RESTORABLE_WORKSPACE_RUNTIME_VERSION = "0.5.2"

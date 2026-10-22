@@ -17,6 +17,15 @@ test("an asleep cloud placement carries why it was stopped when the catalog name
   expect(placements.map((record) => record.placement.kind === "cloud" ? record.placement.stopReason : undefined)).toEqual(["The workspace's runtime stopped answering; it was stopped after 10 minutes.", undefined])
 })
 
+test("a running cloud placement on an older image carries that from the catalog, and an asleep one does not", () => {
+  const { placements } = accountCatalogFromWire([
+    { workspace_id: "ws_7", project_id: "prj_1", status: "ready", imageOutdated: true },
+    { workspace_id: "ws_8", project_id: "prj_1", status: "stopped", imageOutdated: true },
+    { workspace_id: "ws_9", project_id: "prj_1", status: "ready" },
+  ])
+  expect(placements.map((record) => record.placement.kind === "cloud" ? record.placement.imageOutdated : undefined)).toEqual([true, undefined, undefined])
+})
+
 test("the account catalog leaves an unnamed cloud placement unlabelled and labels a machine placement by its folder, never by an id", () => {
   const { placements } = accountCatalogFromWire([
     { workspace_id: "ws_2", project_id: "prj_1", display_name: "ws_2", git_branch: "dev" },

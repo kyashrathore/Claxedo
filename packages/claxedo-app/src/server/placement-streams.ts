@@ -1,6 +1,6 @@
 import { hashKey, type QueryClient } from "@tanstack/solid-query"
 import { toAppError } from "./errors"
-import { isImageOutdated, isRuntimeUnavailable } from "./wire/connection"
+import { isRuntimeUnavailable } from "./wire/connection"
 import { queryKeys } from "./query-keys"
 import { placementId, sessionId, type PlacementId } from "./ids"
 import { createSnapshotCoverage, type SnapshotCoverage } from "./snapshot-coverage"
@@ -30,7 +30,6 @@ type StreamsInput = {
 }
 
 type Refusal =
-  | { readonly kind: "outdated"; readonly current: boolean }
   | { readonly kind: "unavailable"; readonly row: string }
   | { readonly kind: "unanswered"; readonly row: string; readonly retried: boolean }
 
@@ -80,7 +79,6 @@ function placementRow(input: StreamsInput, placement: PlacementId) {
 
 function reopens(input: StreamsInput, open: OpenStream) {
   const refused = open.refused
-  if (refused?.kind === "outdated") return refused.current
   if (refused?.kind === "unanswered" && refused.retried) return true
   return refused !== undefined && refused.row !== placementRow(input, open.placement)
 }
@@ -103,8 +101,7 @@ function openRuntimeStream(state: StreamsState, placement: PlacementId, route: R
       if (!route.sharedSession && connection.kind === "reconnecting" && connection.attempt === 1) refreshCatalog(input)
     },
     onRefused: (error) => {
-      if (isImageOutdated(error)) open.refused = { kind: "outdated", current: false }
-      else if (isRuntimeUnavailable(error)) {
+      if (isRuntimeUnavailable(error)) {
         open.refused = { kind: "unavailable", row: placementRow(input, placement) }
         refreshCatalog(input)
       } else if (route.sharedSession) void input.workspaces.shared.refresh().then(() => input.onGap(session), (error) => console.error("Shared sessions could not be refreshed", error))
@@ -157,12 +154,6 @@ function retain<K>(counts: Map<K, number>, key: K): () => void {
   }
 }
 
-function markImageCurrent(state: StreamsState, workspaceId: string): boolean {
-  const outdated = [...state.sessions.values(), ...state.workspaces.values()].filter((open) => open.workspaceId === workspaceId && open.refused?.kind === "outdated")
-  for (const open of outdated) open.refused = { kind: "outdated", current: true }
-  return outdated.length > 0
-}
-
 function retryUnanswered(state: StreamsState) {
   for (const open of [...state.sessions.values(), ...state.workspaces.values()]) {
     if (open.refused?.kind === "unanswered") open.refused = { ...open.refused, retried: true }
@@ -177,13 +168,9 @@ function followCatalog(state: StreamsState): () => void {
     if (catalogKeys.has(event.query.queryHash) && event.type === "updated") reconcileStreams(state)
   })
   const unsubscribeHosts = input.workspaces.onSessionHostLearned(() => reconcileStreams(state))
-  const unsubscribeImage = input.transport.onRuntimeImage((workspaceId, outdated) => {
-    if (!outdated && markImageCurrent(state, workspaceId)) reconcileStreams(state)
-  })
   return () => {
     unsubscribeCatalog()
     unsubscribeHosts()
-    unsubscribeImage()
   }
 }
 

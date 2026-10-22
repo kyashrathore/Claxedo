@@ -1,7 +1,7 @@
 import { sleep } from "@claxedo/helpers"
 import type { WorkspaceStartProgress } from "./cloud-types"
 import { ServerError } from "./errors"
-import { CLOUD_RUNTIME_BOOT_FAILED, WORKSPACE_CHECKPOINT_UNUSABLE, type ConnectionAnswer, type RelayConnection, type StartRequest } from "./wire/connection"
+import { CLOUD_RUNTIME_BOOT_FAILED, WORKSPACE_CHECKPOINT_UNUSABLE, type ConnectionAnswer, type StartRequest } from "./wire/connection"
 
 export type StartOptions = {
   readonly onProgress?: (progress: WorkspaceStartProgress) => void
@@ -9,6 +9,7 @@ export type StartOptions = {
   readonly now?: () => number
   readonly settled?: (listener: () => void) => () => void
   readonly pollDeadlineMs?: number
+  readonly updateImage?: true
 }
 
 const DEFAULT_RETRY_MS = 2_000
@@ -76,14 +77,14 @@ async function settledAnswer(connect: Connect, workspaceId: string, options: Sta
   }
 }
 
-export async function startWorkspace(connect: Connect, workspaceId: string, options: StartOptions = {}): Promise<RelayConnection> {
-  const answer = await settledAnswer(connect, workspaceId, options, { retry: true })
-  if (answer.kind === "ready") return answer.link
+export async function startWorkspace(connect: Connect, workspaceId: string, options: StartOptions = {}): Promise<Extract<ConnectionAnswer, { kind: "ready" }>> {
+  const answer = await settledAnswer(connect, workspaceId, options, { retry: true, ...(options.updateImage ? { updateImage: options.updateImage } : {}) })
+  if (answer.kind === "ready") return answer
   if (answer.kind === "stopped") throw new ServerError({ class: "internal", message: "The workspace stopped while it was starting" })
   throw new ServerError({ class: "conflict", code: answer.checkpointUnusable ? WORKSPACE_CHECKPOINT_UNUSABLE : CLOUD_RUNTIME_BOOT_FAILED, message: answer.reason })
 }
 
-export async function followWorkspaceStart(read: Connect, workspaceId: string, options: StartOptions = {}): Promise<RelayConnection | undefined> {
+export async function followWorkspaceStart(read: Connect, workspaceId: string, options: StartOptions = {}): Promise<Extract<ConnectionAnswer, { kind: "ready" }> | undefined> {
   const answer = await settledAnswer(read, workspaceId, options)
-  return answer.kind === "ready" ? answer.link : undefined
+  return answer.kind === "ready" ? answer : undefined
 }

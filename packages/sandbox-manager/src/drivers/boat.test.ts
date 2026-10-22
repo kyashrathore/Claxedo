@@ -3,9 +3,11 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { describe, expect, test, vi } from "vitest"
-import { boatTemplateResetCommand, createBoatSandboxDriver, formatBoatRuntimeTemplate, parseBoatRuntimeTemplate, type BoatFetch } from "./boat"
+import { createBoatSandboxDriver, formatBoatRuntimeTemplate, parseBoatRuntimeTemplate, type BoatFetch } from "./boat"
+import { boatTemplateResetCommand } from "./boat-machine"
 import { createSandboxManager, isSandboxHostGone, isSandboxProviderKeyRefused, isSandboxProviderRateLimited, isSandboxRuntimeBootFailure, sandboxRuntimeBootFailure, type SandboxDriverEnsureInput } from ".."
 import { createMemoryLeaseStore, sandboxLease } from "../stores/memory"
+import { preparedImageOutput } from "./boat-preparation.test-support"
 
 type Call = { path: string; method: string; headers: Record<string, string>; body?: any }
 
@@ -58,7 +60,7 @@ const PENDING_STATES = new Set(["init", "provisioning", "provisioned", "cloning"
  * first ready one. Records every call so tests can assert on it; `options` is
  * read at each call, so a test changes the sandbox mid-flight.
  */
-function fakeBoat(options: { states?: string[]; startingRefusals?: number; hostUrl?: string; failHealthOnce?: boolean; failingStderr?: string; containerState?: string; hostPublishFailures?: string[] } = {}) {
+function fakeBoat(options: { states?: string[]; startingRefusals?: number; hostUrl?: string; failHealthOnce?: boolean; failingStderr?: string; containerState?: string; hostPublishFailures?: string[]; keptImage?: string } = {}) {
   const calls: Call[] = []
   const states = options.states ?? ["ready"]
   let stateIdx = 0
@@ -109,6 +111,9 @@ function fakeBoat(options: { states?: string[]; startingRefusals?: number; hostU
         return json(commandFinished({ stdout: `${healthy ? "200" : "000"}\n${options.containerState ?? "running"}` }))
       }
       if (command.startsWith("host url")) return json(commandFinished({ stdout: `${hostUrl}\n` }))
+      if (command.includes("docker info")) {
+        return json(commandFinished({ stdout: options.keptImage && command.includes("previous=") ? `${options.keptImage}\n` : preparedImageOutput(command) }))
+      }
       const publishFailure = isHostCommand(command) ? options.hostPublishFailures?.shift() : undefined
       if (publishFailure) return json(commandFinished({ stderr: publishFailure, exitCode: 1 }))
       return json(commandFinished({}))
@@ -172,6 +177,8 @@ type Vm = {
   /** A create that fails without leaving a container behind. */
   runFails?: boolean
   seededImages?: string[]
+  /** The workspace-runtime version the seeded images' trees carry; none when unset. */
+  seededRuntimeVersion?: string
   /** Images whose trees an earlier driver seeded and marked complete, with no stub or env beside them. */
   seededWithoutStub?: string[]
   /** The container in the slot runs from the image itself, as an earlier driver's runtime did. */
@@ -238,6 +245,10 @@ function vmFixture(vm: Vm) {
       writeFileSync(path.join(trees, "image.env"), "PATH=/usr/bin\n")
       writeFileSync(path.join(trees, "stub.tar"), image)
       writeFileSync(path.join(trees, ".complete"), "")
+      if (vm.seededRuntimeVersion) {
+        mkdirSync(path.join(trees, "opt", "workspace-runtime"), { recursive: true })
+        writeFileSync(path.join(trees, "opt", "workspace-runtime", "workspace-runtime-version"), `${vm.seededRuntimeVersion}\n`)
+      }
     }
     for (const image of vm.seededWithoutStub ?? []) {
       const trees = path.join(persistentRoot, treesDirectory(image))
@@ -318,7 +329,7 @@ function runStartCommand(commands: StartCommands, vm: Vm) {
   const sh = (command: string) => spawnSync("sh", ["-c", vmState.script(command)], { ...vmState.shell, encoding: "utf8" })
   const prepared = sh(commands.prepare)
   const started = prepared.status === 0 ? sh(commands.start) : undefined
-  return { ...vmState, prepared: prepared.status, started: started?.status, stderr: `${prepared.stderr}${started?.stderr ?? ""}`, calls: vmState.calls() }
+  return { ...vmState, prepared: prepared.status, started: started?.status, booted: prepared.stdout.trim().split("\n").pop(), stderr: `${prepared.stderr}${started?.stderr ?? ""}`, calls: vmState.calls() }
 }
 
 /** Boots of one machine run side by side, each its preparation then its start, as two runners of one workspace's start do. */
@@ -350,6 +361,17 @@ async function startCommands(): Promise<StartCommands> {
 }
 
 const commandsOf = (calls: Call[]) => calls.filter((c) => c.path.endsWith("/commands")).map((c) => c.body.command as string)
+
+/** The commands a resume of a running machine sends, as a wake or, with `updateImage`, a person's Restart to update does. */
+async function resumeCommands(ensure: Partial<SandboxDriverEnsureInput> = {}): Promise<StartCommands> {
+  const boat = fakeBoat({ states: ["idle"] })
+  const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: boat.fetchImpl, healthIntervalMs: 0 })
+  await driver.resumeHost!({ lease: sandboxLease({ workspaceId: "ws1", sandboxId: ID, hostId: "boat-ws1", url: "https://runtime.test", status: "stopped" }), ensure: ensureInput(ensure) })
+  const prepare = commandsOf(boat.calls).find((c) => c.includes("docker info"))
+  const start = commandsOf(boat.calls).find((c) => c.includes("docker run -d"))
+  if (!prepare || !start) throw new Error("no container start commands")
+  return { prepare, start, staged: boat.calls.filter((c) => c.path.endsWith("/files")).map((c) => c.body.path as string) }
+}
 
 describe("boat sandbox driver", () => {
   test.each(["transport", "http", "exit"] as const)("staged file cleanup %s failure prevents publishing the runtime", async (failure) => {
@@ -545,30 +567,31 @@ describe("boat sandbox driver", () => {
     const order = boat.calls.map((c) => c.method === "PATCH" ? "ttl" : c.body?.command?.includes("/global/health") ? "health" : c.body?.command?.startsWith("host url") ? "url" : undefined).filter(Boolean)
     expect(order).toEqual(["health", "ttl", "url"])
     const run = boat.calls.find((c) => c.path.endsWith("/commands") && c.body.command.includes("docker run -d"))
+    const envWrite = boat.calls.find((c) => c.path.endsWith("/files") && c.body?.path?.startsWith(".claxedo-runtime-env."))
     expect(run?.body.timeoutSeconds).toBe(120)
     const prepare = boat.calls.find((c) => c.path.endsWith("/commands") && c.body.command.includes("docker info"))
     expect(prepare?.body.timeoutSeconds).toBe(600)
-    const trees = `"$(pwd)/claxedo-persistent/image-ghcr.io-test-sandbox-1"`
-    expect(prepare?.body.command).toContain(`if ! { [ -f ${trees}/.complete ] && [ -f ${trees}/stub.tar ] && [ -f ${trees}/image.env ]; }; then { docker image inspect 'ghcr.io/test/sandbox:1' >/dev/null 2>&1 || docker pull 'ghcr.io/test/sandbox:1'`)
+    expect(prepare?.body.command).toContain(`booted='ghcr.io/test/sandbox:1' && if ! seeded "$(trees_of 'ghcr.io/test/sandbox:1')"; then { docker image inspect 'ghcr.io/test/sandbox:1' >/dev/null 2>&1 || docker pull 'ghcr.io/test/sandbox:1'`)
+    expect(prepare?.body.command).not.toContain("previous=")
     expect(prepare?.body.command).toContain("sudo rm -rf")
     expect(prepare?.body.command).toContain("sudo mkdir -p")
     expect(prepare?.body.command).toContain(`docker import --change "WORKDIR $workdir" --change 'LABEL claxedo.image=ghcr.io/test/sandbox:1' "$stub/skeleton.tar" claxedo-runtime-stub`)
     expect(prepare?.body.command).not.toContain("docker rmi")
-    expect(run?.body.command).toContain("docker rmi 'ghcr.io/test/sandbox:1'")
+    expect(run?.body.command).toContain(`docker rmi "$booted"`)
     expect(run?.body.command).toContain(`sudo rm -f /var/lib/ascii-docker-images/"\${id#sha256:}".tar`)
     expect(run?.body.command).toContain("docker run -d --name claxedo-runtime --hostname 'ws1' -p 2593:2593 -v /usr/libexec/docker/docker-init:/claxedo-init:ro ")
-    expect(run?.body.command).toContain(`--env-file "$(pwd)/claxedo-persistent/image-ghcr.io-test-sandbox-1"/image.env `)
+    expect(run?.body.command).toContain(`booted=$(cat ${envWrite?.body?.path}.image) && trees=$(trees_of "$booted")`)
+    expect(run?.body.command).toContain(`--env-file "$trees/image.env" `)
     expect(run?.body.command).toContain("--security-opt seccomp=unconfined --security-opt apparmor=unconfined --entrypoint /claxedo-init claxedo-runtime-stub -- sh -lc ")
-    expect(run?.body.command).toContain(`[ "$(docker container inspect --format '{{index .Config.Labels "claxedo.image"}}' claxedo-runtime 2>/dev/null)" = 'ghcr.io/test/sandbox:1' ]`)
+    expect(run?.body.command).toContain(`[ "$(docker container inspect --format '{{index .Config.Labels "claxedo.image"}}' claxedo-runtime 2>/dev/null)" = "$booted" ]`)
     expect(run?.body.command).toContain(".claxedo-runtime-env:/run/claxedo-runtime.env:ro")
     for (const tree of IMAGE_TREES) {
-      expect(run?.body.command).toContain(`-v "$(pwd)/claxedo-persistent/image-ghcr.io-test-sandbox-1"/${tree}:/${tree} `)
+      expect(run?.body.command).toContain(`-v "$trees/${tree}":/${tree} `)
     }
     expect(run?.body.command).toContain(`-v "$(pwd)/claxedo-persistent/workspace":'/workspace'`)
     expect(run?.body.command).toContain(`-v "$(pwd)/claxedo-persistent/claxedo":'/root/.claxedo'`)
     expect(run?.body.command).toContain(`-v "$(pwd)/claxedo-persistent/workspace-runtime":'/root/.workspace-runtime'`)
     expect(run?.body.command).not.toContain("--env ")
-    const envWrite = boat.calls.find((c) => c.path.endsWith("/files") && c.body?.path?.startsWith(".claxedo-runtime-env."))
     expect(envWrite?.body).toMatchObject({ encoding: "utf8" })
     expect(envWrite?.body?.content).toContain("export WORKSPACE_RUNTIME_WORKSPACE_ID='ws1'")
     expect(envWrite?.body?.content).toContain("export WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL='https://api.example.test/.well-known/jwks.json'")
@@ -761,7 +784,7 @@ describe("boat sandbox driver", () => {
     expect(staged).toHaveLength(4)
     expect(new Set(staged).size).toBe(4)
     const cleanups = commandsOf(boat.calls).filter((command) => command.startsWith("rm -f .claxedo-runtime-env."))
-    expect(cleanups).toEqual([`rm -f ${staged[0]} ${staged[1]}`, `rm -f ${staged[2]} ${staged[3]}`])
+    expect(cleanups).toEqual([`rm -f ${staged[0]} ${staged[1]} ${staged[0]}.image`, `rm -f ${staged[2]} ${staged[3]} ${staged[2]}.image`])
   })
 
   onVm("a boot moves the env it staged into the container's place and removes what boots that never finished staged", async () => {
@@ -798,7 +821,43 @@ describe("boat sandbox driver", () => {
     expect(existsSync(run.trees("ghcr.io/test/sandbox:0"))).toBe(true)
   })
 
-  test("a sandbox booted from an older image reads as outdated until its next start boots the deployment's image", async () => {
+  onVm("a wake whose named image is not seeded keeps serving the image the machine last booted, with no pull and no seed", async () => {
+    const previous = "ghcr.io/test/sandbox:0"
+    const run = runStartCommand(await resumeCommands(), { existingImage: previous, seededImages: [previous], stubLoaded: previous, seededRuntimeVersion: "0.10.0" })
+    expect(run.prepared).toBe(0)
+    expect(run.started).toBe(0)
+    expect(run.booted).toBe(previous)
+    expect(run.calls).not.toContain(`pull ${IMAGE}`)
+    expect(run.calls.some((call) => call.startsWith("create") || call.startsWith("cp"))).toBe(false)
+    expect(run.calls).toContain("start claxedo-runtime")
+    expect(run.image()).toBe(previous)
+    expect(existsSync(path.join(run.trees(previous), ".complete"))).toBe(true)
+    expect(existsSync(run.trees(IMAGE))).toBe(false)
+  })
+
+  onVm("a wake takes the named image when the image the machine last booted carries a runtime older than the control plane serves", async () => {
+    const previous = "ghcr.io/test/sandbox:0"
+    const run = runStartCommand(await resumeCommands(), { existingImage: previous, seededImages: [previous], stubLoaded: previous, seededRuntimeVersion: "0.5.1" })
+    expect(run.started).toBe(0)
+    expect(run.booted).toBe(IMAGE)
+    expect(run.calls).toContain(`pull ${IMAGE}`)
+    expect(run.image()).toBe(IMAGE)
+    expect(existsSync(run.trees(previous))).toBe(false)
+  })
+
+  onVm("a person's Restart to update takes the named image even when the image the machine last booted could serve", async () => {
+    const previous = "ghcr.io/test/sandbox:0"
+    const commands = await resumeCommands({ updateImage: true })
+    expect(commands.prepare).not.toContain("previous=")
+    const run = runStartCommand(commands, { existingImage: previous, seededImages: [previous], stubLoaded: previous, seededRuntimeVersion: "0.10.0" })
+    expect(run.started).toBe(0)
+    expect(run.booted).toBe(IMAGE)
+    expect(run.calls).toContain(`pull ${IMAGE}`)
+    expect(run.image()).toBe(IMAGE)
+    expect(existsSync(run.trees(previous))).toBe(false)
+  })
+
+  test("a wake that kept the previous image reads as outdated and answers ready at once; a Restart to update boots the deployment's image", async () => {
     const store = createMemoryLeaseStore()
     const boat = fakeBoat()
     const manager = (image: string) => createSandboxManager({
@@ -809,8 +868,11 @@ describe("boat sandbox driver", () => {
     expect(await manager("ghcr.io/test/sandbox:0").ensure("ws1", { homeRegion: "eu" })).toMatchObject({ status: "ready", labels: { image: "ghcr.io/test/sandbox:0" } })
 
     const updated = manager(IMAGE)
+    boat.options.keptImage = "ghcr.io/test/sandbox:0"
+    expect(await updated.ensure("ws1", { homeRegion: "eu" })).toMatchObject({ status: "ready", labels: { image: "ghcr.io/test/sandbox:0" } })
     expect(await updated.target("ws1")).toMatchObject({ status: "ready", imageOutdated: true })
-    expect(await updated.ensure("ws1", { homeRegion: "eu" })).toMatchObject({ status: "ready", labels: { image: IMAGE } })
+
+    expect(await updated.ensure("ws1", { homeRegion: "eu", updateImage: true })).toMatchObject({ status: "ready", labels: { image: IMAGE } })
     expect(await updated.target("ws1")).not.toHaveProperty("imageOutdated")
     expect(boat.calls.filter((call) => call.path === "/sandboxes" && call.method === "POST")).toHaveLength(1)
   })

@@ -1,7 +1,8 @@
 import { generateKeyPairSync } from "node:crypto"
 import type { SandboxDriverEnsureInput, SandboxTarget } from "../contract"
 import { sandboxLease } from "../stores/memory"
-import { boatTemplateResetCommand, createBoatSandboxDriver, type BoatRuntimeTemplate, type BoatSandboxDriverOptions } from "./boat"
+import { createBoatSandboxDriver, type BoatRuntimeTemplate, type BoatSandboxDriverOptions } from "./boat"
+import { boatTemplateResetCommand } from "./boat-machine"
 import { createBoatClient, type BoatClientOptions } from "./boat-client"
 import { createBoatNamedSnapshotClient } from "./boat-named-snapshots"
 
