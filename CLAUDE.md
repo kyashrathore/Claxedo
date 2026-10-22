@@ -16,6 +16,14 @@ When changing code that carries a comment, rewrite the comment from the new code
 
 ## Architecture ratchets
 
+Know these limits before writing code, not from a failing check:
+
+- **File size.** A maintained source file stays at or under 800 lines. Tests, e2e, fixtures, `test-support`, locales, `.d.ts` and `packages/ui` are not counted. Files already over it have an exact ceiling in `script/file-size/ceilings.json` that may only fall. Before adding to a file near the limit, plan the split.
+- **App line budgets.** `packages/claxedo-app` has a per-area budget and a total in `packages/claxedo-app/scripts/checks/budget.ts`, plus its own file (300), function (40) and component (120) limits and a no-comments rule in `packages/claxedo-app/AGENTS.md`.
+- **Product closures.** Each shipped product has a module and package ceiling in `script/product-boundary/policies/*.ts` (`ceilings: { modules, packages }`), and the server's Worker entries are also pinned in `packages/claxedo-server/src/deployments/deployment-closures.test.ts`. A new file imported by Worker, desktop, connector or local-server code raises that product's module count by one; a new npm import raises its package count. Prefer extending an existing module in the product's closure over adding one, and check the policy's `forbiddenModules` and `forbiddenPackages` before importing across packages.
+- **Helpers.** `script/helpers/verify.ts` refuses redefining a name a canonical module owns (`script/helpers/canonical.json`), a new divergent copy of an already-duplicated helper name, and drift between declared twins. Search for the existing helper before writing a guard, parser or retry helper.
+- **Others in the same command:** every package whose bun tests call `mock.module` runs them with `--isolate`; `@claxedo/cli`'s npm install closure may not gain a native compile step (`script/install-steps`); deadlines use the referenced-timer helper; session-core stays free of Node imports.
+
 Run `bun run test:architecture-ratchets` before completing any change that adds, removes, or redirects a production import. The pre-push hook runs this command after typecheck so deterministic closure drift fails locally instead of in CI.
 
 When a ratchet fails, do not blindly raise a ceiling or baseline. First identify the newly reachable module and its dependency chain, then remove an accidental edge or reuse the canonical owner. If the dependency is intentional, run the affected product's full `verify:closure`, raise only the exact measured ceiling with no headroom, and update the adjacent comment to name the reviewed owner and why it belongs in that product. Never hide a dependency from the scanner with an opaque dynamic import.
