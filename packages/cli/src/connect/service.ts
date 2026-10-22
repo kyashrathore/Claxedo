@@ -26,7 +26,8 @@ export type ServiceDeps = {
   env: NodeJS.ProcessEnv
   /** Resolves for every exit, including a command that could not be spawned (`code` -1); never rejects. */
   run: (file: string, args: readonly string[]) => Promise<CommandResult>
-  writeFile: (file: string, text: string) => Promise<void>
+  /** UTF-8 unless `encoding` says otherwise; the Windows task definition is written UTF-16LE. */
+  writeFile: (file: string, text: string, options?: { encoding: "utf16le" }) => Promise<void>
   unlink: (file: string) => Promise<void>
   now: () => number
 }
@@ -56,9 +57,9 @@ export function defaultServiceDeps(): ServiceDeps {
         }
       }
     },
-    writeFile: async (file, text) => {
+    writeFile: async (file, text, options) => {
       await fs.mkdir(path.dirname(file), { recursive: true })
-      await fs.writeFile(file, text, { mode: 0o644 })
+      await fs.writeFile(file, text, { mode: 0o644, encoding: options?.encoding ?? "utf8" })
     },
     unlink: async (file) => {
       await fs.rm(file, { force: true })
@@ -302,7 +303,7 @@ export async function startService(deps: ServiceDeps, service: InstalledService)
   if (whoami.code !== 0 || !userId) throw new Error("whoami.exe did not answer this user's account name")
   // The XML is the registration's input only; the task holds its own copy.
   const taskXml = windowsTaskXmlPath(deps)
-  await deps.writeFile(taskXml, windowsTaskXml(deps, userId))
+  await deps.writeFile(taskXml, windowsTaskXml(deps, userId), { encoding: "utf16le" })
   try {
     await must(deps, "schtasks.exe", ["/Create", "/TN", WINDOWS_TASK, "/XML", taskXml, "/F"])
   } finally {
