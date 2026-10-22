@@ -531,6 +531,7 @@ export async function runHost(input: HostRunInput): Promise<number> {
       })
     },
     onPaused: (paused) => {
+      direct?.withhold(paused)
       if (!paused) return deps.log("resumed by the owner: serving again")
       deps.log("paused by the owner: serving nothing until the owner resumes this machine")
       const run = state.run ?? { pid: deps.pid, started_at: startedAt, generation: connector.generation() ?? 0 }

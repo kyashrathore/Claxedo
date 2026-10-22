@@ -208,6 +208,40 @@ describe("the direct listener in front of the host runtimes", () => {
     expect(await upgrade(`Authorization: Bearer ${token}\r\n`)).toBe("HTTP/1.1 404 Not Found")
     expect(await upgrade(`Sec-WebSocket-Protocol: claxedo-rat.${token}\r\n`)).toBe("HTTP/1.1 404 Not Found")
   })
+
+  test("while the owner has the machine paused, refuses every request and closes the terminals it carried, and serves again on resume", async () => {
+    const token = await ownerToken()
+    const created = await new Promise<{ id: string }>((resolve, reject) => {
+      const body = JSON.stringify({ title: "paused", createRequestId: crypto.randomUUID() })
+      const request = httpsRequest({
+        host: "127.0.0.1", port, path: `/workspaces/${WS_A}/api/wr/pty`, method: "POST", ca: identity.certPem, checkServerIdentity: () => undefined,
+        headers: { ...bearer(token), "content-type": "application/json", "content-length": String(Buffer.byteLength(body)) },
+      }, (response) => {
+        let raw = ""
+        response.on("data", (chunk) => { raw += chunk })
+        response.on("end", () => resolve(JSON.parse(raw) as { id: string }))
+      })
+      request.on("error", reject)
+      request.end(body)
+    })
+    const carried = tlsConnect({ host: "127.0.0.1", port, ca: identity.certPem, checkServerIdentity: () => undefined })
+    const switched = new Promise<string>((resolve) => carried.once("data", (chunk: Buffer) => resolve(chunk.toString().split("\r\n")[0] ?? "")))
+    const closed = new Promise<void>((resolve) => carried.once("close", () => resolve()))
+    carried.on("error", () => undefined)
+    carried.write(
+      `GET /workspaces/${WS_A}/api/wr/pty/${created.id}/connect HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n`
+      + `Sec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nAuthorization: Bearer ${token}\r\n\r\n`,
+    )
+    expect(await switched).toBe("HTTP/1.1 101 Switching Protocols")
+
+    direct.withhold(true)
+    await closed
+    const paused = await call(`/workspaces/${WS_A}/session`, bearer(token))
+    expect([paused.status, code(paused)]).toEqual([503, "machine_paused"])
+
+    direct.withhold(false)
+    expect((await call(`/workspaces/${WS_A}/session`, bearer(token))).status).toBe(200)
+  })
 })
 
 describe("the addresses and port the direct listener holds", () => {

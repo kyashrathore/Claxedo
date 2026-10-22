@@ -28,6 +28,12 @@ export type DirectRoutes = { port: number; addresses: string[]; spkiSha256: stri
 export type DirectListener = {
   /** Re-reads this machine's addresses, opening and closing listeners for the difference, and answers what a beat reports. */
   routes: () => Promise<DirectRoutes | undefined>
+  /**
+   * While withheld (the owner paused this machine) every request is refused
+   * and every socket already carried to a runtime is closed, as a pause closes
+   * the relay tunnels; the addresses stay bound, so a resume needs no new route.
+   */
+  withhold: (withheld: boolean) => void
   close: () => Promise<void>
 }
 
@@ -104,9 +110,16 @@ function directRefusal(status: 401 | 404, code: string) {
   return Response.json({ error: { code, message: "This route is not served to that caller" } }, { status })
 }
 
-function requestApp(runtime: DirectListenerOptions["runtime"]) {
+type Gate = { withheld: boolean; carried: Set<Duplex> }
+
+function pausedRefusal() {
+  return Response.json({ error: { code: "machine_paused", message: "The owner paused this machine" } }, { status: 503 })
+}
+
+function requestApp(runtime: DirectListenerOptions["runtime"], gate: Gate) {
   const app = new Hono()
   app.all("*", async (c) => {
+    if (gate.withheld) return pausedRefusal()
     const request = c.req.raw
     const routed = routeDirectRequest(request.url, bearerToken(request.headers.get("authorization") ?? undefined), runtime.url)
     if (routed.kind === "refused") return directRefusal(routed.status, routed.code)
@@ -121,8 +134,12 @@ function requestApp(runtime: DirectListenerOptions["runtime"]) {
   return app
 }
 
-function upgradeHandler(runtime: DirectListenerOptions["runtime"]) {
+function upgradeHandler(runtime: DirectListenerOptions["runtime"], gate: Gate) {
   return (request: IncomingMessage, socket: Duplex, head: Buffer) => {
+    if (gate.withheld) {
+      socket.end("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n")
+      return
+    }
     const routed = routeDirectRequest(request.url ?? "/", upgradeBearer(request), runtime.url)
     if (routed.kind === "refused") {
       socket.end(`HTTP/1.1 ${routed.status} ${routed.status === 401 ? "Unauthorized" : "Not Found"}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`)
@@ -132,6 +149,8 @@ function upgradeHandler(runtime: DirectListenerOptions["runtime"]) {
       value === undefined ? [] : [[name, Array.isArray(value) ? value.join(", ") : value] as [string, string]])), routed)
     request.headers = Object.fromEntries(headers)
     request.url = `${routed.target.pathname}${routed.target.search}`
+    gate.carried.add(socket)
+    socket.once("close", () => gate.carried.delete(socket))
     runtime.upgrade(request, socket, head)
   }
 }
@@ -156,8 +175,9 @@ function closeServer(server: Server): Promise<void> {
 }
 
 export function startDirectListener(options: DirectListenerOptions): DirectListener {
-  const listener = getRequestListener(requestApp(options.runtime).fetch)
-  const upgrade = upgradeHandler(options.runtime)
+  const gate: Gate = { withheld: false, carried: new Set() }
+  const listener = getRequestListener(requestApp(options.runtime, gate).fetch)
+  const upgrade = upgradeHandler(options.runtime, gate)
   const servers = new Map<string, Server>()
   const log = options.log ?? (() => undefined)
   let port = options.port
@@ -193,6 +213,12 @@ export function startDirectListener(options: DirectListenerOptions): DirectListe
       for (const address of wanted) if (!servers.has(address)) await open(address)
       if (servers.size === 0 || port === undefined) return undefined
       return { port, addresses: [...servers.keys()].sort(), spkiSha256: options.identity.spkiSha256 }
+    },
+    withhold: (withheld) => {
+      gate.withheld = withheld
+      if (!withheld) return
+      for (const socket of gate.carried) socket.destroy()
+      gate.carried.clear()
     },
     close: async () => {
       const closing = [...servers.values()]
