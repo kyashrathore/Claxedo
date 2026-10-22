@@ -14,10 +14,20 @@ claxedo --version
 ```
 
 It installs `@claxedo/workspace-runtime` beside it, which brings the embedded
-OpenCode engine and its native modules. On Windows the install needs Git on
-`PATH` (the runtime's postinstall applies its OpenCode patches with it) and a
-C++ toolchain with Python for the one OpenCode dependency that has no prebuilt
-binary — the Visual Studio Build Tools that Node's installer offers to add.
+OpenCode engine and its native modules. One of OpenCode's dependencies,
+`tree-sitter-powershell` 0.25.10, ships no prebuilt binary and compiles in its
+install script, so a plain install needs make, a C++ compiler and Python
+(`build-essential` and `python3` on Debian/Ubuntu; on Windows the Visual Studio
+Build Tools Node's installer offers to add). OpenCode reads only that
+package's `.wasm`, so on a machine without them, skip install scripts and run
+the one the runtime needs, which applies its OpenCode patches with `git`:
+
+```sh
+npm install -g --ignore-scripts @claxedo/cli
+node "$(npm root -g)/@claxedo/cli/node_modules/@claxedo/workspace-runtime/scripts/install-opencode-node.mjs"
+```
+
+Either way Git must be on `PATH`.
 
 `install.sh` is the one-line installer for Linux and macOS: it uses the `node`
 on your PATH when it is 24 or newer, otherwise downloads the current Node 24

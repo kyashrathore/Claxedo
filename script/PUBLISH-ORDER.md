@@ -155,7 +155,8 @@ It refuses to publish when any of these is true, per package:
 
 `workspace-runtime`'s `verify:publish` checks its exports against
 `docs/api-manifest.json` and its README, runs its bin and the ACP question
-package smoke; `cli`'s runs `claxedo --version`, `--help` and
+package smoke; `cli`'s checks that `dist/claxedo-migration` holds every
+migration of the journal and runs `claxedo --version`, `--help` and
 `connect --help`. Both need Node 24 on `PATH`.
 
 ### Via GitHub Actions
@@ -213,11 +214,14 @@ the graph above.
   self-contained; the CLI ships no declarations.
 - `npm install` runs the install scripts of the embedded OpenCode SDK's
   closure. `tree-sitter-powershell` 0.25.10 (a dependency of
-  `@opencode-ai/core`) ships no prebuilt binary and compiles with node-gyp,
-  so a machine without a C++ toolchain and Python (on Windows, the Visual
-  Studio Build Tools Node's installer offers) fails the install, and
-  `workspace-runtime`'s postinstall applies its OpenCode patches with `git`,
-  which must be on `PATH`.
+  `@opencode-ai/core`) ships no prebuilt binary and compiles with node-gyp on
+  every platform, so a machine without make, a C++ compiler and Python fails
+  the install; OpenCode reads only its `.wasm`, and `--ignore-scripts` followed
+  by `workspace-runtime`'s `scripts/install-opencode-node.mjs` installs and
+  runs without a toolchain (the cli README has the commands). That
+  postinstall applies its OpenCode patches with `git`, which must be on
+  `PATH`. `better-sqlite3` is pinned at 13.0.3, the first 13.x with no install
+  script and prebuilds for every platform in the package.
 - `workspace-runtime` still carries `Copyright (c) 2025 opencode`
   in `LICENSE`; the published packages read `Copyright (c) 2026 Claxedo`. Cosmetic, and a
   call for the owner rather than the release tooling.
