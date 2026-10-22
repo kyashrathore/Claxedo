@@ -216,9 +216,10 @@ the graph above.
   closure. `tree-sitter-powershell` 0.25.10 (a dependency of
   `@opencode-ai/core`) ships no prebuilt binary and compiles with node-gyp on
   every platform, so a machine without make, a C++ compiler and Python fails
-  the install; OpenCode reads only its `.wasm`, and `--ignore-scripts` followed
-  by `workspace-runtime`'s `scripts/install-opencode-node.mjs` installs and
-  runs without a toolchain (the cli README has the commands). That
+  the install. OpenCode reads only its `.wasm`, so the cli's `install.sh`
+  installs with `--ignore-scripts` and then runs `workspace-runtime`'s
+  `scripts/install-opencode-node.mjs`, which needs no toolchain
+  (`packages/cli/src/install-sh.test.ts` pins both steps). That
   postinstall applies its OpenCode patches with `git`, which must be on
   `PATH`. `better-sqlite3` is pinned at 13.0.3, the first 13.x with no install
   script and prebuilds for every platform in the package.

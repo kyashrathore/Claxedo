@@ -87,6 +87,7 @@ if [ -z "$major" ] || [ "$major" -lt "$NODE_MAJOR" ]; then
   install_node
 fi
 command -v npm >/dev/null 2>&1 || fail "npm is missing next to $(command -v node)"
+command -v git >/dev/null 2>&1 || fail "git is required: the workspace runtime applies its OpenCode patches with it"
 
 # `npm prefix -g` is the directory whose lib/node_modules and bin the install
 # writes to; a system Node (apt, brew on Linux) usually owns it as root.
@@ -100,16 +101,28 @@ if [ ! -w "$global_prefix/lib/node_modules" ] && [ ! -w "$global_prefix/lib" ] &
   remember_path "$bin_dir"
 fi
 
+# Install scripts stay off: tree-sitter-powershell, which OpenCode reads only as
+# .wasm, compiles in its own and would need make, a C++ compiler and Python. The
+# one script the install needs, the runtime's OpenCode patch step, runs below.
 if [ -n "${CLAXEDO_CLI_TARBALL:-}" ]; then
   say "Installing @claxedo/cli from $CLAXEDO_CLI_TARBALL"
   # shellcheck disable=SC2086
-  npm install -g --no-fund --no-audit --loglevel=error $prefix_args $CLAXEDO_CLI_TARBALL
+  npm install -g --ignore-scripts --no-fund --no-audit --loglevel=error $prefix_args $CLAXEDO_CLI_TARBALL \
+    || fail "npm install of $CLAXEDO_CLI_TARBALL failed"
 else
   spec="@claxedo/cli@${CLAXEDO_CLI_VERSION:-latest}"
   say "Installing $spec"
   # shellcheck disable=SC2086
-  npm install -g --no-fund --no-audit --loglevel=error $prefix_args "$spec"
+  npm install -g --ignore-scripts --no-fund --no-audit --loglevel=error $prefix_args "$spec" \
+    || fail "npm install of $spec failed"
 fi
+
+# shellcheck disable=SC2086
+global_root="$(npm root -g $prefix_args)"
+runtime_dir="$global_root/@claxedo/cli/node_modules/@claxedo/workspace-runtime"
+[ -d "$runtime_dir" ] || runtime_dir="$global_root/@claxedo/workspace-runtime"
+node "$runtime_dir/scripts/install-opencode-node.mjs" >/dev/null \
+  || fail "applying the workspace runtime's OpenCode patches in $runtime_dir failed"
 
 [ -x "$bin_dir/claxedo" ] || fail "npm finished but $bin_dir/claxedo is not there"
 "$bin_dir/claxedo" --help >/dev/null || fail "$bin_dir/claxedo --help failed"
