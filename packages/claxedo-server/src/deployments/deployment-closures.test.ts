@@ -176,7 +176,12 @@ const ENTRIES = [
   // Every entry runs each request's statements in one D1 session per
   // database, started at the primary or a replica as the request's class
   // says, and hands the bookmarks on (`platform/db/d1-sessions.ts`).
-  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 180, packages: 23 },
+  // Every entry's D1 host access authority validates a machine's roots and
+  // retires the assignments a tightened scope leaves outside them by the
+  // host-path contract, POSIX and Windows alike, in their own module
+  // (`authority/adapters/d1/host-scope-rules.ts`); the contract package was
+  // already in the Worker.
+  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 181, packages: 23 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the
   // manifest, and `cloudflare:workers` for the supervisor and its entrypoints,
@@ -203,7 +208,7 @@ const ENTRIES = [
   // The hosted connections setup picks which code-host connection can read a
   // pasted repository by the rule the local connections host shares
   // (`connections/repository-access.ts`).
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 233, packages: 27 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 234, packages: 27 },
   // The full-hosted entry alone carries the session rows pass
   // (`session/session-rows-pass.ts`) and its wiring to the sandbox and the
   // relay (`hosted-workerd/full-hosted-sandbox.ts`): it delivers the pass to a
@@ -218,7 +223,7 @@ const ENTRIES = [
   // their readers (`workspace/runtime-lost.ts`,
   // `authority/adapters/d1/runtime-lost-sessions.ts`), since only this entry
   // has cloud runtimes to lose.
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 245, packages: 27 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 246, packages: 27 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {
