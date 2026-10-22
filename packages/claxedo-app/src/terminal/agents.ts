@@ -44,14 +44,13 @@ export function agentsNote(t: DomainTranslate<TerminalKey>, runtime: WorkspaceRu
   switch (runtime.kind) {
     case "asleep":
       return t("terminal.creator.agentsAsleep", { name })
-    case "outdated":
-      return t("terminal.creator.agentsOutdated", { name })
     case "wakeFailed":
       return t("terminal.creator.agentsWakeFailed", { name, reason: runtime.error.message })
     case "waking":
       if (isFreshStart(runtime)) return facts.wakeProgress ? t("terminal.creator.startingProgress", { name, progress: facts.wakeProgress }) : t("terminal.creator.startingWorkspace", { name })
       return facts.wakeProgress ? t("terminal.creator.wakingProgress", { name, progress: facts.wakeProgress }) : t("terminal.creator.waking", { name })
     case "live":
+    case "outdated":
       if (agents.isError) return t("terminal.creator.agentsFailed")
       return agents.isPending ? t("terminal.creator.agentsLoading") : undefined
     default:

@@ -5,7 +5,7 @@ import { EVENT_CURSOR_HEADER, EVENT_STREAM_STALL_TIMEOUT_MS } from "@claxedo/age
 import { machine, unreachable, type Machine } from "../lib/machine"
 import { responseError, ServerError, toAppError } from "./errors"
 import type { ConnectionState } from "./events"
-import { isImageOutdated, isRuntimeUnavailable } from "./wire/connection"
+import { isRuntimeUnavailable } from "./wire/connection"
 import { streamSignalOf } from "./wire/stream-signals"
 
 export type StreamOptions = {
@@ -158,7 +158,7 @@ async function openStreamAttempt(run: StreamRun) {
 }
 
 function refusedFor(reason: ServerError) {
-  return reason.status === 401 || reason.status === 403 || reason.class === "not_found" || isImageOutdated(reason) || isRuntimeUnavailable(reason)
+  return reason.status === 401 || reason.status === 403 || reason.class === "not_found" || isRuntimeUnavailable(reason)
 }
 
 function endRefusedStream(run: StreamRun, reason: ServerError) {

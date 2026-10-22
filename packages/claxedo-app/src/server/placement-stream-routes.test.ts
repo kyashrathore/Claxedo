@@ -4,8 +4,7 @@ import { QueryClient } from "@tanstack/solid-query"
 import { createRoot } from "solid-js"
 import { placementId, projectId, sessionId } from "./ids"
 import { createPlacementStreams } from "./placement-streams"
-import { openBody, record, ref, settle, streamTransport, workspaces } from "./test-support/placement-streams"
-import { queryKeys } from "./query-keys"
+import { openBody, record, ref, settle, streamTransport } from "./test-support/placement-streams"
 import type { RuntimeRoute, SessionHostListener } from "./transport"
 import { createWorkspaces, type Workspaces } from "./workspaces"
 
@@ -83,41 +82,3 @@ test("a session whose stream opened against its workspace moves to its own host 
   })
 })
 
-test("a session stream refused because its workspace runs an older image stays closed across catalog reads, claims no status, and reopens with a re-read once its workspace's image reads current", async () => {
-  const serverUrl = "http://127.0.0.1:1"
-  const queryClient = new QueryClient()
-  let restarted = false
-  const seen: string[] = []
-  let announce: (workspaceId: string, outdated: boolean) => void = () => undefined
-  const transport = streamTransport({
-    serverUrl,
-    runtime: async () => {
-      seen.push(restarted ? "opened" : "refused")
-      return restarted ? openBody() : Response.json({ error: { code: "cloud_runtime_image_outdated" } }, { status: 409 })
-    },
-    onRuntimeImage: (listener: typeof announce) => {
-      announce = listener
-      return () => undefined
-    },
-  })
-  const streams = createPlacementStreams({ transport, workspaces, queryClient, onFrame: () => undefined, onGap: () => seen.push("re-read") })
-  const detach = streams.attach(ref("ses_outdated"))
-  try {
-    await settle()
-    await Bun.sleep(600)
-    expect(seen).toEqual(["refused"])
-    expect(streams.streams(ref("ses_outdated")), "a refused stream delivers no status, so the hosted notices must").toBe(false)
-    queryClient.setQueryData(queryKeys.bootstrap(serverUrl), { revision: 1 })
-    queryClient.setQueryData(queryKeys.bootstrap(serverUrl), { revision: 2 })
-    await settle()
-    expect(seen).toEqual(["refused"])
-    restarted = true
-    announce("ws_other", false)
-    await settle()
-    expect(seen).toEqual(["refused"])
-    announce(record.route.workspaceId, false)
-    await settle()
-    expect(seen).toEqual(["refused", "opened", "re-read"])
-    expect(streams.streams(ref("ses_outdated"))).toBe(true)
-  } finally { detach(); streams.close(); queryClient.clear() }
-})

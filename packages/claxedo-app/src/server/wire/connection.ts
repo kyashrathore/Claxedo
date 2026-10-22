@@ -14,12 +14,12 @@ export type RelayConnection = {
 export type StartElapsed = { readonly done: readonly WorkspaceStartStep[]; readonly sinceStartMs: number; readonly sinceStepMs: number }
 
 export type ConnectionAnswer =
-  | { readonly kind: "ready"; readonly link: RelayConnection; readonly sessionHostRoot?: string }
+  | { readonly kind: "ready"; readonly link: RelayConnection; readonly sessionHostRoot?: string; readonly imageOutdated?: true }
   | { readonly kind: "provisioning"; readonly retryAfterMs?: number; readonly bootMode?: WorkspaceBootMode; readonly failure?: string; readonly progress?: StartElapsed }
   | { readonly kind: "stopped" }
   | { readonly kind: "failed"; readonly reason: string; readonly checkpointUnusable?: true }
 
-export type StartRequest = { readonly retry?: true }
+export type StartRequest = { readonly retry?: true; readonly updateImage?: true }
 
 export type WorkspaceConnections = {
   readonly read: (workspaceId: string, sessionId?: string) => Promise<ConnectionAnswer>
@@ -35,12 +35,6 @@ const WORKSPACE_CHECKPOINT_FROZEN = "workspace_checkpoint_frozen"
 
 export function workspaceStopped(): ServerError {
   return new ServerError({ class: "conflict", code: WORKSPACE_STOPPED, message: "The cloud workspace is not running" })
-}
-
-const CLOUD_RUNTIME_IMAGE_OUTDATED = "cloud_runtime_image_outdated"
-
-export function isImageOutdated(error: unknown): boolean {
-  return error instanceof ServerError && error.code === CLOUD_RUNTIME_IMAGE_OUTDATED
 }
 
 export const WORKSPACE_CHECKPOINT_UNUSABLE = "workspace_checkpoint_unusable"
@@ -111,7 +105,7 @@ export function connectionAnswerFromWire(body: unknown, workspaceId: string, ses
   }
   if (sessionId && row.sessionId !== sessionId) throw new ServerError({ class: "internal", message: "Session connection scope does not match the requested session" })
   const link = { ...linkOf(row, workspaceId), ...(sessionId ? { sessionId } : {}) }
-  return { kind: "ready", link, ...(row.backing === "durable-object" && sessionId ? { sessionHostRoot: sessionId } : {}) }
+  return { kind: "ready", link, ...(row.backing === "durable-object" && sessionId ? { sessionHostRoot: sessionId } : {}), ...(row.imageOutdated === true ? { imageOutdated: true } : {}) }
 }
 
 export function startRefused(error: ServerError, body: unknown): ServerError {

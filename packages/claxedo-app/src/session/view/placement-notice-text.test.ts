@@ -67,3 +67,11 @@ test("a sandbox harness keeps a failed start's own notice", () => {
   const error = { class: "rate_limit" as const, message: "Boat's daily start limit (200) is used up; try again later.", retryable: false }
   expect(placementNotice(t, facts({ kind: "wakeFailed", error }))).toMatchObject({ tone: "critical", message: "sessionScreen.workspace.wakeFailed main", detail: error.message })
 })
+
+test("a workspace serving an older image says so with Restart to update, which runs the start that asks for the deployment's image", () => {
+  const woken: string[] = []
+  const notice = placementNotice(t, facts({ kind: "outdated" }, { wake: () => void woken.push("restart") }))
+  expect(notice).toMatchObject({ tone: "warning", message: "sessionScreen.workspace.outdated main", detail: "sessionScreen.workspace.outdated.detail", action: { label: "sessionScreen.workspace.restartToUpdate" } })
+  notice?.action?.run()
+  expect(woken).toEqual(["restart"])
+})

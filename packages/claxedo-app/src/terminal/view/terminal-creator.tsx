@@ -61,7 +61,7 @@ function LauncherGrid(props: {
   const t = useTranslator(terminalDictionary)
   const server = useServer()
   const runtime = () => server.cloud.runtime(props.placementId)
-  const live = () => runtime().kind === "live"
+  const live = () => runtime().kind === "live" || runtime().kind === "outdated"
   const agents = useQuery(() => ({ ...server.queries.terminals.agents(props.placementId), enabled: live() }))
   const launchers = () => terminalLaunchers(t("terminal.creator.shell"), live() ? (agents.data ?? []) : [])
   const named = useWorkspaceName()

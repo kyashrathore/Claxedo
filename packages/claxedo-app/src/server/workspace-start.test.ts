@@ -34,7 +34,7 @@ test("workspace start: asks the explicit connect once as the person's retry, pol
   const progress: WorkspaceStartProgress[] = []
   const link = await startWorkspace(server.connect, "ws_1", { onProgress: (step) => progress.push(step), wait: async (ms) => void waits.push(ms) })
 
-  expect(link).toEqual({ workspaceId: "ws_1", relayUrl: "https://relay.test", runtimeAccessToken: "rat", tokenExpiresAt: READY.tokenExpiresAt })
+  expect(link).toEqual({ kind: "ready", link: { workspaceId: "ws_1", relayUrl: "https://relay.test", runtimeAccessToken: "rat", tokenExpiresAt: READY.tokenExpiresAt } })
   const connect = { path: "/api/workspace/ws_1/connection", method: "POST" }
   expect(server.calls).toEqual([{ ...connect, body: '{"retry":true}' }, ...Array(3).fill({ ...connect, body: "{}" })])
   expect(waits).toEqual([1_500, 500, 30_000])
@@ -93,7 +93,7 @@ test("workspace start: follows the server's start for as long as it reports prog
 
   const link = await startWorkspace(server.connect, "ws_1", { wait: async () => undefined })
 
-  expect(link.runtimeAccessToken).toBe("rat")
+  expect(link.link.runtimeAccessToken).toBe("rat")
   expect(server.calls).toHaveLength(201)
 })
 
@@ -118,7 +118,7 @@ test("following a start somebody else began reads the connection, never starts o
 
   const link = await followWorkspaceStart(server.read, "ws_1", { onProgress: (step) => progress.push(step), wait: async (ms) => void waits.push(ms) })
 
-  expect(link?.runtimeAccessToken).toBe("rat")
+  expect(link?.link.runtimeAccessToken).toBe("rat")
   expect(server.calls).toEqual(Array(3).fill({ path: "/api/workspace/ws_1/connection", method: undefined }))
   expect(waits).toEqual([1_500, 2_000])
   expect(progress).toEqual([{ kind: "provisioning", bootMode: "cold-start" }, { kind: "provisioning" }])
@@ -176,7 +176,7 @@ test("workspace start: a poll the server never answers is asked again once its d
 
   const link = await startWorkspace(connections.start, "ws_1", { wait: async () => undefined, pollDeadlineMs: 5 })
 
-  expect(link.runtimeAccessToken).toBe("rat")
+  expect(link.link.runtimeAccessToken).toBe("rat")
   expect(calls).toBe(3)
 })
 
@@ -205,7 +205,7 @@ test("workspace start: the server's notice that the start settled ends the wait 
   await Bun.sleep(0)
   announce()
 
-  expect((await start).runtimeAccessToken).toBe("rat")
+  expect((await start).link.runtimeAccessToken).toBe("rat")
   expect(calls).toBe(2)
   expect(listeners.size).toBe(0)
 })
@@ -230,7 +230,7 @@ test("workspace start: notices that the start settled while a poll is in flight 
   expect(bodies).toHaveLength(2)
 
   inFlight.resolve(json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 2_000 }))
-  expect((await start).runtimeAccessToken).toBe("rat")
+  expect((await start).link.runtimeAccessToken).toBe("rat")
   expect(bodies).toEqual(['{"retry":true}', "{}", "{}"])
   expect(listeners.size).toBe(0)
 })

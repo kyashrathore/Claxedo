@@ -28,9 +28,10 @@ export type ReadySandboxTarget = Extract<SandboxTargetResult, { status: "ready" 
  * `retry` is a person asking again after a start failed: the failure held for
  * that start's connects does not answer it. `capabilities` is a Task root's
  * own capability set, which this start and every later step of the workspace
- * is prepared with.
+ * is prepared with. `updateImage` is a person's Restart to update: the start
+ * boots the deployment's image even over a runtime that answers.
  */
-export type SandboxStartRequest = { retry?: true; capabilities?: AgentPluginExecutionSelection }
+export type SandboxStartRequest = { retry?: true; capabilities?: AgentPluginExecutionSelection; updateImage?: true }
 
 /** Begins or joins the start of a workspace's sandbox and answers at once; the work itself runs elsewhere. */
 export type SandboxStart = (workspaceId: string, request?: SandboxStartRequest) => Promise<SandboxStartAnswer>
@@ -42,7 +43,7 @@ export type SandboxInFlight = (workspaceId: string) => Promise<SandboxStartAnswe
 export type SandboxStartDrive = {
   acquire(workspaceId: string, capabilities?: AgentPluginExecutionSelection): Promise<SandboxStartAnswer>
   /** One driver step at `epoch`; a step that retries a failed attempt runs on the fresh epoch its answer names. */
-  provision(workspaceId: string, epoch: number, capabilities?: AgentPluginExecutionSelection): Promise<SandboxStartAnswer>
+  provision(workspaceId: string, epoch: number, capabilities?: AgentPluginExecutionSelection, updateImage?: true): Promise<SandboxStartAnswer>
   target(workspaceId: string): Promise<SandboxTargetResult>
   /** The ready target whose runtime answers right now; nothing while the lease is ready in the store but its sandbox sleeps or is gone. */
   live(workspaceId: string): Promise<ReadySandboxTarget | undefined>

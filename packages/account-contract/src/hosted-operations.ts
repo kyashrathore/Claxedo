@@ -204,10 +204,10 @@ export const CORE_HOSTED_OPERATIONS = {
   }),
   "workspace.connection.mint": defineOperation({
     method: "POST", path: operationPath("/api/workspace/:id/connection"),
-    input: operationInput({ id: requiredParameter, retry: bodyField }),
+    input: operationInput({ id: requiredParameter, retry: bodyField, updateImage: bodyField }),
     output: connection, retry: "safe",
     exposure: { renderer: true, app: false },
-    body: selectBody("retry"),
+    body: selectBody("retry", "updateImage"),
   }),
   // A session the plane reserved in its own host, connected to before it is created there.
   "session.connection.mint": defineOperation({
