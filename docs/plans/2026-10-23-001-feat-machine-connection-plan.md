@@ -35,6 +35,10 @@ Open, for the owner (each blocks only its own workstream):
 3. **W10, agents without admin.** A separate low-privilege OS user stops an agent reading the connector's memory
    or damaging the machine, but tasks such as installing a printer driver need admin. Default on or off per
    machine?
+4. **W4, which machines are cloud machines.** The decision above splits model access by machine kind, but nothing
+   records a machine's kind. Is it a flag the owner sets per machine, a property of the invitation, or does every
+   machine use the hosted broker until W1 gives LAN machines a route to the main machine? Building W4 for every
+   machine now would send LAN machines through the hosted broker, against that decision.
 
 ## 1. Where it stands (measured 2026-10-22, from India)
 
@@ -48,12 +52,17 @@ Open, for the owner (each blocks only its own workstream):
 | Connector stop | 0.75–1.7 s, 2.9 s with a terminal open |
 | CLI install from npm | 2–3 min on Linux and macOS; 29 min on Windows (cause not isolated) |
 
-Every byte between the app and a connected machine goes through the relay (`@claxedo/workspace-relay`, a Durable
-Object in us-east), and every runtime request asks the control plane whether the caller may act. The connector only
-dials out; its runtime listens on loopback; the heartbeat reports that a machine is online, not where it is.
+Every byte between the app and a connected machine goes through the relay (`@claxedo/workspace-relay`, one Durable
+Object room per workspace). A room is placed once, when it is created, and for a machine that is the machine's own
+tunnel dial: the room lands in the region of the machine's Cloudflare edge country, or `apac` for a country outside
+the table (`relayLocationHint`). The machine checks the relay's 60 s Relay Host Token itself, then still asks the
+control plane, uncached, on every session read or write, terminal create, attach and 10 s renewal, and every stream
+lease. The connector only dials out; its runtime listens on loopback; the heartbeat reports that a machine is
+online, not where it is.
 
-What a connected machine can spend today: Pi gets the owner's accounts through push-config's direct rows. Claude
-Code and Codex use the machine's own CLI login. OpenCode gets nothing deliverable without a hand-authored key.
+What a connected machine can spend today: Pi gets the owner's accounts through push-config's direct rows, which put
+the raw secrets on the machine (`ownerPiDirectRows`). Claude Code and Codex use the machine's own CLI login.
+OpenCode gets nothing deliverable without a hand-authored key.
 
 ## 2. Target
 
@@ -74,6 +83,18 @@ Each workstream proves its behaviour live before its broad suites run (AGENTS.md
 run it through its real entrypoint against staging or a real machine with the logs tailed, cover every case it
 claims, and only then run the affected replay and e2e flows at merge.
 
+Assessed against the code on 2026-10-22; each workstream's **Assessment** says what it buys, what it costs and
+why it was or was not built:
+
+| | Verdict |
+|---|---|
+| W3 | Not built: decision 1. The owner withdrew a 10 s lease window on the same grounds; an alternative is below |
+| W1 | Not built: needs W3 at three verifiers, and a LAN with the desktop to prove |
+| W2 | Not built as written: most of it already holds, and what is left is small; reshaped below |
+| W4 | Not built: decision 4, and only a server deploy proves it. The most valuable next lane |
+| W5 | `claxedo doctor`, the service's PATH and Pi's Windows bash built; installers need a Windows box |
+| W6 | Already met by how rooms are placed |
+
 ### W1 — Direct route on the same network (desktop app first)
 
 The connector also listens on its private interfaces (LAN, tailnet) behind TLS, and reports those addresses in its
@@ -93,6 +114,18 @@ required, switchable off per machine). The web app is not covered until W7.
   mid-session and the session continues over the relay. Progress:
 - [ ] A per-machine switch turns the private listener off; with it off, nothing listens. Progress:
 
+**Assessment.** The dependency on W3 is harder than stated. The daemon's ingress (`localHostRelayActor`), the
+runtime's `createRelayHostAuthMiddleware` and the control plane's session authority each admit only a
+relay-minted RHT, and a direct caller must never come out as `loopback-direct`, which is the machine's owner.
+Without W3 a LAN terminal still pays the machine's authority call to the control plane, so echo drops to about
+10 ms but a terminal open keeps that call's 0.4–1.9 s from India (inferred from §1, not measured on a LAN). The renderer path is costly: `connect-src` lists exact origins
+stamped at load, the runtime sends no CORS headers, Chromium's Local Network Access gating may apply, certificate
+pinning is possible only in main (`setCertificateVerifyProc`), and the repository has no certificate library.
+Proposed shape once W3 lands: the direct route lives in the daemon, which reaches the LAN address over Node TLS
+pinning the enrollment key's SPKI the control plane already stores, so the renderer keeps talking to loopback. The
+heartbeat field ships on the control plane before any connector sends it, because the schema is strict and a 400
+stops the connector. Size: 8–9 packages, 30–40 files.
+
 ### W2 — One connection per workspace
 
 All terminals and requests for a workspace ride one multiplexed connection instead of a new secure connection per
@@ -105,6 +138,17 @@ change across app, relay and runtime.
   output above file transfers). Progress:
 - [ ] Live over the relay from India: second and later terminals open ≤ 1 s; a 200 MB download does not raise
   keystroke echo by more than 50 ms. Progress:
+
+**Assessment.** Most of this already holds. The browser's runtime requests share one HTTP/2 or HTTP/3 connection to
+the edge (the relay is same-origin under `/relay`), and the machine already carries every stream of a workspace on
+one tunnel (`setHostServing`). What is left is a terminal's WebSocket, which opens its own connection: 0.24–0.44 s
+of TCP and TLS from India, out of 0.76–1.31 s for the whole open. The rest is the relay hop and, on the create, the
+authority call that W3 removes. A multiplexed stream protocol through app, relay room and runtime would replace
+fetch and WebSocket for every runtime call. It would also add head-of-line blocking on the client leg, which
+separate connections do not have; the 200 MB criterion guards against a problem this design creates there.
+Proposed instead: measure a second terminal's open after W3; if the handshake still dominates, keep a warm terminal
+socket per workspace; give the host tunnel per-stream priority only if a measurement shows a transfer delaying
+keystrokes on it.
 
 ### W3 — Access checked on the machine, revoked live
 
@@ -119,6 +163,18 @@ Trade-off: owner decision 1.
   refused within 2 s. Progress:
 - [ ] With the push path cut, a revoked grant is refused at its expiry. Progress:
 - [ ] Live: a terminal attach no longer pays the 0.4–1.9 s authority round trip. Progress:
+
+**Assessment.** The machine already verifies a short-lived grant, the relay's 60 s RHT, and asks the control plane
+anyway, because an RHT keeps verifying after the runtime access token it came from is revoked
+(`pty/terminal-authority.ts`). That per-request question is what makes revocation immediate for new requests; open
+relay sockets already lag by up to a 30 s check plus a 10 s cache. A machine-side grant needs its own audience or
+key (the control plane's one Ed25519 key signs many audiences), per-session share levels or a remote answer for
+shared sessions, a revocation payload on `host.changed` (live-sync admission drops every field but type, host,
+owner and time, and a share revoke, a member removal, a pause or a token refresh rings nothing), and changes at the
+daemon, the runtime and the control plane's oracle. Turn leases and every write stay remote. An alternative that
+keeps revocation decided live: grants for read-only decisions only, and a revocation that completes only once the
+machine acknowledges it, the relay refusing that machine's tunnel until it does. The relay route then stays
+immediate, and only a direct route (W1) is bounded by the grant's life.
 
 ### W4 — The owner's accounts on connected machines
 
@@ -141,10 +197,47 @@ not stored). LAN machines depend on the main machine being on (default above).
 - [ ] Live: revoke the machine and its next model call is refused; rotate the key in the app and the next call
   uses the new one; nothing on the machine changes. Progress:
 
+**Assessment.** Much exists. `/bindings/*` already serves Claude setup tokens and ChatGPT plan accounts under
+`openai`, refreshed inline and written back to D1. Push-config already seals `{baseUrl, placeholder, authMode,
+expiresAt}` rows to a machine, and every harness but Pi reads them. Missing:
+
+- a machine-shaped identity on the stand-in (`leaseIdentity` hard-codes `sandbox:`);
+- a per-request check that the enrollment is live and serves the workspace (`HOST_SERVING_WORKSPACE_SQL` exists);
+- a row builder on the control plane;
+- renewal: passes cap at 1 h, and renewing on the heartbeat, already every 20 s, needs no alarm;
+- Pi spending a binding (risk: pi-ai's `openai-codex` reads the account id from the token);
+- Claude plan refresh, which has no code anywhere;
+- refresh coordinated across isolates: today it is per isolate, and OpenAI rotates refresh tokens.
+
+`host-access-authority.ts` is at its size ceiling and splits first. It is the most valuable next lane, since it
+takes raw keys off machines and needs no other workstream, but it waits on decision 4.
+
 ### W5 — Getting a machine connected
 
 - [ ] `claxedo doctor` checks and explains in one line each: Git Bash on Windows, PATH, the npm cache, the right
-  control plane, a reachable relay, the service state. Progress:
+  control plane, a reachable relay, the service state. Progress: `claxedo doctor`
+  (`packages/cli/src/commands/doctor.ts`) checks, in one line each, and exits 1 on any failure:
+  - Node 24;
+  - the control plane and relay this machine uses, each by `/health` within a referenced 10 s deadline;
+  - whether `claxedo host` talks to the plane the machine is enrolled with;
+  - the enrollment;
+  - the service: running, its user manager, and whether its unit carries PATH;
+  - `git`;
+  - the agent CLIs the runtime finds (`installedTerminalAgents`);
+  - on Windows, the bash Pi runs (`piBashPath`).
+
+  Live on staging from a Linux container, through the built CLI on Node 24 and on Node 22: the control plane
+  answered in 484–1049 ms and the relay through `/relay` in 281–295 ms. Each of these failed with its own line: a
+  host that does not resolve, one that answers 404, a listener that never answers (10 s), the container's missing
+  user manager, a unit without PATH, and a deleted unit. Not covered: the npm cache, because no failure mode is
+  known (the 29-minute install below is unexplained). Not proven: an enrolled, serving machine (the staging
+  credential this run had was refused, so no invitation could be minted), launchd, and Windows.
+- [ ] The service finds what the installing shell finds, and Pi finds Git Bash on Windows. Progress: the systemd
+  unit and the LaunchAgent carry the installing shell's PATH, absolute entries once each (`servicePath`); before,
+  they ran with the service manager's own PATH, where `codex`, `cursor-agent` and every tool an agent runs from
+  `~/.local/bin`, Homebrew or nvm were missing. `systemd-analyze verify` accepts a unit written with `%` and `$` in
+  its PATH. Pi's bash on Windows is Git Bash under `%ProgramFiles%` or `%ProgramFiles(x86)%` before a bare `bash`,
+  as Pi's own lookup does, since Git for Windows puts only `Git\cmd` on PATH. Not proven on macOS or Windows.
 - [ ] `install.ps1` for Windows: installs prerequisites it needs, the CLI with install scripts off, and the
   runtime's setup, proven on a fresh Windows Server from npm. Progress:
 - [ ] Add a machine over SSH from the desktop app: install, start and enroll, with a checksum-verified release.
@@ -156,7 +249,12 @@ not stored). LAN machines depend on the main machine being on (default above).
 Place the relay room near the machine or the person; consider Cloudflare Business or Argo for routes from India
 (parked by the owner earlier; revisit with W2's numbers).
 
-- [ ] A room's region follows the machine's reported region at creation; measured before and after. Progress:
+- [ ] A room's region follows the machine's reported region at creation; measured before and after. Progress: met
+  by the code as it stands, so nothing was built. A machine's room is created by the machine's own tunnel dial,
+  before any client can mint (`activeWorkspaceHost`), and placed by that dial's Cloudflare country
+  (`relayLocationHint`, pinned by "a machine's room stays beside its machine" in `cloudflare.test.ts`). A machine in
+  India gets `apac` and one in us-east-1 `enam`; a country outside the table gets the `apac` floor. No region needs
+  reporting. Proposed: close this item; what remains is the parked Business or Argo question.
 
 ### W7 — Direct route for the web app
 
@@ -203,13 +301,19 @@ runtime-version floor and skew test (`MINIMUM_SERVED_WORKSPACE_RUNTIME_VERSION`)
 ### W12 — Audit trail and a local kill switch
 
 - [ ] The owner sees, per machine, who connected and what ran, and can stop everything from the machine itself
-  (`claxedo pause` or a tray icon). Progress:
+  (`claxedo pause` or a tray icon). Progress: pausing (`POST /api/claxedo/host/enrollments/pause`) has no caller in
+  the app or the CLI yet and rings nothing, so a paused machine stops at its next beat, up to 20 s later. The kill
+  switch should ring `host.changed` there, as revoking does.
 
 ## 4. Order
 
 1. **Now:** W3 then W1 (W1 needs W3), W2, W4, W5.
 2. **Next:** W8, W9 (after decision 2), W6.
 3. **Later:** W7, W10 (after decision 3), W11, W12.
+
+Proposed after the 2026-10-22 assessment: W4 first once decision 4 is answered, because it takes raw keys off
+machines and needs no other workstream; W5's installers on a Windows box; W3 once decision 1 is answered, then W1;
+W2 as reshaped; W6 closed.
 
 ## 5. Definition of done
 
