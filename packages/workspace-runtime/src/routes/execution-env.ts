@@ -6,7 +6,7 @@ import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/conte
 import { boundedJsonBody, errorBody } from "@claxedo/session-core"
 import type { RelayHostAuthContext } from "@claxedo/session-core/relay-host"
 import type { PluginProjection } from "@claxedo/harness/contract"
-import { ownedExecutionEnv, sessionCommands, type PiShellServices } from "@claxedo/harness/pi-durable/shell"
+import { ownedExecutionEnv, resolvedPiShell, sessionCommands, type PiShellServices } from "@claxedo/harness/pi-durable/shell"
 import { runFileSystemOperation } from "./execution-env-fs"
 import { McpStdioRelayRoutes } from "./mcp-stdio-relay"
 
@@ -73,8 +73,9 @@ function stringEnv(env: NodeJS.ProcessEnv): Record<string, string> {
 export function ExecutionEnvRoutes(options: ExecutionEnvRouteOptions) {
   const env = stringEnv(options.env)
   const commands = sessionCommands(options.services)
+  const shell = resolvedPiShell(env)
   const executionEnv = (sessionId: string) =>
-    ownedExecutionEnv({ sessionId, services: options.services, env, live: commands.of(sessionId) }, options.directory)
+    ownedExecutionEnv({ sessionId, services: options.services, env, live: commands.of(sessionId), shell }, options.directory)
   const app = new Hono<Env>()
   app.use("*", executionEnvAccess)
   app.post("/fs", async (c) => {

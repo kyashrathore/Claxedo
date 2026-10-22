@@ -8,7 +8,6 @@ import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node"
 import { deadlineAfter, type HarnessServices, type OwnedProcess } from "../../contract/node"
 import { exitMarker, type ExitMarker } from "./exit-marker"
 
-const SHELL = existsSync("/bin/bash") ? "/bin/bash" : "bash"
 const SCRIPT = `eval "$1"
 printf '%s%d\\n' "$2" "$?" >&2
 wait`
@@ -19,7 +18,36 @@ export type PiShellServices = Pick<HarnessServices, "spawn" | "clock" | "log">
 
 export type LiveProcesses = { add(owned: OwnedProcess): unknown; delete(owned: OwnedProcess): unknown }
 
-export type PiShellHost = { sessionId: string; services: PiShellServices; env: Readonly<Record<string, string>>; live: LiveProcesses }
+export type PiShellHost = { sessionId: string; services: PiShellServices; env: Readonly<Record<string, string>>; live: LiveProcesses;
+  /** From `piShell`; absent on a Windows box without Git for Windows, where every command fails with `NO_SHELL_MESSAGE`. */
+  shell: string | undefined }
+
+export const NO_SHELL_MESSAGE = "Shell commands need Git for Windows (git-scm.com) on this machine; install it and restart claxedo connect"
+
+/**
+ * The bash the tool's script runs in. Git for Windows installs bash.exe under
+ * Git\bin but adds only Git\cmd to PATH, so on Windows the bash is the one
+ * beside the git on PATH or in the installer's default locations, never a PATH
+ * lookup of `bash`: with the WSL feature on that lookup answers
+ * System32\bash.exe, a launcher into a different operating system.
+ */
+export function piShell(input: { platform: NodeJS.Platform; env: Readonly<Record<string, string | undefined>>; exists: (file: string) => boolean }): string | undefined {
+  if (input.platform !== "win32") return input.exists("/bin/bash") ? "/bin/bash" : "bash"
+  const variable = (name: string) => Object.entries(input.env).find(([key]) => key.toUpperCase() === name)?.[1]
+  const gitRoots = (variable("PATH") ?? "").split(";").filter(Boolean)
+    .filter((dir) => input.exists(path.win32.join(dir, "git.exe")))
+    .map((dir) => path.win32.join(dir, ".."))
+  const installRoots = [
+    ...[variable("PROGRAMFILES"), variable("PROGRAMFILES(X86)"), variable("PROGRAMW6432")].flatMap((dir) => dir ? [path.win32.join(dir, "Git")] : []),
+    ...[variable("LOCALAPPDATA")].flatMap((dir) => dir ? [path.win32.join(dir, "Programs", "Git")] : []),
+  ]
+  return [...gitRoots, ...installRoots].map((root) => path.win32.join(root, "bin", "bash.exe")).find((file) => input.exists(file))
+}
+
+/** `piShell` for the process the tools run in. */
+export function resolvedPiShell(env: Readonly<Record<string, string | undefined>>): string | undefined {
+  return piShell({ platform: process.platform, env, exists: existsSync })
+}
 
 type Exec = { owned: OwnedProcess; options: ShellExecOptions | undefined; context: Context; marker: ExitMarker; settled: boolean;
   drained: Promise<void> }
@@ -78,11 +106,12 @@ async function ownedExec(host: PiShellHost, cwd: string, command: string, option
   if (options?.timeout !== undefined && !(Number.isFinite(options.timeout) && options.timeout > 0)) {
     return execFailure("timeout", "Invalid timeout: must be a finite number of seconds")
   }
+  if (host.shell === undefined) return execFailure("spawn_error", NO_SHELL_MESSAGE)
   const env = options?.inheritEnv === false ? { ...options.env } : { ...host.env, ...options?.env }
   const marker = exitMarker()
   let owned: OwnedProcess
   try {
-    owned = await host.services.spawn({ file: SHELL, args: ["-c", SCRIPT, "pi-bash", command, marker.text],
+    owned = await host.services.spawn({ file: host.shell, args: ["-c", SCRIPT, "pi-bash", command, marker.text],
       cwd: options?.cwd ? path.resolve(cwd, options.cwd) : cwd, env },
     { role: "harness", label: "Pi bash", sessionId: host.sessionId, signal: context.abortSignal ?? new AbortController().signal })
   } catch (error) {

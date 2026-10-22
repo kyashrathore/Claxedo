@@ -7,7 +7,7 @@ import type { HarnessServices, ProjectedMcpServer } from "../../contract/node"
 import { piConfiguration } from "./errors"
 import { mcpStdioBaseEnv, OwnedStdioMcpTransport } from "./mcp-stdio"
 import type { PiPlacement, PiSessionRuntime } from "./placement"
-import { ownedExecutionEnv, sessionCommands } from "./shell"
+import { ownedExecutionEnv, resolvedPiShell, sessionCommands } from "./shell"
 import { openPiStorage } from "./storage"
 
 export type PiNodeOptions = { stateRoot: string; env: Readonly<Record<string, string | undefined>> }
@@ -28,8 +28,9 @@ export function createNodePiPlacement(input: PiNodeOptions & { services: Harness
   const mcpEnv = mcpStdioBaseEnv(input.env)
   const directories = new Map<string, string>()
   const commands = sessionCommands(input.services)
+  const shell = resolvedPiShell(env)
   const placement: PiPlacement = {
-    env: ({ sessionId, directory }) => ({ cwd }) => ownedExecutionEnv({ sessionId, services: input.services, env, live: commands.of(sessionId) }, cwd ?? directory),
+    env: ({ sessionId, directory }) => ({ cwd }) => ownedExecutionEnv({ sessionId, services: input.services, env, live: commands.of(sessionId), shell }, cwd ?? directory),
     async open({ sessionId, directory, models }): Promise<PiSessionRuntime> {
       const registry = createRegistry()
       const harness = await Harness.open(await sessionStorage(input.stateRoot, sessionId), { models, registry, env: placement.env({ sessionId, directory }),
