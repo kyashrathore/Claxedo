@@ -14,7 +14,7 @@
  */
 
 import type { EventEmitter } from "node:events"
-import { request as httpRequest, STATUS_CODES, type ClientRequest, type IncomingHttpHeaders, type IncomingMessage } from "node:http"
+import { IncomingMessage, request as httpRequest, STATUS_CODES, type ClientRequest, type IncomingHttpHeaders } from "node:http"
 import os from "node:os"
 import type { Duplex } from "node:stream"
 import type { TLSSocket } from "node:tls"
@@ -56,7 +56,7 @@ function samePrefix(a: IpAddress, b: IpAddress, bits: number): boolean {
   if (a.kind !== "v6" || b.kind !== "v6") return false
   for (let bit = 0; bit < bits; bit += 16) {
     const mask = bits - bit >= 16 ? 0xffff : (0xffff << (16 - (bits - bit))) & 0xffff
-    if ((a.segments[bit / 16]! & mask) !== (b.segments[bit / 16]! & mask)) return false
+    if ((a.segments[bit / 16] & mask) !== (b.segments[bit / 16] & mask)) return false
   }
   return true
 }
@@ -154,6 +154,11 @@ function splice(client: Duplex, clientHead: Buffer, machine: Duplex, machineHead
   client.pipe(machine)
 }
 
+function carriedIncoming(env: unknown): IncomingMessage | undefined {
+  if (typeof env !== "object" || env === null || !("incoming" in env)) return undefined
+  return env.incoming instanceof IncomingMessage ? env.incoming : undefined
+}
+
 export function createDirectRouteCarrier(options: { interfaces?: () => NetworkInterfaces } = {}) {
   const interfaces = options.interfaces ?? (() => os.networkInterfaces())
   const registered = new Map<string, DirectRoutes>()
@@ -239,7 +244,7 @@ export function createDirectRouteCarrier(options: { interfaces?: () => NetworkIn
     if (!target) return unavailable()
     const path = `/workspaces/${encodeURIComponent(workspaceId)}${match?.[2] ?? "/"}${new URL(c.req.url).search}`
     if (!upgrading) return await forward(c, target, path, token)
-    const incoming = (c.env as { incoming?: IncomingMessage } | undefined)?.incoming
+    const incoming = carriedIncoming(c.env)
     if (!incoming) return directRouteRefusal(DIRECT_ROUTE_UNAVAILABLE, 503, "This upgrade did not arrive on a socket the daemon can carry")
     pendingUpgrades.set(incoming, { target, token, path })
     return c.body(null, 204)
@@ -247,7 +252,7 @@ export function createDirectRouteCarrier(options: { interfaces?: () => NetworkIn
 
   const carryUpgrade = async (app: Pick<Hono, "request">, request: IncomingMessage, socket: Duplex, head: Buffer) => {
     if (!request.headers.host) return refuseUpgrade(socket, 400)
-    const headers = new Headers(Object.entries(request.headers).flatMap(([name, value]) => (value === undefined ? [] : [[name, Array.isArray(value) ? value[0]! : value] as [string, string]])))
+    const headers = new Headers(Object.entries(request.headers).flatMap(([name, value]) => (value === undefined ? [] : [[name, Array.isArray(value) ? value[0] : value] as [string, string]])))
     const answer = await app.request(new URL(request.url ?? "/", `http://${request.headers.host}`), { headers }, { incoming: request, outgoing: undefined })
     const pending = pendingUpgrades.get(request)
     pendingUpgrades.delete(request)

@@ -59,7 +59,8 @@ test("a signed desktop sends a machine's runtime traffic through the daemon's di
   await settled()
   expect(transport.runtimeRoute("ws_machine")).toBe("direct")
   const registration = fetcher.mock.calls.find(([url]) => href(url).includes("/api/claxedo/direct-routes/"))
-  expect(JSON.parse(String(registration?.[1]?.body))).toEqual(routes)
+  const registered = registration?.[1]?.body
+  expect(typeof registered === "string" ? JSON.parse(registered) : registered).toEqual(routes)
 
   expect(await (await transport.runtime(machine, "/session?directory=workspace%3Aws_machine")).json()).toEqual({ via: "direct" })
   const [url, init] = fetcher.mock.calls.at(-1) ?? []

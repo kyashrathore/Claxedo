@@ -45,12 +45,12 @@ function integer(magnitude: Uint8Array): Uint8Array {
   let start = 0
   while (start < magnitude.length - 1 && magnitude[start] === 0) start++
   const trimmed = magnitude.subarray(start)
-  return tlv(0x02, trimmed[0]! & 0x80 ? concat([Uint8Array.of(0), trimmed]) : trimmed)
+  return tlv(0x02, trimmed[0] & 0x80 ? concat([Uint8Array.of(0), trimmed]) : trimmed)
 }
 
 function objectIdentifier(dotted: string): Uint8Array {
   const [first, second, ...rest] = dotted.split(".").map(Number)
-  const body: number[] = [first! * 40 + second!]
+  const body: number[] = [first * 40 + second]
   for (const arc of rest) {
     const groups: number[] = [arc & 0x7f]
     for (let value = arc >>> 7; value > 0; value >>>= 7) groups.unshift((value & 0x7f) | 0x80)

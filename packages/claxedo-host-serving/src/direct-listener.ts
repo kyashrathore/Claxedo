@@ -188,7 +188,8 @@ export function startDirectListener(options: DirectListenerOptions): DirectListe
     server.on("upgrade", upgrade)
     try {
       const bound = await listenOn(server, port ?? 0, address).catch(async (error: unknown) => {
-        if (port === undefined || servers.size > 0 || (error as NodeJS.ErrnoException).code !== "EADDRINUSE") throw error
+        const taken = error instanceof Error && "code" in error && error.code === "EADDRINUSE"
+        if (port === undefined || servers.size > 0 || !taken) throw error
         log(`direct route: port ${port} is taken; choosing another`)
         return await listenOn(server, 0, address)
       })

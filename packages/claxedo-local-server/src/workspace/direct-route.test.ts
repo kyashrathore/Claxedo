@@ -38,7 +38,7 @@ function listening(server: Server | TlsServer, host: string) {
 
 type Seen = { method?: string; url?: string; headers: IncomingHttpHeaders }
 
-async function machine(identity: DirectTlsIdentity, host = lanAddress!) {
+async function machine(identity: DirectTlsIdentity, host = lanAddress) {
   const seen: Seen[] = []
   const connections = { count: 0 }
   const server = createTlsServer({ key: identity.keyPem, cert: identity.certPem }, (request, response) => {

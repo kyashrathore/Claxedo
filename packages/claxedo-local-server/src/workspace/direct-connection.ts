@@ -57,6 +57,7 @@ export class PinnedAgent extends Agent {
 
   override createConnection(_options: ClientRequestArgs, ready?: (error: Error | null, stream: Duplex) => void): Duplex | undefined {
     // Node's asynchronous contract calls back with the error alone when no socket was made.
+    // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion
     const settle = ready as ((error: Error | null, stream?: Duplex) => void) | undefined
     pinnedConnection(this.target, this.connectTimeoutMs).then(
       (socket) => settle?.(null, socket),
