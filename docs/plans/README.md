@@ -4,6 +4,10 @@ A plan stays here only while its work is queued or in progress. When the work
 ships, the plan is deleted and anything still true moves to the architecture
 doc or package README that owns it.
 
+- [Machine connection: fast, reliable, safe and trustable](./2026-10-23-001-feat-machine-connection-plan.md)
+  — planned, owner-approved direction. Direct routes with the relay as fallback, access checked on the machine
+  with live revocation, one connection per workspace, owner accounts through the hosted broker (cloud machines) or
+  the main machine's broker (LAN), then peer-to-peer and end-to-end encryption. Three owner decisions open.
 - [Remote machine connection](./2026-09-14-003-feat-connect-implementation-plan.md)
   — P1–P3 shipped; P4–P6 (host folder operations, machine worktrees, the
   remote access panel) are not started. Onboarding v2 records P4 as its gap.
