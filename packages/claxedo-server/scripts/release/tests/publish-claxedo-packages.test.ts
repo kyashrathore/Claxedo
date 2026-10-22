@@ -44,6 +44,64 @@ function fixtureRepo(version: string, extra: (name: string) => Record<string, un
   return root
 }
 
+/**
+ * An npm stand-in: `view` answers from `published`, `publish` adds to it after
+ * `exposeAfterViews` further views of that version, and `pack` builds a real
+ * tarball of the manifest. `tar`, `git` and `cat` run for real so extraction
+ * and history are covered.
+ */
+function fakeNpm(
+  calls: string[][],
+  published: Set<string>,
+  packedManifests = new Map<string, Record<string, unknown>>(),
+  exposeAfterViews = 0,
+) {
+  const pending = new Map<string, number>()
+  return (cmd: string, args: string[], cwd?: string) => {
+    calls.push([cmd, ...args])
+    if (cmd === "tar" || cmd === "git" || cmd === "cat") return defaultCommandRunner(cmd, args, cwd)
+    if (cmd === "npm" && args[0] === "view") {
+      const spec = args[1] ?? ""
+      const remaining = pending.get(spec)
+      if (remaining !== undefined) {
+        if (remaining > 0) pending.set(spec, remaining - 1)
+        else {
+          pending.delete(spec)
+          published.add(spec)
+        }
+      }
+      if (published.has(spec)) return spec.slice(spec.lastIndexOf("@") + 1)
+      throw new Error("E404")
+    }
+    if (cmd === "npm" && args[0] === "publish") {
+      const manifest = JSON.parse(fs.readFileSync(path.join(cwd!, "packages", workspaceDir(cwd!, args[2]), "package.json"), "utf8"))
+      pending.set(`${args[2]}@${manifest.version}`, exposeAfterViews)
+      return ""
+    }
+    if (cmd === "npm" && args[0] === "pack") {
+      const dest = args[args.indexOf("--pack-destination") + 1]
+      const stage = path.join(dest, "stage", "package")
+      fs.mkdirSync(stage, { recursive: true })
+      const manifest = JSON.parse(fs.readFileSync(path.join(cwd!, "package.json"), "utf8"))
+      packedManifests.set(manifest.name, manifest)
+      fs.copyFileSync(path.join(cwd!, "package.json"), path.join(stage, "package.json"))
+      const filename = "fixture.tgz"
+      // Relative -f: an absolute Windows path there is GNU tar remote syntax.
+      defaultCommandRunner("tar", ["-czf", filename, "-C", path.join(dest, "stage"), "package"], dest)
+      return JSON.stringify([{ filename, files: [{ path: "package.json" }, { path: "README.md" }, { path: "LICENSE" }] }])
+    }
+    return ""
+  }
+}
+
+function workspaceDir(root: string, name: string) {
+  for (const dir of fs.readdirSync(path.join(root, "packages"))) {
+    const file = path.join(root, "packages", dir, "package.json")
+    if (fs.existsSync(file) && JSON.parse(fs.readFileSync(file, "utf8")).name === name) return dir
+  }
+  throw new Error(`no workspace package ${name}`)
+}
+
 describe("publish-claxedo-packages", () => {
   test("covers the 10 public packages, on four version tracks", () => {
     expect(claxedoPackages).toHaveLength(10)
@@ -189,34 +247,7 @@ describe("publish-claxedo-packages", () => {
 
     const alreadyPublished = new Set(["@claxedo/channels@9.9.9"])
     const packedManifests = new Map<string, Record<string, unknown>>()
-    const makeRunner = (calls: string[][]) => (cmd: string, args: string[], cwd?: string) => {
-      calls.push([cmd, ...args])
-      // `tar` and `git` are exercised for real so the extraction and history paths are covered.
-      if (cmd === "tar" || cmd === "git" || cmd === "cat") return defaultCommandRunner(cmd, args, cwd)
-      if (cmd === "npm" && args[0] === "view") {
-        if (alreadyPublished.has(args[1] ?? "")) return "9.9.9"
-        throw new Error("E404")
-      }
-      if (cmd === "npm" && args[0] === "publish") {
-        alreadyPublished.add(`${args[2]}@9.9.9`)
-        return ""
-      }
-      if (cmd === "npm" && args[0] === "pack") {
-        // Build a genuine tarball with the same layout npm produces.
-        const dest = args[args.indexOf("--pack-destination") + 1]
-        const stage = path.join(dest, "stage", "package")
-        fs.mkdirSync(stage, { recursive: true })
-        const manifest = JSON.parse(fs.readFileSync(path.join(cwd!, "package.json"), "utf8"))
-        packedManifests.set(manifest.name, manifest)
-        fs.copyFileSync(path.join(cwd!, "package.json"), path.join(stage, "package.json"))
-        const filename = "fixture.tgz"
-        // Relative -f for the same reason the script extracts with one: an
-        // absolute Windows path there is GNU tar remote syntax.
-        defaultCommandRunner("tar", ["-czf", filename, "-C", path.join(dest, "stage"), "package"], dest)
-        return JSON.stringify([{ filename, files: [{ path: "package.json" }, { path: "README.md" }, { path: "LICENSE" }] }])
-      }
-      return ""
-    }
+    const makeRunner = (calls: string[][]) => fakeNpm(calls, alreadyPublished, packedManifests)
 
     const dryCalls: string[][] = []
     const dryRun = await publishClaxedoPackages({ root, selector: "apps", dryRun: true, run: makeRunner(dryCalls), log: () => {} })
@@ -238,6 +269,24 @@ describe("publish-claxedo-packages", () => {
     // Two apps packages plus helpers, which connections depends on and so is built first.
     expect(calls.filter((call) => call[1] === "run" && call[2] === "build")).toHaveLength(targets.length + 1)
     expect(fs.readFileSync(connectionsManifest, "utf8")).toBe(originalConnections)
+  })
+
+  test("waits for npm to serve a version it just accepted, and fails a publish npm never serves", async () => {
+    const root = fixtureRepo("9.9.9")
+    const sleeps: number[] = []
+    const registryWait = { attempts: 4, intervalMs: 10, sleep: async (ms: number) => void sleeps.push(ms) }
+
+    const late = await publishClaxedoPackages({
+      root, only: ["@claxedo/helpers"], run: fakeNpm([], new Set(), undefined, 2), registryWait, log: () => {},
+    })
+    expect(late).toEqual([{ name: "@claxedo/helpers", version: "9.9.9", action: "published" }])
+    expect(sleeps).toEqual([10, 10])
+
+    sleeps.length = 0
+    await expect(publishClaxedoPackages({
+      root, only: ["@claxedo/helpers"], run: fakeNpm([], new Set(), undefined, 10), registryWait, log: () => {},
+    })).rejects.toThrow("@claxedo/helpers: npm did not expose 9.9.9 within 0.04 s of publishing")
+    expect(sleeps).toEqual([10, 10, 10])
   })
 
   test("builds a package's npm variant and refuses a tarball that imports a package its manifest does not declare", async () => {

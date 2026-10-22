@@ -384,6 +384,27 @@ function withMaterializedManifest<T>(file: string, materialized: PackageJson, fn
   }
 }
 
+export type RegistryWait = {
+  attempts: number
+  intervalMs: number
+  sleep: (ms: number) => Promise<void>
+}
+
+// npm's registry served a new version about 2 min after `npm publish` exited (2026-10-22, @claxedo/helpers 0.2.0).
+const DEFAULT_REGISTRY_WAIT: RegistryWait = {
+  attempts: 36,
+  intervalMs: 10_000,
+  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+}
+
+async function registryExposes(name: string, version: string, run: CommandRunner, root: string, wait: RegistryWait) {
+  for (let attempt = 1; attempt <= wait.attempts; attempt++) {
+    if (npmVersionPublished(name, version, run, root)) return true
+    if (attempt < wait.attempts) await wait.sleep(wait.intervalMs)
+  }
+  return false
+}
+
 export type PublishOptions = {
   selector?: PackageSelector
   /** Explicit package names, overriding `selector`. */
@@ -393,6 +414,7 @@ export type PublishOptions = {
   dryRun?: boolean
   provenance?: boolean
   run?: CommandRunner
+  registryWait?: RegistryWait
   workDir?: string
   log?: (message: string) => void
 }
@@ -406,6 +428,7 @@ export type PublishOutcome = {
 export async function publishClaxedoPackages(options: PublishOptions): Promise<PublishOutcome[]> {
   const root = options.root ?? repoRoot
   const run = options.run ?? defaultCommandRunner
+  const registryWait = options.registryWait ?? DEFAULT_REGISTRY_WAIT
   const tag = options.tag ?? "latest"
   const log = options.log ?? ((message: string) => console.log(message))
   const dryRun = options.dryRun === true
@@ -505,15 +528,21 @@ export async function publishClaxedoPackages(options: PublishOptions): Promise<P
         } catch (error) {
           return [`publish failed: ${commandFailureReason(error)}`]
         }
-        if (!npmVersionPublished(item.name, version, run, root)) {
-          return [`npm did not expose ${version} after publish`]
-        }
-        log(`    registry                     published ${version}`)
         return { name: item.name, version, action: "published" }
       })
 
-      if (Array.isArray(outcome)) failures.push(...outcome.map((problem) => `${item.name}: ${problem}`))
-      else outcomes.push(outcome)
+      if (Array.isArray(outcome)) {
+        failures.push(...outcome.map((problem) => `${item.name}: ${problem}`))
+        continue
+      }
+      if (outcome.action === "published") {
+        if (!(await registryExposes(item.name, version, run, root, registryWait))) {
+          failures.push(`${item.name}: npm did not expose ${version} within ${registryWait.attempts * registryWait.intervalMs / 1000} s of publishing`)
+          continue
+        }
+        log(`    registry                     published ${version}`)
+      }
+      outcomes.push(outcome)
     }
   } finally {
     if (cleanup) fs.rmSync(workDir, { recursive: true, force: true })
