@@ -30,7 +30,16 @@ export function workspaceRuntimeVersion() {
  *
  * Raise it, and the workspace-runtime version with it in the same commit, for
  * a runtime security fix or for a control-plane or relay contract an older
- * runtime cannot speak. Bumping the version with it keeps the comparison
- * honest: every image below the new version was built before the change.
+ * runtime cannot speak, and name the first cloud image published at the new
+ * version: the version-skew suite (`bun run --cwd packages/harness flows:skew`)
+ * runs the current control plane and relay against exactly that image.
+ * Bumping the version with it keeps the comparison honest: every image below
+ * the new version was built before the change. What it does not cover: the
+ * images built after the floor's at the same version are trusted, not tested.
  */
-export const MINIMUM_SERVED_WORKSPACE_RUNTIME_VERSION = "0.5.2"
+export const SERVED_WORKSPACE_RUNTIME_FLOOR = {
+  version: "0.10.1",
+  image: "ghcr.io/kyashrathore/claxedo-sandbox:workspace-runtime-0-10-1-40706b7356-agent-plugins-v8",
+} as const
+
+export const MINIMUM_SERVED_WORKSPACE_RUNTIME_VERSION = SERVED_WORKSPACE_RUNTIME_FLOOR.version

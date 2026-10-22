@@ -46,6 +46,7 @@ jobs:
       boundary_host_connector: ${{ steps.changed.outputs.boundary_host_connector }}
       boundary_server: ${{ steps.changed.outputs.boundary_server }}
       app_checks: ${{ steps.changed.outputs.app_checks }}
+      runtime_skew: ${{ inputs.linux-unit-only && 'true' || steps.changed.outputs.runtime_skew }}
     steps:
       - name: Checkout repository history
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -89,6 +90,35 @@ jobs:
 
       - name: Run the app's rule checks
         run: bun run --cwd packages/claxedo-app check
+
+  # The current control plane and relay against the oldest runtime image they
+  # serve (SERVED_WORKSPACE_RUNTIME_FLOOR in sandbox-manager): a wire change the
+  # floor's runtime cannot speak fails here, and deploy-staging requires it
+  # through this workflow, so the break never reaches staging. The fix is to
+  # raise the floor and the runtime version together.
+  runtime-skew:
+    name: runtime version skew
+    needs: changes
+    if: needs.changes.outputs.runtime_skew == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Configure git identity
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+
+      - name: Build dist-resolved workspace packages
+        run: bun run build:packages
+
+      - name: Run the cloud flows against the floor runtime image
+        run: bun run --cwd packages/harness flows:skew
 
   unit:
     name: unit (${{ matrix.settings.name }}, ${{ matrix.lane }})
@@ -270,7 +300,7 @@ jobs:
   result:
     name: CI result
     if: always()
-    needs: [changes, docs, app-checks, unit]
+    needs: [changes, docs, app-checks, unit, runtime-skew]
     runs-on: ubuntu-latest
     steps:
       - name: Require every selected gate to pass
@@ -279,9 +309,11 @@ jobs:
           DOCS_RESULT: ${{ needs.docs.result }}
           UNIT_RESULT: ${{ needs.unit.result }}
           APP_CHECKS_RESULT: ${{ needs.app-checks.result }}
+          RUNTIME_SKEW_RESULT: ${{ needs.runtime-skew.result }}
           DOCS_SELECTED: ${{ needs.changes.outputs.docs }}
           UNIT_SELECTED: ${{ needs.changes.outputs.unit }}
           APP_CHECKS_SELECTED: ${{ needs.changes.outputs.app_checks }}
+          RUNTIME_SKEW_SELECTED: ${{ needs.changes.outputs.runtime_skew }}
         run: |
           require_gate() {
             label="$1"
@@ -304,3 +336,4 @@ jobs:
           require_gate "Documentation" "$DOCS_SELECTED" "$DOCS_RESULT"
           require_gate "Unit" "$UNIT_SELECTED" "$UNIT_RESULT"
           require_gate "App rule checks" "$APP_CHECKS_SELECTED" "$APP_CHECKS_RESULT"
+          require_gate "Runtime version skew" "$RUNTIME_SKEW_SELECTED" "$RUNTIME_SKEW_RESULT"

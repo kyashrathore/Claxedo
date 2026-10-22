@@ -137,6 +137,7 @@
     "test:files": "node ../../script/test-home/run.mjs node ../../script/windows-test-timeout.mjs bun test",
     "flows": "bun e2e/flows/run.ts",
     "flows:versions": "bun e2e/flows/version-matrix.ts",
+    "flows:skew": "bun e2e/flows/runtime-skew.ts",
     "corpus": "bun e2e/harness/corpus.ts",
     "generate:codex-protocol": "bun scripts/generate-codex-protocol.ts",
     "generate:opencode-models": "node ../../script/test-home/run.mjs bun scripts/generate-opencode-models.ts",
