@@ -7,6 +7,7 @@ import type { AuthIdentity, ControlPlanePrincipal } from "@claxedo/server-core/p
 import { D1_AUTHORITY_MISSING_CAPABILITIES, type D1CoreAuthorityBoundary } from "./core-authority"
 import { composeBetterAuthD1Authority } from "../worker/better-auth-d1-compose"
 import { applyControlPlaneBaseline } from "../../../test-support/control-plane-migrations"
+import { WORKERS_COMPATIBILITY_DATE } from "../../../../scripts/deploy/hosted-worker-bundle"
 
 
 const active: Miniflare[] = []
@@ -19,7 +20,7 @@ async function setup() {
   const instance = new Miniflare({
     modules: true,
     script: "export default { fetch() { return new Response('ok') } }",
-    compatibilityDate: "2025-05-01",
+    compatibilityDate: WORKERS_COMPATIBILITY_DATE,
     d1Databases: ["CONTROL_PLANE_DB"],
   })
   active.push(instance)

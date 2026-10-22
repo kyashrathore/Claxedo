@@ -5,6 +5,7 @@ import { Miniflare } from "miniflare"
 import type { D1Database } from "@cloudflare/workers-types"
 import { applyControlPlaneBaseline } from "./control-plane-migrations"
 import type { BetterAuthD1WorkerEnv } from "../deployments/hosted-workerd/better-auth-d1-worker.cf"
+import { WORKERS_COMPATIBILITY_DATE } from "../../scripts/deploy/hosted-worker-bundle"
 
 const AUTH_MIGRATIONS = fileURLToPath(new URL("../../migrations/auth/", import.meta.url))
 
@@ -17,7 +18,7 @@ export async function workerDatabases(): Promise<WorkerDatabases> {
   const instance = new Miniflare({
     modules: true,
     script: "export default { fetch() { return new Response('ok') } }",
-    compatibilityDate: "2025-05-01",
+    compatibilityDate: WORKERS_COMPATIBILITY_DATE,
     d1Databases: ["AUTH_DB", "CONTROL_PLANE_DB"],
   })
   const authDatabase = await instance.getD1Database("AUTH_DB")

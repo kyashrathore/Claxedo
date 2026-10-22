@@ -25,30 +25,14 @@
 
 name = "claxedo-workspace-relay"
 main = "src/worker.ts"
-# HELD at 2025-05-01 deliberately (D3, 2026-07-27) — do not bulk-bump.
-# Cloudflare's `websocket_standard_binary_type` flag becomes default at
-# compatibility_date 2026-03-17: server-side WebSockets then default to
-# binaryType "blob" instead of "arraybuffer".
-#
-# The silent-drop hazard this comment used to warn about is FIXED (W6.1,
-# 2026-07-30): socketFrame()/socketPayload() in src/cloudflare.ts now await
-# Blob.arrayBuffer() and handle DataView/typed arrays symmetrically, and
-# src/relay-workerd-binary.test.ts proves the round-trip on REAL workerd at
-# 2026-03-16 / 2026-03-17 / 2026-07-22.
-#
-# That test also CORRECTED the measurement this comment used to carry. The flip
-# is per-DELIVERY-PATH, not global (miniflare 4.20260722.0, 6-byte binary frame):
-#   addEventListener("message")     2026-03-16 -> ArrayBuffer  2026-03-17+ -> Blob
-#   webSocketMessage (hibernation)  2026-03-16 -> ArrayBuffer  2026-03-17+ -> ArrayBuffer
-# The hibernatable DO socket does NOT flip — the old comment said it did. So the
-# real exposure was the CLOUD client/upstream sockets, which use listeners, not
-# the hibernating host-tunnel channels.
-#
-# The date is still held: the fix removes the blocker, but bumping is a separate
-# change that deserves its own verification. relay-config-drift.test.ts asserts
-# both this file and wrangler-h2.toml stay below 2026-03-17, so moving the date
-# means deliberately updating that guard too.
-compatibility_date = "2025-05-01"
+# The date every Claxedo Worker deploys at: WORKERS_COMPATIBILITY_DATE in
+# claxedo-server's scripts/deploy/hosted-worker-bundle.ts, whose
+# wrangler-config.test.ts holds this file to it, and relay-config-drift.test.ts
+# holds wrangler-h2.toml to this file. At this date a listener-path WebSocket
+# delivers binary frames as Blob, which socketFrame()/socketPayload() in
+# src/cloudflare.ts decode. The real-workerd tests in src/relay-workerd-*.test.ts
+# boot the relay at this date.
+compatibility_date = "2026-07-30"
 
 [observability]
 enabled = true

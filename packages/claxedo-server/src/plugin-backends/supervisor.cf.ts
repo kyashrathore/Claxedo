@@ -39,7 +39,7 @@ export function pluginSupervisor(namespace: PluginSupervisorNamespace, orgId: st
 }
 
 const PLUGIN_USER_HEADER = "x-claxedo-user-id"
-const PLUGIN_COMPATIBILITY_DATE = "2025-05-01"
+const PLUGIN_COMPATIBILITY_DATE = "2026-07-30"
 const PLUGIN_MODULE = "backend.js"
 const OBJECT_NAME_MAX_LENGTH = 256
 

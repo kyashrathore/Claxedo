@@ -1,7 +1,7 @@
 import path from "node:path"
 
 import type { CertifiedHostedWorkerArtifact } from "../../src/deployments/hosted-workerd/certified-worker-artifacts"
-import { HOSTED_WORKER_BUNDLE_CONTRACT } from "./hosted-worker-bundle"
+import { HOSTED_WORKER_BUNDLE_CONTRACT, WORKERS_COMPATIBILITY_DATE } from "./hosted-worker-bundle"
 import { controlPlaneRoutePatterns } from "./public-origin"
 
 const SERVER_ROOT = path.resolve(import.meta.dirname, "../..")
@@ -208,7 +208,7 @@ export function renderSessionHostWranglerConfig(input: Readonly<{
     .join("\n")
   return `name = ${quote(input.workerName)}
 main = ${quote(main)}
-compatibility_date = "2026-07-22"
+compatibility_date = "${WORKERS_COMPATIBILITY_DATE}"
 compatibility_flags = ["nodejs_compat"]
 workers_dev = false
 preview_urls = false
@@ -256,7 +256,7 @@ export function renderAppWranglerConfig(input: Readonly<{
 }>) {
   return `name = ${quote(input.appWorkerName)}
 main = ${quote(APP_WORKER)}
-compatibility_date = "2025-05-01"
+compatibility_date = "${WORKERS_COMPATIBILITY_DATE}"
 workers_dev = false
 preview_urls = false
 

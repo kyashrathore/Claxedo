@@ -17,6 +17,7 @@ import { miniflareControlPlaneDatabase } from "./control-plane-migrations"
 import { generateCanonicalOwnerClaim, ownerClaimMutationSql, ownerClaimProvisioning } from "../../scripts/deploy/claim-owner"
 import { USER_DEPLOYED_OWNER_CLAIM_HEADER } from "../authority/adapters/d1/owner-identity"
 import type { D1CoreAuthorityBoundary } from "../authority/adapters/d1/core-authority"
+import { WORKERS_COMPATIBILITY_DATE } from "../../scripts/deploy/hosted-worker-bundle"
 
 export const USER_DEPLOYED_ORIGIN = "https://app.example.test"
 export const USER_DEPLOYED_DEPLOYMENT_ID = "deployment-1"
@@ -70,7 +71,7 @@ export async function userDeployedBetterAuthApp(
     now?: () => number
   } = {},
 ): Promise<UserDeployedBetterAuthApp> {
-  const instance = new Miniflare({ modules: true, script: "export default { fetch() { return new Response('ok') } }", compatibilityDate: "2025-05-01", d1Databases: ["AUTH_DB"] })
+  const instance = new Miniflare({ modules: true, script: "export default { fetch() { return new Response('ok') } }", compatibilityDate: WORKERS_COMPATIBILITY_DATE, d1Databases: ["AUTH_DB"] })
   const authDatabase = await instance.getD1Database("AUTH_DB")
   await migrateAuth(authDatabase)
   const ciphertext = await betterAuthIntrospectionClientSecretCiphertext(BETTER_AUTH_SECRET, INTROSPECTION_SECRET)

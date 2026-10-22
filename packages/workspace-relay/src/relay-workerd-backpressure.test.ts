@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { readFile } from "node:fs/promises"
 import type { Miniflare } from "miniflare"
 import { bootWorkerd, reapWorkerd } from "./workerd-fixture/boot"
+import { relayCompatibilityDate } from "./workerd-fixture/compatibility"
 
 /**
  * What the Cloudflare runtime does and does NOT tell a Durable Object about its
@@ -26,10 +27,10 @@ const OVERSHOOT_FRAMES = 500
 const GUARD_LIMIT_BYTES = 8 * 1024 * 1024
 
 const COMPAT_BEFORE_FLIP = "2026-03-16"
-const COMPAT_CURRENT = "2026-07-22"
+const COMPAT_DEPLOYED = relayCompatibilityDate()
 
 /** Every date this file measures — one hosted worker each, in the single boot. */
-const COMPAT_DATES = [COMPAT_BEFORE_FLIP, COMPAT_CURRENT]
+const COMPAT_DATES = [COMPAT_BEFORE_FLIP, COMPAT_DEPLOYED]
 
 type SocketSurface = {
   /** `"bufferedAmount" in socket` — the check a guard's truthiness depends on. */
@@ -170,7 +171,7 @@ beforeAll(async () => {
         name: "router",
         modules: true,
         script: ROUTER_SCRIPT,
-        compatibilityDate: COMPAT_CURRENT,
+        compatibilityDate: COMPAT_DEPLOYED,
         serviceBindings: Object.fromEntries(COMPAT_DATES.map((date) => [bindingFor(date), workerFor(date)])),
       },
       ...COMPAT_DATES.map((date) => ({
@@ -206,7 +207,7 @@ async function workerdSocketReport(input: {
 describe("real workerd WebSocket send-buffer surface", () => {
   for (const mode of ["listener", "hibernate"] as const) {
     test(`exposes no bufferedAmount on the ${mode} path`, async () => {
-      const report = await workerdSocketReport({ compatibilityDate: COMPAT_CURRENT, mode })
+      const report = await workerdSocketReport({ compatibilityDate: COMPAT_DEPLOYED, mode })
 
       // The whole W7.1a fix shape rests on this being present. It is not.
       expect(report.surface.hasBufferedAmountProperty).toBe(false)
@@ -228,7 +229,7 @@ describe("real workerd WebSocket send-buffer surface", () => {
     // buffer depth, no state change, no throw. On the cloud it is at this point
     // that workerd eventually destroys the socket underneath us, which is why
     // the failure carried no logs and no exceptions.
-    const report = await workerdSocketReport({ compatibilityDate: COMPAT_CURRENT, mode: "hibernate" })
+    const report = await workerdSocketReport({ compatibilityDate: COMPAT_DEPLOYED, mode: "hibernate" })
 
     expect(report.bufferedAmountAfterOvershoot).toBeNull()
     expect(report.readyStateAfterOvershoot).toBe(1)

@@ -11,6 +11,7 @@ import { prepareBrowserArtifactsForWorkers } from "./browser-app"
 import { controlPlaneRoutePatterns, publicOriginRoute } from "./public-origin"
 import { shellPreloadLinks } from "./shell-preloads"
 import { renderAppWranglerConfig } from "./wrangler-config"
+import { WORKERS_COMPATIBILITY_DATE } from "./hosted-worker-bundle"
 
 const HEADERS = path.resolve(import.meta.dirname, "../../../claxedo-app/public/_headers")
 const SOURCE = {
@@ -64,7 +65,7 @@ beforeAll(async () => {
     cf: false,
     workers: [
       { ...workerOptions, modules: true, script: script.text },
-      { name: "relay-stub", modules: true, script: RELAY_STUB, compatibilityDate: "2025-05-01" },
+      { name: "relay-stub", modules: true, script: RELAY_STUB, compatibilityDate: WORKERS_COMPATIBILITY_DATE },
     ],
   })
   origin = await app.ready

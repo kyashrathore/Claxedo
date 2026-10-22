@@ -2,6 +2,7 @@ import { expect, test } from "vitest"
 import { build } from "esbuild"
 import { Miniflare } from "miniflare"
 import { fileURLToPath } from "node:url"
+import { WORKERS_COMPATIBILITY_DATE } from "../../../scripts/deploy/hosted-worker-bundle"
 
 test("workerd accepts the Boat driver's redirect policy and the driver refuses a redirect", async () => {
   const bundle = await build({
@@ -19,7 +20,7 @@ test("workerd accepts the Boat driver's redirect policy and the driver refuses a
     },
     bundle: true, write: false, format: "esm", platform: "browser", conditions: ["development"],
   })
-  const worker = new Miniflare({ modules: true, compatibilityDate: "2026-07-22", script: bundle.outputFiles[0].text })
+  const worker = new Miniflare({ modules: true, compatibilityDate: WORKERS_COMPATIBILITY_DATE, script: bundle.outputFiles[0].text })
   try {
     expect(await (await worker.dispatchFetch("http://test/")).json()).toEqual({ code: "http_307" })
   } finally {

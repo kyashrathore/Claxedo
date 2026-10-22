@@ -106,6 +106,16 @@ class FakeSocket {
   }
 }
 
+/** workerd's `close()` from compatibility date 2026-03-03: a reason past 123 UTF-8 bytes throws and closes nothing. */
+class ReasonLimitedSocket extends FakeSocket {
+  close(code?: number, reason?: string) {
+    if (new TextEncoder().encode(reason ?? "").byteLength > 123) {
+      throw new SyntaxError("WebSocket close reason must not be longer than 123 bytes when UTF-8 encoded.")
+    }
+    super.close(code, reason)
+  }
+}
+
 class SilentCloseSocket extends FakeSocket {
   close(code?: number, reason?: string) {
     this.closed = { code, reason }
@@ -2050,6 +2060,36 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     expect(harness.room.drain.pendingCount()).toBe(0)
   })
 
+  test("a host tunnel error longer than a close frame carries still closes the client, its reason cut to 123 bytes", async () => {
+    const harness = await roomHarness({ resolveTarget: "local-worktree", createServerSocket: () => new ReasonLimitedSocket() })
+    await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
+      headers: {
+        upgrade: "websocket",
+        authorization: `Bearer ${await harness.hostTunnelToken()}`,
+      },
+    }))
+    await harness.room.fetch(new Request("https://relay.test/workspaces/ws_1/api/claxedo/pty/pty_1/connect", {
+      headers: {
+        upgrade: "websocket",
+        authorization: `Bearer ${await harness.runtimeAccessToken()}`,
+      },
+    }))
+    const hostSocket = harness.socket(0)
+    const clientSocket = harness.socket(1)
+    await waitForSent(hostSocket, 1)
+    const open = JSON.parse(frameText(hostSocket.sent[0])) as { channel_id: string }
+
+    hostSocket.message(JSON.stringify({
+      type: "error",
+      protocol: TUNNEL_PROTOCOL_VERSION,
+      channel_id: open.channel_id,
+      code: "upstream_failed",
+      message: "x".repeat(200),
+    }))
+
+    expect(clientSocket.closed).toEqual({ code: 1011, reason: "x".repeat(123) })
+  })
+
   test("maps host tunnel errors to fail-closed HTTP responses", async () => {
     const harness = await roomHarness({ resolveTarget: "local-worktree" })
     await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
@@ -2710,10 +2750,8 @@ describe("workspace relay Cloudflare Durable Object room", () => {
    * "nothing to forward" — so an unrecognised frame vanishes with no throw and
    * no log. Two shapes hit that path:
    *
-   *  - `Blob`, which is what Cloudflare makes the server-side WebSocket default
-   *    at `compatibility_date >= 2026-03-17`. The only thing standing between
-   *    production and every binary frame disappearing is the pinned date in
-   *    wrangler.toml.
+   *  - `Blob`, which a server-side listener-path WebSocket delivers at
+   *    `compatibility_date >= 2026-03-17`, the relay's deployed date among them.
    *  - `DataView` (and non-Uint8Array typed arrays), which `socketPayload`
    *    handles but `socketFrame` does not — a real asymmetry, independent of
    *    the compatibility date.

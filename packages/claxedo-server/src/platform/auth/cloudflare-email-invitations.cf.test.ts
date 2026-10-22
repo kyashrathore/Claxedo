@@ -10,6 +10,7 @@ import { D1ApplicationIdentityAuthority } from "../../authority/adapters/d1/appl
 import { applyControlPlaneBaseline } from "../../test-support/control-plane-migrations"
 import { recordedEmailOutbox } from "../../test-support/recorded-email"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
+import { WORKERS_COMPATIBILITY_DATE } from "../../../scripts/deploy/hosted-worker-bundle"
 
 test("an org invitation traverses the simulated Cloudflare send_email binding", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "claxedo-invitation-email-"))
@@ -17,7 +18,7 @@ test("an org invitation traverses the simulated Cloudflare send_email binding", 
   const instance = new Miniflare({
     modules: true,
     script: "export default { fetch() { return new Response('ok') } }",
-    compatibilityDate: "2025-05-01",
+    compatibilityDate: WORKERS_COMPATIBILITY_DATE,
     email: { send_email: [{ name: "EMAIL", allowed_sender_addresses: ["auth@example.com"] }] },
     d1Databases: ["CONTROL_PLANE_DB"],
     defaultProjectTmpPath: directory,

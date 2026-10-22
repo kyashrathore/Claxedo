@@ -5,6 +5,7 @@ import type { D1Database } from "@cloudflare/workers-types"
 import { createD1McpOAuthClientRegistry, type McpOAuthClientSecretStore } from "./d1-client-registry"
 
 import { applyControlPlaneBaseline } from "../../test-support/control-plane-migrations"
+import { WORKERS_COMPATIBILITY_DATE } from "../../../scripts/deploy/hosted-worker-bundle"
 
 const active: Miniflare[] = []
 
@@ -16,7 +17,7 @@ async function database(): Promise<D1Database> {
   const instance = new Miniflare({
     modules: true,
     script: "export default { fetch() { return new Response('ok') } }",
-    compatibilityDate: "2025-05-01",
+    compatibilityDate: WORKERS_COMPATIBILITY_DATE,
     d1Databases: ["CONTROL_PLANE_DB"],
   })
   active.push(instance)

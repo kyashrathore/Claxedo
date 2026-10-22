@@ -30,6 +30,16 @@ function esModuleEntry(packageName: string, condition: "import" | "module", impo
 const betterAuthCore = () => createRequire(import.meta.url).resolve("@better-auth/core")
 
 /**
+ * The one compatibility date every Claxedo Worker deploys at: the newest the
+ * workerd in this repository's Miniflare (1.20260730.1) runs, so each Worker's
+ * tests boot it under the date it ships with. workspace-relay's wrangler.toml
+ * and wrangler-h2.toml and the plugin supervisor's loaded backends repeat it;
+ * wrangler-config.test.ts holds them equal and names the sandbox Worker, at a
+ * later date its own Wrangler runs, as the one exception.
+ */
+export const WORKERS_COMPATIBILITY_DATE = "2026-07-30"
+
+/**
  * The bundle contract every certified hosted Worker config declares: the
  * compatibility posture its entry is built and booted under, and the module
  * aliases it is bundled with.
@@ -50,15 +60,11 @@ const betterAuthCore = () => createRequire(import.meta.url).resolve("@better-aut
  * names Better Auth imports bring the package's whole CommonJS build, which
  * cannot be tree-shaken and runs at startup.
  *
- * `enable_ctx_exports` gives the plugin-backend supervisor `ctx.exports`, from
- * which it binds a loaded backend's `env.PLATFORM` and outbound gate; at this
- * compatibility date the runtime leaves `ctx.exports` undefined without it.
- *
  * The aliases are a TOML table, so this block has to close the config's
  * top-level keys: a bare key emitted after it would belong to `[alias]`.
  */
-export const HOSTED_WORKER_BUNDLE_CONTRACT = `compatibility_date = "2025-05-01"
-compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public", "enable_ctx_exports"]
+export const HOSTED_WORKER_BUNDLE_CONTRACT = `compatibility_date = "${WORKERS_COMPATIBILITY_DATE}"
+compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 workers_dev = false
 preview_urls = false
 

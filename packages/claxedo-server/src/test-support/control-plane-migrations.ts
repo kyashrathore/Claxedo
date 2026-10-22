@@ -1,6 +1,7 @@
 import { Miniflare } from "miniflare"
 import type { D1Database } from "@cloudflare/workers-types"
 import { baselineStatements, currentControlPlaneBaseline } from "../../scripts/control-plane-schema"
+import { WORKERS_COMPATIBILITY_DATE } from "../../scripts/deploy/hosted-worker-bundle"
 
 export type ControlPlaneDatabase = {
   database: D1Database
@@ -11,7 +12,7 @@ export async function miniflareControlPlaneDatabase(): Promise<ControlPlaneDatab
   const instance = new Miniflare({
     modules: true,
     script: "export default { fetch() { return new Response('ok') } }",
-    compatibilityDate: "2025-05-01",
+    compatibilityDate: WORKERS_COMPATIBILITY_DATE,
     d1Databases: ["CONTROL_PLANE_DB"],
   })
   try {

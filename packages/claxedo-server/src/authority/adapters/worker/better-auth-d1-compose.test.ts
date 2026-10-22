@@ -15,6 +15,7 @@ import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-
 import type { D1CoreAuthorityBoundary } from "../d1/core-authority"
 import { composeBetterAuthD1UserDeployedControlPlane } from "./better-auth-d1-compose"
 import { applyControlPlaneBaseline } from "../../../test-support/control-plane-migrations"
+import { WORKERS_COMPATIBILITY_DATE } from "../../../../scripts/deploy/hosted-worker-bundle"
 
 const ROOT = path.resolve(import.meta.dirname, "../../../..")
 const AUTH_MIGRATIONS = ["0001_better_auth.sql", "0003_authentication_evidence.sql"]
@@ -41,7 +42,7 @@ async function databases() {
   const instance = new Miniflare({
     modules: true,
     script: "export default { fetch() { return new Response('ok') } }",
-    compatibilityDate: "2025-05-01",
+    compatibilityDate: WORKERS_COMPATIBILITY_DATE,
     d1Databases: ["AUTH_DB", "CONTROL_PLANE_DB"],
   })
   active.push(instance)

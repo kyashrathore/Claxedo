@@ -29,6 +29,7 @@ import { D1ApplicationIdentityAuthority } from "./application-identity"
 import { D1ChannelRuntimeAuthority } from "./channel-runtime-authority"
 import { D1SessionAuthority } from "./session-authority"
 import { applyControlPlaneBaseline } from "../../../test-support/control-plane-migrations"
+import { WORKERS_COMPATIBILITY_DATE } from "../../../../scripts/deploy/hosted-worker-bundle"
 
 
 const active: Miniflare[] = []
@@ -41,7 +42,7 @@ async function setup() {
   const instance = new Miniflare({
     modules: true,
     script: "export default { fetch() { return new Response('ok') } }",
-    compatibilityDate: "2025-05-01",
+    compatibilityDate: WORKERS_COMPATIBILITY_DATE,
     d1Databases: ["CONTROL_PLANE_DB"],
   })
   active.push(instance)

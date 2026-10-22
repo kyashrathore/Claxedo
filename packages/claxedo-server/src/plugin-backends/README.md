@@ -46,7 +46,7 @@ A request the plugin was already handling when its epoch ended keeps running unt
 
 ## Deployment
 
-The Agent Plugins artifacts (`scripts/deploy/wrangler-config.ts`) bind `PLUGIN_LOADER` (`[[worker_loaders]]`) and `PLUGIN_SUPERVISOR`, and add migration `v2` with `new_sqlite_classes = ["PluginSupervisor"]`. Their entries export `PluginSupervisor`, `PluginPlatform` and `PluginOutbound`. The hosted compatibility flags include `enable_ctx_exports`, which the supervisor needs for `ctx.exports` at compatibility date 2025-05-01. The base artifact carries none of this.
+The Agent Plugins artifacts (`scripts/deploy/wrangler-config.ts`) bind `PLUGIN_LOADER` (`[[worker_loaders]]`) and `PLUGIN_SUPERVISOR`, and add migration `v2` with `new_sqlite_classes = ["PluginSupervisor"]`. Their entries export `PluginSupervisor`, `PluginPlatform` and `PluginOutbound`. The supervisor binds a loaded backend through `ctx.exports`, which the hosted compatibility date (`WORKERS_COMPATIBILITY_DATE`, 2026-07-30) provides without a flag, since `enable_ctx_exports` is a default from 2025-11-17; loaded backends run at the same date (`PLUGIN_COMPATIBILITY_DATE`). The base artifact carries none of this.
 
 ## Gate finding (local workerd)
 

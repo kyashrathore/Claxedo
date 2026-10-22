@@ -38,6 +38,7 @@ import { createD1McpOAuthClientRegistry } from "./mcp/d1-client-registry"
 import { HostedMcpGatewayRoutes } from "./mcp/routes"
 import { mintMcpGatewayToken } from "./mcp/runtime-token"
 import { fetchBodyText } from "../test-support/fetch-calls"
+import { WORKERS_COMPATIBILITY_DATE } from "../../scripts/deploy/hosted-worker-bundle"
 
 /**
  * Signed-in Composio Gmail loop against Miniflare R2 and the real hosted
@@ -482,7 +483,7 @@ async function controlPlaneDatabase(): Promise<D1Database> {
   const instance = new Miniflare({
     modules: true,
     script: "export default { fetch() { return new Response('ok') } }",
-    compatibilityDate: "2025-05-01",
+    compatibilityDate: WORKERS_COMPATIBILITY_DATE,
     d1Databases: ["CONTROL_PLANE_DB"],
   })
   disposable.push(instance)

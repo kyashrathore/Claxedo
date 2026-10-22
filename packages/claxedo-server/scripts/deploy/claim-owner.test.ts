@@ -23,6 +23,7 @@ import {
 } from "./claim-owner"
 
 import { applyControlPlaneBaseline } from "../../src/test-support/control-plane-migrations"
+import { WORKERS_COMPATIBILITY_DATE } from "./hosted-worker-bundle"
 const active: Miniflare[] = []
 
 afterEach(async () => {
@@ -33,7 +34,7 @@ async function controlPlane(): Promise<D1Database> {
   const instance = new Miniflare({
     modules: true,
     script: "export default { fetch() { return new Response('ok') } }",
-    compatibilityDate: "2025-05-01",
+    compatibilityDate: WORKERS_COMPATIBILITY_DATE,
     d1Databases: ["CONTROL_PLANE_DB"],
   })
   active.push(instance)
@@ -121,7 +122,7 @@ describe("claim-owner", () => {
     const instance = new Miniflare({
       modules: true,
       script: "export default { fetch() { return new Response('ok') } }",
-      compatibilityDate: "2025-05-01",
+      compatibilityDate: WORKERS_COMPATIBILITY_DATE,
       d1Databases: ["AUTH_DB"],
     })
     active.push(instance)

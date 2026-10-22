@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, test } from "vitest"
 import { Miniflare } from "miniflare"
 import type { D1Database } from "@cloudflare/workers-types"
 import { currentD1Bookmark, echoesD1Bookmarks, inD1Scope, inD1Sessions, requestSessionD1 } from "./d1-sessions"
+import { WORKERS_COMPATIBILITY_DATE } from "../../../scripts/deploy/hosted-worker-bundle"
 
 const ORIGIN = "https://app.example.test"
 const BOOKMARK = /^[0-9a-f]{8}-[0-9a-f]{8}-[0-9a-f]{8}-[0-9a-f]{32}$/
@@ -27,7 +28,7 @@ function recording(database: D1Database): D1Database {
 }
 
 beforeEach(async () => {
-  instance = new Miniflare({ modules: true, script: "export default { fetch() { return new Response('ok') } }", compatibilityDate: "2025-05-01", d1Databases: ["DB"] })
+  instance = new Miniflare({ modules: true, script: "export default { fetch() { return new Response('ok') } }", compatibilityDate: WORKERS_COMPATIBILITY_DATE, d1Databases: ["DB"] })
   raw = await instance.getD1Database("DB")
   await raw.prepare("create table notes (id text primary key)").run()
   opened = []

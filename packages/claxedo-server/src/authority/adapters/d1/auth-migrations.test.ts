@@ -12,6 +12,7 @@ import {
   betterAuthNativeResource,
   verifyBetterAuthDatabaseSchemaInspection,
 } from "../../../platform/auth/better-auth-native-clients"
+import { WORKERS_COMPATIBILITY_DATE } from "../../../../scripts/deploy/hosted-worker-bundle"
 
 // Read from the directory rather than listed: a migration added and not
 // listed would never be applied here, and the drift would be green.
@@ -28,7 +29,7 @@ async function freshDatabase(): Promise<D1Database> {
   const instance = new Miniflare({
     modules: true,
     script: "export default { fetch() { return new Response('ok') } }",
-    compatibilityDate: "2025-05-01",
+    compatibilityDate: WORKERS_COMPATIBILITY_DATE,
     d1Databases: ["AUTH_DB"],
   })
   active.push(instance)

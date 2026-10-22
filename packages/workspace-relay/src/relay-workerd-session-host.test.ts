@@ -9,11 +9,12 @@ import type { Miniflare } from "miniflare"
 import { sessionHostId } from "@claxedo/workspace-relay-protocol"
 import { mintRuntimeAccessToken, verifyRelayHostToken } from "./auth"
 import { bootWorkerd, reapWorkerd } from "./workerd-fixture/boot"
+import { relayCompatibilityDate } from "./workerd-fixture/compatibility"
 
 const WORKSPACE_ID = "ws_session_host"
 const ROOT = "ses_root"
 const HOST_ID = sessionHostId(ROOT)
-const COMPATIBILITY_DATE = "2025-05-01"
+const COMPATIBILITY_DATE = relayCompatibilityDate()
 
 /**
  * The session-host Worker's place in the relay's world, and nothing more: a

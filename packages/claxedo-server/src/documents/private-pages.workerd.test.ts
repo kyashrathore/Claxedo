@@ -12,6 +12,7 @@ import { applyControlPlaneBaseline } from "../test-support/control-plane-migrati
 import { createHostedDocumentsBackend } from "@claxedo/documents/hosted"
 import type { R2BucketBinding } from "@claxedo/documents/hosted"
 import { inviteOrgMember } from "../test-support/invite-org-member"
+import { WORKERS_COMPATIBILITY_DATE } from "../../scripts/deploy/hosted-worker-bundle"
 
 const instances: Miniflare[] = []
 afterEach(async () => {
@@ -22,7 +23,7 @@ async function fixture() {
   const instance = new Miniflare({
     modules: true,
     script: "export default { fetch() { return new Response('ok') } }",
-    compatibilityDate: "2026-07-18",
+    compatibilityDate: WORKERS_COMPATIBILITY_DATE,
     d1Databases: ["CONTROL_PLANE_DB"],
     r2Buckets: ["CLAXEDO_DOCUMENTS"],
   })

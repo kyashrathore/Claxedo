@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   SESSION_HOST_PREFIX,
+  closeReason,
   TUNNEL_PROTOCOL_VERSION,
   sessionHostId,
   sessionHostRootOf,
@@ -292,5 +293,20 @@ describe("session scope", () => {
     ]) {
       expect(sessionScopeReaches("ses_1", path, ""), path).toBe(false)
     }
+  })
+})
+
+describe("closeReason", () => {
+  const bytes = (text: string) => new TextEncoder().encode(text).byteLength
+
+  test("keeps a reason that fits and cuts a longer one at a character boundary within 123 UTF-8 bytes", () => {
+    expect(closeReason("Host tunnel unavailable")).toBe("Host tunnel unavailable")
+    expect(closeReason("x".repeat(123))).toBe("x".repeat(123))
+    expect(closeReason("x".repeat(200))).toBe("x".repeat(123))
+    const accented = "é".repeat(80)
+    expect(bytes(closeReason(accented))).toBe(122)
+    expect(closeReason(accented)).toBe("é".repeat(61))
+    expect(closeReason(`${"x".repeat(121)}😀`)).toBe("x".repeat(121))
+    expect(closeReason(undefined)).toBe("")
   })
 })

@@ -45,7 +45,7 @@ async function bundle() {
 function launchWorkerd(script: string, persist: string | false) {
   const stderr: string[] = []
   const miniflare = new Miniflare({
-    compatibilityDate: "2026-07-22",
+    compatibilityDate: "2026-07-30",
     modules: [{ type: "ESModule", path: "index.mjs", contents: script }],
     durableObjects: { SESSION_CORE: { className: "SessionCoreObject", useSQLite: true } },
     durableObjectsPersist: persist,

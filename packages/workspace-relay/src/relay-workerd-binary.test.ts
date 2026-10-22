@@ -6,14 +6,15 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import type { Miniflare } from "miniflare"
 import { bootWorkerd, reapWorkerd } from "./workerd-fixture/boot"
+import { relayCompatibilityDate } from "./workerd-fixture/compatibility"
 
 /**
- * Real-workerd binary-frame round-trip; must pass before any
- * `compatibility_date` bump.
+ * Real-workerd binary-frame round-trip at the relay's deployed date and on each
+ * side of the date the listener path changes shape.
  *
  * Every other test in this package drives socket doubles, so none can observe
  * what workerd delivers as `event.data` for a binary frame — and that changes
- * with the compatibility date (miniflare 4.20260722.0 / workerd 1.20260722.1):
+ * with the compatibility date (miniflare 4.20260730.0 / workerd 1.20260730.1):
  *
  *   | delivery path                  | 2026-03-16  | 2026-03-17+ |
  *   | addEventListener("message")    | ArrayBuffer | Blob        |
@@ -21,16 +22,16 @@ import { bootWorkerd, reapWorkerd } from "./workerd-fixture/boot"
  *
  * Only the listener path flips. Production host-tunnel channels run the
  * hibernation path and cloud client/upstream sockets run the listener path, so
- * the exposure is the cloud path. This boots the real runtime and asserts the
- * decoders survive both shapes.
+ * at the deployed date the cloud path decodes Blob. This boots the real runtime
+ * and asserts the decoders survive both shapes.
  */
 
 const COMPAT_BEFORE_FLIP = "2026-03-16"
 const COMPAT_AFTER_FLIP = "2026-03-17"
-const COMPAT_CURRENT = "2026-07-22"
+const COMPAT_DEPLOYED = relayCompatibilityDate()
 
 /** Every date this file measures — one hosted worker each, in the single boot. */
-const COMPAT_DATES = [COMPAT_BEFORE_FLIP, COMPAT_AFTER_FLIP, COMPAT_CURRENT]
+const COMPAT_DATES = [COMPAT_BEFORE_FLIP, COMPAT_AFTER_FLIP, COMPAT_DEPLOYED]
 
 const PAYLOAD = new Uint8Array([0, 1, 0x7f, 0x80, 0xfe, 0xff])
 const PAYLOAD_BASE64 = btoa(String.fromCharCode(...PAYLOAD))
@@ -106,7 +107,7 @@ beforeAll(async () => {
         name: "router",
         modules: true,
         script: ROUTER_SCRIPT,
-        compatibilityDate: COMPAT_CURRENT,
+        compatibilityDate: COMPAT_DEPLOYED,
         serviceBindings: Object.fromEntries(COMPAT_DATES.map((date) => [bindingFor(date), workerFor(date)])),
       },
       ...COMPAT_DATES.map((date) => ({
@@ -173,8 +174,8 @@ describe("real workerd binary frame round-trip", () => {
     expect(report.payloadBase64).toBe(PAYLOAD_BASE64)
   }, 180_000)
 
-  test("decodes a binary frame on the listener path at the current compatibility date", async () => {
-    const report = await sendBinaryFrame({ compatibilityDate: COMPAT_CURRENT, mode: "listener" })
+  test("decodes a binary frame on the listener path at the deployed compatibility date", async () => {
+    const report = await sendBinaryFrame({ compatibilityDate: COMPAT_DEPLOYED, mode: "listener" })
 
     expect(report.runtimeType).toBe("Blob")
     expect(report.frameDropped).toBe(false)
@@ -186,21 +187,11 @@ describe("real workerd binary frame round-trip", () => {
     // If a future workerd flips the hibernation path to Blob too, the exposure
     // extends to the host-tunnel channels; the decoders already handle Blob,
     // but wrangler.toml's comment would need updating.
-    for (const compatibilityDate of [COMPAT_BEFORE_FLIP, COMPAT_AFTER_FLIP, COMPAT_CURRENT]) {
+    for (const compatibilityDate of [COMPAT_BEFORE_FLIP, COMPAT_AFTER_FLIP, COMPAT_DEPLOYED]) {
       const report = await sendBinaryFrame({ compatibilityDate, mode: "hibernate" })
       expect(report.runtimeType, `hibernation delivery at ${compatibilityDate}`).toBe("ArrayBuffer")
       expect(report.frameDropped).toBe(false)
       expect(report.dataBase64).toBe(PAYLOAD_BASE64)
     }
   }, 240_000)
-
-  test("the deployed compatibility_date is still the pinned pre-flip value", async () => {
-    // wrangler-h2.toml pins the same date and is checked too.
-    for (const config of ["../wrangler.toml", "../wrangler-h2.toml"]) {
-      const source = await readFile(new URL(config, import.meta.url), "utf8")
-      const declared = source.match(/^compatibility_date = "([\d-]+)"$/m)?.[1]
-      expect(declared, `${config} must declare compatibility_date`).toBeDefined()
-      expect(declared! < COMPAT_AFTER_FLIP, `${config} is at ${declared}, past the binaryType flip`).toBe(true)
-    }
-  })
 })

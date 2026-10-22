@@ -12,7 +12,7 @@ import { bundleSessionHostWorker } from "../../src/test-support/session-host-wor
 
 const RELAY_WORKER = fileURLToPath(new URL("../../../workspace-relay/src/worker.ts", import.meta.url))
 const AUTHORITY_URL = "https://control-plane.test/api/runtime-authority/session-authorize"
-const COMPATIBILITY_DATE = "2026-07-22"
+const COMPATIBILITY_DATE = "2026-07-30"
 
 /**
  * One-way latencies of the staging topology as seen from India, in

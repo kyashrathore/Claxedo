@@ -13,6 +13,28 @@ export const SESSION_TURN_LEASE_TTL_MS = 60_000
  */
 export const CURRENT_CHANNEL_IDENTITY_VERSION = 1
 
+const CLOSE_REASON_MAX_BYTES = 123
+
+/**
+ * A WebSocket close reason cut to the 123 UTF-8 bytes a close frame carries,
+ * at a character boundary. A WHATWG or Node `ws` socket's `close()` throws past
+ * it, and workerd's does from compatibility date 2026-03-03
+ * (`websocket_close_reason_byte_limit`).
+ */
+export function closeReason(reason: unknown): string {
+  if (typeof reason !== "string") return ""
+  const encoder = new TextEncoder()
+  if (encoder.encode(reason).byteLength <= CLOSE_REASON_MAX_BYTES) return reason
+  let cut = ""
+  let bytes = 0
+  for (const char of reason) {
+    bytes += encoder.encode(char).byteLength
+    if (bytes > CLOSE_REASON_MAX_BYTES) return cut
+    cut += char
+  }
+  return cut
+}
+
 /**
  * What a Runtime Access Token's scope reaches, asked of the runtime path a
  * request names. A token with no session is the workspace owner's and reaches

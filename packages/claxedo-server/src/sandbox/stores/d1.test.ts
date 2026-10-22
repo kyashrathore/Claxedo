@@ -12,6 +12,7 @@ import { createD1SandboxLeaseStore } from "./d1"
 import { countRunningCloudLeases } from "./d1-boots"
 
 import { applyControlPlaneBaseline } from "../../test-support/control-plane-migrations"
+import { WORKERS_COMPATIBILITY_DATE } from "../../../scripts/deploy/hosted-worker-bundle"
 
 const NOW = 1_900_000_000_000
 const STALE_AFTER_MS = 30_000
@@ -27,7 +28,7 @@ async function database(): Promise<D1Database> {
   const instance = new Miniflare({
     modules: true,
     script: "export default { fetch() { return new Response('ok') } }",
-    compatibilityDate: "2025-05-01",
+    compatibilityDate: WORKERS_COMPATIBILITY_DATE,
     d1Databases: ["CONTROL_PLANE_DB"],
   })
   active.push(instance)

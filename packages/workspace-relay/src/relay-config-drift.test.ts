@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { readFile } from "node:fs/promises"
+import { relayCompatibilityDate } from "./workerd-fixture/compatibility"
 import { DEFAULT_RELAY_LOCATION_HINT, RELAY_LOCATION_HINTS, relayLocationHint } from "./relay-location"
 
 /**
@@ -86,26 +87,8 @@ describe("relay wrangler config", () => {
     expect(declaredValue(production, "CLAXEDO_RELAY_LOCATION_HINT")).toBe(DEFAULT_RELAY_LOCATION_HINT)
   })
 
-  /**
-   * `wrangler-h2.toml` is the H2 opener-sharding experiment variant. It pins the
-   * same `compatibility_date` as production but sat outside every drift guard, so
-   * the binaryType hazard could be reintroduced there silently while
-   * wrangler.toml stayed correct. Bringing it under the guard is W6.1's second
-   * half.
-   */
-  test("both relay configs pin the compatibility date below the binaryType flip", async () => {
-    for (const name of ["wrangler.toml", "wrangler-h2.toml"]) {
-      const config = await readFile(new URL(`../${name}`, import.meta.url), "utf8")
-      const declared = config.match(/^compatibility_date = "([\d-]+)"$/m)?.[1]
-
-      expect(declared, `${name} must declare compatibility_date`).toBeDefined()
-      // 2026-03-17 is where server-side WebSockets default to binaryType "blob"
-      // on the addEventListener path. The decoders handle Blob now
-      // (relay-workerd-binary.test.ts proves it on real workerd), so this is no
-      // longer a correctness cliff — it stays asserted so a bump is a deliberate
-      // edit to a test rather than an unnoticed edit to a toml.
-      expect(declared! < "2026-03-17", `${name} is at ${declared}, past the binaryType flip`).toBe(true)
-    }
+  test("the H2 experiment config deploys at the production relay's compatibility date", () => {
+    expect(relayCompatibilityDate("wrangler-h2.toml")).toBe(relayCompatibilityDate())
   })
 
   test("the H2 experiment config keeps its own vars block", async () => {

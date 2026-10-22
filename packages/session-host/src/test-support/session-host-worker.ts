@@ -33,7 +33,7 @@ export async function startSessionHostWorker(input: { script: string; persist: s
   const stderr: string[] = []
   const keySet = input.relayHostKey instanceof CryptoKey ? undefined : input.relayHostKey
   const miniflare = new Miniflare({
-    compatibilityDate: "2026-07-22",
+    compatibilityDate: "2026-07-30",
     compatibilityFlags: ["nodejs_compat"],
     modules: [{ type: "ESModule", path: "worker.mjs", contents: input.script }],
     durableObjects: { SESSION_HOST: { className: "SessionDO", useSQLite: true } },

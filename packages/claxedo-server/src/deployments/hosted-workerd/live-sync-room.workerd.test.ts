@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import { build } from "esbuild"
 import { Miniflare } from "miniflare"
 import { fileURLToPath } from "node:url"
+import { WORKERS_COMPATIBILITY_DATE } from "../../../scripts/deploy/hosted-worker-bundle"
 
 let miniflare: Miniflare
 /** Kept so the cap test can stand up a second instance with a different cap. */
@@ -76,7 +77,7 @@ beforeAll(async () => {
   })
   workerModule = bundled.outputFiles[0].text
   miniflare = new Miniflare({
-    compatibilityDate: "2026-07-18",
+    compatibilityDate: WORKERS_COMPATIBILITY_DATE,
     compatibilityFlags: ["nodejs_compat"],
     modules: [{ type: "ESModule", path: "index.mjs", contents: workerModule }],
     durableObjects: { LIVE_SYNC_ROOM: "LiveSyncRoom" },
@@ -295,7 +296,7 @@ describe("LiveSyncRoom workerd integration", () => {
    */
   test("the room answers 503 once its connection cap is reached", async () => {
     const capped = new Miniflare({
-      compatibilityDate: "2026-07-18",
+      compatibilityDate: WORKERS_COMPATIBILITY_DATE,
       compatibilityFlags: ["nodejs_compat"],
       modules: [{ type: "ESModule", path: "index.mjs", contents: workerModule }],
       durableObjects: { LIVE_SYNC_ROOM: "LiveSyncRoom" },

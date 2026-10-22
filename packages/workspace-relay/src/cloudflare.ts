@@ -11,6 +11,7 @@ import {
 } from "./auth"
 import { bearerToken, errorBody, hostIdFromTunnelPath, workspaceIdsFromSearch } from "./http"
 import {
+  closeReason,
   makeTunnelPong,
   TUNNEL_PROTOCOL_VERSION,
   validateTunnelMessage,
@@ -411,12 +412,10 @@ function viewBytes(input: ArrayBufferView) {
 /**
  * Socket `data` → a tunnel `ws.frame` payload.
  *
- * Returns a promise ONLY for `Blob` data, so the production path at the pinned
- * `compatibility_date` (string/ArrayBuffer) stays synchronous and pays no extra
- * microtask per frame. `Blob` is what Cloudflare makes the server-side default
- * at `compatibility_date >= 2026-03-17` (see the comment in wrangler.toml):
- * before this, every binary frame returned `undefined` here and was dropped
- * with no throw and no log.
+ * Returns a promise only for `Blob` data, which a listener-path socket delivers
+ * for a binary frame at `compatibility_date >= 2026-03-17`, the relay's
+ * deployed date among them. Strings and ArrayBuffers, which every hibernated
+ * host-tunnel frame is, stay synchronous and cost no microtask per frame.
  */
 function socketFrame(input: unknown) {
   if (typeof input === "string") {
@@ -764,7 +763,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
 
   const closeSocket = (socket: WorkspaceRelayDurableObjectSocket, code: number, reason: string) => {
     try {
-      socket.close?.(code, reason)
+      socket.close?.(code, closeReason(reason))
     } catch {
       // The socket boundary is best-effort cleanup.
     }
@@ -2117,11 +2116,11 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     },
     webSocketClose(socket: WorkspaceRelayDurableObjectSocket, code: number, reason: string) {
       ensureHibernatedSocketsRebuilt()
-      // Before compatibility date 2026-04-07 (`web_socket_auto_reply_to_close`)
-      // workerd leaves a socket the peer closed in CLOSING until the
-      // application closes it too. Unanswered, the peer waits out its own
-      // close timeout: 30 s in Node's `ws`, which `claxedo connect` spent
-      // after every SIGTERM.
+      // A hibernated socket the peer closed stays CLOSING until the application
+      // closes it too, `web_socket_auto_reply_to_close` notwithstanding
+      // (workerd 1.20260730.1 at 2026-07-30). Unanswered, the peer waits out
+      // its own close timeout: 30 s in Node's `ws`, which held `claxedo
+      // connect` open after SIGTERM. relay-workerd-close.test.ts proves it.
       closeSocket(socket, safeCloseCode(code, 1000), reason)
       const attachment = socketAttachment(socket)
       if (!attachment) return

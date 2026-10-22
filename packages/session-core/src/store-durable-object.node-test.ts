@@ -96,7 +96,7 @@ void describe("store core scenarios on Durable Object SQLite under workerd", () 
       plugins: [noNodeImports],
     })
     miniflare = new Miniflare({
-      compatibilityDate: "2026-07-22",
+      compatibilityDate: "2026-07-30",
       modules: [{ type: "ESModule", path: "index.mjs", contents: bundled.outputFiles[0].text }],
       durableObjects: { STORE_GATE: { className: "StoreGate", useSQLite: true } },
     })

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs"
 import path from "node:path"
 
 import { describe, expect, test } from "vitest"
@@ -7,6 +8,7 @@ import {
   requireNonLegacyWorkerName,
   selectHostedWorkerArtifact,
 } from "../../src/deployments/hosted-workerd/certified-worker-artifacts"
+import { HOSTED_WORKER_BUNDLE_CONTRACT, WORKERS_COMPATIBILITY_DATE } from "./hosted-worker-bundle"
 import { renderAppWranglerConfig, renderEdgeWorkerWranglerConfig, renderSessionHostWranglerConfig, renderWorkerWranglerConfig } from "./wrangler-config"
 
 const serverRoot = path.resolve(import.meta.dirname, "../..")
@@ -180,5 +182,34 @@ describe("the session-host Worker Wrangler config", () => {
     expect(config).toContain('[[migrations]]\ntag = "v1"\nnew_sqlite_classes = ["SessionDO"]')
     expect(config).toContain('[vars]\nWORKSPACE_RUNTIME_SESSION_AUTHORITY_URL = "https://api.example.com/api/runtime-authority/session-authorize"')
     expect(config).not.toContain("[placement]")
+  })
+})
+
+describe("one compatibility date", () => {
+  const declaredDate = (source: string) => /^compatibility_date = "([\d-]+)"$/m.exec(source)?.[1]
+
+  test("every Claxedo Worker deploys at WORKERS_COMPATIBILITY_DATE", () => {
+    const relay = (name: string) => readFileSync(path.join(serverRoot, "../workspace-relay", name), "utf8")
+    const supervisor = readFileSync(path.join(serverRoot, "src/plugin-backends/supervisor.cf.ts"), "utf8")
+    const sessionHostTests = readFileSync(path.join(serverRoot, "../session-host/src/test-support/session-host-worker.ts"), "utf8")
+    const declared = {
+      hostedWorker: declaredDate(HOSTED_WORKER_BUNDLE_CONTRACT),
+      appWorker: declaredDate(renderAppWranglerConfig({ appWorkerName: "app", relayWorkerName: "relay", browserDirectory: configDirectory })),
+      sessionHost: declaredDate(renderSessionHostWranglerConfig({ workerName: "session-host", controlPlaneWorkerName: "claxedo", configDirectory, variables: {} })),
+      relay: declaredDate(relay("wrangler.toml")),
+      relayH2: declaredDate(relay("wrangler-h2.toml")),
+      pluginBackends: /^const PLUGIN_COMPATIBILITY_DATE = "([\d-]+)"$/m.exec(supervisor)?.[1],
+      sessionHostTests: /compatibilityDate: "([\d-]+)"/.exec(sessionHostTests)?.[1],
+    }
+
+    for (const [worker, date] of Object.entries(declared)) expect(date, worker).toBe(WORKERS_COMPATIBILITY_DATE)
+  })
+
+  test("the sandbox Worker is the one deliberate exception, at a later date its own Wrangler runs", () => {
+    // Its package needs Wrangler 4.131.0 or later for `scheduling_policy = "durable_object"`, and that Wrangler runs a later date than this repository's Miniflare.
+    const sandbox = declaredDate(readFileSync(path.join(serverRoot, "scripts/sandbox/cloudflare-worker/wrangler.toml"), "utf8"))
+
+    expect(sandbox).toBe("2026-09-29")
+    expect(sandbox! > WORKERS_COMPATIBILITY_DATE).toBe(true)
   })
 })

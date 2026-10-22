@@ -24,11 +24,8 @@
 
 name = "claxedo-workspace-relay-h2-reeval"
 main = "src/worker-h2.ts"
-# Same deliberate hold as wrangler.toml — see the long comment there for the
-# measured per-delivery-path binaryType flip at 2026-03-17. This file was
-# previously outside every drift guard; relay-config-drift.test.ts now asserts
-# BOTH configs stay below that date.
-compatibility_date = "2025-05-01"
+# The same date as wrangler.toml; relay-config-drift.test.ts holds them equal.
+compatibility_date = "2026-07-30"
 
 [observability]
 enabled = true

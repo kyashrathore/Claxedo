@@ -1,4 +1,5 @@
 import {
+  closeReason,
   isTunnelMessage,
   makeTunnelPing,
   makeTunnelPong,
@@ -284,23 +285,13 @@ function safeCloseCode(code: unknown) {
   return 1000
 }
 
-function safeCloseReason(reason: unknown) {
-  if (typeof reason !== "string") return ""
-  let result = ""
-  for (const char of reason) {
-    if (Buffer.byteLength(result + char) > 123) return result
-    result += char
-  }
-  return result
-}
-
 function errorMessage(input: unknown) {
   return input instanceof Error ? input.message : String(input)
 }
 
 function closeSocket(ws: TunnelWebSocket, code?: number, reason?: string) {
   try {
-    ws.close(safeCloseCode(code), safeCloseReason(reason))
+    ws.close(safeCloseCode(code), closeReason(reason))
   } catch {
     // A close() that throws (already-closing socket, exotic runtime
     // validation) must never take down the host process.
@@ -330,7 +321,7 @@ function sendWsClose(tunnel: TunnelWebSocket, channelId: string, code: unknown, 
     protocol: TUNNEL_PROTOCOL_VERSION,
     channel_id: channelId,
     code: safeCloseCode(code),
-    reason: safeCloseReason(reason),
+    reason: closeReason(reason),
   })
 }
 

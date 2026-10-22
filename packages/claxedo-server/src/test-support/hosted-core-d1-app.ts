@@ -22,6 +22,7 @@ import { betterAuthAccount } from "../platform/auth/better-auth-d1-authenticatio
 import { orgInvitationEmailDelivery } from "../platform/auth/auth-email-delivery"
 import { testRequestAuthenticationAdapter } from "./request-authentication"
 import { miniflareControlPlaneDatabase } from "./control-plane-migrations"
+import { WORKERS_COMPATIBILITY_DATE } from "../../scripts/deploy/hosted-worker-bundle"
 
 
 const AUTH_MIGRATIONS = fileURLToPath(new URL("../../migrations/auth/", import.meta.url))
@@ -32,7 +33,7 @@ async function authDatabase(disposers: Array<() => Promise<void>>) {
   const instance = new Miniflare({
     modules: true,
     script: "export default { fetch() { return new Response('ok') } }",
-    compatibilityDate: "2025-05-01",
+    compatibilityDate: WORKERS_COMPATIBILITY_DATE,
     d1Databases: ["AUTH_DB"],
   })
   disposers.push(() => instance.dispose())

@@ -20,6 +20,7 @@ import { D1ApplicationIdentityAuthority } from "../../authority/adapters/d1/appl
 import { applyControlPlaneBaseline } from "../../test-support/control-plane-migrations"
 import { D1AgentPluginSourceStore } from "./d1-store"
 import { HostedAgentPluginSourceRoutes } from "./routes"
+import { WORKERS_COMPATIBILITY_DATE } from "../../../scripts/deploy/hosted-worker-bundle"
 
 
 const EMPTY_BASE: CatalogSourceProvider = { listAuthorizedSources: async () => [] }
@@ -83,7 +84,7 @@ async function rail(fetch: AgentPluginSourceFetch) {
   const instance = new Miniflare({
     modules: true,
     script: "export default { fetch() { return new Response('ok') } }",
-    compatibilityDate: "2025-05-01",
+    compatibilityDate: WORKERS_COMPATIBILITY_DATE,
     d1Databases: ["CONTROL_PLANE_DB"],
   })
   active.push(instance)

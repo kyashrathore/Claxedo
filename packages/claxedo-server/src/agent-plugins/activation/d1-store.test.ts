@@ -21,6 +21,7 @@ import {
 import { applyControlPlaneBaseline } from "../../test-support/control-plane-migrations"
 import { desiredAgentPluginSelections } from "../runtime/provision"
 import { createCloudRootToolGroups } from "../runtime/cloud-root-environment"
+import { WORKERS_COMPATIBILITY_DATE } from "../../../scripts/deploy/hosted-worker-bundle"
 
 
 const PLUGIN = "claxedo/review"
@@ -47,7 +48,7 @@ async function setup() {
   const instance = new Miniflare({
     modules: true,
     script: "export default { fetch() { return new Response('ok') } }",
-    compatibilityDate: "2025-05-01",
+    compatibilityDate: WORKERS_COMPATIBILITY_DATE,
     d1Databases: ["CONTROL_PLANE_DB"],
   })
   active.push(instance)
