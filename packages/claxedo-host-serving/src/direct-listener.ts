@@ -66,14 +66,17 @@ function isRuntimeAccessToken(token: string | undefined): token is string {
   }
 }
 
-function protocolToken(header: string | string[] | undefined): string | undefined {
+/** A browser cannot set a header on a socket, so its token rides as a subprotocol; any other client sends the bearer. */
+function upgradeBearer(request: IncomingMessage): string | undefined {
+  const header = request.headers["sec-websocket-protocol"]
   const offered = (Array.isArray(header) ? header.join(",") : header ?? "").split(",").map((item) => item.trim())
-  return offered.find((item) => item.startsWith(RUNTIME_ACCESS_TOKEN_PROTOCOL))?.slice(RUNTIME_ACCESS_TOKEN_PROTOCOL.length)
+  return bearerToken(request.headers.authorization)
+    ?? offered.find((item) => item.startsWith(RUNTIME_ACCESS_TOKEN_PROTOCOL))?.slice(RUNTIME_ACCESS_TOKEN_PROTOCOL.length)
 }
 
 type Routed = { kind: "routed"; target: URL; workspaceId: string; token: string } | { kind: "refused"; status: 401 | 404; code: string }
 
-function route(rawUrl: string, token: string | undefined, localBaseUrl: string): Routed {
+function routeDirectRequest(rawUrl: string, token: string | undefined, localBaseUrl: string): Routed {
   const url = new URL(rawUrl, "https://direct.invalid")
   const match = WORKSPACE_ROUTE.exec(url.pathname)
   if (!isRuntimeAccessToken(token)) return { kind: "refused", status: 401, code: "direct_route_token_required" }
@@ -97,7 +100,7 @@ function forwardedHeaders(headers: Headers, routed: Extract<Routed, { kind: "rou
   return kept
 }
 
-function refusal(status: 401 | 404, code: string) {
+function directRefusal(status: 401 | 404, code: string) {
   return Response.json({ error: { code, message: "This route is not served to that caller" } }, { status })
 }
 
@@ -105,8 +108,8 @@ function requestApp(runtime: DirectListenerOptions["runtime"]) {
   const app = new Hono()
   app.all("*", async (c) => {
     const request = c.req.raw
-    const routed = route(request.url, bearerToken(request.headers.get("authorization") ?? undefined), runtime.url)
-    if (routed.kind === "refused") return refusal(routed.status, routed.code)
+    const routed = routeDirectRequest(request.url, bearerToken(request.headers.get("authorization") ?? undefined), runtime.url)
+    if (routed.kind === "refused") return directRefusal(routed.status, routed.code)
     const bodyless = request.method === "GET" || request.method === "HEAD"
     return await runtime.fetch(new Request(routed.target, {
       method: request.method,
@@ -120,8 +123,7 @@ function requestApp(runtime: DirectListenerOptions["runtime"]) {
 
 function upgradeHandler(runtime: DirectListenerOptions["runtime"]) {
   return (request: IncomingMessage, socket: Duplex, head: Buffer) => {
-    const token = bearerToken(request.headers.authorization) ?? protocolToken(request.headers["sec-websocket-protocol"])
-    const routed = route(request.url ?? "/", token, runtime.url)
+    const routed = routeDirectRequest(request.url ?? "/", upgradeBearer(request), runtime.url)
     if (routed.kind === "refused") {
       socket.end(`HTTP/1.1 ${routed.status} ${routed.status === 401 ? "Unauthorized" : "Not Found"}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`)
       return
@@ -134,7 +136,7 @@ function upgradeHandler(runtime: DirectListenerOptions["runtime"]) {
   }
 }
 
-function listen(server: Server, port: number, address: string): Promise<number> {
+function listenOn(server: Server, port: number, address: string): Promise<number> {
   return new Promise((resolve, reject) => {
     server.once("error", reject)
     server.listen(port, address, () => {
@@ -165,10 +167,10 @@ export function startDirectListener(options: DirectListenerOptions): DirectListe
     server.keepAliveTimeout = 30_000
     server.on("upgrade", upgrade)
     try {
-      const bound = await listen(server, port ?? 0, address).catch(async (error: unknown) => {
+      const bound = await listenOn(server, port ?? 0, address).catch(async (error: unknown) => {
         if (port === undefined || servers.size > 0 || (error as NodeJS.ErrnoException).code !== "EADDRINUSE") throw error
         log(`direct route: port ${port} is taken; choosing another`)
-        return await listen(server, 0, address)
+        return await listenOn(server, 0, address)
       })
       if (bound !== port) options.onPort?.(bound)
       port = bound

@@ -2,6 +2,8 @@ import { ServerError } from "../errors"
 import type { WorkspaceBootMode, WorkspaceStartStep } from "../cloud-types"
 import { isRecord, nonEmptyString } from "@claxedo/helpers/guards"
 
+export type DirectRoutes = { readonly port: number; readonly addresses: readonly string[]; readonly spkiSha256: string }
+
 export type RelayConnection = {
   readonly sessionId?: string
   readonly workspaceId: string
@@ -9,6 +11,13 @@ export type RelayConnection = {
   readonly runtimeAccessToken: string
   readonly tokenExpiresAt: number
   readonly region?: string
+  readonly directRoutes?: DirectRoutes
+}
+
+export function directRoutesOf(value: unknown): DirectRoutes | undefined {
+  if (!isRecord(value) || typeof value.port !== "number" || typeof value.spkiSha256 !== "string" || !Array.isArray(value.addresses)) return undefined
+  const addresses = value.addresses.filter((address): address is string => typeof address === "string")
+  return addresses.length > 0 ? { port: value.port, addresses, spkiSha256: value.spkiSha256 } : undefined
 }
 
 export type StartElapsed = { readonly done: readonly WorkspaceStartStep[]; readonly sinceStartMs: number; readonly sinceStepMs: number }
@@ -86,7 +95,8 @@ function linkOf(row: Record<string, unknown>, workspaceId: string): RelayConnect
     throw new ServerError({ class: "internal", message: `The workspace connection for ${workspaceId} is malformed` })
   }
   const region = row.backing === "cloud-vm" ? nonEmptyString(row.homeRegion) : undefined
-  return { workspaceId, relayUrl: relayUrl.replace(/\/+$/, ""), runtimeAccessToken, tokenExpiresAt, ...(region ? { region } : {}) }
+  const directRoutes = row.backing === "local-worktree" ? directRoutesOf(row.directRoutes) : undefined
+  return { workspaceId, relayUrl: relayUrl.replace(/\/+$/, ""), runtimeAccessToken, tokenExpiresAt, ...(region ? { region } : {}), ...(directRoutes ? { directRoutes } : {}) }
 }
 
 export function connectionAnswerFromWire(body: unknown, workspaceId: string, sessionId?: string): ConnectionAnswer {

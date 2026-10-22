@@ -554,8 +554,12 @@ export const desktopRenderer: Policy = {
   // The terminal's one loader of its xterm backend, which the terminal pane's
   // mount and the terminal creator's preload share (owner: the app's terminal
   // domain, `terminal/backend/load.ts`). It adds no package edge.
-  // 1556/37, no headroom.
-  ceilings: { modules: 1556, packages: 37 },
+  // A remote machine's route machine, direct through the daemon or through
+  // the relay, which the transport asks for each runtime request and socket
+  // (owner: the app's server adapter, `server/direct-route.ts`). It adds no
+  // package edge.
+  // 1557/37, no headroom.
+  ceilings: { modules: 1557, packages: 37 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

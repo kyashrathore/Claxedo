@@ -35,6 +35,7 @@ import type {
 import type { OrgMember, OrgMembership } from "./access-types"
 import type { OrgId, PlacementId, ProjectId, RequestId, TerminalId } from "./ids"
 import type { Workspaces } from "./workspaces"
+import type { RuntimeRouteKind } from "./direct-route"
 import type {
   MarketplaceCatalog,
   PluginActivationInput,
@@ -129,6 +130,7 @@ export type PlacementsApi = {
   readonly load: () => Promise<readonly Placement[]>
   readonly createWorktree: (root: PlacementId, input: WorktreeCreateInput) => Promise<Placement>
   readonly locateSession: Workspaces["locateSession"]
+  readonly runtimeRoute: (id: PlacementId) => RuntimeRouteKind
 }
 
 export type TerminalsApi = {

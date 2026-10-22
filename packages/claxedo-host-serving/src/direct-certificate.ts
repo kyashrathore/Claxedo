@@ -74,7 +74,7 @@ function ecdsaSignatureValue(raw: Uint8Array): Uint8Array {
   return sequence(integer(raw.subarray(0, half)), integer(raw.subarray(half)))
 }
 
-function pem(label: string, der: Uint8Array): string {
+function pemBlock(label: string, der: Uint8Array): string {
   const body = Buffer.from(der).toString("base64").replace(/.{64}/g, "$&\n").replace(/\n$/, "")
   return `-----BEGIN ${label}-----\n${body}\n-----END ${label}-----\n`
 }
@@ -108,8 +108,8 @@ export async function directTlsIdentity(privateKeyJwk: JsonWebKey, now = Date.no
   const pkcs8 = new Uint8Array(await crypto.subtle.exportKey("pkcs8", signingKey))
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", spki))
   return {
-    keyPem: pem("PRIVATE KEY", pkcs8),
-    certPem: pem("CERTIFICATE", certificate),
+    keyPem: pemBlock("PRIVATE KEY", pkcs8),
+    certPem: pemBlock("CERTIFICATE", certificate),
     spkiSha256: Buffer.from(digest).toString("base64url"),
   }
 }

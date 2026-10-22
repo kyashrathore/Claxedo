@@ -78,6 +78,7 @@ function placementsApi(transport: Transport, workspaces: Workspaces): Placements
     },
     createWorktree: createWorktreeCreator(transport, workspaces),
     locateSession: workspaces.locateSession,
+    runtimeRoute: transport.runtimeRoute,
   }
 }
 
@@ -111,8 +112,9 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
   }
 }
 
-function retryConnections(startup: Pick<ReturnType<typeof createStartup>, "retry">, placementStreams: Pick<PlacementStreams, "retry">) {
+function retryConnections(startup: Pick<ReturnType<typeof createStartup>, "retry">, placementStreams: Pick<PlacementStreams, "retry">, transport: Pick<Transport, "recheckRoutes">) {
   return () => {
+    transport.recheckRoutes()
     placementStreams.retry()
     return startup.retry()
   }
@@ -181,7 +183,7 @@ export function createServer(config: ServerConfig): ServerHandle {
     attachPlacement: placementStreams.attach,
     watchPlacement: placementStreams.watch,
     queries,
-    retryConnection: retryConnections(startup, placementStreams),
+    retryConnection: retryConnections(startup, placementStreams, transport),
     ready: startup.ready,
     ...scopeTeardown({ streams, placementStreams, stopProjecting, intake, workspaces, queryClient }),
   }
