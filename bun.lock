@@ -221,7 +221,7 @@
     },
     "packages/claxedo-helpers": {
       "name": "@claxedo/helpers",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "dependencies": {
         "yaml": "2.9.0",
       },
