@@ -148,6 +148,25 @@ test("24 a sandbox stopping while its session is open shows sleep and keeps hist
   expect((await storedMessages(signedCloud, workspace, sessionId)).map((message) => message.info.role)).toEqual(["user", "assistant"])
 })
 
+test("24 a terminal open when its sandbox stops loses its connection, and nothing it sends wakes the sandbox", async ({ signedCloud, page }) => {
+  test.setTimeout(180_000)
+  const workspace = await makeCloudWorkspace(signedCloud, "main")
+  await startCloudWorkspace(signedCloud, workspace)
+  await signedCloud.signIn(page, signedCloud.owner)
+  await page.goto(`${signedCloud.url}${sessionRoute(workspace.id)}`)
+  await page.getByRole("button", { name: "New Terminal", exact: true }).click()
+  await page.getByTestId("terminal-creator").getByRole("button", { name: /^Shell\b/ }).click()
+  await expect(page.locator('[data-testid="terminal-pane"]')).toHaveAttribute("data-terminal-connected", "true")
+  const from = signedCloud.controlPlaneRequests().length
+  const boots = await bootsServed(signedCloud)
+
+  await stopCloudWorkspace(signedCloud, workspace)
+  await expect(page.getByText("Connection Lost", { exact: true })).toBeVisible({ timeout: 90_000 })
+
+  expect(desktopWakes(signedCloud, workspace, from)).toEqual([])
+  expect(await bootsServed(signedCloud)).toBe(boots)
+})
+
 test("24 desktop: a gone sandbox's session reads from the control plane with the asleep card, and nothing wakes it", { tag: "@desktop" }, async ({ signedCloud, signedDesktop, page }) => {
   test.setTimeout(150_000)
   const { workspace } = await asleepWithHistory(signedCloud)
