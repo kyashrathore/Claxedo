@@ -91,6 +91,8 @@ export type HostState = {
     /** The `expires_at` the control plane issued on that beat, not a TTL assumed here. */
     lease_expires_at?: number
     last_beat_error?: string
+    /** When a beat found the owner had paused this machine; a later good beat rewrites `run` without it. */
+    paused_at?: number
     /** What the last successful beat acked, with whether its tunnel is open; what `claxedo status` lists. */
     served?: Array<{ workspace_id: string; revision: number; connected: boolean }>
   }
@@ -308,6 +310,7 @@ function runRecord(value: unknown): NonNullable<HostState["run"]> {
   const lastBeatOkAt = stateNumberOrUndefined(record.last_beat_ok_at)
   const leaseExpiresAt = stateNumberOrUndefined(record.lease_expires_at)
   const lastBeatError = stateStringOrUndefined(record.last_beat_error)
+  const pausedAt = stateNumberOrUndefined(record.paused_at)
   return {
     pid: stateNumber(record.pid, "run.pid"),
     started_at: stateNumber(record.started_at, "run.started_at"),
@@ -315,6 +318,7 @@ function runRecord(value: unknown): NonNullable<HostState["run"]> {
     ...(lastBeatOkAt !== undefined ? { last_beat_ok_at: lastBeatOkAt } : {}),
     ...(leaseExpiresAt !== undefined ? { lease_expires_at: leaseExpiresAt } : {}),
     ...(lastBeatError !== undefined ? { last_beat_error: lastBeatError } : {}),
+    ...(pausedAt !== undefined ? { paused_at: pausedAt } : {}),
     ...(served ? { served } : {}),
   }
 }

@@ -124,6 +124,7 @@ async function relayCheck(deps: DoctorDeps, state: HostState | undefined): Promi
 function enrollmentCheck(deps: DoctorDeps, state: HostState | undefined): Check {
   if (state?.bootstrap) return { level: "fail", line: "The invitation was not redeemed to the end; run the same `claxedo connect <invitation>` again" }
   if (!state?.enrollment) return { level: "info", line: "Not connected yet: `claxedo connect <invitation>` enrolls this machine" }
+  if (state.run?.paused_at !== undefined) return { level: "info", line: "Paused by the owner: nothing is served until the owner resumes this machine in the app" }
   if (hostOnline(state, deps)) {
     const ago = Math.max(0, Math.round((deps.now() - (state.run?.last_beat_ok_at ?? deps.now())) / 1000))
     return { level: "ok", line: `Connected; the last beat was ${ago} s ago` }

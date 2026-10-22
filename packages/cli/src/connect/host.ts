@@ -473,6 +473,12 @@ export async function runHost(input: HostRunInput): Promise<number> {
         },
       })
     },
+    onPaused: (paused) => {
+      if (!paused) return deps.log("resumed by the owner: serving again")
+      deps.log("paused by the owner: serving nothing until the owner resumes this machine")
+      const run = state.run ?? { pid: deps.pid, started_at: startedAt, generation: connector.generation() ?? 0 }
+      void persist({ ...state, run: { ...run, paused_at: deps.now() } })
+    },
     onError: (stage, error) => {
       deps.log(`${stage} failed: ${errorMessage(error)}`)
       if (stage !== "heartbeat") return

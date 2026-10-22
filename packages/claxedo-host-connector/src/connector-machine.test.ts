@@ -68,6 +68,7 @@ async function machineHost(
   const ackFailures: unknown[] = []
   const providerConfigs: ProviderConfigRevision[] = []
   const rings: number[] = []
+  const pauses: boolean[] = []
   let tick: (() => void) | undefined
   const connector = createHostConnector({
     mode: "machine",
@@ -99,6 +100,7 @@ async function machineHost(
     },
     onServing: (tunnel) => tunnels.push(tunnel),
     onHostChanged: () => rings.push(beats().length),
+    onPaused: (paused) => pauses.push(paused),
     onError: (stage, error) => errors.push({ stage, error }),
     ...(input.sealingPublicKey ? { sealingPublicKey: input.sealingPublicKey } : {}),
     onProviderConfig: async (config) => {
@@ -113,6 +115,7 @@ async function machineHost(
     cp,
     enrolled,
     rings,
+    pauses,
     connector,
     seen,
     scopes,
@@ -274,9 +277,47 @@ describe("assignment discovery", () => {
     await vi.waitFor(() => expect(h.beats().length).toBeGreaterThan(beatsWhilePaused))
     expect(h.connector.state().status, "a pause is not a revocation: the loop stays").toBe("enrolled")
     expect(h.tunnels.slice(servedBeforePause), "serving is withdrawn once, not on every refused beat").toEqual([undefined])
+    expect(h.pauses, "the pause is reported once").toEqual([true])
+    expect(h.errors, "the owner's pause is not a failed heartbeat").toEqual([])
 
     cp.pause(id, false)
     await vi.waitFor(() => expect(h.tunnels.at(-1), "the resume ring is heard on the doorbell still open").toMatchObject({ workspaceIds: ["ws_1"] }))
+    expect(h.pauses).toEqual([true, false])
+  })
+
+  test("a machine that starts while paused waits for its owner's resume instead of exiting, and serves once resumed", async () => {
+    const cp = createFakeControlPlane()
+    const h = await machineHost(cp)
+    const id = h.enrolled.enrollmentId
+    const acquires = () => cp.log.filter((entry) => entry.path === "/api/claxedo/host/enrollments/acquire").length
+    cp.assign({ enrollmentId: id, workspaceId: "ws_1", remoteDirectory: "/srv/api" })
+    cp.pause(id, true)
+    let settled: string | undefined
+    const starting = h.connector.start().then((state) => {
+      settled = state.status
+      return state
+    })
+    await vi.waitFor(() => expect(h.pauses).toEqual([true]))
+    h.tick()
+    await vi.waitFor(() => expect(acquires()).toBe(2))
+    expect(settled, "a paused start neither stops nor serves").toBeUndefined()
+    expect(h.errors, "the owner's pause is not a failed acquire").toEqual([])
+
+    cp.pause(id, false)
+    h.tick()
+    expect((await starting).status).toBe("enrolled")
+    await vi.waitFor(() => expect(h.tunnels.at(-1)).toMatchObject({ workspaceIds: ["ws_1"] }))
+    expect(h.pauses).toEqual([true, false])
+  })
+
+  test("closing a machine that is waiting out a pause ends its start", async () => {
+    const cp = createFakeControlPlane()
+    const h = await machineHost(cp)
+    cp.pause(h.enrolled.enrollmentId, true)
+    const starting = h.connector.start()
+    await vi.waitFor(() => expect(h.pauses).toEqual([true]))
+    h.connector.close()
+    expect(await starting).toMatchObject({ status: "stopped", reason: "closed" })
   })
 
   test("a doorbell refused while the machine was paused reopens on the first good beat after the resume", async () => {

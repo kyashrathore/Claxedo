@@ -493,6 +493,12 @@ describe("root pinning", () => {
     expect(parseHostState(text).roots_canonical).toEqual({ "/srv": "/private/srv" })
     expect(() => parseHostState(JSON.stringify({ ...state(), roots_canonical: { "/srv": 1 } }))).toThrow("roots_canonical")
   })
+
+  test("a paused run's time round-trips through the state file", () => {
+    const run = { pid: 7, started_at: 4, generation: 1, lease_expires_at: 90, paused_at: 12 }
+    expect(parseHostState(JSON.stringify({ ...state(), run })).run).toEqual(run)
+    expect(parseHostState(JSON.stringify({ ...state(), run: { ...run, paused_at: undefined } })).run).not.toHaveProperty("paused_at")
+  })
 })
 
 // POSIX file modes; Windows reports 0o666 whatever was asked.

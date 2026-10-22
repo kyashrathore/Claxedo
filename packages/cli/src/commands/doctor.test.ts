@@ -167,12 +167,15 @@ describe("claxedo doctor", () => {
   test("a beat the control plane refused, or a connect that is not running, fails the enrollment line", async () => {
     const refused = enrolled({ run: { pid: 7, started_at: 4, generation: 1, last_beat_error: "This machine was revoked by its owner" } })
     const stopped = enrolled({ run: { pid: 7, started_at: 4, generation: 1 } })
+    const paused = enrolled({ run: { pid: 42, started_at: 4, generation: 1, last_beat_ok_at: NOW - 7_000, lease_expires_at: NOW + 60_000, paused_at: NOW - 5_000 } })
     const pending = enrolled({ enrollment: undefined, bootstrap: { invitation_id: "inv_1", token_file: "/t" } })
     const neverEnrolled = enrolled({ enrollment: undefined, run: undefined })
     const line = async (state: HostState) =>
       (await doctorChecks(deps({ state, files: { [UNIT]: systemdUnitWithPath } }).deps)).find((check) => /^(Not serving|Connected|The invitation)/.test(check.line))
     expect(await line(refused)).toEqual({ level: "fail", line: "Not serving: This machine was revoked by its owner" })
     expect(await line(stopped)).toEqual({ level: "fail", line: "Not serving: connect is not running; start it with `claxedo connect` or its service" })
+    expect((await doctorChecks(deps({ state: paused, files: { [UNIT]: systemdUnitWithPath } }).deps)).find((check) => /^(Paused|Connected)/.test(check.line)), "a paused machine's lease has not lapsed yet, but it serves nothing")
+      .toEqual({ level: "info", line: "Paused by the owner: nothing is served until the owner resumes this machine in the app" })
     expect(await line(pending)).toEqual({ level: "fail", line: "The invitation was not redeemed to the end; run the same `claxedo connect <invitation>` again" })
     expect((await doctorChecks(deps({ state: neverEnrolled, files: { [UNIT]: systemdUnitWithPath } }).deps)).find((check) => check.line.startsWith("Not connected")))
       .toEqual({ level: "info", line: "Not connected yet: `claxedo connect <invitation>` enrolls this machine" })

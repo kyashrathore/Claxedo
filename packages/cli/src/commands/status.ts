@@ -35,7 +35,7 @@ export function defaultStatusDeps(): StatusDeps {
 /** Online means the connect process is alive AND the lease the control plane issued on its last good beat has not expired. */
 export function hostOnline(state: HostState, deps: Pick<StatusDeps, "pidAlive" | "now">) {
   const run = state.run
-  if (!run || !deps.pidAlive(run.pid)) return false
+  if (!run || run.paused_at !== undefined || !deps.pidAlive(run.pid)) return false
   return run.lease_expires_at !== undefined && deps.now() <= run.lease_expires_at
 }
 
@@ -69,7 +69,7 @@ export async function statusLines(deps: StatusDeps): Promise<string[]> {
   lines.push(
     `  generation   ${run?.generation ?? "-"}`,
     `  lease        expires ${iso(run?.lease_expires_at)}; last beat ok ${iso(run?.last_beat_ok_at)}`,
-    `  status       ${online ? "online" : "offline"}${run && !online ? ` (pid ${run.pid} ${deps.pidAlive(run.pid) ? "alive, lease stale" : "gone"})` : ""}`,
+    `  status       ${run?.paused_at !== undefined ? `paused by the owner at ${iso(run.paused_at)}; nothing is served until the owner resumes this machine in the app` : online ? "online" : `offline${run ? ` (pid ${run.pid} ${deps.pidAlive(run.pid) ? "alive, lease stale" : "gone"})` : ""}`}`,
   )
   if (run?.last_beat_error) lines.push(`  last error   ${run.last_beat_error}`)
   const { roots, drifted } = await resolveRoots(state, deps.resolvePath)

@@ -179,6 +179,8 @@ export type ConnectorOptions = MachineDirectoryScope & {
   /** Injected so a test does not wait, and so Electron can use its own timer. */
   setInterval: (fn: () => void, ms: number) => { cancel: () => void }
   onError?: (stage: ConnectorErrorStage, error: unknown) => void
+  /** True when a beat finds the owner paused this machine, false when a later beat finds it resumed; once per change. */
+  onPaused?: (paused: boolean) => void
   /**
    * The serving credential from the latest beat — one token whose claim is
    * exactly the workspaces this machine is currently routable for, or
@@ -361,6 +363,8 @@ export function createHostConnector(options: ConnectorOptions) {
   let watchRefused = false
   /** Serving withdrawn because the owner paused the machine, until a beat succeeds again. */
   let paused = false
+  /** Ends a paused start's wait for its next acquire when the connector stops. */
+  let wakePausedStart: (() => void) | undefined
 
   const closeWatch = () => {
     watch?.close()
@@ -371,6 +375,7 @@ export function createHostConnector(options: ConnectorOptions) {
     era++
     timer?.cancel()
     timer = undefined
+    wakePausedStart?.()
     closeWatch()
     descriptions.clear()
     acked.clear()
@@ -378,6 +383,20 @@ export function createHostConnector(options: ConnectorOptions) {
     refused.clear()
     state = { status: "stopped", reason, detail }
   }
+
+  const untilNextAcquire = () =>
+    new Promise<boolean>((resolve) => {
+      const next = options.setInterval(() => {
+        next.cancel()
+        wakePausedStart = undefined
+        resolve(state.status !== "stopped")
+      }, options.heartbeatIntervalMs)
+      wakePausedStart = () => {
+        next.cancel()
+        wakePausedStart = undefined
+        resolve(false)
+      }
+    })
 
   const openWatch = () => {
     closeWatch()
@@ -410,6 +429,18 @@ export function createHostConnector(options: ConnectorOptions) {
     // turned it off themselves. The era check is the same one the success
     // path applies to a late answer.
     if (startedIn !== era) return
+    // A pause closes the tunnels now and keeps beating, so the owner's resume,
+    // made from any device, is heard at the next beat. It is the owner's
+    // choice, not a failure, so it is reported once rather than as every
+    // refused beat.
+    if (pausedByOwner(error)) {
+      if (!paused) {
+        options.onServing?.(undefined)
+        options.onPaused?.(true)
+      }
+      paused = true
+      return
+    }
     options.onError?.("heartbeat", error)
     // A disruption keeps the enrollment for the next beat to retry: a control
     // plane mid-deploy answers `503 deployment_candidate_unavailable` for the
@@ -418,15 +449,9 @@ export function createHostConnector(options: ConnectorOptions) {
     // permanently offline. If the control plane really is gone, the lease
     // expires there on its own.
     if (transientHeartbeatFailure(error)) return
-    // A pause closes the tunnels now and keeps beating, so the owner's resume,
-    // made from any device, is heard at the next beat. Every other decision
-    // (revoked, enrolled elsewhere, a newer instance holds the generation)
-    // stops the connector: acquiring again would overrule the owner.
-    if (pausedByOwner(error)) {
-      if (!paused) options.onServing?.(undefined)
-      paused = true
-      return
-    }
+    // Every other decision (revoked, enrolled elsewhere, a newer instance
+    // holds the generation) stops the connector: acquiring again would
+    // overrule the owner.
     stop("revoked", String(error))
   }
 
@@ -594,7 +619,10 @@ export function createHostConnector(options: ConnectorOptions) {
         options.onError?.("reconcile", error)
       }
       if (startedIn !== era || draining) return state
-      paused = false
+      if (paused) {
+        paused = false
+        options.onPaused?.(false)
+      }
       if (watchRefused) openWatch()
       options.onServing?.(result.hostTunnel)
       options.onLeaseRenewed?.(state)
@@ -709,18 +737,31 @@ export function createHostConnector(options: ConnectorOptions) {
     },
 
     async start(input: StartInput = {}): Promise<ConnectorState> {
-      try {
-        const acquired = await options.transport.acquire(input.acquireTimeoutMs === undefined ? undefined : { timeoutMs: input.acquireTimeoutMs })
-        era++
-        generation = acquired.generation
-        state = {
-          status: "enrolled",
-          enrollment: { enrollment_id: options.enrollmentId, host_id: options.hostId, expires_at: 0 },
+      for (;;) {
+        try {
+          const acquired = await options.transport.acquire(input.acquireTimeoutMs === undefined ? undefined : { timeoutMs: input.acquireTimeoutMs })
+          era++
+          generation = acquired.generation
+          state = {
+            status: "enrolled",
+            enrollment: { enrollment_id: options.enrollmentId, host_id: options.hostId, expires_at: 0 },
+          }
+          break
+        } catch (error) {
+          // A machine that starts while its owner has it paused (a reboot, a
+          // restart, an upgrade) waits for the resume and asks again each
+          // interval, rather than exiting with a decision its service manager
+          // would never restart, which would make the pause permanent.
+          if (pausedByOwner(error) && state.status !== "stopped") {
+            if (!paused) options.onPaused?.(true)
+            paused = true
+            if (await untilNextAcquire()) continue
+            return state
+          }
+          options.onError?.("acquire", error)
+          stop(transientHeartbeatFailure(error) ? "error" : "revoked", String(error))
+          return state
         }
-      } catch (error) {
-        options.onError?.("acquire", error)
-        stop(transientHeartbeatFailure(error) ? "error" : "revoked", String(error))
-        return state
       }
       installTimer()
       // Opened before the first beat so a change made while that beat is in
