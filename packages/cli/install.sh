@@ -89,9 +89,15 @@ fi
 command -v npm >/dev/null 2>&1 || fail "npm is missing next to $(command -v node)"
 command -v git >/dev/null 2>&1 || fail "git is required: the workspace runtime applies its OpenCode patches with it"
 
-# `npm prefix -g` is the directory whose lib/node_modules and bin the install
-# writes to; a system Node (apt, brew on Linux) usually owns it as root.
-global_prefix="$(npm prefix -g)"
+# The global prefix is the directory whose lib/node_modules and bin the install
+# writes to; a system Node (apt, brew on Linux) usually owns it as root. It is
+# read from the environment npm gives a command it runs, not from `npm prefix
+# -g` or `npm config get prefix`: npm 11 prints a UUID-shaped path segment as
+# `***` in its own output and refuses `config get prefix` when the prefix comes
+# from the environment.
+# shellcheck disable=SC2016
+global_prefix="$(npm exec --yes=false -c 'printf %s "$npm_config_global_prefix"')"
+[ -n "$global_prefix" ] || fail "npm did not report its global prefix"
 install_prefix="$global_prefix"
 prefix_args=""
 bin_dir="$global_prefix/bin"
