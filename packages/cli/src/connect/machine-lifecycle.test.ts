@@ -619,6 +619,51 @@ linuxMachine("provider configuration on a running claxedo connect host", () => {
     expect(await h.stop()).toBe(0)
   }, 30_000)
 
+  test("the control plane's build is kept apart from the owner's push, the push is spent over it, and a restart applies both and declares the newer", async () => {
+    h = await inProcessHost()
+    process.env.CLAXEDO_DATA_DIR = path.join(h.root, "..", "data")
+    await h.start()
+    const id = h.enrollmentId()
+    const built = JSON.stringify({
+      version: 1,
+      source: "control-plane",
+      credentials: {
+        machineOwnerUserId: "alice",
+        accounts: { alice: {
+          "claude-sdk": { baseUrl: "https://cp.example/bindings/a", placeholder: "stand-in-a", authMode: "bearer", expiresAt: 2_000_000_000_000 },
+          openai: { baseUrl: "https://cp.example/bindings/o", placeholder: "stand-in-o", authMode: "bearer", apiPath: "/v1", expiresAt: 2_000_000_000_000 },
+        } },
+      },
+    })
+
+    const first = await h.cp.pushProviderConfig(id, built)
+    await h.beat()
+    await until(async () => (await h.state())?.built_provider_config?.revision === first, "the build on disk")
+    expect((await h.state())?.provider_config).toBeUndefined()
+    expect(h.lines).toContain(`provider configuration revision ${first} from the owner's accounts: claude-sdk, openai`)
+
+    const second = await h.cp.pushProviderConfig(id, providerConfig(SECRET))
+    await h.beat()
+    await until(async () => (await h.state())?.provider_config?.revision === second, "the owner's push on disk")
+    expect((await h.state())?.built_provider_config?.revision).toBe(first)
+    expect(h.lines).toContain(`provider configuration revision ${second}: claude-sdk, openai`)
+
+    const third = await h.cp.pushProviderConfig(id, null)
+    await h.beat()
+    await until(async () => (await h.state())?.provider_config?.revision === third, "the withdrawal on disk")
+    expect(h.lines).toContain(`provider configuration revision ${third}: pushed providers withdrawn; the owner's accounts remain: claude-sdk, openai`)
+    expect((await h.beat()).providerConfigRevision).toBe(third)
+    expect(await h.stop()).toBe(0)
+
+    h.lines.length = 0
+    await h.start()
+    expect(h.cp.beats().at(-1)?.body.providerConfigRevision, "the newer stored revision is declared").toBe(third)
+    expect(h.lines).toContain(`provider configuration revision ${first} from the owner's accounts: claude-sdk, openai`)
+    expect(h.lines).toContain(`provider configuration revision ${third}: pushed providers withdrawn; the owner's accounts remain: claude-sdk, openai`)
+    expect(await h.stateText()).not.toContain("stand-in-a")
+    expect(await h.stop()).toBe(0)
+  }, 30_000)
+
   test("a restart declares the stored revision under the same sealing key, and applies what the owner pushed while it was down", async () => {
     h = await inProcessHost()
     process.env.CLAXEDO_DATA_DIR = path.join(h.root, "..", "data")

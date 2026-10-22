@@ -13,6 +13,10 @@ export const piDirectCredentialRequired = (providerId: string) =>
   piConfiguration(`direct_credential_required: Pi needs a connected ${providerId} account for this session`,
     { reason: "direct_credential_required", providerId })
 
+export const piBrokeredPlanUnsupported = (providerId: string) =>
+  piConfiguration("brokered_plan_unsupported: Pi cannot use a Claude plan through Claxedo's credential broker; connect an Anthropic API key",
+    { reason: "brokered_plan_unsupported", providerId })
+
 export type PiModelFailure = { error: string; errorClass?: FirstTurnErrorClass }
 
 export function piModelFailure(record: { reason: string; detail?: unknown }): PiModelFailure {

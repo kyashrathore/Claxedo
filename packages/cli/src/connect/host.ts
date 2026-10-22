@@ -25,6 +25,7 @@ import {
   createHostRuntimeListener,
   installHostProviderConfigAuthority,
   adoptConnectedHostOwner,
+  hostProviderConfigSource,
   setHostProviderConfig,
   type HostRuntimeListener,
 } from "@claxedo/host-serving/runtime"
@@ -250,34 +251,39 @@ export async function runHost(input: HostRunInput): Promise<number> {
   }
   const sealingPublicKey = JSON.stringify(publicKeyJwk(sealingPrivateKeyJwk))
 
-  const installProviderConfig = async (config: { revision: number; sealed: string | null }) => {
-    const plaintext =
-      config.sealed === null
-        ? null
-        : await openMachineSeal(
-            sealingPrivateKeyJwk,
-            config.sealed,
-            machineSealAad({ enrollmentId: enrollment.enrollment_id, revision: config.revision }),
-          )
-    const { providerIds } = setHostProviderConfig(plaintext)
+  const openProviderConfig = async (config: { revision: number; sealed: string | null }) =>
+    config.sealed === null
+      ? null
+      : await openMachineSeal(
+          sealingPrivateKeyJwk,
+          config.sealed,
+          machineSealAad({ enrollmentId: enrollment.enrollment_id, revision: config.revision }),
+        )
+  const applyProviderConfig = (revision: number, plaintext: string | null) => {
+    const { source, providerIds } = setHostProviderConfig(plaintext)
+    const providers = providerIds.join(", ")
     deps.log(
-      config.sealed === null
-        ? `provider configuration revision ${config.revision}: withdrawn; harnesses run on this machine's own logins`
-        : `provider configuration revision ${config.revision}: ${providerIds.join(", ") || "no providers"}`,
+      source === "control-plane"
+        ? `provider configuration revision ${revision} from the owner's accounts: ${providers || "no providers"}`
+        : plaintext !== null
+          ? `provider configuration revision ${revision}: ${providers || "no providers"}`
+          : providers
+            ? `provider configuration revision ${revision}: pushed providers withdrawn; the owner's accounts remain: ${providers}`
+            : `provider configuration revision ${revision}: withdrawn; harnesses run on this machine's own logins`,
     )
   }
   // A stored revision is declared only once it is open again: a blob on disk
   // this key cannot open would otherwise be acked forever, and the owner would
-  // read "applied" for a configuration no harness here has.
+  // read "applied" for a configuration no harness here has. The owner's push
+  // and the control plane's build are each kept, and the newer is declared.
   let declaredProviderConfigRevision: number | undefined
-  if (state.provider_config) {
+  for (const stored of [state.built_provider_config, state.provider_config]) {
+    if (!stored) continue
     try {
-      await installProviderConfig(state.provider_config)
-      declaredProviderConfigRevision = state.provider_config.revision
+      applyProviderConfig(stored.revision, await openProviderConfig(stored))
+      declaredProviderConfigRevision = Math.max(declaredProviderConfigRevision ?? 0, stored.revision)
     } catch (error) {
-      deps.log(
-        `stored provider configuration revision ${state.provider_config.revision} could not be applied: ${errorMessage(error)}`,
-      )
+      deps.log(`stored provider configuration revision ${stored.revision} could not be applied: ${errorMessage(error)}`)
     }
   }
 
@@ -394,13 +400,18 @@ export async function runHost(input: HostRunInput): Promise<number> {
         ...(endpoints.authority ? { authority: endpoints.authority } : {}),
         ...(endpoints.sessionRows ? { sessionRows: endpoints.sessionRows } : {}),
       }),
-    // Stored, then opened, then applied. The connector acks a revision only
-    // when this resolves, so a write that fails throws here and the control
-    // plane delivers the same revision on the next beat.
+    // Opened, stored under its source, then applied. The connector acks a
+    // revision only when this resolves, so a write that fails throws here and
+    // the control plane delivers the same revision on the next beat.
     onProviderConfig: (config) =>
       servingUpdates.run("serving", async () => {
-        await persistOrThrow({ ...state, provider_config: config })
-        await installProviderConfig(config)
+        const plaintext = await openProviderConfig(config)
+        await persistOrThrow(
+          config.sealed !== null && hostProviderConfigSource(plaintext) === "control-plane"
+            ? { ...state, built_provider_config: { revision: config.revision, sealed: config.sealed } }
+            : { ...state, provider_config: config },
+        )
+        applyProviderConfig(config.revision, plaintext)
         await listener.applyRuntimeConfig()
       }),
     onAssignments: async (descriptions) => {

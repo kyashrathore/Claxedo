@@ -5,7 +5,7 @@ import type { ModelRef } from "@earendil-works/pi-durable"
 import type { ConfigOperations, DraftLaunch, HarnessSession, ModelSettings } from "../../contract"
 import { piPermissionMode } from "./approvals"
 import { PiCredentials } from "./credentials"
-import { piConfiguration, piDirectCredentialRequired } from "./errors"
+import { piBrokeredPlanUnsupported, piConfiguration, piDirectCredentialRequired } from "./errors"
 import { piCatalogOptions, type PiCatalogModel } from "./launch-catalog"
 import { piCatalog, sessionModelCatalog } from "./model-catalog"
 import type { PiSession } from "./session"
@@ -17,7 +17,9 @@ export function piModelRef(model: PromptModel | undefined): ModelRef {
 }
 
 export function piModel(credentials: PiCredentials, ref: ModelRef): Model<Api> {
-  if (!credentials.direct(ref.provider)) throw piDirectCredentialRequired(ref.provider)
+  if (!credentials.spend(ref.provider)) {
+    throw credentials.unspendableBinding(ref.provider) ? piBrokeredPlanUnsupported(ref.provider) : piDirectCredentialRequired(ref.provider)
+  }
   const model = credentials.models.getModel(ref.provider, ref.modelId)
   if (!model) throw piConfiguration(`Pi does not offer model ${ref.provider}/${ref.modelId}`)
   return model
