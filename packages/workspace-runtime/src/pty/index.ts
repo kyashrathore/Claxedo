@@ -63,6 +63,7 @@ export namespace Pty {
     return Math.floor(raw)
   })()
   const BUFFER_CHUNK = 64 * 1024
+  const GOING_AWAY_CLOSE = 1001
   const QUEUE_HIGH_WATERMARK = (() => {
     const raw = Number(process.env.CLAXEDO_PTY_QUEUE_HIGH_WATERMARK)
     if (!Number.isFinite(raw) || raw <= 0) return 1024 * 1024
@@ -280,7 +281,8 @@ export namespace Pty {
 
     session.ready = false
     for (const ws of session.subscribers) {
-      ws.close()
+      if (session.hostStopping) ws.close(GOING_AWAY_CLOSE, "The terminal's host is stopping")
+      else ws.close()
     }
     session.subscribers.clear()
     session.writeQueue = []
@@ -500,8 +502,10 @@ export namespace Pty {
           log.info("session exited", { id, exitCode })
           const tail = snapshot(id, 16_384)
           const event = { id, exitCode, tail }
-          session.bus.publish({ type: "pty.exited", ...event })
-          session.bus.publish({ type: "pty.stream", kind: "exit", ...event })
+          if (!session.hostStopping) {
+            session.bus.publish({ type: "pty.exited", ...event })
+            session.bus.publish({ type: "pty.stream", kind: "exit", ...event })
+          }
           await cleanupSession(session.info.id, session, "exit")
         },
       })
@@ -547,10 +551,12 @@ export namespace Pty {
         sessions.delete(id)
         activityChanged()
       }
-      session.bus.publish({
-        type: "pty.deleted",
-        id,
-      })
+      if (!session.hostStopping) {
+        session.bus.publish({
+          type: "pty.deleted",
+          id,
+        })
+      }
       return result
     })()
     const result = await session.removeOperation
@@ -596,6 +602,7 @@ export namespace Pty {
    */
   export async function dispose(): Promise<Array<{ id: string; retirement: RetirementResult | undefined }>> {
     const results: Array<{ id: string; retirement: RetirementResult | undefined }> = []
+    for (const session of sessions.values()) session.hostStopping = true
     for (const id of Array.from(sessions.keys())) {
       results.push({ id, retirement: await remove(id) })
     }

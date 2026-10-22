@@ -301,6 +301,34 @@ describe("Pty lifecycle cleanup", () => {
     expect(Pty.get(info.id)).toBeUndefined()
   }))
 
+  test("dispose retires a terminal without telling its clients it ended, and keeps its history to recreate it from", async () => {
+    const core = testSessionCore(tmpDir, "ws_test")
+    const events: string[] = []
+    const unsubscribe = core.bus.subscribe((event) => { events.push(event.type) })
+    try {
+      await withSessionCore(core, async () => {
+        const { Pty } = await import("./index")
+        const info = await Pty.create({ cwd: tmpDir, title: "restart" }, ownership)
+        const ws = socket()
+        Pty.connect(info.id, ws)
+        Pty.write(info.id, "printf before-restart\n")
+        await waitFor(() => Pty.snapshot(info.id).includes("before-restart"))
+        const disposing = Pty.dispose()
+        await Promise.all((fakeProcesses.get(info.pid)?.exitHandlers ?? []).map((handler) => handler({ exitCode: 0 })))
+        await disposing
+
+        expect(events).not.toContain("pty.exited")
+        expect(events).not.toContain("pty.deleted")
+        expect(ws.tracker.closes).toEqual([[1001, "The terminal's host is stopping"]])
+        expect(await fs.readFile(historyPath(info.cwd, info.id), "utf8")).toContain("before-restart")
+        expect(Pty.list()).toEqual([])
+        expect(alive(info.pid)).toBe(false)
+      })
+    } finally {
+      unsubscribe()
+    }
+  })
+
   test("dispose removes every active session", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
     const first = await Pty.create({ cwd: tmpDir, title: "first" }, ownership)
@@ -518,13 +546,14 @@ describe("Pty agent hook access", () => {
  * ever needs `this`.
  */
 function socket() {
-  const tracker = { closeCount: 0 }
+  const tracker = { closeCount: 0, closes: [] as Array<[number | undefined, string | undefined]> }
   const ws = {
     readyState: 1,
     bufferedAmount: 0,
     send: mock(() => {}),
-    close: mock(() => {
+    close: mock((code?: number, reason?: string) => {
       tracker.closeCount += 1
+      tracker.closes.push([code, reason])
     }),
   } as unknown as WSContext
   return Object.assign(ws, { tracker })

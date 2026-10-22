@@ -82,6 +82,13 @@ export interface ActiveSession {
   subscribers: Set<WebSocketBackpressureSocket>
   exited: boolean
   removed: boolean
+  /**
+   * Retired by `dispose`, because its process is stopping rather than because
+   * anyone ended it: its clients are told the host went away, not that the
+   * terminal exited or was deleted, so after a restart they find it gone and
+   * recreate it from its history.
+   */
+  hostStopping?: boolean
   ready: boolean
   writeQueue: QueuedOperation[]
   queuedBytes: number
