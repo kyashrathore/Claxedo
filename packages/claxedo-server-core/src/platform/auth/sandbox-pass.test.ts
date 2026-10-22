@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest"
 import { decodeJwt, decodeProtectedHeader, exportJWK, exportPKCS8, exportSPKI, generateKeyPair, SignJWT } from "jose"
 import { runtimeAccessTokenIssuer } from "@claxedo/workspace-relay"
 import { sha256Hex16 } from "@claxedo/server-core/platform/auth/web-crypto"
-import { mintSandboxPass, SandboxPassError, verifySandboxPass } from "./sandbox-pass"
+import { mintSandboxPass, SandboxPassError, verifySandboxPass, verifyScopedPass } from "./sandbox-pass"
 import { memorySandboxPassRegister } from "./sandbox-pass-register"
 
 async function fixture() {
@@ -177,6 +177,37 @@ describe("sandbox pass family", () => {
     await expect(verify(sibling.token, OTHER)).resolves.toMatchObject({ jti: sibling.jti })
     // A verifier given no register keeps answering for the signature alone.
     await expect(verifySandboxPass(minted.token, env, { audience: ONE, fault, now: () => now })).resolves.toBeTruthy()
+  })
+
+  test("a connected machine's pass names its enrollment and no workspace, and only the scoped verifier reads it", async () => {
+    const { env, key } = await fixture()
+    const machine = { userId: "user-1", orgId: "org-1", enrollmentId: "enrollment_1" }
+    const minted = await mintSandboxPass({
+      audience: ONE, scope: machine, operations: ["spend"],
+      extra: { binding_id: "b", "https://api.openai.com/auth": { chatgpt_account_id: "acct_1" } },
+    }, env, fault)
+    const payload = decodeJwt(minted.token)
+    expect(payload).toMatchObject({ user_id: "user-1", org_id: "org-1", enrollment_id: "enrollment_1", "https://api.openai.com/auth": { chatgpt_account_id: "acct_1" } })
+    expect(payload).not.toHaveProperty("workspace_id")
+    await expect(verifyScopedPass(minted.token, env, { audience: ONE, fault })).resolves.toMatchObject({ scope: machine, operations: ["spend"] })
+    await expect(verifySandboxPass(minted.token, env, { audience: ONE, fault })).rejects.toThrow("scope is invalid")
+    await expect(verifyScopedPass((await mintSandboxPass({ audience: ONE, scope, operations: ["read"] }, env, fault)).token, env, { audience: ONE, fault }))
+      .resolves.toMatchObject({ scope })
+
+    await expect(mintSandboxPass({ audience: ONE, scope: machine, operations: ["spend"], register: memorySandboxPassRegister() }, env, fault))
+      .rejects.toThrow("pass requires a workspace scope to be written to a register")
+    await expect(mintSandboxPass({ audience: ONE, scope: { ...machine, enrollmentId: " " }, operations: ["spend"] }, env, fault)).rejects.toThrow(Fault)
+    await expect(mintSandboxPass({ audience: ONE, scope: machine, operations: ["spend"], extra: { nested: { member: "" } } }, env, fault))
+      .rejects.toThrow("pass requires nested.member")
+
+    const both = await new SignJWT({ user_id: "user-1", org_id: "org-1", workspace_id: "ws_1", enrollment_id: "enrollment_1", operations: ["read"] })
+      .setProtectedHeader({ alg: "EdDSA" }).setIssuer(runtimeAccessTokenIssuer).setAudience(ONE).setSubject("user-1")
+      .setIssuedAt().setExpirationTime("5m").setJti("both").sign(key.privateKey)
+    await expect(verifyScopedPass(both, env, { audience: ONE, fault })).rejects.toThrow("scope is invalid")
+    const sessionScoped = await new SignJWT({ user_id: "user-1", org_id: "org-1", enrollment_id: "enrollment_1", session_id: "ses_1", operations: ["read"] })
+      .setProtectedHeader({ alg: "EdDSA" }).setIssuer(runtimeAccessTokenIssuer).setAudience(ONE).setSubject("user-1")
+      .setIssuedAt().setExpirationTime("5m").setJti("session").sign(key.privateKey)
+    await expect(verifyScopedPass(sessionScoped, env, { audience: ONE, fault })).rejects.toThrow("scope is invalid")
   })
 
   test("names the deployment fault the audience supplied when the key is missing", async () => {

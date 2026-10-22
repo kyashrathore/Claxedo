@@ -39,6 +39,14 @@ export type ProviderDestination = {
    * naming another makes the vendor refuse the operator's key.
    */
   identityHeaders?: readonly string[]
+  /**
+   * Claims a broker's stand-in for this account carries, for a client that
+   * reads them off the token it is handed: pi-ai's Codex client takes the
+   * ChatGPT account from the plan's access token and refuses a token naming
+   * none. The broker sets the account header itself, so whatever the client
+   * sends from the claim is replaced on the way out.
+   */
+  standInClaims?: Readonly<Record<string, Readonly<Record<string, string>>>>
   /** What the broker injects, which is the token inside a stored login document. */
   value: string
 }
@@ -97,6 +105,7 @@ const openaiDestination: ProviderRow = (material) => material.form === "subscrip
       // so the harness's own value never travels beside the operator's token.
       headers: { "ChatGPT-Account-Id": material.accountId ?? null },
     },
+    ...(material.accountId ? { standInClaims: { "https://api.openai.com/auth": { chatgpt_account_id: material.accountId } } } : {}),
   }
   : {
     origin: "https://api.openai.com",

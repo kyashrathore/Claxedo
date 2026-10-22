@@ -270,17 +270,23 @@ async function brokeredDelivery(credential: CredentialMetadata, destination: Pro
  * the sandbox the env var that edge fills. A driver without one is handed
  * nothing; its sandbox gets a binding on the plane's broker when the plane
  * has one, and otherwise the refusal that keeps the harness off the account.
+ *
+ * A plan login a harness signs in with itself (`deliveredDirect`) is handed
+ * over as its token unless `directPlans` is false: a connected machine is
+ * never handed a token, so there every account, plans included, is bound.
  */
 export async function nativeProviderDeliveriesFromRepository(input: DeliveryWalk & {
   secretBrokering?: SandboxSecretBrokering
   broker?: HarnessCredentialBroker
+  directPlans?: boolean
 }): Promise<NativeProviderDelivery[]> {
   const native = input.secretBrokering === "native"
+  const direct = (credential: CredentialMetadata) => input.directPlans !== false && deliveredDirect(credential)
   const walked = await walkDeliverableAccounts(input, (credential) =>
-    native || input.broker || deliveredDirect(credential) ? undefined : HARNESS_NEEDS_BROKERING)
+    native || input.broker || direct(credential) ? undefined : HARNESS_NEEDS_BROKERING)
   return Promise.all(walked.map(async (row) => {
     if ("refused" in row) return row.refused
-    if (native || !input.broker || deliveredDirect(row.credential)) return delivery(row.credential, row.destination)
+    if (native || !input.broker || direct(row.credential)) return delivery(row.credential, row.destination)
     return brokeredDelivery(row.credential, row.destination, input.broker)
   }))
 }

@@ -379,8 +379,9 @@ export function createLocalCredentialBroker(input: {
       }
     },
     async currentRuntime(identity) {
-      return projected.has(leaseKey(identity.orgId, identity.workspaceId, identity.userId))
-        && sameRuntime(await runtimeIdentity(identity.workspaceId, identity.orgId, identity.userId), identity)
+      const { workspaceId } = identity
+      return workspaceId !== undefined && projected.has(leaseKey(identity.orgId, workspaceId, identity.userId))
+        && sameRuntime(await runtimeIdentity(workspaceId, identity.orgId, identity.userId), identity)
     },
     async markUsed(id) {
       const entry = minted.get(id)

@@ -1,6 +1,6 @@
 import { settleAtRequestDeadline } from "@claxedo/helpers"
 import type { CredentialBrokerErrorCode } from "@claxedo/agent-runtime-contract"
-import { sameRuntime, secureOrLoopback, type BindingAuthority, type BindingFailure, type RuntimeIdentity } from "./binding.js"
+import { sameRuntime, secureOrLoopback, type BindingAuthority, type BindingFailure } from "./binding.js"
 import { brokerErrorBody } from "./errors.js"
 import { ExchangedTokens } from "./exchanged-tokens.js"
 import { API_KEY_HEADERS, presentedRuntimeToken, type RuntimeTokenClaims } from "./token.js"
@@ -211,7 +211,7 @@ export function createEgressBroker<Claims extends RuntimeTokenClaims = RuntimeTo
   }
   const authority: BindingAuthority<Claims> = {
     resolve: (bindingId, claims) => authorityRequest("resolve", options.authority.resolve(bindingId, claims)),
-    currentRuntime: (identity: RuntimeIdentity) => authorityRequest("currentRuntime", options.authority.currentRuntime(identity)),
+    currentRuntime: (claims: Claims) => authorityRequest("currentRuntime", options.authority.currentRuntime(claims)),
     markUsed: (bindingId) => authorityRequest("markUsed", options.authority.markUsed(bindingId)),
     reportFailure: (failure: BindingFailure) => authorityRequest("reportFailure", options.authority.reportFailure(failure)),
   }
@@ -225,6 +225,10 @@ export function createEgressBroker<Claims extends RuntimeTokenClaims = RuntimeTo
     if (!claims) return refuse(401, "runtime_token_invalid")
     const bindingId = route[1]
     if (!claims.bindingIds.includes(bindingId)) return refuse(403, "binding_not_permitted")
+    // `fetch` cannot carry a WebSocket upgrade: forwarded, it would reach the
+    // vendor as a plain GET under the operator's account. A client that tries
+    // a socket first (pi-ai's Codex transport) falls back to SSE on this.
+    if (request.headers.has("upgrade")) return refuse(403, "request_outside_policy")
     let release: () => void
     try {
       release = await lane.enter(request.signal, upstreamTimeoutMs)

@@ -1,6 +1,6 @@
 import { createKeyedSerializer } from "@claxedo/helpers"
 import { isPiLaunchProvider, isProviderUnavailable, PI_LAUNCH_PROVIDERS, piCredentialProviderIDs, type PiLaunchProvider,
-  type ProviderDirect, type ProviderProjection, type TurnAccount } from "@claxedo/agent-runtime-contract"
+  type ProviderBinding, type ProviderDirect, type ProviderProjection, type TurnAccount } from "@claxedo/agent-runtime-contract"
 import { createModels, type AuthContext, type Credential, type CredentialStore, type MutableModels, type OAuthCredential,
   type Provider, type ProviderAuth } from "@earendil-works/pi-ai"
 import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic"
@@ -23,12 +23,15 @@ const NO_AMBIENT_AUTH: AuthContext = { env: async () => undefined, fileExists: a
 
 export type PiDirectRefresh = (credentialProviderId: string) => Promise<ProviderDirect | undefined>
 
-function credentialOf(row: ProviderDirect): Credential {
+type PiSpend = { credentialProviderId: string; row: ProviderDirect | ProviderBinding }
+
+function credentialOf(row: ProviderDirect | ProviderBinding): Credential {
+  if (!("delivery" in row)) return { type: "api_key", key: row.placeholder }
   return row.authKind === "api-key" ? { type: "api_key", key: row.secret }
     : { type: "oauth", access: row.secret, refresh: "", expires: row.expiresAt ?? Number.MAX_SAFE_INTEGER }
 }
 
-function apiRoot(providerId: string, row: ProviderDirect): string {
+function apiRoot(providerId: string, row: ProviderDirect | ProviderBinding): string {
   return providerId === "anthropic" ? row.baseUrl : `${row.baseUrl}${row.apiPath ?? ""}`
 }
 
@@ -56,17 +59,37 @@ export class PiCredentials {
   }
 
   connected(): string[] {
-    return this.models.getProviders().flatMap((provider) => this.direct(provider.id) ? [provider.id] : [])
+    return this.models.getProviders().flatMap((provider) => this.spend(provider.id) ? [provider.id] : [])
   }
 
   catalogProviders(): string[] {
-    return this.models.getProviders().flatMap((provider) => this.credentialIds(provider.id).some((id) =>
-      Object.hasOwn(this.rows, id) || (Object.hasOwn(this.accounts, id) && !isProviderUnavailable(this.accounts[id]!))) ? [provider.id] : [])
+    return this.models.getProviders().flatMap((provider) =>
+      this.credentialIds(provider.id).some((id) => Object.hasOwn(this.rows, id) || this.boundRow(id)) ? [provider.id] : [])
   }
 
   direct(providerId: string): { credentialProviderId: string; row: ProviderDirect } | undefined {
     const credentialProviderId = this.credentialIds(providerId).find((id) => Object.hasOwn(this.rows, id))
     return credentialProviderId ? { credentialProviderId, row: this.rows[credentialProviderId]! } : undefined
+  }
+
+  spend(providerId: string): PiSpend | undefined {
+    const direct = this.direct(providerId)
+    const bound = direct ? undefined : this.credentialIds(providerId).find((id) => this.spendableBinding(providerId, id))
+    return direct ?? (bound ? { credentialProviderId: bound, row: this.boundRow(bound)! } : undefined)
+  }
+
+  unspendableBinding(providerId: string): boolean {
+    return !this.spend(providerId) && this.credentialIds(providerId).some((id) => this.boundRow(id))
+  }
+
+  private spendableBinding(providerId: string, credentialProviderId: string): boolean {
+    const row = this.boundRow(credentialProviderId)
+    return !!row && !(providerId === "anthropic" && row.authMode === "bearer")
+  }
+
+  private boundRow(credentialProviderId: string): ProviderBinding | undefined {
+    const row = Object.hasOwn(this.accounts, credentialProviderId) ? this.accounts[credentialProviderId]! : undefined
+    return row && !isProviderUnavailable(row) ? row : undefined
   }
 
   private credentialIds(providerId: string): readonly string[] {
@@ -75,18 +98,18 @@ export class PiCredentials {
   }
 
   account(providerId: string): TurnAccount | undefined {
-    const account = this.direct(providerId)?.row.account
+    const account = this.spend(providerId)?.row.account
     return account ? { kind: "stored", harnessId: "pi", ...account } : undefined
   }
 
   private store(): CredentialStore {
     const read = async (providerId: string) => {
-      const row = this.direct(providerId)?.row
+      const row = this.spend(providerId)?.row
       return this.refreshed.get(providerId) ?? (row ? credentialOf(row) : undefined)
     }
     return {
       read,
-      list: async () => this.connected().map((providerId) => ({ providerId, type: credentialOf(this.direct(providerId)!.row).type })),
+      list: async () => this.connected().map((providerId) => ({ providerId, type: credentialOf(this.spend(providerId)!.row).type })),
       modify: (providerId, change) => this.writes.run(providerId, async () => {
         const current = await read(providerId)
         const next = await change(current)
@@ -98,7 +121,7 @@ export class PiCredentials {
   }
 
   private auth(providerId: string): ProviderAuth {
-    const root = () => { const direct = this.direct(providerId); return direct ? { baseUrl: apiRoot(providerId, direct.row) } : {} }
+    const root = () => { const spent = this.spend(providerId); return spent ? { baseUrl: apiRoot(providerId, spent.row) } : {} }
     return {
       apiKey: { name: providerId, resolve: async ({ credential }) => credential?.key ? { auth: { apiKey: credential.key, ...root() } } : undefined },
       oauth: {

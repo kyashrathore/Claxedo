@@ -270,7 +270,7 @@ The harness layer holds the most valuable things Claxedo handles: people's provi
 - **A localhost cookie can be seen by other local ports** (P-108), accepted on localhost.
 - **Secrets that must be inside the harness's environment are visible there:** leased custom-harness secrets, and secrets for local MCP commands. The settings screen says so.
 - **Sandbox drivers that can't broker keys refuse** turns that need a provider key (decision 20).
-- **By design, but not yet ruled on:** "machine provider config" sends the owner's **raw key** to an enrolled machine, sealed in transit, and that machine's harness then holds it (`machine-provider-config.tsx:73-78`, `host-provider-config.ts:78-83`). It fits trusting the owner's own machine. It shouldn't extend to a machine the owner doesn't control.
+- **By design, but not yet ruled on:** "machine provider config" sends the owner's **raw key** to an enrolled machine, sealed in transit, and that machine's harness then holds it (`machine-provider-config.tsx:73-78`, `host-provider-config.ts:78-83`). It fits trusting the owner's own machine. It shouldn't extend to a machine the owner doesn't control. Now limited to a machine enrolled from the owner's account (the desktop). A machine enrolled with `claxedo connect` receives broker bindings only, and the hosted broker injects the key at each request (W4 of `2026-10-23-001-feat-machine-connection-plan.md`).
 
 ### How each rule is tested
 

@@ -134,6 +134,7 @@ describe("parseHostState", () => {
     [`${SEALING_BASE},"sealing_private_key_jwk":{"kty":"EC","crv":"P-256","x":"x","y":"y"}}`, /sealing_private_key_jwk.d/],
     [`${SEALING_BASE},"provider_config":{"sealed":"mseal1.a.b.c"}}`, /provider_config.revision/],
     [`${SEALING_BASE},"provider_config":{"revision":1,"sealed":7}}`, /provider_config.sealed/],
+    [`${SEALING_BASE},"built_provider_config":{"revision":2,"sealed":null}}`, /built_provider_config.sealed/],
   ])("names the missing field in %s", (text, message) => {
     expect(() => parseHostState(text)).toThrow(message)
   })
@@ -144,6 +145,14 @@ describe("parseHostState", () => {
     )
     expect(state.sealing_private_key_jwk).toEqual({ kty: "EC", crv: "P-256", x: "sx", y: "sy", d: "sd" })
     expect(state.provider_config).toEqual({ revision: 4, sealed: "mseal1.a.b.c" })
+  })
+
+  test("carries the control plane's build beside the owner's push, each at its own revision", () => {
+    const state = parseHostState(
+      `${SEALING_BASE},"provider_config":{"revision":4,"sealed":"mseal1.a.b.c"},"built_provider_config":{"revision":5,"sealed":"mseal1.d.e.f"}}`,
+    )
+    expect(state.provider_config).toEqual({ revision: 4, sealed: "mseal1.a.b.c" })
+    expect(state.built_provider_config).toEqual({ revision: 5, sealed: "mseal1.d.e.f" })
   })
 
   test("a recorded withdrawal is a revision with no blob, not an absent record", () => {

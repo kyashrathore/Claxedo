@@ -126,6 +126,25 @@ describe("native provider delivery through the plane's broker", () => {
     expect(bound).toEqual(["key"])
   })
 
+  test("a plan login is bound like every other account where plans are never handed over, and travels direct nowhere", async () => {
+    const { broker, bound } = recordingBroker()
+    const rows = await nativeProviderDeliveriesFromRepository({
+      owner: "user_owner",
+      machineOwnerUserId: "user_owner",
+      selections: {},
+      selected: [credential({ id: "plan", provider_id: "codex-app-server", kind: "oauth_token", expires_at: 9_000_000_000_000 })].map((row) => ({ credential: row })),
+      readSecret: async (row) => secrets[row.id],
+      broker,
+      directPlans: false,
+    })
+    expect(rows).toEqual([expect.objectContaining({
+      providerId: "codex-app-server",
+      projection: expect.objectContaining({ baseUrl: "https://api.claxedo.test/bindings/plan", placeholder: "placeholder-plan", authMode: "bearer", apiPath: "/backend-api/codex" }),
+    })])
+    expect(rows[0]).not.toHaveProperty("direct")
+    expect(bound).toEqual(["plan"])
+  })
+
   test("every form of delivery names the stored account it spends, so a turn on it is filed against that credential", async () => {
     const rows = [
       credential({ id: "subscription", provider_id: "claude-sdk", kind: "oauth_token", label: "Claude plan", revision: 3 }),

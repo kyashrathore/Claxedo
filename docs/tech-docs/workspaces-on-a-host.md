@@ -79,6 +79,43 @@ the control plane's own order — scope, endpoints, provider config (strictly
 newer revisions only), assignments — and then `onServing` hands the
 credential on.
 
+For a machine enrolled with `claxedo connect` (`enrolled_via='invitation'`)
+the same answer can carry the control plane's build of the owner's accounts.
+After the authority answers, `machineHeartbeat` calls `beat` on
+`createMachineProviderConfig`
+(`packages/claxedo-server/src/credentials/machine-provider-config.ts`). It
+reads one row, `machineProviderConfigState`
+(`authority/adapters/d1/host-provider-config-authority.ts`), and builds only
+when `providerConfigBuildDue` says so: no build yet, a new serving
+generation, the machine's sealing key changed, the stand-ins past half their
+life (`accountsRenewalDueAt`), or the owner's accounts changed. It never
+builds over an owner push the machine has not acked, nor for a machine with
+no sealing key. A build runs `nativeProviderDeliveriesFromRepository` with
+`directPlans: false` and the broker's `machineBinder`
+(`credentials/hosted-egress-broker/index.ts`), so every account, the ChatGPT
+plan included, is a binding on the plane's `/bindings/*`. Its stand-in is a
+sandbox pass naming `enrollment_id` instead of a workspace, leased as
+`host:<enrollmentId>` at the serving generation with the host id as its
+runtime. `serializeHostProviderConfig(..., "control-plane")` writes it,
+`sealForMachine` seals it, and `storeMachineProviderConfig` stores it as the
+next provider-config revision. That store is guarded on the enrollment still
+being eligible, the same generation, and no unacked owner push. The beat
+answer's `provider_config` is that revision. An owner's credential write rings
+each connected machine of the organization whose owner's accounts it changed
+(`credentialChange`, through `liveSyncHostChanged`). It marks them stale, so
+their next beat builds. A machine enrolled from an account (the desktop) is
+never built for.
+
+The broker admits a machine's stand-in through `currentRuntime` in
+`credentials/hosted-egress-broker/authority.ts`. `machineBrokerSubject`
+supplies the enrollment's owner, organization, host and serving generation.
+It answers only while the enrollment is neither revoked nor paused and its
+owner is active and still a member of the invitation's organization. The stand-in is
+refused once the lease, generation or host no longer match. A refused call
+answers 403 `binding_unavailable` before any vendor request. A WebSocket
+upgrade is refused with 403 `request_outside_policy`, so pi-ai's Codex
+transport falls back to SSE.
+
 **A.3 Serving: the daemon owns the tunnel** — the child posts a `serving`
 message; main pushes it verbatim to the daemon's `PUT /api/claxedo/host-serving`
 (`host-connector/serving-push.ts` → `HostServingRoutes` in
@@ -134,7 +171,18 @@ clear the suspension so a later sign-in cannot undo a decision.
 `packages/claxedo-host-connector/src/bootstrap.ts` and runs `createHostConnector`
 in machine mode. Its `roots` and `resolvePath` refuse assignments outside the
 served roots before acknowledgment. Heartbeats and enrollment reach the hosted
-Cloudflare authority through the machine transport.
+Cloudflare authority through the machine transport. Its `onProviderConfig`
+(`packages/cli/src/connect/host.ts`) opens each revision. It stores the
+revision by the source its plaintext names: `built_provider_config` for the
+control plane's build, `provider_config` for the owner's push
+(`packages/claxedo-host-connector/src/host-state.ts`). It then applies the
+revision with `setHostProviderConfig`
+(`packages/claxedo-host-serving/src/runtime.ts`). The runtime holds one
+snapshot per source and spends `layeredHostProviderConfig`: the build's
+accounts, with the owner's pushed accounts over them for the same provider,
+and direct rows only from the owner's push. No direct row is pushed to an
+invitation machine, so it holds no key or plan token. On boot both stored
+revisions are opened again, and the newer one is declared.
 
 **A.7 The tunnel replays onto loopback** — the tunnel owner
 (`host-serving/src/serving.ts`) replays a relayed request as a fetch to the
@@ -673,11 +721,22 @@ the runtime's relay-host middleware and its embedded exposure, with the same
 That is why the app never asks such a runtime for a terminal without a
 session; flow 24 proves both arms on a live sandbox.
 
-**G.2 Configuration** — provider configuration the owner pushed to a machine
-reaches the daemon over `PUT /api/claxedo/host-provider-config`
+**G.2 Configuration** — on the desktop, provider configuration the owner
+pushed to the machine reaches the daemon over `PUT /api/claxedo/host-provider-config`
 (`packages/claxedo-local-server/src/workspace/host-provider-config-routes.ts`,
 mounted in `packages/claxedo-local-server/src/app/local-app.ts`), a loopback-only surface the relay's
-`hostServingSurface` denies. The app reads a placement's harness options
+`hostServingSurface` denies. A desktop is enrolled from an account, so its
+push carries Pi's direct rows (`ownerPiDirectRows` in
+`packages/claxedo-server/src/routes/hosted/host-enrollment.ts`) and the
+control plane builds nothing for it. A `claxedo connect` machine applies its
+configuration in-process (A.6). The control plane builds it from the owner's
+accounts (A.2), and an owner's push to it carries bindings only. There Pi
+spends a binding where it has no direct row (`spend` in
+`packages/harness/src/transports/pi-durable/credentials.ts`): the stand-in in
+the vendor's key slot at the binding's URL. A Claude plan's binding is refused
+before any request with `brokered_plan_unsupported`, because pi-ai sends a
+plan token's Claude Code identity only for a token it recognises as one. The
+app reads a placement's harness options
 from the attached server, not the runtime: `readHarnessOptions`
 (`packages/claxedo-app/src/server/harness-options.ts`) asks
 `GET /api/claxedo/agent-config/harness/options` with the placement's
@@ -738,3 +797,16 @@ names the file and what it claims to cover.
 - **App e2e** (`packages/claxedo-app/e2e/`): no flow drives a machine-placed
   workspace. The hosted relay (`packages/harness/e2e/harness/hosted-relay.ts`)
   backs the signed stack (`packages/claxedo-app/e2e/harness/signed-stack.ts`).
+- **A machine's brokered accounts**: `machine-provider-config.test.ts`
+  (`packages/claxedo-server/src/credentials/`) opens a real sealed build and
+  covers when a beat builds. The machine block of
+  `credentials/hosted-egress-broker/hosted-egress-broker.test.ts` covers
+  admission through the composed hosted app, and refusal once the enrollment
+  is revoked, paused, superseded, or moved to another host or organization.
+  `host-access-authority.test.ts` covers on D1 the store's guards and
+  `machineBrokerSubject`, which answers nothing once the owner leaves the
+  invitation's organization.
+  `packages/harness/src/transports/pi-durable/credentials.test.ts` covers Pi
+  spending a binding, and refusing a Claude plan's binding.
+  No committed flow drives a `claxedo connect` machine against the hosted
+  broker.

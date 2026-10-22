@@ -299,6 +299,15 @@ describe("host workspace runtime behind the loopback listener", () => {
     expect(() => setHostProviderConfig(JSON.stringify({ version: 2, providers: {} }))).toThrow("version 2, not 1")
     expect(() => setHostProviderConfig("{")).toThrow("not JSON")
     expect(await projectRuntimeAuth({ scope: "local", workspaceId: WS_C }), "an unreadable payload leaves the rows in place").toEqual({ machineOwnerUserId: "owner", accounts: { owner: { "claude-sdk": row } } })
+
+    const standIn = { baseUrl: "https://cp.example/bindings/o", placeholder: "stand-in", authMode: "bearer" as const, apiPath: "/v1" }
+    const build = (rows: Record<string, unknown>) => JSON.stringify({ version: 1, source: "control-plane", credentials: { machineOwnerUserId: "owner", accounts: { owner: rows } } })
+    expect(setHostProviderConfig(build({ "claude-sdk": standIn, openai: standIn }))).toEqual({ source: "control-plane", providerIds: ["claude-sdk", "openai"] })
+    expect(await projectRuntimeAuth({ scope: "local", workspaceId: WS_C }), "the owner's push is spent over the build").toEqual({ machineOwnerUserId: "owner", accounts: { owner: { "claude-sdk": row, openai: standIn } } })
+    expect(setHostProviderConfig(null)).toEqual({ source: "owner", providerIds: ["claude-sdk", "openai"] })
+    expect(await projectRuntimeAuth({ scope: "local", workspaceId: WS_C }), "withdrawing the push leaves the build").toEqual({ machineOwnerUserId: "owner", accounts: { owner: { "claude-sdk": standIn, openai: standIn } } })
+    installHostProviderConfigAuthority()
+    expect(await projectRuntimeAuth({ scope: "local", workspaceId: WS_C }), "a fresh authority holds nothing until the host installs what it stored").toEqual({ machineOwnerUserId: "owner", accounts: {} })
     resetHostEnrolledOwner()
   })
 

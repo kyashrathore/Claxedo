@@ -214,7 +214,7 @@ CREATE TABLE host_enrollments (
   check (scope_json is null or json_valid(scope_json)), scope_revision integer not null default 0, sealing_public_key_json text
   check (sealing_public_key_json is null or json_valid(sealing_public_key_json)), provider_config_sealed text, provider_config_revision integer not null default 0, provider_config_acked_revision integer not null default 0, provider_config_updated_at integer, provider_config_sealed_key_json text
   check (provider_config_sealed_key_json is null or json_valid(provider_config_sealed_key_json)), provider_config_provider_ids text
-  check (provider_config_provider_ids is null or json_valid(provider_config_provider_ids)),
+  check (provider_config_provider_ids is null or json_valid(provider_config_provider_ids)), provider_config_built_at integer, provider_config_renew_at integer, provider_config_accounts text, provider_config_built_generation integer,
   unique (owner_actor_id, host_id)
 );
 
@@ -809,6 +809,8 @@ CREATE INDEX host_enrollment_requests_by_expiry
 
 CREATE INDEX host_enrollments_by_owner_activity
   on host_enrollments (owner_actor_id, last_seen_at desc, enrollment_id);
+
+CREATE INDEX host_invitations_by_org on host_invitations (org_id, redeemed_enrollment_id);
 
 CREATE INDEX host_invitations_by_owner
   on host_invitations (owner_actor_id, created_at desc, invitation_id);

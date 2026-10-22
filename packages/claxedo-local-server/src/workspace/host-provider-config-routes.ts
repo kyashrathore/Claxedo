@@ -19,8 +19,8 @@
  * would otherwise make free: a revision below the held one is refused.
  *
  * The body's `providers` is the sealed payload's plaintext VERBATIM — the
- * `{"version":1,"providers":{...}}` text `serializeHostProviderConfig` wrote
- * at the control plane — and it is validated with the same reader the
+ * text `serializeHostProviderConfig` wrote at the control plane — and it is
+ * validated with the same reader the
  * runtime applies rows with, so a row that would be refused on a turn is
  * refused on arrival, with nothing held from the revision that carried it.
  */

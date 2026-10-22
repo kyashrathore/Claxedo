@@ -46,13 +46,20 @@ export type HostState = {
    */
   sealing_private_key_jwk?: JsonWebKey
   /**
-   * The owner's provider configuration as the control plane sealed it, stored
-   * verbatim. It is ciphertext for THIS machine's sealing key, so the file is
-   * at rest exactly as the wire had it and no plaintext secret is ever
-   * written. `sealed: null` is a revocation the machine has recorded, kept so
-   * a restart states the revision it has rather than asking for the blob again.
+   * The provider configuration the owner pushed, as the control plane sealed
+   * it, stored verbatim. It is ciphertext for THIS machine's sealing key, so
+   * the file is at rest exactly as the wire had it and no plaintext secret is
+   * ever written. `sealed: null` is a revocation the machine has recorded,
+   * kept so a restart states the revision it has rather than asking for the
+   * blob again.
    */
   provider_config?: { revision: number; sealed: string | null }
+  /**
+   * The configuration the control plane built from the owner's accounts,
+   * stored the same way. Its rows hold stand-ins its broker honours, never a
+   * secret; the owner's push is spent over it.
+   */
+  built_provider_config?: { revision: number; sealed: string }
   created_at: number
   /** Frozen at first redeem; a different URL is a different host state. */
   control_plane_url: string
@@ -290,6 +297,14 @@ function providerConfigRecord(value: unknown): NonNullable<HostState["provider_c
   return { revision: stateNumber(record.revision, "provider_config.revision"), sealed }
 }
 
+function builtProviderConfigRecord(value: unknown): NonNullable<HostState["built_provider_config"]> {
+  const record = stateRecord(value, "built_provider_config")
+  return {
+    revision: stateNumber(record.revision, "built_provider_config.revision"),
+    sealed: stateString(record.sealed, "built_provider_config.sealed"),
+  }
+}
+
 function scopeRecord(value: unknown): HostScope {
   const record = stateRecord(value, "scope")
   return {
@@ -392,6 +407,7 @@ export function parseHostState(text: string): HostState {
     state.sealing_private_key_jwk = privateKeyJwk(value.sealing_private_key_jwk, "sealing_private_key_jwk")
   }
   if (value.provider_config !== undefined) state.provider_config = providerConfigRecord(value.provider_config)
+  if (value.built_provider_config !== undefined) state.built_provider_config = builtProviderConfigRecord(value.built_provider_config)
   if (value.scope !== undefined) state.scope = scopeRecord(value.scope)
   if (value.roots_canonical !== undefined) {
     const record = stateRecord(value.roots_canonical, "roots_canonical")

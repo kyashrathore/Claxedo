@@ -1,4 +1,4 @@
-import { bindingBaseUrl, brokerErrorBody, createEgressBroker, presentedRuntimeToken, type RuntimeIdentity } from "@claxedo/egress-broker"
+import { bindingBaseUrl, brokerErrorBody, createEgressBroker, presentedRuntimeToken } from "@claxedo/egress-broker"
 import type { CredentialBrokerErrorCode, ProviderBindingSource } from "@claxedo/agent-runtime-contract"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 import type { ControlPlaneTelemetry } from "@claxedo/server-core/platform/telemetry/ports"
@@ -9,11 +9,12 @@ import type { ControlPlaneCredentials } from "../../authority/services"
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { requestClientKeyFromHeaders, type RouteGuardExemption } from "../../platform/auth/request-guard"
 import type { CredentialRefusals } from "../credential-refusals"
-import { hostedBindingAuthority, type HostedBrokerCredentialRead } from "./authority"
-import { brokerBindingId, mintBrokerPlaceholder, repositoryBindingId, verifyBrokerPlaceholder, type HostedBrokerClaims } from "./placeholder"
+import { hostedBindingAuthority, machineLeaseId, type HostedBrokerCredentialRead, type MachineBrokerSubject } from "./authority"
+import { mintBrokerPlaceholder, repositoryBindingId, servingBindingId, verifyBrokerPlaceholder, type BrokerServing, type HostedBrokerClaims } from "./placeholder"
 import type { HostedRepositoryBindings } from "./repository-binding"
 
-export { EGRESS_BROKER_PASS_AUDIENCE, PLACEHOLDER_TTL_SECONDS, brokerBindingId, mintBrokerPlaceholder, verifyBrokerPlaceholder, type HostedBrokerClaims } from "./placeholder"
+export { EGRESS_BROKER_PASS_AUDIENCE, PLACEHOLDER_TTL_SECONDS, brokerBindingId, machineBindingId, mintBrokerPlaceholder, verifyBrokerPlaceholder, type HostedBrokerClaims } from "./placeholder"
+export type { MachineBrokerSubject } from "./authority"
 export type { HostedRepositoryBindings } from "./repository-binding"
 
 /**
@@ -72,11 +73,16 @@ const UNVERIFIED_REQUESTS_PER_MINUTE = 60
 /** The sandbox a placeholder is minted for, as the lease store reports it once the sandbox is ready. */
 export type BrokerLease = { epoch: number; hostId: string }
 
+/** A connected machine a placeholder is minted for: its enrollment, at the serving generation it holds, on its host. */
+export type MachineBrokerLease = { enrollmentId: string; servingGeneration: number; hostId: string }
+
 export type HostedEgressBroker = {
   /** Mounted at `/bindings/*` on the control plane's public origin. */
   handler: (request: Request) => Promise<Response>
   /** The account binder for one workspace's deliveries; without a lease it projects draft placeholders. */
   binder(input: { orgId: string; workspaceId: string; lease?: BrokerLease }): HarnessCredentialBroker
+  /** The account binder for a connected machine's deliveries: one binding per provider under its enrollment, for every workspace it serves. */
+  machineBinder(input: { orgId: string; machine: MachineBrokerLease }): HarnessCredentialBroker
   /** The workspace's repository binding for `lease`, through which its sandbox's git reaches the repository while that lease serves or boots. */
   repositoryBinding(input: { orgId: string; ownerUserId: string; workspaceId: string; connectionId: string; lease: BrokerLease }): Promise<{ baseUrl: string; placeholder: string; expiresAt: number }>
   /** Installs how every repository binding resolves; until it is installed, none does. */
@@ -137,6 +143,8 @@ export function createHostedEgressBroker(input: {
   read: (orgId: string) => HostedBrokerCredentialRead
   workspaceOwner: (workspaceId: string) => Promise<WorkspaceOwnerIdentity | undefined>
   sandboxManager: Pick<SandboxManager, "target">
+  /** A connected machine's enrollment as a stand-in minted for it is admitted; absent, no machine stand-in is. */
+  machine?: (enrollmentId: string) => Promise<MachineBrokerSubject | undefined>
   env: Record<string, string | undefined>
   /** The public origin sandboxes reach the plane at; a binding's base URL is under it. */
   origin: string
@@ -160,7 +168,8 @@ export function createHostedEgressBroker(input: {
   }
   let repositories: HostedRepositoryBindings | undefined
   const authority = hostedBindingAuthority({
-    credentials: input.credentials, read, workspaceOwner: input.workspaceOwner, sandboxManager: input.sandboxManager, ...(input.fetch ? { fetch: input.fetch } : {}), now,
+    credentials: input.credentials, read, workspaceOwner: input.workspaceOwner, sandboxManager: input.sandboxManager,
+    ...(input.machine ? { machine: input.machine } : {}), ...(input.fetch ? { fetch: input.fetch } : {}), now,
     ...(input.credentialRefusals ? { credentialRefusals: input.credentialRefusals } : {}),
     repositories: () => repositories,
   })
@@ -174,7 +183,7 @@ export function createHostedEgressBroker(input: {
   }
   const brokers = recent<string, (request: Request) => Promise<Response>>(HELD_RUNTIMES)
   const brokerFor = (claims: HostedBrokerClaims) => {
-    const key = `${claims.orgId}\n${claims.workspaceId}\n${claims.leaseId}\n${claims.leaseGeneration}\n${claims.runtimeId}`
+    const key = `${claims.orgId}\n${claims.workspaceId ?? claims.enrollmentId}\n${claims.leaseId}\n${claims.leaseGeneration}\n${claims.runtimeId}`
     let broker = brokers.get(key)
     if (!broker) {
       broker = createEgressBroker<HostedBrokerClaims>({
@@ -206,8 +215,27 @@ export function createHostedEgressBroker(input: {
     }
     return refusing(request)
   }
-  const leaseIdentity = (identity: { userId: string; orgId: string; workspaceId: string }, lease: BrokerLease): RuntimeIdentity =>
-    ({ ...identity, leaseId: `sandbox:${identity.workspaceId}`, leaseGeneration: lease.epoch, runtimeId: lease.hostId })
+  const sandboxLease = (workspaceId: string, lease: BrokerLease) => ({ leaseId: `sandbox:${workspaceId}`, leaseGeneration: lease.epoch, runtimeId: lease.hostId })
+  type RuntimeLease = ReturnType<typeof sandboxLease>
+  const binderFor = (orgId: string, serving: BrokerServing, lease: RuntimeLease | undefined): HarnessCredentialBroker => ({
+    async bind(credential, destination): Promise<ProviderBindingSource> {
+      const userId = credential.owner ?? `org:${orgId}`
+      const id = servingBindingId({ userId, orgId, ...serving }, credential.provider_id)
+      const route = {
+        baseUrl: bindingBaseUrl(input.origin, id),
+        authMode: destinationAuthMode(destination),
+        ...(destination.apiPath ? { apiPath: destination.apiPath } : {}),
+      }
+      if (!lease) return { ...route, placeholder: DRAFT_PLACEHOLDER }
+      const { placeholder, expiresAt } = await mintBrokerPlaceholder({
+        identity: { userId, orgId, ...serving, ...lease },
+        bindingId: id,
+        credentialId: credential.id,
+        ...(destination.standInClaims ? { claims: destination.standInClaims } : {}),
+      }, input.env, { now })
+      return { ...route, placeholder, expiresAt }
+    },
+  })
   return {
     handler,
     serveRepositoryClones: (resolve) => {
@@ -216,22 +244,14 @@ export function createHostedEgressBroker(input: {
     repositoryBinding: async ({ orgId, ownerUserId, workspaceId, connectionId, lease }) => {
       const identity = { userId: ownerUserId, orgId, workspaceId }
       const id = repositoryBindingId(identity)
-      const minted = await mintBrokerPlaceholder({ identity: leaseIdentity(identity, lease), bindingId: id, credentialId: connectionId }, input.env, { now })
+      const minted = await mintBrokerPlaceholder({ identity: { ...identity, ...sandboxLease(workspaceId, lease) }, bindingId: id, credentialId: connectionId }, input.env, { now })
       return { baseUrl: bindingBaseUrl(input.origin, id), ...minted }
     },
-    binder: ({ orgId, workspaceId, lease }) => ({
-      async bind(credential, destination): Promise<ProviderBindingSource> {
-        const userId = credential.owner ?? `org:${orgId}`
-        const id = brokerBindingId({ userId, orgId, workspaceId, providerId: credential.provider_id })
-        const route = {
-          baseUrl: bindingBaseUrl(input.origin, id),
-          authMode: destinationAuthMode(destination),
-          ...(destination.apiPath ? { apiPath: destination.apiPath } : {}),
-        }
-        if (!lease) return { ...route, placeholder: DRAFT_PLACEHOLDER }
-        const { placeholder, expiresAt } = await mintBrokerPlaceholder({ identity: leaseIdentity({ userId, orgId, workspaceId }, lease), bindingId: id, credentialId: credential.id }, input.env, { now })
-        return { ...route, placeholder, expiresAt }
-      },
+    binder: ({ orgId, workspaceId, lease }) => binderFor(orgId, { workspaceId }, lease && sandboxLease(workspaceId, lease)),
+    machineBinder: ({ orgId, machine }) => binderFor(orgId, { enrollmentId: machine.enrollmentId }, {
+      leaseId: machineLeaseId(machine.enrollmentId),
+      leaseGeneration: machine.servingGeneration,
+      runtimeId: machine.hostId,
     }),
   }
 }

@@ -17,6 +17,8 @@ import { D1WorkspaceAuthority } from "./workspace-authority"
 import { D1ApplicationIdentityAuthority } from "./application-identity"
 import { createD1HostTunnelTargetResolver } from "./host-tunnel-relay-target"
 import { D1HostAccessAuthority } from "./host-access-authority"
+import { D1HostInvitationAuthority } from "./host-invitation-authority"
+import { D1HostProviderConfigAuthority } from "./host-provider-config-authority"
 
 import { D1ChannelRuntimeAuthority } from "./channel-runtime-authority"
 import { D1SessionAuthority } from "./session-authority"
@@ -73,7 +75,17 @@ async function setup() {
     randomNonce: () => `nonce_${String(++sequence).padStart(4, "0")}`,
     localWorkspaceRegistration: (auth, input) => workspace.localWorkspaceRegistration(auth, input),
     authorizeLocalWorkspaceRegistration: (auth, args) => workspace.authorizeLocalWorkspaceRegistration(auth, args),
+  })
+  const hostInvitations = new D1HostInvitationAuthority(database, {
+    deploymentId: "deployment-a",
+    now,
+    randomId: (prefix) => `${prefix}_${String(++sequence).padStart(4, "0")}`,
     resolveOrgId: (auth) => workspace.resolveOrgId(auth),
+  })
+  const hostProviderConfig = new D1HostProviderConfigAuthority(database, {
+    deploymentId: "deployment-a",
+    now,
+    randomId: (prefix) => `${prefix}_${String(++sequence).padStart(4, "0")}`,
   })
   const runtimeTokens = new D1ChannelRuntimeAuthority(database, { deploymentId: "deployment-a", now })
   // No deployment pin: the fixture's organizations are team orgs, which carry
@@ -83,6 +95,8 @@ async function setup() {
     database,
     workspace,
     hostAccess,
+    hostInvitations,
+    hostProviderConfig,
     runtimeTokens,
     relayTarget,
     now,
@@ -845,7 +859,7 @@ describe("D1 host access authority", () => {
  */
 describe("host-connect: machine heartbeat, readiness, invitations, scope", () => {
   async function invite(input: Input, owner: SignedControlPlaneAuth, roots: string[]) {
-    return await input.hostAccess.createHostInvitation(owner, { scope: { allowed_roots: roots } })
+    return await input.hostInvitations.createHostInvitation(owner, { scope: { allowed_roots: roots } })
   }
 
   async function redeem(
@@ -854,7 +868,7 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
     hostId: string,
     key: Awaited<ReturnType<typeof hostKey>>,
   ) {
-    return await input.hostAccess.redeemHostInvitation({
+    return await input.hostInvitations.redeemHostInvitation({
       invitationId: invitation.invitationId,
       secret: invitation.secret,
       hostId,
@@ -1182,7 +1196,7 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
         row.public_key_fingerprint,
       ]),
     ).toEqual([["vps-1", "invitation", key.fingerprint]])
-    expect(await input.hostAccess.listHostInvitations(owner)).toMatchObject([
+    expect(await input.hostInvitations.listHostInvitations(owner)).toMatchObject([
       {
         invitation_id: invitation.invitationId,
         redeemed_host_id: "vps-1",
@@ -1215,7 +1229,7 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
     // A bad signature over the right secret is an attestation failure, not a hint about the invitation.
     const forger = await hostKey()
     await expect(
-      input.hostAccess.redeemHostInvitation({
+      input.hostInvitations.redeemHostInvitation({
         invitationId: invitation.invitationId,
         secret: invitation.secret,
         hostId: "vps-2",
@@ -1277,7 +1291,7 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
     const invitation = await invite(input, owner, ["/srv"])
     const [redeemed, revoked] = await Promise.allSettled([
       redeem(input, invitation, "vps-a", await hostKey()),
-      input.hostAccess.revokeHostInvitation(owner, { invitationId: invitation.invitationId }),
+      input.hostInvitations.revokeHostInvitation(owner, { invitationId: invitation.invitationId }),
     ])
     const enrollments = await input.database
       .prepare("select count(*) as n from host_enrollments")
@@ -1308,7 +1322,7 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
       code: "invitation_host_conflict",
       status: 409,
     })
-    expect((await input.hostAccess.listHostInvitations(owner))[0]).not.toHaveProperty("redeemed_at")
+    expect((await input.hostInvitations.listHostInvitations(owner))[0]).not.toHaveProperty("redeemed_at")
 
     await input.hostAccess.revokeHostEnrollment(owner, { hostId: "laptop" })
     await expect(redeem(input, live, "laptop", await hostKey())).rejects.toMatchObject({
@@ -1325,7 +1339,7 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
     const second = await invite(input, owner, ["/srv"])
     await expect(redeem(input, second, "vps-1", key)).rejects.toMatchObject({ code: "invitation_host_conflict" })
     expect(
-      (await input.hostAccess.listHostInvitations(owner)).find((row) => row.invitation_id === second.invitationId),
+      (await input.hostInvitations.listHostInvitations(owner)).find((row) => row.invitation_id === second.invitationId),
     ).not.toHaveProperty("redeemed_at")
   })
 
@@ -1333,25 +1347,25 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
     const input = await setup()
     const { bob } = await fixture(input)
     const owner = await signed(input.workspace, "alice", "org_acme")
-    const short = await input.hostAccess.createHostInvitation(owner, { scope: { allowed_roots: ["/srv"] }, expiresInMs: 1_000 })
+    const short = await input.hostInvitations.createHostInvitation(owner, { scope: { allowed_roots: ["/srv"] }, expiresInMs: 1_000 })
     input.advance(1)
-    const long = await input.hostAccess.createHostInvitation(owner, { scope: { allowed_roots: ["/srv"] }, expiresInMs: 7 * 24 * 60 * 60_000 })
+    const long = await input.hostInvitations.createHostInvitation(owner, { scope: { allowed_roots: ["/srv"] }, expiresInMs: 7 * 24 * 60 * 60_000 })
     expect(long.expiresAt).toBe(input.now() + 24 * 60 * 60_000)
     expect(short.expiresAt).toBe(input.now() - 1 + 5 * 60_000)
-    await expect(input.hostAccess.createHostInvitation(owner, { scope: { allowed_roots: ["relative"] } }))
+    await expect(input.hostInvitations.createHostInvitation(owner, { scope: { allowed_roots: ["relative"] } }))
       .rejects.toMatchObject({ code: "invalid_input" })
     // Another member of the org cannot revoke the owner's invitation.
-    expect(await input.hostAccess.revokeHostInvitation(bob, { invitationId: short.invitationId })).toEqual({
+    expect(await input.hostInvitations.revokeHostInvitation(bob, { invitationId: short.invitationId })).toEqual({
       revoked: false,
     })
-    expect(await input.hostAccess.revokeHostInvitation(owner, { invitationId: short.invitationId })).toEqual({
+    expect(await input.hostInvitations.revokeHostInvitation(owner, { invitationId: short.invitationId })).toEqual({
       revoked: true,
     })
-    expect(await input.hostAccess.revokeHostInvitation(owner, { invitationId: short.invitationId })).toEqual({
+    expect(await input.hostInvitations.revokeHostInvitation(owner, { invitationId: short.invitationId })).toEqual({
       revoked: false,
     })
     expect(
-      (await input.hostAccess.listHostInvitations(owner)).map((row) => [
+      (await input.hostInvitations.listHostInvitations(owner)).map((row) => [
         row.invitation_id,
         row.revoked_at !== undefined,
       ]),
@@ -1361,7 +1375,7 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
     ])
     // An org the caller does not belong to cannot be claimed.
     const outsider = await signed(input.workspace, "outsider", "org_acme")
-    await expect(input.hostAccess.createHostInvitation(outsider, { scope: { allowed_roots: ["/srv"] } }))
+    await expect(input.hostInvitations.createHostInvitation(outsider, { scope: { allowed_roots: ["/srv"] } }))
       .rejects.toMatchObject({ status: 403 })
   })
 
@@ -1971,19 +1985,131 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
       .first()
   }
 
+  /** A machine invited into Acme with `claxedo connect`, serving at its first generation, with a sealing key declared. */
+  async function invitedMachine(input: Input, hostId: string) {
+    const owner = await signed(input.workspace, "alice", "org_acme")
+    const key = await hostKey()
+    const { enrollment } = await redeem(input, await invite(input, owner, ["/srv"]), hostId, key)
+    const enrollmentId = enrollment.enrollment_id
+    await input.hostAccess.acquireHostServingGeneration(await principal(input, enrollmentId))
+    const sealing = await sealingKey()
+    await machineBeat(input, enrollmentId, [], { sealingPublicKey: sealing.publicKey })
+    return { owner, enrollmentId, sealing, machine: await principal(input, enrollmentId) }
+  }
+
+  const build = (sealing: { stored: string }, revision: number, generation = 1) => ({
+    revision, sealed: `mseal1.built.${revision}.c`, sealingPublicKey: sealing.stored, providerIds: ["anthropic"],
+    generation, renewAt: 1_900_000_000_000, accounts: `accounts-${revision}`,
+  })
+
+  test("an invited machine's build is stored within the machine's eligibility, generation, key and revision, and the beat carries it until acked", async () => {
+    const input = await setup()
+    const { alice } = await fixture(input)
+    const { enrollmentId, sealing, machine } = await invitedMachine(input, "vps-build")
+    expect(await input.hostProviderConfig.machineProviderConfigState(machine)).toEqual({
+      enrollmentId, hostId: "vps-build", ownerUserId: alice.principal!.userId, orgId: "org_acme",
+      servingGeneration: 1, sealingPublicKey: sealing.stored, nextRevision: 1, ownerPushPending: false, rekeyed: false,
+    })
+
+    expect(await input.hostProviderConfig.storeMachineProviderConfig(machine, build(sealing, 1))).toBe(true)
+    expect((await machineBeat(input, enrollmentId, [])).provider_config).toEqual({ revision: 1, sealed: "mseal1.built.1.c" })
+    expect(await input.hostProviderConfig.machineProviderConfigState(machine)).toMatchObject({
+      nextRevision: 2, built: { generation: 1, renewAt: 1_900_000_000_000, accounts: "accounts-1" },
+    })
+
+    expect(await input.hostProviderConfig.storeMachineProviderConfig(machine, build(sealing, 1))).toBe(false)
+    expect(await input.hostProviderConfig.storeMachineProviderConfig(machine, build(sealing, 2, 2))).toBe(false)
+    expect(await input.hostProviderConfig.storeMachineProviderConfig(machine, { ...build(sealing, 2), sealingPublicKey: (await sealingKey()).stored })).toBe(false)
+    expect(await input.hostProviderConfig.storeMachineProviderConfig({ ...machine, keyVersion: 2 }, build(sealing, 2))).toBe(false)
+    await input.hostAccess.pauseHostEnrollment(alice, { hostId: "vps-build", paused: true })
+    expect(await input.hostProviderConfig.storeMachineProviderConfig(machine, build(sealing, 2))).toBe(false)
+    expect(await input.hostProviderConfig.machineProviderConfigState(machine)).toBeUndefined()
+    await input.hostAccess.pauseHostEnrollment(alice, { hostId: "vps-build", paused: false })
+    expect(await input.hostProviderConfig.storeMachineProviderConfig(machine, build(sealing, 2))).toBe(true)
+    expect(await machineBeat(input, enrollmentId, [], { providerConfigRevision: 2 })).not.toHaveProperty("provider_config")
+  })
+
+  test("a build never replaces an owner's push the machine has not acked, and an owner's push over an unacked build leaves the next beat to build again", async () => {
+    const input = await setup()
+    await fixture(input)
+    const { owner, enrollmentId, sealing, machine } = await invitedMachine(input, "vps-order")
+    const push = (revision: number) => input.hostProviderConfig.pushHostProviderConfig(owner, {
+      enrollmentId, sealed: `mseal1.owner.${revision}.c`, revision, sealingPublicKey: sealing.stored, providerIds: ["openai"],
+    })
+    expect(await input.hostProviderConfig.storeMachineProviderConfig(machine, build(sealing, 1))).toBe(true)
+    await push(2)
+    expect(await input.hostProviderConfig.machineProviderConfigState(machine)).toMatchObject({ ownerPushPending: true })
+    expect(await input.hostProviderConfig.machineProviderConfigState(machine)).not.toHaveProperty("built")
+    expect(await input.hostProviderConfig.storeMachineProviderConfig(machine, build(sealing, 3))).toBe(false)
+    expect((await machineBeat(input, enrollmentId, [])).provider_config).toEqual({ revision: 2, sealed: "mseal1.owner.2.c" })
+
+    await machineBeat(input, enrollmentId, [], { providerConfigRevision: 2 })
+    expect(await input.hostProviderConfig.machineProviderConfigState(machine)).toMatchObject({ ownerPushPending: false, nextRevision: 3 })
+    expect(await input.hostProviderConfig.storeMachineProviderConfig(machine, build(sealing, 3))).toBe(true)
+    await machineBeat(input, enrollmentId, [], { providerConfigRevision: 3 })
+    await push(4)
+    expect(await input.hostProviderConfig.machineProviderConfigState(machine)).toMatchObject({
+      ownerPushPending: true, built: { generation: 1, accounts: "accounts-3" },
+    })
+  })
+
+  test("only a live invited machine has a build state, the organization's machines are listed with what each was built, and a stale mark makes the next beat build", async () => {
+    const input = await setup()
+    const { alice } = await fixture(input)
+    const { enrollmentId, sealing, machine } = await invitedMachine(input, "vps-list")
+    const account = await enrollAccountMachine(input, alice, "desktop-1")
+    expect(await input.hostProviderConfig.machineProviderConfigState(await principal(input, account.enrollmentId))).toBeUndefined()
+    expect(await input.hostProviderConfig.providerConfigMachines("org_acme")).toEqual([
+      { enrollmentId, ownerUserId: alice.principal!.userId, hostId: "vps-list", accounts: null },
+    ])
+    expect(await input.hostProviderConfig.storeMachineProviderConfig(machine, build(sealing, 1))).toBe(true)
+    expect((await input.hostProviderConfig.providerConfigMachines("org_acme"))[0]?.accounts).toBe("accounts-1")
+    expect(await input.hostProviderConfig.providerConfigMachines("org_other")).toEqual([])
+    await input.hostProviderConfig.staleMachineProviderConfigAccounts([enrollmentId])
+    expect(await input.hostProviderConfig.machineProviderConfigState(machine)).not.toHaveProperty("built")
+    await input.hostAccess.revokeHostEnrollment(alice, { hostId: "vps-list" })
+    expect(await input.hostProviderConfig.providerConfigMachines("org_acme")).toEqual([])
+  })
+
+  test("the broker admits an invited machine while it is live and its owner stands in the invitation's organization, and nothing else", async () => {
+    const input = await setup()
+    const { alice, bob } = await fixture(input)
+    const { enrollmentId } = await invitedMachine(input, "vps-broker")
+    expect(await input.hostProviderConfig.machineBrokerSubject(enrollmentId)).toEqual({
+      ownerUserId: alice.principal!.userId, orgId: "org_acme", hostId: "vps-broker", servingGeneration: 1,
+    })
+    await input.hostAccess.pauseHostEnrollment(alice, { hostId: "vps-broker", paused: true })
+    expect(await input.hostProviderConfig.machineBrokerSubject(enrollmentId)).toBeUndefined()
+    await input.hostAccess.pauseHostEnrollment(alice, { hostId: "vps-broker", paused: false })
+    expect(await input.hostProviderConfig.machineBrokerSubject(enrollmentId)).toMatchObject({ servingGeneration: 1 })
+
+    const bobs = await signed(input.workspace, "bob", "org_acme")
+    const key = await hostKey()
+    const { enrollment } = await redeem(input, await invite(input, bobs, ["/srv"]), "vps-bob", key)
+    expect(await input.hostProviderConfig.machineBrokerSubject(enrollment.enrollment_id)).toMatchObject({ ownerUserId: bob.principal!.userId })
+    await input.database.prepare("update org_memberships set revoked_at = ? where org_id = ? and user_id = ?")
+      .bind(input.now(), "org_acme", bob.principal!.userId).run()
+    expect(await input.hostProviderConfig.machineBrokerSubject(enrollment.enrollment_id)).toBeUndefined()
+
+    const account = await enrollAccountMachine(input, alice, "desktop-2")
+    expect(await input.hostProviderConfig.machineBrokerSubject(account.enrollmentId)).toBeUndefined()
+    await input.hostAccess.revokeHostEnrollment(alice, { hostId: "vps-broker" })
+    expect(await input.hostProviderConfig.machineBrokerSubject(enrollmentId)).toBeUndefined()
+  })
+
   test("an owner suspended between sealing and the push stores nothing: the write re-asks who is writing", async () => {
     const input = await setup()
     const { alice } = await fixture(input)
     const { enrollmentId } = await enrollAccountMachine(input, alice, "machine-s", { displayName: "Suspended box" })
     const key = await sealingKey()
     await machineBeat(input, enrollmentId, [], { sealingPublicKey: key.publicKey })
-    const target = await input.hostAccess.hostProviderConfigTarget(alice, { enrollmentId })
+    const target = await input.hostProviderConfig.hostProviderConfigTarget(alice, { enrollmentId })
 
     input.beforeNextBatch(async () => {
       await input.database.prepare("update users set state = 'suspended', suspended_at = ? where user_id = ?")
         .bind(input.now(), alice.principal!.userId).run()
     })
-    await expect(input.hostAccess.pushHostProviderConfig(alice, {
+    await expect(input.hostProviderConfig.pushHostProviderConfig(alice, {
       enrollmentId,
       sealed: "mseal1.e.i.c",
       revision: target.next_revision,
@@ -2000,15 +2126,16 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
     const key = await sealingKey()
 
     // Nothing pushable before a beat declares a key: the target says so and the write refuses a null key outright.
-    expect(await input.hostAccess.hostProviderConfigTarget(alice, { enrollmentId })).toEqual({
+    expect(await input.hostProviderConfig.hostProviderConfigTarget(alice, { enrollmentId })).toEqual({
       enrollment_id: enrollmentId,
       host_id: "machine-p",
       display_name: "Push box",
+      enrolled_via: "account",
       sealing_public_key: null,
       next_revision: 1,
     })
     await expect(
-      input.hostAccess.pushHostProviderConfig(alice, {
+      input.hostProviderConfig.pushHostProviderConfig(alice, {
         enrollmentId,
         sealed: "mseal1.e.i.c",
         revision: 1,
@@ -2020,17 +2147,17 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
     expect(await machineBeat(input, enrollmentId, [], { sealingPublicKey: key.publicKey })).not.toHaveProperty(
       "provider_config",
     )
-    const target = await input.hostAccess.hostProviderConfigTarget(alice, { enrollmentId })
+    const target = await input.hostProviderConfig.hostProviderConfigTarget(alice, { enrollmentId })
     expect(target.sealing_public_key).toBe(key.stored)
     expect(target.next_revision).toBe(1)
 
     // The grant is the owner's alone. Bob is a member of the same organization and learns nothing.
-    await expect(input.hostAccess.hostProviderConfigTarget(bob, { enrollmentId })).rejects.toMatchObject({
+    await expect(input.hostProviderConfig.hostProviderConfigTarget(bob, { enrollmentId })).rejects.toMatchObject({
       code: "host_enrollment_not_found",
       status: 404,
     })
     await expect(
-      input.hostAccess.pushHostProviderConfig(bob, {
+      input.hostProviderConfig.pushHostProviderConfig(bob, {
         enrollmentId,
         sealed: "mseal1.e.i.c",
         revision: 1,
@@ -2044,7 +2171,7 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
     })
 
     expect(
-      await input.hostAccess.pushHostProviderConfig(alice, {
+      await input.hostProviderConfig.pushHostProviderConfig(alice, {
         enrollmentId,
         sealed: "mseal1.e.i.c1",
         revision: 1,
@@ -2076,7 +2203,7 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
     )
     expect(await machineBeat(input, enrollmentId, [])).not.toHaveProperty("provider_config")
     expect(await storedProviderConfig(input, enrollmentId)).toMatchObject({ provider_config_acked_revision: 1 })
-    expect((await input.hostAccess.hostProviderConfigTarget(alice, { enrollmentId })).next_revision).toBe(2)
+    expect((await input.hostProviderConfig.hostProviderConfigTarget(alice, { enrollmentId })).next_revision).toBe(2)
   })
 
   test("a push at a stale revision or against a key the machine no longer holds writes nothing, including a re-key that lands between the read and the write", async () => {
@@ -2087,7 +2214,7 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
     const other = await sealingKey()
     await machineBeat(input, enrollmentId, [], { sealingPublicKey: key.publicKey })
     const push = (args: { sealed: string | null; revision: number; sealingPublicKey: string }) =>
-      input.hostAccess.pushHostProviderConfig(alice, { enrollmentId, providerIds: ["openai"], ...args })
+      input.hostProviderConfig.pushHostProviderConfig(alice, { enrollmentId, providerIds: ["openai"], ...args })
     await push({ sealed: "mseal1.e.i.c1", revision: 1, sealingPublicKey: key.stored })
 
     // Two owners' devices read next_revision 2 and both push: the second is refused with where the row is.
@@ -2140,7 +2267,7 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
     ).rejects.toMatchObject({ code: "invalid_input", status: 400 })
     expect(await input.hostAccess.activeHostEnrollment(alice)).toEqual(before)
     await input.hostAccess.revokeHostEnrollment(alice, { hostId: "machine-r" })
-    await expect(input.hostAccess.hostProviderConfigTarget(alice, { enrollmentId })).rejects.toMatchObject({
+    await expect(input.hostProviderConfig.hostProviderConfigTarget(alice, { enrollmentId })).rejects.toMatchObject({
       code: "host_enrollment_not_found",
       status: 404,
     })
@@ -2153,7 +2280,7 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
     const key = await sealingKey()
     await machineBeat(input, enrollmentId, [], { sealingPublicKey: key.publicKey })
     const push = (args: { sealed: string | null; revision: number }) =>
-      input.hostAccess.pushHostProviderConfig(alice, {
+      input.hostProviderConfig.pushHostProviderConfig(alice, {
         enrollmentId,
         sealingPublicKey: key.stored,
         providerIds: ["openai"],
@@ -2173,7 +2300,7 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
       .bind(enrollmentId)
       .run()
     await machineBeat(input, enrollmentId, [], { providerConfigRevision: 2 })
-    expect((await input.hostAccess.hostProviderConfigTarget(alice, { enrollmentId })).next_revision).toBe(3)
+    expect((await input.hostProviderConfig.hostProviderConfigTarget(alice, { enrollmentId })).next_revision).toBe(3)
     await expect(push({ sealed: "mseal1.e.i.replay", revision: 2 })).rejects.toMatchObject({
       code: "host_provider_config_revision_stale",
       status: 409,
@@ -2196,7 +2323,7 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
     const { enrollmentId: bare } = await enrollAccountMachine(input, alice, "machine-bare")
     const key = await sealingKey()
     await machineBeat(input, enrollmentId, [], { sealingPublicKey: key.publicKey })
-    await input.hostAccess.pushHostProviderConfig(alice, {
+    await input.hostProviderConfig.pushHostProviderConfig(alice, {
       enrollmentId,
       sealed: "mseal1.e.i.c1",
       revision: 1,
@@ -2206,7 +2333,7 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
     await machineBeat(input, enrollmentId, [], { providerConfigRevision: 1 })
 
     expect(
-      await input.hostAccess.pushHostProviderConfig(alice, {
+      await input.hostProviderConfig.pushHostProviderConfig(alice, {
         enrollmentId,
         sealed: null,
         revision: 2,

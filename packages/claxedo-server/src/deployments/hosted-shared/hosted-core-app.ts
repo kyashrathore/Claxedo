@@ -1,6 +1,5 @@
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { RuntimeConfigSnapshotPlugins } from "@claxedo/harness/contract"
-import { ownerDirectDelivery, PI_DIRECT_PROVIDERS } from "../../credentials/direct-rows"
 import { defaultSessionHarnessId } from "../../session/default-session-harness"
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import { Hono } from "hono"
@@ -33,13 +32,8 @@ import { hostedHarnessRuntimeStatus } from "../../workspace/harness-runtime"
 import { HostedAuthProfileRoutes } from "../../routes/hosted/auth-profile"
 import { HostedDeviceAuthRoutes } from "../../routes/hosted/device-auth"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "../../routes/hosted/workspace"
-import { HostEnrollmentRoutes, HostInvitationRoutes } from "../../routes/hosted/host-enrollment"
-import { HostSessionRowsRoutes } from "../../routes/hosted/host-session-rows"
 import type { SessionRowsPasses } from "../../session/session-rows-pass"
-import { createSessionHostRows } from "../../session/session-host-rows"
 import type { CredentialRefusals } from "../../credentials/credential-refusals"
-import { RemoteAccessOwnerRoutes } from "../../routes/remote-access"
-import { hostedRemoteAccessService } from "./hosted-remote-access-service"
 import { hostedWorkspaceIdleStop, WorkspaceCheckpointRoutes } from "../../workspace/routes/checkpoints"
 import { hostConnectEndpointOptions, missingBearerBody, routeAuth, signedOrError } from "../../workspace/route-support"
 import { liveSyncHostChanged } from "../../workspace/host-changed-notice"
@@ -96,6 +90,8 @@ import { orgRoutedCredentials, UNDELIVERED_CREDENTIAL_CHANGE } from "../../crede
 import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-tracker-pricing"
 import { privateRepoHosts } from "../private-repo-hosts"
 import { hostedSandboxEgress } from "./hosted-sandbox-egress"
+import { mountHostedHostRoutes } from "./hosted-host-routes"
+import type { MachineProviderConfig } from "../../credentials/machine-provider-config"
 import { configuredCoreAppOrigins, coreAppHomeOrigin, corsMiddleware } from "./hosted-core-origins"
 import { BROKER_ROUTE_PATTERN } from "@claxedo/egress-broker"
 import type { UsageProjectionLedger } from "@claxedo/server-core/usage/ledger"
@@ -138,6 +134,13 @@ export type HostedCoreAppOptions = {
    * plane that provisions cloud sandboxes.
    */
   accountSetup?: Pick<HostedCredentialRoutesInput, "change" | "administers" | "sandboxDriverKeys" | "fetch">
+  /**
+   * Builds each `claxedo connect` machine's provider configuration from its
+   * owner's accounts on the machine's beat, and rings the organization's
+   * machines when a credential write changes what they spend. Absent where
+   * the plane has no broker.
+   */
+  machineProviderConfig?: MachineProviderConfig
   /**
    * Build-composed product route families (Agent Plugins today). An entry
    * passes an explicit array; the base core passes none and imports no
@@ -291,6 +294,9 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
 
   const approvedPrivateRepoHosts = privateRepoHosts(plane.env)
   const hostChanged = liveSyncHostChanged(options.liveSyncRoom)
+  const credentialChange = options.accountSetup && options.machineProviderConfig
+    ? options.machineProviderConfig.credentialChange(options.accountSetup.change, hostChanged)
+    : options.accountSetup?.change
   const workspaceOptions: HostedWorkspaceRouteOptions = {
     privateRepoHosts: approvedPrivateRepoHosts,
     authentication: options.authentication,
@@ -370,6 +376,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       keys: envelopeKeyProviderFromEnv(plane.env),
       telemetry: services.telemetry,
       ...options.accountSetup,
+      ...(credentialChange ? { change: credentialChange } : {}),
     }))
   }
   app.route(
@@ -414,42 +421,15 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       ...(plane.orgCredentials ? { credentials: plane.orgCredentials } : {}),
     }))
   }
-  const orgCredentials = plane.orgCredentials
-  app.route("/api/claxedo/host/enrollments", HostEnrollmentRoutes(services, {
-    ...workspaceOptions,
+  mountHostedHostRoutes(app, {
+    plane,
+    workspaceOptions,
+    authentication: options.authentication,
     liveSyncRoom: options.liveSyncRoom,
-    ...(orgCredentials ? {
-      ownerPiDirectRows: async (auth) => (await ownerDirectDelivery(orgCredentials(await requireAuthority(services).resolveOrgId(auth)), auth.user.subject, { providers: PI_DIRECT_PROVIDERS })).direct,
-    } : {}),
-  }))
-  app.route("/api/claxedo/host/session-rows", HostSessionRowsRoutes(services, {
-    notify: (orgId, notices) => nudgeLiveSyncRoom(options.liveSyncRoom, liveSyncRoomNameForPrincipal({ orgId }), notices),
+    hostChanged,
     ...(options.sessionRowsPasses ? { sessionRowsPasses: options.sessionRowsPasses } : {}),
-    ...(services.sessionHosts && services.authority?.resolveWorkspaceOwner
-      ? {
-          sessionHostRows: createSessionHostRows({
-            env: plane.env,
-            sessionHosts: services.sessionHosts,
-            resolveWorkspaceOwner: services.authority.resolveWorkspaceOwner.bind(services.authority),
-          }),
-        }
-      : {}),
-  }))
-  app.route("/api/claxedo/host/invitations", HostInvitationRoutes(services, {
-    ...workspaceOptions,
-    controlPlaneOrigin: options.authentication.descriptor.native.cli.controlPlaneOrigin,
-  }))
-  app.route("/api/claxedo/remote-access", RemoteAccessOwnerRoutes({
-    deviceLoginConfigured: true,
-    relayConfigured: !!services.relay.provider,
-    authenticate: async (request) => {
-      const result = await signedOrError(request, { authentication: options.authentication, requireSigned: true }, services)
-      if ("error" in result) return Response.json(result.error, { status: result.status })
-      if (!result.auth) return Response.json({ error: { code: "UNAUTHORIZED", message: "Signed auth is required" } }, { status: 401 })
-      return result.auth
-    },
-    service: hostedRemoteAccessService(requireAuthority(services), { hostChanged }),
-  }))
+    ...(options.machineProviderConfig ? { machineProviderConfig: options.machineProviderConfig } : {}),
+  })
   app.route(
     "/api/workspace",
     WorkspaceCheckpointRoutes(services, {
@@ -542,7 +522,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       ...(plane.orgCredentials
         ? {
             quota: createHostedQuotaReader({
-              credentials: orgRoutedCredentials(plane.orgCredentials, options.accountSetup?.change ?? UNDELIVERED_CREDENTIAL_CHANGE),
+              credentials: orgRoutedCredentials(plane.orgCredentials, credentialChange ?? UNDELIVERED_CREDENTIAL_CHANGE),
               ...(options.accountSetup?.fetch ? { fetch: options.accountSetup.fetch } : {}),
             }),
           }

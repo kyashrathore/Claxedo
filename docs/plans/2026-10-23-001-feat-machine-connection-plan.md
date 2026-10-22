@@ -87,7 +87,7 @@ why it was or was not built:
 | W3 | Built after decision 1 was accepted (Progress below) |
 | W1 | In progress after W3 |
 | W2 | Not built as written: most of it already holds, and what is left is small; reshaped below |
-| W4 | Cloud path in progress; the LAN path follows W1 |
+| W4 | Cloud path built for every `claxedo connect` machine and proven on Miniflare; the LAN path follows W1; plan refresh and a deploy remain |
 | W5 | `claxedo doctor`, the service's PATH and Pi's Windows bash built; installers need a Windows box |
 | W6 | Already met by how rooms are placed |
 
@@ -183,30 +183,39 @@ account in a Durable Object.
 Trade-offs: cloud machines' model calls pass through our Worker (a few ms from an AWS box near the edge; streamed,
 not stored). LAN machines depend on the main machine being on (default above).
 
-- [ ] The control plane mints machine-bound stand-ins (enrollment, served workspace, generation) and refuses them
-  once the enrollment is revoked, paused or no longer serves that workspace. Progress:
+- [x] The control plane mints machine-bound stand-ins (enrollment, served workspace, generation) and refuses them
+  once the enrollment is revoked, paused or no longer serves that workspace. Progress: a stand-in names the
+  enrollment, leased as `host:<enrollmentId>` at the serving generation with the host id as its runtime. It is
+  bound per enrollment and provider, not per served workspace, because every workspace on the machine spends its
+  owner's accounts alike. The broker refuses it once the enrollment is revoked or paused, a new instance serves,
+  or the owner leaves the invitation's organization. Each beat builds the rows when they are due
+  (`createMachineProviderConfig`, `packages/claxedo-server/src/credentials/machine-provider-config.ts`): at half
+  life, on a new serving generation, or once a credential write rings the machine. No alarm is used.
 - [ ] OpenCode, Pi, Claude Code and Codex on a connected cloud machine spend the owner's accounts through it; the
-  real key is never on the machine. Progress:
-- [ ] The hosted broker serves Claude and ChatGPT plan accounts, refresh state in a Durable Object. Progress:
+  real key is never on the machine. Progress: the build and the owner's push to such a machine carry bindings
+  only, the ChatGPT plan included. Pi spends a binding where it has no direct row. Pi refuses a Claude plan's
+  binding with `brokered_plan_unsupported`, because pi-ai sends a plan token's Claude Code identity only for a
+  token it recognises. Not yet proven: a real harness turn on a connected machine.
+- [ ] The hosted broker serves Claude and ChatGPT plan accounts, refresh state in a Durable Object. Progress: the
+  ChatGPT plan is delivered brokered, and its stand-in names the plan's account for pi-ai. Not built: Claude plan
+  refresh, and refresh coordinated across isolates.
 - [ ] A LAN machine's agents spend through the main machine's broker over W1; with the main machine asleep they
   pause with the one-line notice. Progress:
 - [ ] Live: revoke the machine and its next model call is refused; rotate the key in the app and the next call
-  uses the new one; nothing on the machine changes. Progress:
+  uses the new one; nothing on the machine changes. Progress: on the hosted control plane on Miniflare, with a
+  machine enrolled by invitation and a scripted upstream, its first beat delivered bound rows with no key. A
+  `/bindings/*` call with the stand-in reached the upstream with the real key injected. Pause, restart (new
+  generation) and revoke each refused the stand-in it held (403 `binding_unavailable`). After a key rotation, the
+  stand-in the machine already held spent the new key. Not yet proven on a deploy.
 
-**Assessment.** Much exists. `/bindings/*` already serves Claude setup tokens and ChatGPT plan accounts under
-`openai`, refreshed inline and written back to D1. Push-config already seals `{baseUrl, placeholder, authMode,
-expiresAt}` rows to a machine, and every harness but Pi reads them. Missing:
+**Assessment.** The cloud path is built: the machine-shaped stand-in, the per-request check, the row builder,
+renewal on the beat, and Pi spending a binding. Still missing:
 
-- a machine-shaped identity on the stand-in (`leaseIdentity` hard-codes `sandbox:`);
-- a per-request check that the enrollment is live and serves the workspace (`HOST_SERVING_WORKSPACE_SQL` exists);
-- a row builder on the control plane;
-- renewal: passes cap at 1 h, and renewing on the heartbeat, already every 20 s, needs no alarm;
-- Pi spending a binding (risk: pi-ai's `openai-codex` reads the account id from the token);
 - Claude plan refresh, which has no code anywhere;
-- refresh coordinated across isolates: today it is per isolate, and OpenAI rotates refresh tokens.
-
-`host-access-authority.ts` is at its size ceiling and splits first. It is the most valuable next lane, since it
-takes raw keys off machines and needs no other workstream, but it waits on decision 4.
+- refresh coordinated across isolates: today it is per isolate, and OpenAI rotates refresh tokens;
+- the LAN path through the main machine (W1);
+- a Pi direct row an owner pushed to a machine before this change stays on that machine until the owner pushes
+  again or clears the configuration.
 
 ### W5 — Getting a machine connected
 

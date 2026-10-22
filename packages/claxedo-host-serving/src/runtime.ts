@@ -35,8 +35,10 @@ import { isSessionConfigRefusal } from "@claxedo/workspace-runtime/config"
 import { configureAgentConfig } from "@claxedo/server-core/agent-config/index"
 import {
   hostProviderConfigProjectAuth,
+  layeredHostProviderConfig,
   parseHostProviderConfig,
   type HostProviderConfig,
+  type HostProviderConfigSource,
 } from "@claxedo/server-core/credentials/host-provider-config"
 import { createClaxedoAppliedRuntimeConfig } from "@claxedo/server-core/hosts/workspace-runtime/runtime-config"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
@@ -52,37 +54,56 @@ const log = Log.create({ service: "host-runtime" })
  */
 export const CONNECTED_HOST_PLACEMENT: WorkspaceRuntimeServerOptions["placement"] = { placement: "desktop", machineOwnerUserId: "", canUseOwnLogin: true }
 
-let pushedProviders: HostProviderConfig["credentials"] | undefined
+/** The latest revision of each source this host holds: the owner's push, and the control plane's build from their accounts. */
+const held: Record<HostProviderConfigSource, HostProviderConfig["credentials"] | undefined> = { owner: undefined, "control-plane": undefined }
+
+const spent = () => layeredHostProviderConfig(held.owner, held["control-plane"])
 
 /**
- * Make the owner's pushed rows this process's only credential authority. A
- * connect host has no credential registry of its own, so there is no base
- * answer to write the rows over and no account choice to honour; a provider
- * the owner has not pushed resolves to nothing and the harness runs on
- * whatever login the box holds.
+ * Make the owner's configurations this process's only credential authority:
+ * the rows the control plane built from their accounts, with the rows they
+ * pushed by hand over them. A connect host has no credential registry of its
+ * own, so there is no base answer to write the rows over and no account
+ * choice to honour; a provider neither names resolves to nothing and the
+ * harness runs on whatever login the box holds. It starts holding nothing:
+ * the host installs what it stored before its first beat.
  */
 export function installHostProviderConfigAuthority() {
-  configureAgentConfig({ projectAuth: hostProviderConfigProjectAuth(undefined, () => pushedProviders, hostEnrolledOwner, () => ({})) })
+  held.owner = undefined
+  held["control-plane"] = undefined
+  configureAgentConfig({ projectAuth: hostProviderConfigProjectAuth(undefined, spent, hostEnrolledOwner, () => ({})) })
 }
 
 /**
- * Replace the pushed rows with the plaintext the host opened, or with nothing
- * when the owner withdrew them. Parsed here rather than by the caller because
- * the CLI does not depend on `@claxedo/server-core`, and the rows themselves
- * never leave this module. Throws on a payload this host cannot read, leaving
- * the previous rows in place.
+ * Which configuration a revision the host opened replaces; a withdrawal
+ * (`null`) is always the owner's. Throws on a payload this host cannot read.
  */
-export function setHostProviderConfig(plaintext: string | null): { providerIds: string[] } {
-  const providers = plaintext === null ? undefined : parseHostProviderConfig(plaintext).credentials
-  pushedProviders = providers
-  return { providerIds: providers ? [...new Set(Object.values(providers.accounts).flatMap((rows) => Object.keys(rows)))].sort() : [] }
+export function hostProviderConfigSource(plaintext: string | null): HostProviderConfigSource {
+  return plaintext === null ? "owner" : parseHostProviderConfig(plaintext).source
+}
+
+/**
+ * Replace the configuration of the plaintext's source with it, or withdraw
+ * the owner's push on `null`; answers the providers the host now spends.
+ * Parsed here rather than by the caller because the CLI does not depend on
+ * `@claxedo/server-core`, and the rows themselves never leave this module.
+ * Throws on a payload this host cannot read, leaving every row in place.
+ */
+export function setHostProviderConfig(plaintext: string | null): { source: HostProviderConfigSource; providerIds: string[] } {
+  const config = plaintext === null ? undefined : parseHostProviderConfig(plaintext)
+  const source = config?.source ?? "owner"
+  held[source] = config?.credentials
+  const providers = spent()
+  return { source, providerIds: providers ? [...new Set(Object.values(providers.accounts).flatMap((rows) => Object.keys(rows)))].sort() : [] }
 }
 
 /** Adopt the enrolled owner a heartbeat ack names, re-applying every live runtime under them. */
 export async function adoptConnectedHostOwner(owner: string, listener: Pick<HostRuntimeListener, "applyRuntimeConfig">): Promise<void> {
   await adoptHostEnrolledOwner(owner, {
     forget: (next) => {
-      if (pushedProviders && pushedProviders.machineOwnerUserId !== next) pushedProviders = undefined
+      for (const source of ["owner", "control-plane"] as const) {
+        if (held[source] && held[source].machineOwnerUserId !== next) held[source] = undefined
+      }
     },
     reapply: () => listener.applyRuntimeConfig(),
   })

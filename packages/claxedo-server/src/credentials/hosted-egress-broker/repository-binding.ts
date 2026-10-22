@@ -16,6 +16,7 @@ export type HostedRepositoryBindings = (bindingId: string, claims: HostedBrokerC
  */
 export function hostedRepositoryBindings(read: HostedRepositoryCloneRead): HostedRepositoryBindings {
   return async (bindingId, claims) => {
+    if (claims.workspaceId === undefined) return undefined
     const clone = await read({ workspaceId: claims.workspaceId, ownerUserId: claims.userId, orgId: claims.orgId })
     if (!clone || clone.connectionId !== claims.credentialId) return undefined
     const route = githubRepositoryRoute(clone.repoUrl)
