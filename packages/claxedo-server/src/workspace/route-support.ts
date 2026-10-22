@@ -17,7 +17,7 @@ import type { HostTunnelTokenSigner, RuntimeAccessTokenSigner } from "@claxedo/s
 import type { ConnectionRateLimiter } from "../platform/auth/rate-limit"
 import { regionValue, type ClaxedoRegion, type ClaxedoRegionMap } from "@claxedo/server-core/platform/runtime/region/index"
 import type { SandboxBrokeredSecret, SandboxManagerInput } from "@claxedo/sandbox-manager"
-import type { SandboxInFlight, SandboxStart } from "./sandbox-start"
+import type { ReadySandboxTarget, SandboxInFlight, SandboxStart } from "./sandbox-start"
 import type { AgentPluginExecutionSelection } from "@claxedo/server-core/agent-plugins/runtime/execution-selection"
 
 export type WorkspaceRuntimeContext = {
@@ -96,7 +96,8 @@ export type WorkspaceRouteOptions = {
   sandboxStart?: SandboxStart
   /** The sandbox start's run in flight, which a read reports before it asks a runtime that run is replacing. */
   sandboxInFlight?: SandboxInFlight
-  runtimeProvisioned?: (context: WorkspaceRuntimeContext) => Promise<boolean>
+  /** Whether the runtime behind a lease the caller already read as ready holds its settings. */
+  runtimeProvisioned?: (workspaceId: string, target: ReadySandboxTarget) => Promise<boolean>
   /** Build-composed withdrawal of the passes a cloud root's runtime preparation issued, once its workspace is deleted. */
   releaseRuntime?: (context: WorkspaceRuntimeContext) => Promise<void>
   /**

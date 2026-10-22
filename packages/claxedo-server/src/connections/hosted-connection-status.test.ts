@@ -26,7 +26,7 @@ function subject() {
     sandbox: { sandboxManager: { target: vi.fn(async () => READY) } },
     telemetry: { capture: vi.fn() },
   } as unknown as ControlPlaneServices
-  const runtimeProvisioned = vi.fn(async () => true)
+  const runtimeProvisioned = vi.fn(async (_workspaceId: string, _target: typeof READY) => true)
   const options = (inFlight: () => Promise<{ status: "provisioning"; retryAfterMs: number; epoch: number; homeRegion: string; bootMode?: "resume"; failure?: string } | undefined>) => ({
     defaultHomeRegion: "us-east",
     relayUrl: "wss://relay.test",
@@ -66,5 +66,12 @@ describe("a connection read while a sandbox start is in flight", () => {
     const result = await hostedConnectionStatus(services, options(async () => undefined), auth, "ws_1")
     expect(result).toMatchObject({ connection: { runtimeAccessToken: "runtime-token", hostId: "host_1" } })
     expect(runtimeProvisioned).toHaveBeenCalledTimes(1)
+  })
+
+  test("asks the runtime the lease it already read names, reading the lease once", async () => {
+    const { services, options, runtimeProvisioned } = subject()
+    await hostedConnectionStatus(services, options(async () => undefined), auth, "ws_1")
+    expect(services.sandbox.sandboxManager?.target).toHaveBeenCalledTimes(1)
+    expect(runtimeProvisioned).toHaveBeenCalledWith("ws_1", READY)
   })
 })

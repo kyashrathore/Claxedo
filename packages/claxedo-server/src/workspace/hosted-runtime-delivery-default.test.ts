@@ -71,12 +71,23 @@ test("a disabled default connection is refused before settings are delivered", a
   expect(configApplied).not.toHaveBeenCalled()
 })
 
+const READY_TARGET = { status: "ready", hostId: "host", url: "https://runtime.test", epoch: 1 } as unknown as import("./sandbox-start").ReadySandboxTarget
+
 test("readiness comes from applied settings, survives a refresh, and reports failed delivery", async () => {
   const delivery = await createDelivery({ version: 3, connections: {} })
   for (const [state, revision, ready] of [["idle", 0, false], ["applying", 1, false], ["applied", 1, true], ["applying", 2, true]] as const) {
     configStatus.mockResolvedValueOnce({ state, revision })
-    expect(await delivery.runtimeProvisioned({ workspaceId: "ws" })).toBe(ready)
+    expect(await delivery.runtimeProvisioned("ws", READY_TARGET)).toBe(ready)
   }
   configStatus.mockResolvedValueOnce({ state: "failed", revision: 1, error: { code: "refused", message: "Harness refused settings" } })
-  await expect(delivery.runtimeProvisioned({ workspaceId: "ws" })).rejects.toThrow("Harness refused settings")
+  await expect(delivery.runtimeProvisioned("ws", READY_TARGET)).rejects.toThrow("Harness refused settings")
+})
+
+test("readiness asks the runtime the caller's ready lease names and reads no lease of its own", async () => {
+  const delivery = await createDelivery({ version: 3, connections: {} })
+  const { createWorkspaceRuntimeClient } = await import("@claxedo/workspace-runtime/client")
+  configStatus.mockResolvedValueOnce({ state: "applied", revision: 1 })
+  vi.mocked(createWorkspaceRuntimeClient).mockClear()
+  expect(await delivery.runtimeProvisioned("ws", { ...READY_TARGET, url: "https://named.runtime.test" })).toBe(true)
+  expect(vi.mocked(createWorkspaceRuntimeClient).mock.calls[0]?.[0]).toMatchObject({ baseUrl: "https://named.runtime.test" })
 })

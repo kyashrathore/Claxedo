@@ -411,7 +411,7 @@ export async function hostedConnectionStatus(
     return { error: apiError("cloud_runtime_image_outdated", "This cloud workspace runs an older version. Restart it to update."), status: 409 } as const
   }
   try {
-    if (options.runtimeProvisioned && !(await options.runtimeProvisioned({ workspaceId }))) {
+    if (options.runtimeProvisioned && !(await options.runtimeProvisioned(workspaceId, target))) {
       return { connection: { status: "provisioning" as const, workspaceId, homeRegion } }
     }
   } catch (cause) {

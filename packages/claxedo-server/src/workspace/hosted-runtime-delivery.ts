@@ -33,6 +33,7 @@ import { accountsRenewalDueAt, type CredentialSnapshot } from "@claxedo/agent-ru
 import { PLACEHOLDER_TTL_SECONDS, type BrokerLease, type HostedEgressBroker } from "../credentials/hosted-egress-broker"
 import { isSandboxDriverID } from "@claxedo/sandbox-contract"
 import { sandboxDriverCatalog } from "@claxedo/sandbox-manager/driver-catalog"
+import { timedFetch } from "../platform/http/server-timing"
 import { asRecord } from "@claxedo/server-core/platform/json/index"
 import { IDLE_CHECK_FAILURE_LIMIT, IDLE_CHECK_MS, workspaceIdleStopDue } from "../sandbox/workspace-idle"
 import type { WorkspaceIdleStop } from "./routes/checkpoints"
@@ -61,9 +62,9 @@ const hostWatchesIdle = (target: { driver?: { id: string } }) =>
  */
 const LIVE_ANSWER_MS = 3_000
 
-async function supervisorClientFor(workspaceId: string, target: ReadySandboxTarget, signingEnv: Record<string, string | undefined>) {
+async function supervisorClientFor(workspaceId: string, target: ReadySandboxTarget, signingEnv: Record<string, string | undefined>, fetch?: typeof globalThis.fetch) {
   const token = await mintSupervisorBackplaneToken({ workspaceId, hostId: target.hostId, subject: "workspace-supervisor" }, signingEnv)
-  return { client: createWorkspaceRuntimeClient({ baseUrl: target.url }), options: { token: token.supervisorBackplaneToken }, target }
+  return { client: createWorkspaceRuntimeClient({ baseUrl: target.url, ...(fetch ? { fetch } : {}) }), options: { token: token.supervisorBackplaneToken }, target }
 }
 
 /** Whether the runtime holds the settings a push delivered; a revision past the first is being replaced, not still awaited. */
@@ -407,8 +408,8 @@ export function createHostedRuntimeDelivery(input: {
       return runtimeAuth(workspaceId, await owner(workspaceId))
     },
     /** Whether a ready sandbox has taken its settings; a refresh over applied settings keeps it connectable. */
-    runtimeProvisioned: async ({ workspaceId }: WorkspaceRuntimeContext) => {
-      const { client, options } = await supervisorClient(input.services, workspaceId, input.signingEnv)
+    runtimeProvisioned: async (workspaceId: string, target: ReadySandboxTarget) => {
+      const { client, options } = await supervisorClientFor(workspaceId, target, input.signingEnv, timedFetch())
       const status = await client.configStatus(options)
       if (status.state === "failed") throw new Error(status.error?.message ?? "Runtime settings application failed")
       return provisioned(status)
