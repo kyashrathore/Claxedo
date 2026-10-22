@@ -34,6 +34,21 @@ import { corsPreflight, withRelayResponseHeaders, workspaceUpgradeOriginDenied }
 import { isHostTunnelTarget } from "./host-tunnel-forwarding"
 import { forwardSessionHostHttp, isSessionHostTarget, type SessionHostNamespace } from "./session-host-forwarding"
 import { workspaceRelayRoomPlacement } from "./gateway-placement"
+import {
+  logTrace,
+  serverTiming,
+  TRACE_ID_HEADER,
+  TRACE_SAMPLED_RESPONSE_HEADER,
+  traceRequest,
+  traceSpan,
+  tracedRequest,
+  webSocketTraceFrame,
+  withTraceHeaders,
+  type RelayTrace,
+  type WorkspaceRelayTraceLogEvent,
+} from "./relay-trace"
+
+export type { WorkspaceRelayTraceLogEvent } from "./relay-trace"
 
 export type WorkspaceRelayDurableObjectId = unknown
 
@@ -148,18 +163,6 @@ export type WorkspaceRelayDurableObjectRoomOptions = WorkspaceRelayOptions & {
   now?: () => number
 }
 
-export type WorkspaceRelayTraceLogEvent = {
-  event: "workspace_relay_request"
-  traceId: string
-  workspaceId?: string
-  routeKind: string
-  method: string
-  path: string
-  status: number
-  totalMs: number
-  phases: Record<string, number>
-}
-
 export type WorkspaceRelayDurableObjectHibernation = {
   acceptWebSocket: (socket: WorkspaceRelayDurableObjectSocket) => void
   getWebSockets: () => WorkspaceRelayDurableObjectSocket[]
@@ -249,14 +252,6 @@ const RESOLVER_OUTAGE_GRACE_ATTEMPTS_DEFAULT = 3
 // installed on the hibernating path at all.
 const HIBERNATED_REVOCATION_ALARM_INTERVAL_MS_DEFAULT = 30_000
 const HOST_GENERATION_CHECK_INTERVAL_MS_DEFAULT = 30_000
-const TRACE_ID_HEADER = "x-claxedo-trace-id"
-const TRACE_FORCE_HEADER = "x-claxedo-relay-trace"
-/**
- * Set by a room on a sampled trace's response and consumed by the gateway: the
- * gateway appends its own phases only behind this marker, never behind an
- * upstream's `server-timing`, which a session host answers on every response.
- */
-const TRACE_SAMPLED_RESPONSE_HEADER = "x-claxedo-relay-sampled"
 
 type HostTunnelSocket = {
   hostId: string
@@ -318,116 +313,6 @@ type PendingTunnelHttpResponse = {
   timeout: ReturnType<typeof setTimeout>
   resolve: (response: Response) => void
   reject: (error: Error) => void
-}
-
-type RelayTrace = {
-  id: string
-  sampled: boolean
-  startedAt: number
-  routeKind: string
-  phases: Array<{ name: string; ms: number }>
-}
-
-function clampRate(input: number | undefined) {
-  if (input === undefined || !Number.isFinite(input)) return 0
-  if (input <= 0) return 0
-  if (input >= 1) return 1
-  return input
-}
-
-function traceRequest(request: Request, routeKind: string, options: WorkspaceRelayDurableObjectRoomOptions): RelayTrace {
-  const id = trimToUndefined(request.headers.get(TRACE_ID_HEADER)) ?? crypto.randomUUID()
-  const forceSecret = trimToUndefined(options.traceForceHeaderSecret)
-  const forced = !!forceSecret && request.headers.get(TRACE_FORCE_HEADER) === forceSecret
-  const rate = clampRate(options.traceSampleRate)
-  return {
-    id,
-    sampled: forced || (rate > 0 && (options.random ?? Math.random)() < rate),
-    startedAt: performance.now(),
-    routeKind,
-    phases: [],
-  }
-}
-
-async function traceSpan<T>(trace: RelayTrace | undefined, name: string, fn: () => Promise<T>) {
-  const startedAt = performance.now()
-  try {
-    return await fn()
-  } finally {
-    trace?.phases.push({ name, ms: performance.now() - startedAt })
-  }
-}
-
-function tracedRequest(request: Request, trace: RelayTrace, forwarded: { url: string; headers: Headers } = request) {
-  const headers = new Headers(forwarded.headers)
-  headers.set(TRACE_ID_HEADER, trace.id)
-  // Set-or-strip, never passthrough: the sampled marker must reflect this
-  // relay's own sampling decision, not a client-supplied header.
-  if (trace.sampled) headers.set("x-claxedo-trace-sampled", "1")
-  else headers.delete("x-claxedo-trace-sampled")
-  return new Request(forwarded.url, {
-    method: request.method,
-    headers,
-    body: request.method === "GET" || request.method === "HEAD" ? undefined : request.body,
-    redirect: request.redirect,
-    duplex: "half",
-  } as RequestInit)
-}
-
-function roundedMs(value: number) {
-  return Math.round(value * 100) / 100
-}
-
-function serverTiming(trace: RelayTrace) {
-  return trace.phases
-    .map((phase) => `${phase.name};dur=${roundedMs(phase.ms)}`)
-    .join(", ")
-}
-
-function withTraceHeaders(response: Response, trace: RelayTrace) {
-  const headers = new Headers(response.headers)
-  headers.set(TRACE_ID_HEADER, trace.id)
-  // Phase timings expose internal routing/upstream latency breakdowns, so they
-  // are only emitted for sampled traces — never on every production response.
-  const timing = trace.sampled ? serverTiming(trace) : ""
-  if (timing) {
-    const existing = headers.get("server-timing")
-    headers.set("server-timing", existing ? `${existing}, ${timing}` : timing)
-    headers.set(TRACE_SAMPLED_RESPONSE_HEADER, "1")
-  }
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers,
-  })
-}
-
-function logTrace(
-  options: WorkspaceRelayDurableObjectRoomOptions,
-  request: Request,
-  workspaceId: string | undefined,
-  trace: RelayTrace,
-  response: Response,
-) {
-  if (!trace.sampled) return
-  const url = new URL(request.url)
-  const totalMs = performance.now() - trace.startedAt
-  const event: WorkspaceRelayTraceLogEvent = {
-    event: "workspace_relay_request",
-    traceId: trace.id,
-    workspaceId,
-    routeKind: trace.routeKind,
-    method: request.method,
-    path: url.pathname,
-    status: response.status,
-    totalMs: roundedMs(totalMs),
-    phases: Object.fromEntries(trace.phases.map((phase) => [phase.name, roundedMs(phase.ms)])),
-  }
-  if (options.traceLog) {
-    options.traceLog(event)
-    return
-  }
-  console.log(JSON.stringify(event))
 }
 
 function workspaceIdFromRelayPath(pathname: string) {
@@ -834,12 +719,12 @@ export function createWorkspaceRelayDurableObjectGateway(
       tracedResponse.headers.delete(TRACE_SAMPLED_RESPONSE_HEADER)
       const roomTiming = tracedResponse.headers.get("server-timing") ?? ""
       if (sampled) {
-        const gatewayTiming = [
-          `relay-gateway-route;dur=${roundedMs(routeFinishedAt - gatewayStartedAt)}`,
-          `relay-gateway-do-fetch;dur=${roundedMs(fetchFinishedAt - routeFinishedAt)}`,
-          `relay-gateway-response;dur=${roundedMs(gatewayFinishedAt - gatewayResponseStartedAt)}`,
-          `relay-gateway;dur=${roundedMs(gatewayFinishedAt - gatewayStartedAt)}`,
-        ].join(", ")
+        const gatewayTiming = serverTiming([
+          { name: "relay-gateway-route", ms: routeFinishedAt - gatewayStartedAt },
+          { name: "relay-gateway-do-fetch", ms: fetchFinishedAt - routeFinishedAt },
+          { name: "relay-gateway-response", ms: gatewayFinishedAt - gatewayResponseStartedAt },
+          { name: "relay-gateway", ms: gatewayFinishedAt - gatewayStartedAt },
+        ])
         tracedResponse.headers.set("server-timing", `${roomTiming}, ${gatewayTiming}`)
       }
       return url.pathname.startsWith("/workspaces/") ? withRelayResponseHeaders(request, tracedResponse) : tracedResponse
@@ -1905,12 +1790,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       // Unchecked on purpose: this frame exists only when a client opted in with
       // `x-claxedo-relay-ws-trace`, and losing a diagnostic must never affect the
       // connection it is measuring.
-      sendSocket(pair.server, JSON.stringify({
-        type: "relay.trace",
-        wsUpstreamOpenMs: roundedMs(openedAt - trace.upstreamStartedAt),
-        queuedFrames: trace.queueTimes.length,
-        maxQueuedDelayMs: roundedMs(trace.queueTimes.reduce((max, at) => Math.max(max, openedAt - at), 0)),
-      }))
+      sendSocket(pair.server, JSON.stringify(webSocketTraceFrame(trace.upstreamStartedAt, trace.queueTimes, openedAt)))
     }
     const activeTokenTimer = watchRuntimeAccessToken(client, (reason) => {
       closeSocket(pair.server, 1008, reason)
@@ -2237,6 +2117,12 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     },
     webSocketClose(socket: WorkspaceRelayDurableObjectSocket, code: number, reason: string) {
       ensureHibernatedSocketsRebuilt()
+      // Before compatibility date 2026-04-07 (`web_socket_auto_reply_to_close`)
+      // workerd leaves a socket the peer closed in CLOSING until the
+      // application closes it too. Unanswered, the peer waits out its own
+      // close timeout: 30 s in Node's `ws`, which `claxedo connect` spent
+      // after every SIGTERM.
+      closeSocket(socket, safeCloseCode(code, 1000), reason)
       const attachment = socketAttachment(socket)
       if (!attachment) return
       if (attachment.kind === "host-tunnel") {

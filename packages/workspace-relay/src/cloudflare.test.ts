@@ -1226,6 +1226,34 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     expect(clientSocket.sent).toEqual(["from-host-after-wake"])
   })
 
+  test("a hibernated socket the peer closes is closed back, so the peer's close handshake completes", async () => {
+    const harness = await roomHarness({ resolveTarget: "local-worktree", hibernation: true })
+    await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
+      headers: {
+        upgrade: "websocket",
+        authorization: `Bearer ${await harness.hostTunnelToken()}`,
+      },
+    }))
+    await harness.room.fetch(new Request("https://relay.test/workspaces/ws_1/api/claxedo/pty/pty_1/connect", {
+      headers: {
+        upgrade: "websocket",
+        authorization: `Bearer ${await harness.runtimeAccessToken()}`,
+      },
+    }))
+    const hostSocket = harness.socket(0)
+    const clientSocket = harness.socket(1)
+
+    await harness.room.webSocketClose(clientSocket, 4001, "tab closed")
+    await harness.room.webSocketClose(hostSocket, 1000, "")
+    const noStatus = new FakeSocket()
+    await harness.room.webSocketClose(noStatus, 1005, "")
+
+    expect(clientSocket.closed).toEqual({ code: 4001, reason: "tab closed" })
+    expect(hostSocket.closed).toEqual({ code: 1000, reason: "" })
+    expect(noStatus.closed, "1005 is never sent on the wire").toEqual({ code: 1000, reason: "" })
+    expect(harness.room.state()).toMatchObject({ hostTunnelCount: 0, clientCount: 0 })
+  })
+
   test("drops a tunnelled WebSocket close carrying a reserved code, then honours a legal one", async () => {
     const harness = await roomHarness({ resolveTarget: "local-worktree" })
     await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
