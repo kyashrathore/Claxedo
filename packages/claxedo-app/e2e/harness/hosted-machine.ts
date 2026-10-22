@@ -8,23 +8,28 @@ import { sendJson, directTransport } from "../../../harness/e2e/harness/transpor
 import type { Workspace } from "../../../harness/e2e/harness/workspaces"
 import type { Stack } from "./stack"
 
-export async function startHostedMachine(hosted: HostedStack, local: Stack, owner: HostedPerson) {
+export async function enrollHostedMachine(hosted: HostedStack, owner: HostedPerson, displayName: string) {
   const keys = await createHostKeyPair()
   const hostId = newHostId()
   const account = hostedControlTransport(hosted, owner)
   const challenge = JSON.parse(await sendJson(account, "POST", `${hosted.workerUrl}/api/claxedo/host/enrollments/requests`, { hostId }, "Host enrollment challenge")) as { request_id: string; nonce: string }
   const { enrollment } = JSON.parse(await sendJson(account, "POST", `${hosted.workerUrl}/api/claxedo/host/enrollments`, {
     hostId, publicKey: keys.publicKey, requestId: challenge.request_id,
-    signature: await keys.sign(enrollmentPayload({ hostId, requestId: challenge.request_id, nonce: challenge.nonce })), displayName: "Signed fixture machine",
+    signature: await keys.sign(enrollmentPayload({ hostId, requestId: challenge.request_id, nonce: challenge.nonce })), displayName,
   }, "Host enrollment")) as { enrollment: { enrollment_id: string } }
-  const transport = createMachineSignedTransport({ controlPlaneUrl: hosted.workerUrl, keys, hostId, enrollmentId: enrollment.enrollment_id,
+  return { keys, hostId, account, enrollmentId: enrollment.enrollment_id }
+}
+
+export async function startHostedMachine(hosted: HostedStack, local: Stack, owner: HostedPerson) {
+  const { keys, hostId, account, enrollmentId } = await enrollHostedMachine(hosted, owner, "Signed fixture machine")
+  const transport = createMachineSignedTransport({ controlPlaneUrl: hosted.workerUrl, keys, hostId, enrollmentId,
     fetch: (input, init) => hostedFetch(hosted, String(input), init) })
   const serving = JSON.parse(await sendJson(directTransport, "GET", `${local.url}/api/claxedo/host-serving`, undefined, "Machine session authority")) as { sessionAuthority: "local" | "managed-private" }
   const consented = new Map<string, string>()
   let endpoints: HostEndpoints = {}
   let delivery = Promise.resolve()
   const connector = createHostConnector({
-    mode: "machine", transport, hostId, enrollmentId: enrollment.enrollment_id, heartbeatIntervalMs: 1_000,
+    mode: "machine", transport, hostId, enrollmentId, heartbeatIntervalMs: 1_000,
     sessionAuthority: serving.sessionAuthority,
     setInterval: (fn, ms) => { const timer = setInterval(fn, ms); return { cancel: () => clearInterval(timer) } },
     onEndpoints: (value) => { endpoints = value },
@@ -36,7 +41,7 @@ export async function startHostedMachine(hosted: HostedStack, local: Stack, owne
       }
     },
     onServing: (credential) => {
-      delivery = delivery.then(async () => {
+      delivery = delivery.catch(() => undefined).then(async () => {
         await sendJson(directTransport, "PUT", `${local.url}/api/claxedo/host-serving`, {
           credential: credential ?? null,
           endpoints: { relayJwksUrl: endpoints.relay?.jwksUrl, sessionAuthorityUrl: endpoints.authority?.sessionAuthorityUrl, sessionRowsUrl: endpoints.sessionRows?.url },

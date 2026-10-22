@@ -554,8 +554,14 @@ export const desktopRenderer: Policy = {
   // The terminal's one loader of its xterm backend, which the terminal pane's
   // mount and the terminal creator's preload share (owner: the app's terminal
   // domain, `terminal/backend/load.ts`). It adds no package edge.
-  // 1556/37, no headroom.
-  ceilings: { modules: 1556, packages: 37 },
+  // The Machines section's details drawer, which checks a machine hop by hop
+  // and pauses, resumes or removes it, and the decoder of the devices list it
+  // reads (owner: the app's settings domain, `settings/machines.ts` and
+  // `settings/view/machine-details.tsx`, `machine-check.tsx`,
+  // `machine-actions.tsx`, `machine-status.tsx`; and its server adapter,
+  // `server/wire/machines.ts`). They add no package edge.
+  // 1562/37, no headroom.
+  ceilings: { modules: 1562, packages: 37 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

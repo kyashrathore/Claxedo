@@ -1,7 +1,8 @@
 import { expect } from "@playwright/test"
+import { enrollHostedMachine } from "./hosted-machine"
 import type { SignedStack } from "./signed-stack"
 
-type Device = { readonly host_id: string }
+type Device = { readonly host_id: string; readonly display_name: string; readonly state: string; readonly serving_workspace_ids: readonly string[] }
 
 function devicesUrl(signed: SignedStack, path = "") {
   return `${signed.hosted.workerUrl}/api/claxedo/remote-access/devices${path}`
@@ -10,6 +11,10 @@ function devicesUrl(signed: SignedStack, path = "") {
 export async function ownerDevices(signed: SignedStack): Promise<readonly Device[]> {
   const listed = await signed.owner.transport({ method: "GET", url: devicesUrl(signed), headers: {} })
   return (JSON.parse(listed.body) as { devices: Device[] }).devices
+}
+
+export async function enrollOwnerMachine(signed: SignedStack, displayName: string): Promise<string> {
+  return (await enrollHostedMachine(signed.hosted, signed.owner.person, displayName)).hostId
 }
 
 export async function revokeOwnerMachines(signed: SignedStack) {
