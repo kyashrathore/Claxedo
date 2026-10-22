@@ -202,9 +202,9 @@ Decision 1 accepted the bound: revoked within about a second, a minute at worst.
 A pause no longer stops a `claxedo connect` machine: it withdraws serving, so its relay tunnels and its direct route
 (W1) close at once, keeps beating, says so once, and serves again when a beat finds it resumed. One started while
 paused waits instead of exiting with a decision its service manager would not restart. `claxedo status` and
-`claxedo doctor` report the pause. A machine whose doorbell was refused while paused, or that started paused, hears
-the resume at its next beat, up to 20 s (22.3 s measured on staging); admitting a paused machine to the doorbell,
-which carries only rings, would make that about a second.
+`claxedo doctor` report the pause. The control plane admits a paused machine to its doorbell, which carries only
+rings, so a resume reaches it at once: on the hosted stack run locally a running machine served again 34 ms after the
+resume and one restarted while paused 130 ms after it, where staging, without this, took the next beat (22.3 s).
 
 ### W4 — The owner's accounts on connected machines
 
