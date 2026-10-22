@@ -51,7 +51,7 @@
     "@claxedo/workspace-relay-protocol": "workspace:*",
     "@claxedo/workspace-runtime": "workspace:*",
     "@zip.js/zip.js": "2.7.62",
-    "better-sqlite3": "13.0.1",
+    "better-sqlite3": "13.0.3",
     "drizzle-orm": "catalog:",
     "hono": "4.12.34",
     "jose": "6.2.4",

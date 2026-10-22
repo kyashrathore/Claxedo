@@ -71,7 +71,7 @@
     "@claxedo/workspace-runtime": "workspace:*",
     "@sinclair/typebox": "^0.34.41",
     "better-auth": "1.7.1",
-    "better-sqlite3": "13.0.1",
+    "better-sqlite3": "13.0.3",
     "drizzle-orm": "catalog:",
     "hono": "4.12.34",
     "jose": "6.2.4",
