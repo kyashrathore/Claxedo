@@ -1439,6 +1439,7 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
       scope: { allowed_roots: ["C:\\Work\\IS", "C:\\work\\casex"] },
     })
     expect(updated, "the root's own case is kept; retirement compares without it and by whole segments").toEqual({
+      host_id: "win-box",
       scope: { allowed_roots: ["C:\\Work\\IS", "C:\\work\\casex"], revision: 2 },
       retired_workspace_ids: ["ws_case", "ws_nas", "ws_root"],
     })
@@ -1447,6 +1448,7 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
       scope: { allowed_roots: ["c:\\"] },
     })
     expect(drive, "a drive root admits everything on the drive").toEqual({
+      host_id: "win-box",
       scope: { allowed_roots: ["C:\\"], revision: 3 },
       retired_workspace_ids: [],
     })
