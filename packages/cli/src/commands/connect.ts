@@ -4,7 +4,7 @@ import { CLAXEDO_DAEMON_PROTOCOL } from "@claxedo/helpers/claxedo-daemon"
 import { machineDisplayName } from "@claxedo/helpers/machine-name"
 import { DECISION_EXIT_CODE, HostConnectDecisionError, redeemInvitation } from "@claxedo/host-connector/bootstrap"
 import { createHostKeyPair, hostKeyPairFromJwk, newHostId } from "@claxedo/host-connector/host-identity"
-import { ControlPlaneUrlError, HostEndpointUrlError, newHostState, type HostState, type HostStateStore } from "@claxedo/host-connector/host-state"
+import { canonicalControlPlaneUrl, ControlPlaneUrlError, HostEndpointUrlError, newHostState, type HostState, type HostStateStore } from "@claxedo/host-connector/host-state"
 import { REDEEM_REQUEST_TIMEOUT_MS } from "@claxedo/host-connector/machine-transport"
 import { CLAXEDO_MIGRATION_JOURNAL, configureClaxedoSchema } from "@claxedo/server-core/platform/db/index"
 import { config } from "../config"
@@ -147,6 +147,15 @@ async function resetRoots(deps: ConnectDeps, log: (line: string) => void) {
   return 0
 }
 
+function controlPlaneUrlOf(deps: ConnectDeps): string {
+  try {
+    return canonicalControlPlaneUrl(deps.controlPlaneUrl)
+  } catch (error) {
+    if (!(error instanceof ControlPlaneUrlError)) throw error
+    throw new HostConnectDecisionError(`${errorMessage(error)}; set CLAXEDO_CONTROL_PLANE_URL to an https:// origin`, { cause: error })
+  }
+}
+
 async function enroll(deps: ConnectDeps, args: ConnectArgs, existing: HostState | undefined, log: (line: string) => void) {
   const tokenFile = args.tokenFile ?? existing?.bootstrap?.token_file
   if (!tokenFile) {
@@ -156,6 +165,15 @@ async function enroll(deps: ConnectDeps, args: ConnectArgs, existing: HostState 
   let state = existing
   let keys
   if (state) {
+    // The state's URL is the one the pending redeem resumes against, whatever
+    // the environment says now; a person who pointed the first attempt at the
+    // wrong control plane would otherwise retry it there without a word.
+    if (controlPlaneUrlOf(deps) !== state.control_plane_url) {
+      throw new HostConnectDecisionError(
+        `a redeem against ${state.control_plane_url} is still pending; run \`claxedo connect --reset\` to enroll against ${deps.controlPlaneUrl} instead`,
+        {},
+      )
+    }
     keys = await hostKeyPairFromJwk(state.private_key_jwk)
   } else {
     const created = await createHostKeyPair()

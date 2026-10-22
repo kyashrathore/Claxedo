@@ -62,7 +62,13 @@ export class HostConnectDecisionError extends Error {
 export const DECISION_STATUSES: ReadonlySet<number> = new Set([400, 401, 403, 404, 405, 409, 410])
 
 /** Wrap a control-plane refusal as a decision; anything else is the caller's to retry. */
-export function asDecision(error: unknown): HostConnectDecisionError | undefined {
+/**
+ * A refusal without the control plane's own code is one the route never saw
+ * (a 404 or 405 from a server that is not a Claxedo control plane, or an
+ * older one), so the message names the host that answered, where the person
+ * can see the URL they pointed this machine at.
+ */
+export function asDecision(error: unknown, controlPlaneUrl?: string): HostConnectDecisionError | undefined {
   if (error instanceof HostConnectDecisionError) return error
   // A redeem that is redirected is not retried: the secret would go back out
   // on every attempt for an endpoint that will not answer it, and where it is
@@ -70,7 +76,12 @@ export function asDecision(error: unknown): HostConnectDecisionError | undefined
   if (error instanceof HostedRedirectError) return new HostConnectDecisionError(error.message, { cause: error })
   if (!(error instanceof HostedHttpError) || !DECISION_STATUSES.has(error.status)) return undefined
   const code = decisionCode(error)
-  return new HostConnectDecisionError(code ? `control plane refused: ${code}` : error.message, {
+  const message = code
+    ? `control plane refused: ${code}`
+    : controlPlaneUrl
+      ? `${new URL(controlPlaneUrl).host} answered HTTP ${error.status} to the enrollment; is it the control plane that minted the invitation?`
+      : error.message
+  return new HostConnectDecisionError(message, {
     ...(code ? { code } : {}),
     status: error.status,
     cause: error,
@@ -153,7 +164,7 @@ export async function redeemInvitation(input: {
       input.requestTimeoutMs ?? REDEEM_REQUEST_TIMEOUT_MS,
     )
   } catch (error) {
-    throw asDecision(error) ?? error
+    throw asDecision(error, pending.control_plane_url) ?? error
   }
   if (!isPlainRecord(value) || !isPlainRecord(value.enrollment)) throw new Error("redeem returned no enrollment")
   const enrollmentId = requireString(value.enrollment.enrollment_id, "enrollment.enrollment_id")

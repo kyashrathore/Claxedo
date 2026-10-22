@@ -5,7 +5,7 @@ import path from "node:path"
 import { promisify } from "node:util"
 import type { HostState } from "@claxedo/host-connector/host-state"
 import { EXIT_TIMEOUT_S } from "./paths"
-import { WINDOWS_TASK, windowsScriptPath, windowsTaskXml, windowsTaskXmlPath, windowsWrapperScript, xmlTextNode } from "./service-windows"
+import { WINDOWS_TASK, windowsScriptPath, windowsTaskStatus, windowsTaskXml, windowsTaskXmlPath, windowsWrapperScript, xmlTextNode } from "./service-windows"
 
 const execFileAsync = promisify(execFile)
 
@@ -215,6 +215,7 @@ export async function writeServiceUnit(deps: ServiceDeps, options: ServiceUnitOp
 async function must(deps: ServiceDeps, file: string, args: readonly string[]) {
   const result = await deps.run(file, args)
   if (result.code !== 0) throw new Error(`${[file, ...args].join(" ")} exited with ${result.code}`)
+  return result
 }
 
 export type UserManagerCheck = { reachable: true } | { reachable: false; reason: string; remedy: string[] }
@@ -309,14 +310,21 @@ export async function startService(deps: ServiceDeps, service: InstalledService)
   } finally {
     await deps.unlink(taskXml)
   }
+  // `/Run` answers success for an InteractiveToken task whether or not its
+  // user has a session to run in; the task's own status says what happened.
   await must(deps, "schtasks.exe", ["/Run", "/TN", WINDOWS_TASK])
-  return {
-    started: true,
-    lines: [
-      `Installed and started the scheduled task ${WINDOWS_TASK} (${service.unit}).`,
-      `It runs at each logon of ${deps.username} and restarts connect after any failure except a control-plane decision (exit 78), which disables the task until \`schtasks /Change /TN ${WINDOWS_TASK} /Enable\` and \`schtasks /Run /TN ${WINDOWS_TASK}\`.`,
-    ],
+  const status = windowsTaskStatus((await must(deps, "schtasks.exe", ["/Query", "/TN", WINDOWS_TASK, "/FO", "CSV", "/NH"])).stdout)
+  const restarts = `It runs at each logon of ${deps.username} and restarts connect after any failure except a control-plane decision (exit 78), which disables the task until \`schtasks /Change /TN ${WINDOWS_TASK} /Enable\` and \`schtasks /Run /TN ${WINDOWS_TASK}\`.`
+  if (status !== "Running") {
+    return {
+      started: false,
+      lines: [
+        `Installed the scheduled task ${WINDOWS_TASK} (${service.unit}) but it is ${status}: it runs in ${deps.username}'s desktop session, so it starts at that user's next logon.`,
+        restarts,
+      ],
+    }
   }
+  return { started: true, lines: [`Installed and started the scheduled task ${WINDOWS_TASK} (${service.unit}).`, restarts] }
 }
 
 export async function uninstallService(deps: ServiceDeps, installed: InstalledService | undefined): Promise<string[]> {

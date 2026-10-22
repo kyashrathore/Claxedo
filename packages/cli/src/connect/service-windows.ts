@@ -55,6 +55,16 @@ export function windowsWrapperScript(
   ].join("\r\n")
 }
 
+/**
+ * The task's state from `schtasks /Query /TN <task> /FO CSV /NH`, one row of
+ * `"\\<task>","<next run>","<status>"`: `Running` once the wrapper is up,
+ * `Ready` while nobody is logged on, `Disabled` after an exit 78.
+ */
+export function windowsTaskStatus(csv: string): string {
+  const fields = csv.trim().split("\n")[0]?.match(/"([^"]*)"/g)?.map((field) => field.slice(1, -1)) ?? []
+  return fields[2] || "unknown"
+}
+
 /** Text content of an XML element, for the task definition and the launchd plist alike. */
 export function xmlTextNode(value: string) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")

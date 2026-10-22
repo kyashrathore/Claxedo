@@ -237,6 +237,17 @@ describe("decisions", () => {
     expect(h.stored()?.bootstrap, "the pending marker stays for the retry").toBeDefined()
   })
 
+  test("a server without the enrollment route is a decision that names the host it answered from", async () => {
+    const h = await freshHost()
+    const error = await h.redeem({ fetch: async () => new Response("", { status: 405 }) }).catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(HostConnectDecisionError)
+    expect(error).toMatchObject({ exitCode: 78, status: 405 })
+    expect((error as Error).message).toBe(
+      `${new URL(h.cp.url).host} answered HTTP 405 to the enrollment; is it the control plane that minted the invitation?`,
+    )
+  })
+
   test("a cleartext control plane is refused before the marker is written and before the secret leaves", async () => {
     const h = await freshHost()
     // Not through `newHostState`, which refuses it: the state a redeem is

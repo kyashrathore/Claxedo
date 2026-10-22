@@ -16,7 +16,7 @@ import {
   type CommandResult,
   type ServiceDeps,
 } from "./service"
-import { windowsTaskXml, windowsWrapperScript } from "./service-windows"
+import { windowsTaskStatus, windowsTaskXml, windowsWrapperScript } from "./service-windows"
 
 type Box = {
   linger?: CommandResult
@@ -259,6 +259,7 @@ describe("service units", () => {
         registered = files.get(args[4])
         registeredEncoding = encodings.get(args[4])
       }
+      if (args[0] === "/Query") return { code: 0, stdout: '"\\ClaxedoConnect","N/A","Running"\r\n' }
       return { code: 0, stdout: "" }
     }
     const { started, lines } = await startService(deps, service)
@@ -267,6 +268,7 @@ describe("service units", () => {
       "whoami.exe",
       `schtasks.exe /Create /TN ClaxedoConnect /XML ${taskXml} /F`,
       "schtasks.exe /Run /TN ClaxedoConnect",
+      "schtasks.exe /Query /TN ClaxedoConnect /FO CSV /NH",
     ])
     expect(registered).toBe(windowsTaskXml(deps, "win-box\\svc"))
     expect(registeredEncoding).toBe("utf16le")
@@ -283,8 +285,23 @@ describe("service units", () => {
     expect(lines[1]).toContain("exit 78), which disables the task until `schtasks /Change /TN ClaxedoConnect /Enable`")
 
     expect(await uninstallService(deps, service)).toEqual([`Stopped and removed the scheduled task ClaxedoConnect (${script}).`])
-    expect(calls.slice(3)).toEqual(["schtasks.exe /End /TN ClaxedoConnect", "schtasks.exe /Delete /TN ClaxedoConnect /F"])
+    expect(calls.slice(4)).toEqual(["schtasks.exe /End /TN ClaxedoConnect", "schtasks.exe /Delete /TN ClaxedoConnect /F"])
     expect(files.size).toBe(0)
+  })
+
+  test("a task /Run accepted while its user is not logged on is installed, not started", async () => {
+    const { deps } = fakeDeps("win32")
+    deps.homedir = "C:\\Users\\svc"
+    deps.run = async (file, args) => {
+      if (file === "whoami.exe") return { code: 0, stdout: "win-box\\svc\r\n" }
+      if (args[0] === "/Query") return { code: 0, stdout: '"\\ClaxedoConnect","N/A","Ready"\r\n' }
+      return { code: 0, stdout: "" }
+    }
+    const service = await writeServiceUnit(deps, { alongsideDesktop: false })
+    const { started, lines } = await startService(deps, service)
+    expect(started).toBe(false)
+    expect(lines[0]).toBe(`Installed the scheduled task ClaxedoConnect (${service.unit}) but it is Ready: it runs in svc's desktop session, so it starts at that user's next logon.`)
+    expect(windowsTaskStatus("")).toBe("unknown")
   })
 
   test("the task's files follow APPDATA, its user is escaped as XML text, and no user means no registration", async () => {

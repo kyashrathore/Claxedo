@@ -18,8 +18,9 @@ import { connectPaths, connectStateStore } from "../connect/paths"
 import { relayStub, until as waitUntil } from "../connect/relay-stub.test-support"
 import type { ServiceDeps } from "../connect/service"
 import { HOST_ENROLLMENT_EVENTS_PATH as EVENTS_PATH, HostedHttpError, HostedRequestTimeoutError } from "@claxedo/host-connector/machine-transport"
-import { HostEndpointUrlError } from "@claxedo/host-connector/host-state"
+import { HostEndpointUrlError, newHostState } from "@claxedo/host-connector/host-state"
 import { HostConnectDecisionError } from "@claxedo/host-connector/bootstrap"
+import { createHostKeyPair } from "@claxedo/host-connector/host-identity"
 import { freePort } from "@claxedo/helpers/net"
 import { connect, type ConnectDeps } from "./connect"
 import { hostOnline, statusLines } from "./status"
@@ -356,6 +357,21 @@ describe("claxedo connect", () => {
     expect(h.cp.enrollments.size).toBe(1)
     await fs.rm(other.home, { recursive: true, force: true })
     await fs.rm(other.root, { recursive: true, force: true })
+  })
+
+  test("a redeem left pending against another control plane is not resumed there, and says how to leave it", async () => {
+    const { file } = await invitationFile(h, [h.root])
+    const pending = newHostState({
+      hostId: "host_pending", privateKeyJwk: (await createHostKeyPair()).privateKeyJwk, controlPlaneUrl: "https://app.claxedo.com",
+      cliRoots: [], storageRoot: h.deps.paths.storageRoot,
+    })
+    await h.deps.store.save(pending)
+
+    expect(await connect(["--token-file", file, "--root", h.root], h.deps)).toBe(78)
+
+    expect(h.lines.at(-1)).toBe(`a redeem against https://app.claxedo.com is still pending; run \`claxedo connect --reset\` to enroll against ${h.cp.url} instead`)
+    expect(h.cp.beats(), "nothing was sent anywhere").toHaveLength(0)
+    expect((await h.deps.store.load())?.control_plane_url).toBe("https://app.claxedo.com")
   })
 
   test("a cleartext CLAXEDO_CONTROL_PLANE_URL exits 78 with what to change, before any state or request", async () => {
@@ -919,7 +935,7 @@ describe("claxedo connect", () => {
 
     expect(requests).toEqual(["/api/claxedo/host/enrollments/redeem"])
     expect(h.lines.some((line) => line.includes("retrying"))).toBe(false)
-    expect(h.lines.at(-1)).toBe("HTTP 405")
+    expect(h.lines.at(-1)).toBe(`${new URL(h.cp.url).host} answered HTTP 405 to the enrollment; is it the control plane that minted the invitation?`)
     expect((await fs.readFile(file, "utf8")).trim()).toBe(invitation.token)
   })
 
@@ -935,7 +951,9 @@ describe("claxedo connect", () => {
       env: { APPDATA: "C:\\Users\\svc\\AppData\\Roaming" },
       run: async (file, args) => {
         h.serviceCalls.push([file, ...args].join(" "))
-        return file === "whoami.exe" ? { code: 0, stdout: "win-box\\svc\r\n" } : { code: 0, stdout: "" }
+        if (file === "whoami.exe") return { code: 0, stdout: "win-box\\svc\r\n" }
+        if (args[0] === "/Query") return { code: 0, stdout: '"\\ClaxedoConnect","N/A","Running"\r\n' }
+        return { code: 0, stdout: "" }
       },
       writeFile: async (file, text) => {
         h.serviceCalls.push(`write ${file}`)
@@ -959,6 +977,7 @@ describe("claxedo connect", () => {
       `schtasks.exe /Create /TN ClaxedoConnect /XML ${taskXml} /F`,
       `unlink ${taskXml}`,
       "schtasks.exe /Run /TN ClaxedoConnect",
+      "schtasks.exe /Query /TN ClaxedoConnect /FO CSV /NH",
     ])
     expect(written.get(script)).toContain(
       `& 'C:\\Program Files\\nodejs\\node.exe' 'C:\\Users\\svc\\AppData\\Roaming\\npm\\node_modules\\@claxedo\\cli\\dist\\index.mjs' 'connect' '--foreground' 2>&1 | ForEach-Object { $_.ToString() } | Out-File -Append -Encoding utf8 'C:\\Users\\svc\\AppData\\Roaming\\Claxedo\\claxedo-connect.log'`,
@@ -971,7 +990,7 @@ describe("claxedo connect", () => {
     expect(h.cp.beats(), "the task's process beats, not this one").toHaveLength(0)
 
     expect(await connect(["--uninstall-service"], h.deps)).toBe(0)
-    expect(h.serviceCalls.slice(6)).toEqual([
+    expect(h.serviceCalls.slice(7)).toEqual([
       "schtasks.exe /End /TN ClaxedoConnect",
       "schtasks.exe /Delete /TN ClaxedoConnect /F",
       `unlink ${script}`,
