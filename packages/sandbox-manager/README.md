@@ -171,7 +171,10 @@ ran 92.7 s.
 
 `MINIMUM_SERVED_WORKSPACE_RUNTIME_VERSION` (`src/runtime-version.ts`) is the one
 floor for every driver: the oldest runtime this control plane and relay serve,
-whether a Cloudflare restore brings it back or a Boat wake keeps it. A runtime
+whether a Cloudflare restore brings it back or a Boat wake keeps it. Below it a
+workspace updates and keeps its files on every driver: a Boat wake takes the
+new image over the same `/workspace` and homes, and a Cloudflare restore
+carries the repository and HOME into the current image. A runtime
 security fix, or a control-plane or relay contract an older runtime cannot
 speak, raises the floor and the workspace-runtime version together, in the
 commit that makes the change; a test keeps the floor at or below the runtime

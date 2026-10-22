@@ -1,4 +1,5 @@
 import type { ContainerExecOptions, ContainerStart, WorkspaceContainer } from "../container-api"
+import { PLACE_CARRIED } from "../container-start"
 import { TRUST_INTERCEPT_CA } from "../container-trust"
 import { RUNTIME_DIGEST_SCRIPT } from "../runtime-integrity"
 import { READ_RUNTIME_LOG } from "../runtime-log-forward"
@@ -38,8 +39,19 @@ function output(stdout = "", exitCode = 0, stderr = "") {
 export function fakeContainer(options: { missingSnapshots?: string[]; trustExit?: number; memoryRootExit?: number } = {}) {
   const missing = new Set(options.missingSnapshots ?? [])
   const snapshotDigests = new Map<string, string>()
+  const snapshotFiles = new Map<string, Map<string, string>>()
+  const directorySnapshots = new Map<string, { dir: string; files: Map<string, string> }>()
   const state = {
     running: false,
+    /** The running container's files by path; an image start holds none of a workspace's. */
+    files: new Map<string, string>(),
+    /** Directory snapshots mounted into the running container, by mount point. */
+    mounts: new Map<string, Map<string, string>>(),
+    directorySnapshotsTaken: [] as string[],
+    /** The runtime digest a container from the image carries; a test changes it to stand for a deploy of a new image. */
+    imageDigest: IMAGE_RUNTIME_DIGEST,
+    /** Fails each copy of a carried directory, as a full disk does. */
+    placeFails: false,
     /** What the runtime files hash to in the running container; a test changes it to stand for an agent editing them. */
     runtimeDigest: IMAGE_RUNTIME_DIGEST,
     starts: [] as ContainerStart[],
@@ -85,7 +97,11 @@ export function fakeContainer(options: { missingSnapshots?: string[]; trustExit?
       }
       state.failure = undefined
       state.running = true
-      state.runtimeDigest = "containerSnapshot" in start ? snapshotDigests.get(start.containerSnapshot.id) ?? IMAGE_RUNTIME_DIGEST : IMAGE_RUNTIME_DIGEST
+      state.runtimeDigest = "containerSnapshot" in start ? snapshotDigests.get(start.containerSnapshot.id) ?? state.imageDigest : state.imageDigest
+      state.files = new Map("containerSnapshot" in start ? snapshotFiles.get(start.containerSnapshot.id) : [])
+      state.mounts = new Map("directorySnapshots" in start
+        ? (start.directorySnapshots ?? []).map(({ snapshot, mountPoint }) => [mountPoint, new Map(directorySnapshots.get(snapshot.id)?.files)])
+        : [])
     },
     monitor() {
       if (state.failure) return Promise.reject(state.failure)
@@ -112,6 +128,12 @@ export function fakeContainer(options: { missingSnapshots?: string[]; trustExit?
       }
       if (program !== "sh" || flag !== "-c") throw new Error(`unexpected exec ${argv.join(" ")}`)
       if (script === TRUST_INTERCEPT_CA) return output("", options.trustExit ?? 0)
+      if (script === PLACE_CARRIED) {
+        const [, , , , from = "", to = ""] = argv
+        if (state.placeFails) return output("", 1, "cp: No space left on device")
+        for (const [file, content] of state.mounts.get(from) ?? []) state.files.set(`${to}/${file}`, content)
+        return output()
+      }
       if (script === MEMORY_RUNTIME_ROOT) return output("", options.memoryRootExit ?? 0)
       if (script === RUNTIME_DIGEST_SCRIPT) return output(`${state.runtimeDigest}\n`)
       if (script === RUNTIME_STATUS) return output(`${status(dir)}\n`)
@@ -173,7 +195,16 @@ export function fakeContainer(options: { missingSnapshots?: string[]; trustExit?
       const id = `snap-${state.snapshots.length + 1}`
       state.snapshots.push(id)
       snapshotDigests.set(id, state.runtimeDigest)
+      snapshotFiles.set(id, new Map(state.files))
       return { id, size: 4_096 }
+    },
+    async snapshotDirectory({ dir }) {
+      if (!state.running) throw new Error("Container is not running")
+      const id = `dir-${directorySnapshots.size + 1}`
+      const prefix = `${dir}/`
+      directorySnapshots.set(id, { dir, files: new Map([...state.files].filter(([path]) => path.startsWith(prefix)).map(([path, content]) => [path.slice(prefix.length), content])) })
+      state.directorySnapshotsTaken.push(dir)
+      return { id, size: 4_096, dir }
     },
   }
   return { container, state }

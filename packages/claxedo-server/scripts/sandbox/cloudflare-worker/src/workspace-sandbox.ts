@@ -34,7 +34,7 @@ export type WorkspaceEnsureInput = {
   reuseRunning: boolean
   /** The snapshot a stopped workspace's checkpoint names; its container starts from it, never from the image. */
   restore?: string
-  /** The oldest runtime version the control plane lets a restore run. */
+  /** The oldest runtime version the control plane serves; a checkpoint saved below it is carried into the current image. */
   minimumRuntimeVersion?: string
 }
 
@@ -138,16 +138,24 @@ export class WorkspaceSandbox extends DurableObject<WorkerEnv> {
     return source
   }
 
+  private imageBuild() {
+    const image = workerRuntimeBuild(this.env)
+    if (!image) throw new Error("The sandbox Worker was deployed without its runtime build identity")
+    return image
+  }
+
+  /**
+   * A checkpoint saved by a runtime below the control plane's minimum keeps the
+   * workspace's directories and nothing else: they are carried into a
+   * container from this Worker's image, so the restore runs the current
+   * runtime instead of refusing the person's files.
+   */
   private async origin(input: WorkspaceEnsureInput): Promise<ContainerOrigin> {
-    if (input.restore === undefined) {
-      const image = workerRuntimeBuild(this.env)
-      if (!image) throw new Error("The sandbox Worker was deployed without its runtime build identity")
-      return { image }
-    }
+    if (input.restore === undefined) return { image: this.imageBuild() }
     const binding = await snapshotBinding(this.ctx.storage, input.restore)
     if (!binding?.entrypoint) throw new CheckpointUnusableError("not_restorable")
-    if (input.minimumRuntimeVersion && versionBefore(binding.build.version, input.minimumRuntimeVersion)) throw new CheckpointUnusableError("runtime_outdated")
-    return { snapshotId: input.restore, binding }
+    if (!input.minimumRuntimeVersion || !versionBefore(binding.build.version, input.minimumRuntimeVersion)) return { snapshotId: input.restore, binding }
+    return { image: this.imageBuild(), carry: { snapshotId: input.restore, binding, directories: workspaceDirectories(input.env) } }
   }
 
   /** Whether the container runs, and so bills; the control plane asks this of a lease it holds serving whose runtime stopped answering. */
@@ -262,6 +270,13 @@ export class WorkspaceSandbox extends DurableObject<WorkerEnv> {
       return runtimeUnavailable("The workspace runtime is not answering")
     }
   }
+}
+
+/** The directories a workspace keeps across an image change, as the driver's boot env names them: the repository's and HOME. */
+function workspaceDirectories(env: Record<string, string>) {
+  const { WORKSPACE_RUNTIME_DIRECTORY: workspace, HOME: home } = env
+  if (!workspace || !home) throw new Error("The ensure's boot env names no WORKSPACE_RUNTIME_DIRECTORY or HOME to carry")
+  return [workspace, home]
 }
 
 /** The relay's own envelope for a hop that never reached the runtime, which its clients read as a machine that didn't answer. */

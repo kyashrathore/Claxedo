@@ -160,7 +160,6 @@ describe("ensure-runtime", () => {
 
   test.each([
     ["expired", "This workspace's saved files expired after 30 days unused; choose Start fresh."],
-    ["runtime_outdated", "This workspace was saved by a runtime that has since had a security fix; choose Start fresh."],
     ["runtime_modified", "This workspace's saved runtime was changed inside the machine; choose Start fresh."],
     ["not_restorable", "This workspace's saved files can't be restored here; choose Start fresh."],
   ] as const)("an unusable checkpoint (%s) is a 410 carrying its cause and the one line a person reads", async (cause, line) => {
