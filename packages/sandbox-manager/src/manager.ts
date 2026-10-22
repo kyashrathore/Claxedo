@@ -371,6 +371,12 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         // error for observability only. A boot that exited left nothing
         // serving, so it demotes and backs off like a cold-create failure.
         const updated = await options.leaseStore.update(workspaceId, lease.epoch, { lastError: error }, "ready")
+        // A person's update that failed is that start's answer, with its
+        // reason: answered ready, it would read as the update having run.
+        if (managerInput.updateImage) {
+          console.warn("A workspace's update to the deployment's image failed; it keeps serving its image", { workspaceId, epoch: lease.epoch, error })
+          return { status: "unavailable", error, epoch: lease.epoch, homeRegion }
+        }
         if (updated) {
           const resolved = await leaseTarget(updated)
           if (resolved.status === "ready") return { ...resolved, stale: true }

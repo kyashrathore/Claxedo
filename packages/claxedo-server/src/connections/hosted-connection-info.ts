@@ -268,6 +268,7 @@ export async function hostedConnectionInfo(
         retryAfterMs: started.retryAfterMs,
         ...(started.bootMode ? { bootMode: started.bootMode } : {}),
         ...(started.failure ? { failure: sandboxStartFailureReason(started.failure) } : {}),
+        ...(updateImage ? { update: true as const } : {}),
       }, current),
     } as const
   }
