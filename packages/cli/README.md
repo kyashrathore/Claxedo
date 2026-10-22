@@ -90,6 +90,8 @@ claxedo host list
 claxedo host assign --machine <name|enrollment_id> <dir> [--name N]
 claxedo host unassign --machine <name|enrollment_id> <dir>
 claxedo host scope --machine <name|enrollment_id> --root DIR...
+claxedo host pause --machine <name|enrollment_id>
+claxedo host resume --machine <name|enrollment_id>
 claxedo host revoke --machine <name|enrollment_id>
 ```
 

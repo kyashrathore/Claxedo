@@ -1120,8 +1120,8 @@ describe("hosted-core remote access (the owner's view)", () => {
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({
       devices: [
-        { host_id: "host_b", enrollment_id: "enr_b", display_name: "desk", last_seen_at: 20, state: "paused", workspace_ids: [] },
-        { host_id: "host_a", enrollment_id: "enr_a", display_name: "laptop", last_seen_at: 10, state: "online", workspace_ids: ["ws_1", "ws_2"] },
+        { host_id: "host_b", enrollment_id: "enr_b", display_name: "desk", last_seen_at: 20, state: "paused", workspace_ids: [], serving_workspace_ids: [] },
+        { host_id: "host_a", enrollment_id: "enr_a", display_name: "laptop", last_seen_at: 10, state: "online", workspace_ids: ["ws_1", "ws_2"], serving_workspace_ids: ["ws_1"] },
       ],
     })
   })

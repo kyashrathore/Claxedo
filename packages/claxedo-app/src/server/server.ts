@@ -17,6 +17,7 @@ import { createGitApi } from "./git"
 import { createMarketplaceApi } from "./marketplace"
 import { createHarnessConfigApi } from "./harness-config"
 import { createLivePluginsApi } from "./live-plugins"
+import { createMachinesApi } from "./machines"
 import { createOperations } from "./operations"
 import type { ProjectId } from "./ids"
 import type { SessionLocation } from "./types"
@@ -101,6 +102,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     marketplace: createMarketplaceApi(transport, queryClient, telemetry),
     folders: createFoldersApi(transport),
     integrations: createIntegrationsApi(transport, queryClient),
+    machines: createMachinesApi(transport, queryClient, workspaces, account),
     agentConnections: createAgentConnectionsApi(transport, queryClient),
     providerConnect: createProviderConnectApi(transport, queryClient),
     providerCatalogs: createProviderCatalogsApi(transport, workspaces, queryClient),

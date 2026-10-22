@@ -1,7 +1,8 @@
 import { AGENT_HARNESS_IDS, HARNESS_EFFORT_LEVELS, HARNESS_TABLE } from "@claxedo/agent-runtime-contract"
 import { createSignal, type Accessor } from "solid-js"
 import { machineId } from "./ids"
-import type { Capabilities, HarnessInfo, ServingMachine } from "./types"
+import type { Capabilities, HarnessInfo } from "./types"
+import type { ServingMachine } from "./machine-types"
 import type { BootstrapDeclaration } from "./wire/placements"
 
 export type CapabilitiesOwner = {

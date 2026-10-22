@@ -40,7 +40,7 @@ export {
 } from "./fixture-plugin-surface"
 export { MCP_APP_FIXTURE_FORECAST, mcpAppFrameTitle, startMcpAppFixture } from "./mcp-app-fixture"
 export { sessionCookie, type Account, type SignedStack } from "./signed-stack"
-export { ownerDevices, revokeOwnerMachines, servingMachineName } from "./machine-devices"
+export { enrollOwnerMachine, ownerDevices, revokeOwnerMachines, servingMachineName } from "./machine-devices"
 export {
   chooseOrgSandboxProvider, cloudMessages, draftModelChoices, cloudPrompt, cloudTurn, cloudWorkspaceNames, cloudWorkspaces, createCloudSession, deleteCloudWorkspace, listedSessions, makeCloudWorkspace, orgSandboxListing, relayedTerminalOutput, removeOrgSandboxKeys,
   sessionConnection, sessionHostTables, startCloudWorkspace, stopCloudWorkspace, storedMessages, storeOwnerKey, type CloudWorkspace,

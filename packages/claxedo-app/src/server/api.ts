@@ -10,6 +10,8 @@ import type { HarnessOptions } from "./harness-types"
 import type { ConnectionState, ServerEvent } from "./events"
 import type { AgentConnectionsApi, AgentConnectionsQueries } from "./agent-connections"
 import type { IntegrationQueries, IntegrationsApi } from "./integrations"
+import type { Machine } from "./machine-types"
+import type { MachinesApi } from "./machines"
 import type { ProviderConnectApi, ProviderConnectQueries } from "./provider-connect"
 import type { ProviderCatalogQueries, ProviderCatalogsApi } from "./provider-catalogs"
 import type { FolderQueries, FoldersApi } from "./folders"
@@ -62,7 +64,6 @@ import type {
   FetchQuery,
   GoalAction,
   HeldSessionReads,
-  Machine,
   Placement,
   Project,
   ProjectEnvironment,
@@ -261,6 +262,7 @@ export type Server = {
   readonly marketplace: MarketplaceApi
   readonly folders: FoldersApi
   readonly integrations: IntegrationsApi
+  readonly machines: MachinesApi
   readonly agentConnections: AgentConnectionsApi
   readonly providerConnect: ProviderConnectApi
   readonly providerCatalogs: ProviderCatalogsApi

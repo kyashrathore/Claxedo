@@ -2,27 +2,30 @@ import { For, Match, Show, Switch, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useErrorCopy, useTranslator } from "@/i18n"
 import { FailureNotice } from "@/lib/failure"
-import { useServer, type Machine } from "@/server"
-import { Button } from "@/ui"
-import { settingsDictionary, type SettingsKey } from "../i18n"
+import { useServer, type Machine, type MachineEnrollment } from "@/server"
+import { Button, useDialog } from "@/ui"
+import { settingsDictionary } from "../i18n"
 import { useConnectMachine } from "../connect-machine"
+import { MachineDetails } from "./machine-details"
+import { MachineDot, MachineStatus } from "./machine-status"
 import { SettingsEmpty, SettingsGroup, SettingsIntro, SettingsList, SettingsListSkeleton, SettingsRow } from "./section"
 
-function machineStatus(machine: Machine): SettingsKey {
-  if (machine.paused) return "settings.machines.paused"
-  if (!machine.online) return "settings.machines.offline"
-  if (!machine.isThisMachine) return "settings.machines.connected"
-  return machine.enrolled ? "settings.machines.reachableElsewhere" : "settings.machines.reachableHereOnly"
+function DetailsButton(props: { readonly name: string; readonly enrollment: MachineEnrollment }) {
+  const t = useTranslator(settingsDictionary)
+  const dialog = useDialog()
+  const open = () => dialog.show(() => <MachineDetails hostId={props.enrollment.hostId} name={props.name} />)
+  return (
+    <Button size="small" variant="ghost" aria-label={t("settings.machines.details.label", { name: props.name })} onClick={open}>
+      {t("settings.machines.details")}
+    </Button>
+  )
 }
 
 function MachineRow(props: { readonly machine: Machine }) {
-  const t = useTranslator(settingsDictionary)
   return (
-    <SettingsRow
-      leading={<span class="settings-dot" data-tone={props.machine.online ? "success" : "muted"} aria-hidden="true" />}
-      title={props.machine.name}
-      description={t(machineStatus(props.machine))}
-    />
+    <SettingsRow leading={<MachineDot machine={props.machine} />} title={props.machine.name} description={<MachineStatus machine={props.machine} />}>
+      <Show when={props.machine.enrollment}>{(enrollment) => <DetailsButton name={props.machine.name} enrollment={enrollment()} />}</Show>
+    </SettingsRow>
   )
 }
 

@@ -36,6 +36,8 @@ claxedo host unassign --machine <name|enrollment_id> <dir>
 claxedo host scope --machine <name|enrollment_id> --root DIR...
 claxedo host push-config --machine <name|enrollment_id> --from-file FILE
 claxedo host push-config --machine <name|enrollment_id> --clear
+claxedo host pause --machine <name|enrollment_id>
+claxedo host resume --machine <name|enrollment_id>
 claxedo host revoke --machine <name|enrollment_id>`
 
 export const hostHelp = `${hostUsage}
@@ -52,6 +54,8 @@ Owner commands, run from a signed-in laptop (\`claxedo login\`), never on the ho
             {"providers": {"<providerId>": {"baseUrl": ..., "placeholder": ..., "authMode": "bearer"|"api-key"}}}
             and a pushed provider is used ahead of the machine's own login for it. --clear withdraws them.
             Credentials travel only in the file, never on the command line.
+  pause     stop ONE machine serving until you resume it: its next beat is refused, so nothing reaches it; nothing is deleted
+  resume    let a paused machine serve again; a \`claxedo connect\` that exited 78 while paused needs its service started again
   revoke    revoke a machine for good (assignments, readiness and tokens cascade); its next beat is refused and \`claxedo connect\` exits 78
 --machine matches an enrollment id, else a display name exactly (case-sensitive); an ambiguous name is refused.`
 
@@ -401,6 +405,21 @@ async function pushConfig(deps: HostDeps, parsed: Parsed) {
   deps.log(`${name}: sealed ${Object.keys(providers).sort().join(", ")}${stamp}; the machine applies it on its next beat`)
 }
 
+async function setMachinePaused(deps: HostDeps, parsed: Parsed, paused: boolean) {
+  const selector = requireMachineSelector(parsed)
+  const token = await deps.token()
+  const machine = await selectMachine(deps, token, selector)
+  await deps.request({
+    url: url(deps.controlPlaneUrl, "/api/claxedo/host/enrollments/pause"),
+    token,
+    body: { hostId: machine.host_id, paused },
+  })
+  const name = machine.display_name || machine.enrollment_id
+  deps.log(paused
+    ? `${name} paused: nothing reaches it until \`claxedo host resume --machine ${selector}\``
+    : `${name} resumed: it serves again once it beats; \`claxedo doctor\` there says whether its service is running`)
+}
+
 async function revokeMachine(deps: HostDeps, parsed: Parsed) {
   const selector = requireMachineSelector(parsed)
   const token = await deps.token()
@@ -428,6 +447,8 @@ export async function hostCommand(args: string[], deps: HostDeps = defaultHostCo
   if (subcommand === "unassign") return unassignFolder(deps, parsed)
   if (subcommand === "scope") return scopeMachine(deps, parsed)
   if (subcommand === "push-config") return pushConfig(deps, parsed)
+  if (subcommand === "pause") return setMachinePaused(deps, parsed, true)
+  if (subcommand === "resume") return setMachinePaused(deps, parsed, false)
   if (subcommand === "revoke") return revokeMachine(deps, parsed)
   throw new Error(`Unknown host subcommand: ${subcommand}\n${hostUsage}`)
 }

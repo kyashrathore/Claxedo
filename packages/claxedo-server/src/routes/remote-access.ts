@@ -19,6 +19,8 @@ export type RemoteAccessOwnerService = {
     lastSeenAt: number
     state: HostDeviceState
     workspaceIds: string[]
+    /** The assigned workspaces the machine acknowledged on its latest beat: the ones it serves. */
+    servingWorkspaceIds: string[]
   }>>
   revoke(auth: SignedControlPlaneAuth, hostId: string): Promise<{ revoked: boolean }>
   /**
@@ -90,6 +92,7 @@ export function RemoteAccessOwnerRoutes(options: RemoteAccessRouteOptions) {
         last_seen_at: device.lastSeenAt,
         state: device.state,
         workspace_ids: device.workspaceIds,
+        serving_workspace_ids: device.servingWorkspaceIds,
       })),
     })
   })

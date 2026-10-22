@@ -16,7 +16,7 @@ const parts: readonly Part[] = [
   { name: "Browser tabs", budget: 1542, folders: ["src/browser"] },
   { name: "Shell and platform", budget: 8838, folders: ["src/shell", "src/auth", "src/i18n", "src/lib", "src/*"], except: ["src/lib/machine.ts"] },
   { name: "Terminal", budget: 4417, folders: ["src/terminal"] },
-  { name: "Settings and accounts", budget: 5382, folders: ["src/settings", "src/accounts"] },
+  { name: "Settings and accounts", budget: 6031, folders: ["src/settings", "src/accounts"] },
   { name: "Access", budget: 1000, folders: ["src/access"] },
   { name: "Review and files", budget: 4400, folders: ["src/review", "src/files"] },
   { name: "Projects and cloud", budget: 3466, folders: ["src/projects", "src/cloud"] },
@@ -31,7 +31,7 @@ const parts: readonly Part[] = [
   { name: "State-machine helper", budget: 100, folders: ["src/lib/machine.ts"] },
   { name: "UI kit and transcript renderers", budget: 20000, folders: ["src/ui", "src/transcript"] },
 ]
-const totalBudget = 115318
+const totalBudget = 116214
 
 function main(): never {
   const appFiles = listFiles(packageRoot, ["src"], codeExtensions).filter((file) => !isTranslationFile(packageRoot, file))

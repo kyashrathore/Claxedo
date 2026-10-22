@@ -34,6 +34,8 @@ claxedo host unassign --machine <name|enrollment_id> <dir>
 claxedo host scope --machine <name|enrollment_id> --root DIR...
 claxedo host push-config --machine <name|enrollment_id> --from-file FILE
 claxedo host push-config --machine <name|enrollment_id> --clear
+claxedo host pause --machine <name|enrollment_id>
+claxedo host resume --machine <name|enrollment_id>
 claxedo host revoke --machine <name|enrollment_id>
 claxedo status
 claxedo doctor

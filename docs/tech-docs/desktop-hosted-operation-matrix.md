@@ -58,8 +58,10 @@ Also excluded from AccountPort (intentional non-rows):
 - **Workspace-scoped** `GET /api/wr/events` after connection mint — RAT data
   plane (same as other post-mint runtime traffic). The control plane's own
   notice stream is `controlPlane.events` below.
-- **Machine pause** — desktop reaches it through Host
-  Connector IPC. The enrollment handshake itself is the `host.enrollmentNonce` and
+- **This machine's own pause** (stop its heartbeat, keep its identity) —
+  desktop reaches it through Host Connector IPC (`claxedo.hostConnector.pause`).
+  The owner's pause of any of their machines by host id is `machines.pause`
+  below. The enrollment handshake itself is the `host.enrollmentNonce` and
   `host.enrollCurrentMachine` rows below, performed by main for the Host
   Connector child; everything after the enroll response is machine-signed.
   There is no `host.enrollmentHeartbeat` row: the beat is
@@ -195,6 +197,20 @@ are withheld from the renderer (see "Withheld from the renderer" below).
 | `host.enrollCurrentMachine` | `platform/account/account-port.ts` | `POST /api/claxedo/host/enrollments` | unary | idempotency-key (`hostId`) | Enrolls the MACHINE once, with no workspace in the path — the successor of the retired per-workspace host-link registration. The key is the machine identity and it is a real one — `enrollHost` upserts on (owner, `host_id`), so a repeat enrollment rewrites that machine's row rather than inserting a second. **Main-only.** `publicKey` and `signature` are the machine identity, so a caller that supplies them enrolls a machine whose private half main has never seen; the route stores whatever public key it is handed, and a second enrollment on a known `host_id` overwrites the honest key and clears a revocation. The only caller is Electron main's Host Connector, which fills those fields from the key it owns. The renderer's route to this feature is the connector's own zero-argument IPC (`claxedo.hostConnector.start`), and `RENDERER_WITHHELD_OPERATIONS` refuses the account channel. |
 | `host.enrollmentNonce` | `platform/account/account-port.ts` | `POST /api/claxedo/host/enrollments/requests` | unary | unsafe | The one-use nonce the machine signs. Unsafe rather than safe: each call mints a new nonce, so a retry burns one. It carries no secret — the nonce is public and worthless without the machine's private key — but a caller that retried freely would fill the request table. Main-only, like the enrollment it precedes: a renderer able to mint nonces holds step one of the handshake, and the account channel is refused. |
 | `host.renameCurrentMachine` | `platform/remote-access/machine-remote-access-port.ts` | `PATCH /api/claxedo/host/enrollments/:enrollmentId/display-name` | unary | idempotent (same name, same result) | The owner's name for a machine, as every device sees it. **Main-only.** The route renames any enrollment the owner holds, so a caller that supplies `enrollmentId` can rename a machine the user is not sitting at. The only caller is the Host Connector supervisor, which reads that id from its own enrolled state; the renderer reaches the feature through `claxedo.hostConnector.rename`, which carries a display name and nothing that names a machine, and `RENDERER_WITHHELD_OPERATIONS` refuses the account channel. The name is stored on this machine too, because every enable re-enrolls and the enroll route overwrites `display_name`. |
+
+### The owner's machines
+
+The owner's view of every machine the account enrolled, and the owner's
+decisions about one of them, named by its host id. These reach only the
+caller's own enrollments, and the web app serves the same routes to the same
+person, so the renderer may call them.
+
+| Operation ID | Owner module | Method + path | Transport | Retry | Notes |
+|---|---|---|---|---|---|
+| `machines.list` | `packages/claxedo-app/src/server/machines.ts` | `GET /api/claxedo/remote-access/devices` | unary | safe | Every unrevoked enrollment: host id, enrollment id, name, last check-in, `online`/`offline`/`paused`, assigned workspaces, and `serving_workspace_ids`, the assigned ones the machine acknowledged on its latest beat. |
+| `machines.pause` | `packages/claxedo-app/src/server/machines.ts` | `POST /api/claxedo/host/enrollments/pause` | unary | safe | Body `{ hostId, paused: true }`. `hostId` is required here: the route pauses every machine of the owner's when it is absent. The machine's next beat is refused. |
+| `machines.resume` | `packages/claxedo-app/src/server/machines.ts` | `POST /api/claxedo/host/enrollments/pause` | unary | safe | Body `{ hostId, paused: false }`. |
+| `machines.remove` | `packages/claxedo-app/src/server/machines.ts` | `DELETE /api/claxedo/remote-access/devices/:hostId` | unary | unsafe | Revokes the machine; its assignments and runtime tokens go with it. |
 
 ### Sessions
 

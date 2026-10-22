@@ -1,11 +1,18 @@
-import { createSignal, type JSX } from "solid-js"
-import { useTranslator } from "@/i18n"
+import { createSignal, Match, Show, Switch, untrack, type JSX } from "solid-js"
+import { useQuery } from "@tanstack/solid-query"
+import { useErrorCopy, useTranslator } from "@/i18n"
 import { copyText } from "@/lib/clipboard"
-import { ClaxedoIconButton, Drawer, useDialog } from "@/ui"
+import { useServer } from "@/server"
+import { Button, ClaxedoIconButton, Drawer, TextField, useDialog } from "@/ui"
 import { settingsDictionary } from "../i18n"
+import { createConnectWait, knownHostIds, type ConnectWait } from "../machines"
 
-const INVITE_COMMAND = "claxedo host invite --name build-box --root ~/code"
+const DEFAULT_NAME = "build-box"
 const CONNECT_COMMAND = "claxedo connect --token-file ./invite.txt --install-service"
+
+function shellWord(value: string): string {
+  return /^[\w.@%+=:,/-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`
+}
 
 function CommandLine(props: { readonly command: string; readonly label: string }) {
   const [copied, setCopied] = createSignal(false)
@@ -33,16 +40,56 @@ function Step(props: { readonly number: string; readonly title: string; readonly
   )
 }
 
-function MachineConnectSteps() {
+function WaitLine(props: { readonly state: ConnectWait }) {
   const t = useTranslator(settingsDictionary)
+  const errorCopy = useErrorCopy("machines")
   return (
-    <ol class="settings-steps">
-      <Step number="1" title={t("settings.machines.step.here")} description={t("settings.machines.step.here.description")} />
-      <Step number="2" title={t("settings.machines.step.another")} description={t("settings.machines.step.another.description")}>
-        <CommandLine command={INVITE_COMMAND} label={t("settings.machines.copyInvite")} />
-        <CommandLine command={CONNECT_COMMAND} label={t("settings.machines.copyConnect")} />
-      </Step>
-    </ol>
+    <Switch>
+      <Match when={(props.state.kind === "checking" || props.state.kind === "waiting") && props.state}>
+        {(waiting) => <p class="settings-row-description" role="status">{t("settings.machines.connect.waiting", { name: waiting().name })}</p>}
+      </Match>
+      <Match when={props.state.kind === "connected" && props.state}>
+        {(connected) => <p class="settings-row-title" role="status">{t("settings.machines.connect.connected", { name: connected().machine.name })}</p>}
+      </Match>
+      <Match when={props.state.kind === "failed" && props.state}>
+        {(failed) => <p class="settings-note" data-tone="danger" role="alert">{t("settings.machines.connect.failed", { name: failed().name, reason: errorCopy(failed().error).title })}</p>}
+      </Match>
+    </Switch>
+  )
+}
+
+function WaitButton(props: { readonly state: ConnectWait; readonly canCheck: boolean; readonly onCheck: () => void }) {
+  const t = useTranslator(settingsDictionary)
+  const label = () => {
+    if (props.state.kind === "instructions") return t("settings.machines.connect.ranIt")
+    return t(props.state.kind === "checking" ? "settings.machines.connect.checking" : "settings.machines.connect.checkAgain")
+  }
+  return (
+    <Show when={props.state.kind !== "connected"}>
+      <Button size="small" variant="neutral" disabled={!props.canCheck || props.state.kind === "checking"} onClick={() => props.onCheck()}>
+        {label()}
+      </Button>
+    </Show>
+  )
+}
+
+function AnotherMachine() {
+  const t = useTranslator(settingsDictionary)
+  const server = useServer()
+  const listed = useQuery(() => server.queries.machines.list())
+  const wait = createConnectWait(server.machines, knownHostIds(untrack(() => listed.data)))
+  const [name, setName] = createSignal(DEFAULT_NAME)
+  const chosen = () => name().trim()
+  return (
+    <Step number="2" title={t("settings.machines.step.another")} description={t("settings.machines.step.another.description")}>
+      <TextField label={t("settings.machines.connect.name")} value={name()} onChange={setName} autocomplete="off" />
+      <CommandLine command={`claxedo host invite --name ${shellWord(chosen() || DEFAULT_NAME)} --root ~/code`} label={t("settings.machines.copyInvite")} />
+      <CommandLine command={CONNECT_COMMAND} label={t("settings.machines.copyConnect")} />
+      <div class="settings-inline">
+        <WaitButton state={wait.state()} canCheck={chosen() !== ""} onCheck={() => wait.check(chosen())} />
+        <WaitLine state={wait.state()} />
+      </div>
+    </Step>
   )
 }
 
@@ -51,7 +98,10 @@ export function ConnectMachineDrawer() {
   const dialog = useDialog()
   return (
     <Drawer title={t("settings.machines.connect.title")} description={t("settings.machines.connect.description")} closeLabel={t("settings.machines.connect.done")} onClose={() => dialog.close()}>
-      <MachineConnectSteps />
+      <ol class="settings-steps">
+        <Step number="1" title={t("settings.machines.step.here")} description={t("settings.machines.step.here.description")} />
+        <AnotherMachine />
+      </ol>
     </Drawer>
   )
 }

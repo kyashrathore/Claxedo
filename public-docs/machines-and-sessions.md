@@ -66,6 +66,11 @@ is logged on: a headless Windows server needs automatic logon for the user,
 or run `claxedo connect --foreground` under a service manager of your own. `--root` decides which folders that machine may
 ever serve; you can widen or narrow it later with `claxedo host scope`.
 
+Connect a machine in Settings → Machines shows both commands with the name you
+type filled in. Once you have run them, press **I've run it**: it says
+"Waiting for build-box…" until the new machine is on your account, then that it
+is connected.
+
 If the machine does not appear, or its sessions cannot find `codex` or your
 project's tools, run `claxedo doctor` on it: it says in one line each whether
 the control plane and relay answer, whether the service runs and with your
@@ -129,9 +134,18 @@ work from the web without any extra step.
 |---|---|
 | A session | Delete it from the session's menu. It disappears everywhere at once. |
 | A workspace from a machine | `claxedo host unassign --machine <name> <dir>`, or remove it from the machine's row in Settings → Machines. Files on disk are not touched. |
-| A machine | **Revoke this machine** in Settings → Machines, or `claxedo host revoke --machine <name>`. The machine's key stops working immediately; its service exits on the next heartbeat and will not restart into a revoked enrollment. |
+| A machine | **Remove** in the machine's Details in Settings → Machines, or `claxedo host revoke --machine <name>`. The app asks first: its sessions stay in your history, and new ones cannot start there until you add it again. The machine's key stops working immediately; its service exits on the next heartbeat and will not restart into a revoked enrollment. |
 | A cloud environment | Close it from Settings → Machines or from the workspace's row. The environment is destroyed; sessions that ran there stay readable. |
 | Your desktop's remote access | Turn the switch off. The machine keeps working locally. |
+
+To stop a machine without removing it, **Pause** it in its Details, or run
+`claxedo host pause --machine <name>`: nothing reaches it until you resume it
+(**Resume**, or `claxedo host resume --machine <name>`), and nothing is deleted.
+A paused `claxedo connect` machine keeps running and closes everything it
+serves, including its direct route on your network. It serves again when it
+next checks in after a resume, usually within a second and at most 20 seconds
+later, and one started while paused waits for the resume.
+`claxedo status` and `claxedo doctor` on the machine say it is paused.
 
 To wipe a connected machine's own state, for example to enroll it under a
 different account, run `claxedo connect --reset` on that machine.
@@ -183,8 +197,14 @@ until you share it.
 ## What you will see when something is unreachable
 
 - A machine that is switched off or has lost its network shows as offline in
-  Settings → Machines. Its sessions stay listed and readable from what was
-  recorded; new prompts to them wait until the machine returns.
+  Settings → Machines, with when it was last seen. Its sessions stay listed and
+  readable from what was recorded; new prompts to them wait until the machine
+  returns.
+- **Details** on a machine checks the connection one step at a time: this
+  device to Claxedo, Claxedo to the machine, and the machine answering through
+  the relay (when it serves a folder). It names the first step that fails, says
+  what to try, and **Copy diagnostics** copies what it found. It runs when you
+  open it and when you press Check again.
 - A session on your desktop machine opened from the web while its remote access
   is off shows "machine not reachable" and names the machine and the switch.
 - A revoked machine's sessions remain in your history. You cannot start new ones

@@ -558,8 +558,14 @@ export const desktopRenderer: Policy = {
   // the relay, which the transport asks for each runtime request and socket
   // (owner: the app's server adapter, `server/direct-route.ts`). It adds no
   // package edge.
-  // 1557/37, no headroom.
-  ceilings: { modules: 1557, packages: 37 },
+  // The Machines section's details drawer, which checks a machine hop by hop
+  // and pauses, resumes or removes it, and the decoder of the devices list it
+  // reads (owner: the app's settings domain, `settings/machines.ts` and
+  // `settings/view/machine-details.tsx`, `machine-check.tsx`,
+  // `machine-actions.tsx`, `machine-status.tsx`; and its server adapter,
+  // `server/wire/machines.ts`). They add no package edge.
+  // 1563/37, no headroom.
+  ceilings: { modules: 1563, packages: 37 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

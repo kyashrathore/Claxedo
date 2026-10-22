@@ -1,5 +1,6 @@
 import type { WorkspaceRuntime } from "./cloud-types"
-import type { Machine, Placement } from "./types"
+import type { Machine } from "./machine-types"
+import type { Placement } from "./types"
 
 export function isStoppedCloud(placement: Placement | undefined): boolean {
   return placement?.kind === "cloud" && !placement.reachable

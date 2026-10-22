@@ -18,7 +18,8 @@ import type { BackgroundWork, ListedStatus, SessionStatus } from "./status-types
 import type { SolidQueryOptions } from "@tanstack/solid-query"
 import type { HarnessSelection } from "../lib/harness-selection"
 import type { MachinePrincipal } from "./access-types"
-import type { MachineId, PlacementId, ProjectId, RequestId, SessionId, UserId } from "./ids"
+import type { MachineId, PlacementId, ProjectId, RequestId, SessionId } from "./ids"
+import type { ServingMachine } from "./machine-types"
 
 export type ErrorClass = "auth" | "forbidden" | "rate_limit" | "network" | "runtime_unreachable" | "not_found" | "conflict" | "invalid" | "internal"
 
@@ -43,18 +44,6 @@ export type SharedSessionRow = {
   readonly ownerName: string | null
   readonly level: "follow" | "send"
 }
-
-export type Machine = {
-  readonly id?: MachineId
-  readonly name: string
-  readonly ownerId?: UserId
-  readonly online: boolean
-  readonly paused?: boolean
-  readonly isThisMachine: boolean
-  readonly enrolled: boolean
-}
-
-export type ServingMachine = { readonly id?: MachineId; readonly name: string }
 
 export type PlacementKind = "folder" | "worktree" | "cloud"
 
