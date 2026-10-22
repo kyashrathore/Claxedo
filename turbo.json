@@ -81,7 +81,7 @@
       // test process — isolation, not timeouts, is the fix (same reasoning as
       // the runtime edge above).
       "dependsOn": ["@claxedo/workspace-runtime#test"],
-      "outputs": [".artifacts/unit/junit.xml", ".artifacts/unit/junit-bun-adapter.xml", ".artifacts/unit/junit-workerd.xml"],
+      "outputs": [".artifacts/unit/junit.xml", ".artifacts/unit/junit-bun-adapter.xml", ".artifacts/unit/junit-relay-workerd-*.xml"],
       "passThroughEnv": ["*"]
     },
     // The suites that were already wired before this file grew a generic

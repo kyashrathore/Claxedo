@@ -243,7 +243,7 @@ jobs:
         with:
           # `junit*.xml`, not `junit.xml`: a package that runs more than one
           # runner writes one report each -- @claxedo/workspace-relay emits
-          # `junit-bun-adapter.xml` / `junit-workerd.xml`. Those suites already
+          # `junit-bun-adapter.xml` / `junit-relay-workerd-*.xml`. Those suites already
           # gate the job through their exit code; the narrower glob only meant
           # their results were missing from the published check.
           report_paths: |

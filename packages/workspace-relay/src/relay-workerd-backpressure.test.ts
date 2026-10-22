@@ -144,7 +144,7 @@ const workerFor = (date: string) => `compat-${date}`
  * Entry worker: forwards the request, untouched, to the dated worker named by
  * the `x-target-date` header. It exists so ONE Miniflare boot can host every
  * compatibility date this file measures — see workerd-fixture/boot.ts for why
- * a second boot in the same bun process wedges on Linux. The router carries no
+ * a process boots workerd only once. The router carries no
  * behavior of its own, so the dated workers see exactly the request the test
  * sent.
  */
@@ -163,8 +163,7 @@ let mf: Miniflare
 
 beforeAll(async () => {
   // ONE boot for the whole file: the same fixture runs once per compatibility
-  // date, as separate workers behind the router. Per-date boots wedge under
-  // bun on Linux (see workerd-fixture/boot.ts).
+  // date, as separate workers behind the router (see workerd-fixture/boot.ts).
   mf = await bootWorkerd({
     workers: [
       {
@@ -186,9 +185,6 @@ beforeAll(async () => {
 }, 240_000)
 
 afterAll(() => {
-  // `mf` is deliberately NOT disposed: under bun on Linux a dispose wedges
-  // every later Miniflare boot in this process (the other workerd test file's
-  // boot included). SIGKILLing the workerd children does not.
   reapWorkerd()
 })
 
