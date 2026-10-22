@@ -1,6 +1,6 @@
 import { rmSync } from "node:fs"
 import type { Page } from "@playwright/test"
-import { expect, sessionRoute, test, UI } from "../harness"
+import { expect, relayedTerminalOutput, sessionCookie, sessionRoute, test, UI } from "../harness"
 
 const TERMINAL_URL = /\/w\/[^/]+\/terminal\/pty_[^/?]+$/
 
@@ -189,4 +189,18 @@ test("13 terminal: a workspace whose folder is gone reads no terminal list", asy
   await expect(app.getByRole("navigation", { name: UI.rail })).toBeVisible()
   await expect.poll(() => reads.some((url) => url.includes(live.directory))).toBe(true)
   expect(reads.filter((url) => url.includes(gone.directory))).toEqual([])
+})
+
+test("13 terminal: a terminal the web opens on a signed desktop's workspace runs through the relay and is still attached after 10 s", async ({ signed, page }) => {
+  const workspace = await signed.makeWorkspace("relay-terminal", "Relay terminal")
+  await page.context().addCookies([sessionCookie(signed.url, signed.owner)])
+  await page.goto(`${signed.url}${sessionRoute(workspace.id)}`)
+  const terminalId = await newShell(page)
+  await expect(terminalPane(page, terminalId)).toHaveAttribute("data-terminal-connected", "true")
+
+  await page.getByRole("textbox", { name: "Terminal input" }).focus()
+  await page.keyboard.type("sleep 10; echo relay-alive-$((6*7))")
+  await page.keyboard.press("Enter")
+  expect(await relayedTerminalOutput(signed, workspace, terminalId, "relay-alive-42")).toContain("relay-alive-42")
+  await expect(terminalPane(page, terminalId)).toHaveAttribute("data-terminal-connected", "true")
 })

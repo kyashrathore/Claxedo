@@ -13,6 +13,10 @@
  *   - the session-meta tap and `/workspaces/:workspaceId` both go before the
  *     runtime proxy — the proxy answers those routes itself, so anything
  *     registered after it never sees them;
+ *   - the terminal socket routes go before `/workspaces/:workspaceId`, whose
+ *     proxy would hand a relayed terminal's upgrade to the embedded runtime's
+ *     `app.fetch`, where no listener carries the socket and `@hono/node-ws`
+ *     throws;
  *   - only routes registered after the proxy are subject to it.
  */
 
@@ -479,12 +483,12 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   // Registered before the runtime proxy, which answers `/session` itself.
   app.use(sessionMetaProjectionTap(services.projectionStore))
 
+  mountWorkspaceRuntimePtyWebSocketProxy(app, upgradeWebSocket, runtimeProxyOptions)
   // Before the runtime proxy on purpose — both claim `/workspaces/:workspaceId`.
   if (options.workspaceRelayProxy) {
     app.all("/workspaces/:workspaceId", options.workspaceRelayProxy)
     app.all("/workspaces/:workspaceId/*", options.workspaceRelayProxy)
   }
-  mountWorkspaceRuntimePtyWebSocketProxy(app, upgradeWebSocket, runtimeProxyOptions)
   if (options.usage) app.route("/api/claxedo/usage", LocalUsageRoutes(options.usage))
 
   // Route execution traffic to the workspace runtime. `/api/wr/*` is

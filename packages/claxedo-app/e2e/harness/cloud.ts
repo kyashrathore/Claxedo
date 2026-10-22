@@ -175,7 +175,7 @@ function terminalFrameText(data: unknown, decoder: TextDecoder) {
   return typeof meta.checkpoint?.screen === "string" ? meta.checkpoint.screen : ""
 }
 
-export async function relayedTerminalOutput(signed: SignedStack, workspace: CloudWorkspace, terminalId: string, marker: string): Promise<string> {
+export async function relayedTerminalOutput(signed: SignedStack, workspace: { id: string }, terminalId: string, marker: string): Promise<string> {
   const connection = JSON.parse((await asOwner(signed)("GET", `/api/workspace/${encodeURIComponent(workspace.id)}/connection`)).body) as { runtimeAccessToken: string }
   const url = new URL(`/workspaces/${encodeURIComponent(workspace.id)}/api/wr/pty/${encodeURIComponent(terminalId)}/connect?cursor=0`, signed.hosted.relayUrl)
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:"
