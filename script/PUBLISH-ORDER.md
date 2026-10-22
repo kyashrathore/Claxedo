@@ -21,7 +21,7 @@ mistake that has actually bitten this repo.
 
 | Track | Packages | On npm | In the repo |
 |---|---|---|---|
-| helpers | `helpers` | 0.2.0 | 0.2.0 |
+| helpers | `helpers` | 0.2.0 | **0.2.1** |
 | runtime | `agent-runtime-contract`, `sandbox-contract`, `sandbox-manager`, `workspace-relay`, `workspace-relay-protocol`, `workspace-runtime` | 0.10.0 | **0.10.1** |
 | apps | `channels`, `connections` | 0.4.0 | **0.5.0** |
 | cli | `cli` | 0.2.0 | **0.2.1** |
@@ -33,6 +33,9 @@ uses, an addition that breaks no caller), and closing a terminal ends its
 shell at the hangup in `workspace-runtime`. `agent-runtime-contract`,
 `sandbox-contract` and `sandbox-manager` ride the track. `cli` moves because
 the code it bundles changed and so that it pins `workspace-runtime` 0.10.1.
+`helpers` 0.2.1 changes only its manifest's `test` script, which is in the
+packed `package.json`, so the published bytes for 0.2.0 no longer match the
+tree; the packages that depend on it pin 0.2.1.
 
 `helpers` rides its own track because both the runtime and apps tracks depend
 on it — `agent-runtime-contract`, `sandbox-manager` and `workspace-runtime` on
@@ -207,7 +210,7 @@ for name in \
 done
 ```
 
-Expect `0.2.0` for `@claxedo/helpers`, `0.2.1` for `@claxedo/cli`, `0.10.1`
+Expect `0.2.1` for `@claxedo/helpers` and `@claxedo/cli`, `0.10.1`
 for the runtime track, and `0.5.0` for the apps track. A line still showing the old
 version means either the registry has not finished indexing (retry) or that
 package's publish failed and must be re-run before anything downstream of it in
