@@ -66,6 +66,11 @@ is logged on: a headless Windows server needs automatic logon for the user,
 or run `claxedo connect --foreground` under a service manager of your own. `--root` decides which folders that machine may
 ever serve; you can widen or narrow it later with `claxedo host scope`.
 
+If the machine does not appear, or its sessions cannot find `codex` or your
+project's tools, run `claxedo doctor` on it: it says in one line each whether
+the control plane and relay answer, whether the service runs and with your
+shell's PATH, and which agent CLIs and, on Windows, which Git Bash it finds.
+
 If the machine already runs the desktop app, do not run `claxedo connect` on it.
 The desktop app already serves it under its own enrollment, and `connect`
 refuses to start beside a running desktop unless you force it.

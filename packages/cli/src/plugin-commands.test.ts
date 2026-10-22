@@ -36,6 +36,7 @@ claxedo host push-config --machine <name|enrollment_id> --from-file FILE
 claxedo host push-config --machine <name|enrollment_id> --clear
 claxedo host revoke --machine <name|enrollment_id>
 claxedo status
+claxedo doctor
 claxedo whoami
 claxedo documents list [--project <id> | --directory <path>]
 claxedo documents open <claxedo://document/id | id | name> [--session <id>] [--project <id> | --directory <path>]

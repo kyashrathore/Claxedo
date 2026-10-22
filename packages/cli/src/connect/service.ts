@@ -97,7 +97,36 @@ function connectArgs(options: ServiceUnitOptions) {
   return ["connect", "--foreground", ...(options.alongsideDesktop ? ["--alongside-desktop"] : [])]
 }
 
-export function systemdUnit(deps: Pick<ServiceDeps, "command" | "claxedoHome">, options: ServiceUnitOptions) {
+/**
+ * The installing shell's PATH, absolute entries only. A service manager's own
+ * PATH (launchd's is `/usr/bin:/bin:/usr/sbin:/sbin`) holds none of the
+ * directories CLIs install into — `~/.local/bin`, Homebrew, nvm — and Codex,
+ * cursor-agent and every command an agent runs are found on PATH alone. A
+ * relative entry would resolve against the service's working directory.
+ */
+export function servicePath(env: NodeJS.ProcessEnv): string | undefined {
+  const entries = [...new Set((env.PATH ?? "").split(":").filter((entry) => path.posix.isAbsolute(entry)))]
+  return entries.length ? entries.join(":") : undefined
+}
+
+type UnitEnvironmentDeps = Pick<ServiceDeps, "claxedoHome" | "env">
+
+function unitEnvironment(deps: UnitEnvironmentDeps): [name: string, value: string][] {
+  const searchPath = servicePath(deps.env)
+  return [
+    ...(deps.claxedoHome ? [["CLAXEDO_HOME", deps.claxedoHome] satisfies [string, string]] : []),
+    ...(searchPath ? [["PATH", searchPath] satisfies [string, string]] : []),
+  ]
+}
+
+/** Whether a unit this module wrote sets PATH; the Windows task runs with the user's own environment, so it always counts. */
+export function unitSetsPath(kind: ServiceKind, text: string) {
+  if (kind === "systemd-user") return /^Environment=PATH=/m.test(text)
+  if (kind === "launchd") return text.includes("<key>PATH</key>")
+  return true
+}
+
+export function systemdUnit(deps: Pick<ServiceDeps, "command"> & UnitEnvironmentDeps, options: ServiceUnitOptions) {
   const exec = [...deps.command, ...connectArgs(options)].map(systemdQuote).join(" ")
   return [
     "[Unit]",
@@ -111,7 +140,7 @@ export function systemdUnit(deps: Pick<ServiceDeps, "command" | "claxedoHome">, 
     "RestartSec=5",
     "RestartPreventExitStatus=78",
     `TimeoutStopSec=${EXIT_TIMEOUT_S}`,
-    ...(deps.claxedoHome ? [`Environment=CLAXEDO_HOME=${systemdQuote(deps.claxedoHome)}`] : []),
+    ...unitEnvironment(deps).map(([name, value]) => `Environment=${name}=${systemdQuote(value)}`),
     "",
     "[Install]",
     "WantedBy=default.target",
@@ -158,7 +187,8 @@ export function launchdWrapperScript(connect: string, bootout: string) {
   ].join("\n")
 }
 
-export function launchdPlist(deps: Pick<ServiceDeps, "command" | "claxedoHome">, options: ServiceUnitOptions) {
+export function launchdPlist(deps: Pick<ServiceDeps, "command"> & UnitEnvironmentDeps, options: ServiceUnitOptions) {
+  const environment = unitEnvironment(deps)
   const connect = [...deps.command, ...connectArgs(options)].map(singleQuoted).join(" ")
   const script = launchdWrapperScript(connect, `launchctl bootout "gui/$(id -u)/${LAUNCHD_LABEL}"`)
   return [
@@ -178,10 +208,10 @@ export function launchdPlist(deps: Pick<ServiceDeps, "command" | "claxedoHome">,
     `  <dict><key>SuccessfulExit</key><false/></dict>`,
     `  <key>ThrottleInterval</key><integer>10</integer>`,
     `  <key>ExitTimeOut</key><integer>${EXIT_TIMEOUT_S}</integer>`,
-    ...(deps.claxedoHome
+    ...(environment.length
       ? [
           `  <key>EnvironmentVariables</key>`,
-          `  <dict><key>CLAXEDO_HOME</key><string>${xmlTextNode(deps.claxedoHome)}</string></dict>`,
+          `  <dict>${environment.map(([name, value]) => `<key>${name}</key><string>${xmlTextNode(value)}</string>`).join("")}</dict>`,
         ]
       : []),
     `</dict>`,
@@ -190,7 +220,7 @@ export function launchdPlist(deps: Pick<ServiceDeps, "command" | "claxedoHome">,
   ].join("\n")
 }
 
-function launchdDomain() {
+export function launchdDomain() {
   return `gui/${process.getuid?.() ?? 501}`
 }
 

@@ -8,7 +8,14 @@ import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node"
 import { deadlineAfter, type HarnessServices, type OwnedProcess } from "../../contract/node"
 import { exitMarker, type ExitMarker } from "./exit-marker"
 
-const SHELL = existsSync("/bin/bash") ? "/bin/bash" : "bash"
+export function piBashPath(platform: NodeJS.Platform = process.platform, env: NodeJS.ProcessEnv = process.env,
+  exists: (file: string) => boolean = existsSync): string {
+  if (platform !== "win32") return exists("/bin/bash") ? "/bin/bash" : "bash"
+  const installed = [env.ProgramFiles, env["ProgramFiles(x86)"]].flatMap((root) => (root ? [path.win32.join(root, "Git", "bin", "bash.exe")] : []))
+  return installed.find(exists) ?? "bash"
+}
+
+const SHELL = piBashPath()
 const SCRIPT = `eval "$1"
 printf '%s%d\\n' "$2" "$?" >&2
 wait`

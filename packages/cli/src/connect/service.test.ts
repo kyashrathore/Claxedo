@@ -89,11 +89,32 @@ describe("service units", () => {
       {
         command: ["/opt/100%$u/node", '/x"\\y'],
         claxedoHome: "/var/lib/claxedo%h$HOME",
+        env: { PATH: "/opt/50%/bin:/home/$USER/bin" },
       },
       { alongsideDesktop: false },
     )
     expect(unit).toContain('ExecStart="/opt/100%%$$u/node" "/x\\"\\\\y" "connect" "--foreground"')
     expect(unit).toContain('Environment=CLAXEDO_HOME="/var/lib/claxedo%%h$$HOME"')
+    expect(unit).toContain('Environment=PATH="/opt/50%%/bin:/home/$$USER/bin"')
+  })
+
+  test("a unit runs with the installing shell's PATH, absolute entries once each, so the service finds what the shell finds", () => {
+    const env = { PATH: "/home/svc/.local/bin::.:bin:/home/svc/.nvm/versions/node/v24.1.0/bin:/usr/bin:/home/svc/.local/bin" }
+    const searchPath = "/home/svc/.local/bin:/home/svc/.nvm/versions/node/v24.1.0/bin:/usr/bin"
+    const unit = systemdUnit({ command: ["/usr/bin/node", "/opt/claxedo/dist/index.mjs"], env }, { alongsideDesktop: false })
+    expect(unit).toContain(`Environment=PATH="${searchPath}"`)
+    expect(unit).not.toContain("CLAXEDO_HOME")
+    const plist = launchdPlist({ command: ["/usr/bin/node", "/opt/claxedo/dist/index.mjs"], claxedoHome: "/Users/svc/claxedo", env }, { alongsideDesktop: false })
+    expect(plist).toContain(
+      `  <key>EnvironmentVariables</key>\n  <dict><key>CLAXEDO_HOME</key><string>/Users/svc/claxedo</string><key>PATH</key><string>${searchPath}</string></dict>`,
+    )
+  })
+
+  test("a shell with no absolute PATH entry leaves the service manager's own PATH in place", () => {
+    for (const env of [{}, { PATH: "" }, { PATH: ".:bin" }]) {
+      expect(systemdUnit({ command: ["/usr/bin/node", "/x.mjs"], env }, { alongsideDesktop: false })).not.toContain("PATH")
+      expect(launchdPlist({ command: ["/usr/bin/node", "/x.mjs"], env }, { alongsideDesktop: false })).not.toContain("EnvironmentVariables")
+    }
   })
 
   test("a degraded user manager still counts as reachable; a failed enable surfaces as an error", async () => {

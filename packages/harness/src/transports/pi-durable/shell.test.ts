@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { PassThrough } from "node:stream"
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context"
 import type { OwnedProcess } from "../../contract/node"
-import { ownedExecutionEnv, sessionCommands } from "./shell"
+import { ownedExecutionEnv, piBashPath, sessionCommands } from "./shell"
 
 function owned(retired: string[], name: string): OwnedProcess {
   return {
@@ -43,4 +43,16 @@ test("output that arrives after the shell exits still reaches the caller before 
   const result = await env.exec("exit 3", { onOutput: (text) => { seen.push(text) } }, BACKGROUND_CONTEXT)
   expect(seen.join("")).toBe("onetwo")
   expect(result).toEqual({ ok: true, value: { exitCode: 3 } })
+})
+
+test("on Windows Pi's bash is Git Bash where Git for Windows installs it, since its default PATH holds only Git\\cmd", () => {
+  const programFiles = { ProgramFiles: "C:\\Program Files", "ProgramFiles(x86)": "C:\\Program Files (x86)" }
+  const installedAt = (...files: string[]) => (file: string) => files.includes(file)
+  expect(piBashPath("win32", programFiles, installedAt("C:\\Program Files\\Git\\bin\\bash.exe", "C:\\Program Files (x86)\\Git\\bin\\bash.exe")))
+    .toBe("C:\\Program Files\\Git\\bin\\bash.exe")
+  expect(piBashPath("win32", programFiles, installedAt("C:\\Program Files (x86)\\Git\\bin\\bash.exe"))).toBe("C:\\Program Files (x86)\\Git\\bin\\bash.exe")
+  expect(piBashPath("win32", programFiles, installedAt())).toBe("bash")
+  expect(piBashPath("win32", {}, installedAt("C:\\Program Files\\Git\\bin\\bash.exe"))).toBe("bash")
+  expect(piBashPath("linux", programFiles, installedAt("/bin/bash"))).toBe("/bin/bash")
+  expect(piBashPath("darwin", {}, installedAt())).toBe("bash")
 })

@@ -70,6 +70,8 @@ export { createWorkspaceHost } from "./workspace"
 export type { WorkspaceHost, WorkspaceHostOptions } from "./workspace"
 
 export { Pty } from "./pty/index"
+export { installedTerminalAgents } from "./pty/terminal-agents"
+export type { TerminalAgentId } from "./pty/terminal-agents"
 export {
   createAuthorizedPtyConnection,
   isPtyStreamSocket,

@@ -517,6 +517,7 @@
       "devDependencies": {
         "@claxedo/account-contract": "workspace:*",
         "@claxedo/documents": "workspace:*",
+        "@claxedo/harness": "workspace:*",
         "@claxedo/helpers": "workspace:*",
         "@claxedo/host-connector": "workspace:*",
         "@claxedo/host-serving": "workspace:*",

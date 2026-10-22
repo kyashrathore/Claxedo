@@ -8,6 +8,7 @@ claxedo logout
 ${connectUsage}
 ${hostUsage}
 claxedo status
+claxedo doctor
 claxedo whoami
 ${PLUGIN_COMMANDS.map((command) => command.usage).join("\n")}
 claxedo --version

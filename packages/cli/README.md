@@ -70,10 +70,17 @@ claxedo connect --token-file ./invite.token --root /srv/projects --install-servi
 
 That redeems the invitation, removes the token file, and installs a user
 service (`systemd --user` on Linux, a LaunchAgent on macOS) that keeps
-`claxedo connect --foreground` running. `claxedo connect --help` documents every
+`claxedo connect --foreground` running. The unit carries the PATH of the shell
+that installed it, so the service finds the same `codex`, `node` and other
+tools the shell does; run `--install-service` again after changing it. `claxedo connect --help` documents every
 flag, the exit codes (78 = the control plane decided against this machine, so a
 service manager must not restart into it), and what a user service does and
 does not isolate.
+
+`claxedo doctor` checks, one line each, what a connected machine needs: Node
+24, the control plane and the relay it uses answering, the enrollment, the
+service running with your PATH, `git`, the agent CLIs it finds, and on Windows
+the Git Bash Pi runs commands in. It exits 1 when any check fails.
 
 ## Owner commands
 
@@ -94,6 +101,7 @@ claxedo host revoke --machine <name|enrollment_id>
 claxedo login
 claxedo logout
 claxedo status
+claxedo doctor
 claxedo whoami
 claxedo documents ...
 ```

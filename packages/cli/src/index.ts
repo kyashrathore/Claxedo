@@ -1,6 +1,7 @@
 import { login } from "./auth/device-code"
 import { whoami } from "./auth/identity"
 import { connect, connectHelp } from "./commands/connect"
+import { doctor } from "./commands/doctor"
 import { hostCommand } from "./commands/host"
 import { logout } from "./commands/logout"
 import { status } from "./commands/status"
@@ -35,6 +36,10 @@ async function main(argv: string[]) {
   }
   if (command === "host") return hostCommand(args)
   if (command === "status") return status()
+  if (command === "doctor") {
+    process.exitCode = await doctor()
+    return
+  }
   if (command === "whoami") return whoami()
   const contributed = pluginCommand(command)
   if (contributed) return contributed.run(args, cliCommandContext())

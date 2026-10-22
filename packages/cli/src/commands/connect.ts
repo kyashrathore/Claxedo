@@ -68,7 +68,9 @@ restarting after any failure; exit 78 disables the task until
 until \`loginctl enable-linger <user>\` is on and XDG_RUNTIME_DIR reaches the
 user manager — the state a cloud-init run without a login session is in. On
 Windows the task runs only while its user is logged on, and an ended task is
-killed without draining. A user service isolates this process from OTHER users
+killed without draining. The Linux and macOS units run with the PATH of the
+shell that installed them, so the service finds the tools that shell finds;
+the Windows task has its user's own environment. A user service isolates this process from OTHER users
 only. An agent running as the same user can read the key file; what the key can
 do is serve the owner-assigned folders under the roots, nothing about the account.
 
