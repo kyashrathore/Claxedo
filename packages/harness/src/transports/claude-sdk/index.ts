@@ -156,7 +156,9 @@ export class ClaudeSdkTransport implements HarnessTransport {
   }
 
   async dispose(): Promise<void> {
+    const probes = this.models.dispose()
     for (const entry of this.entries.values()) await this.close(entry.session)
     this.disposed = true
+    await probes
   }
 }

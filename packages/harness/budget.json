@@ -6,7 +6,7 @@
   "registry": 900,
   "capabilities": 450,
   "profiles": 550,
-  "transports/claude-sdk": 3429,
+  "transports/claude-sdk": 3458,
   "transports/codex-app-server": 3626,
   "transports/cursor-sdk": 1888,
   "transports/acp": 3149,
