@@ -30,7 +30,11 @@ describe("packed-imports", () => {
       "dist/legacy.cjs": `const r = require("req-pkg")\ntry { require.resolve("optional-pkg") } catch {}\nmodule.exports = r`,
       "dist/index.d.ts": `import type { X } from "types-only"\nexport type Y = X`,
     })
-    expect(scriptFiles(root).map((file) => path.relative(root, file))).toEqual(["dist/chunk.mjs", "dist/index.mjs", "dist/legacy.cjs"])
+    expect(scriptFiles(root).map((file) => path.relative(root, file).split(path.sep).join("/"))).toEqual([
+      "dist/chunk.mjs",
+      "dist/index.mjs",
+      "dist/legacy.cjs",
+    ])
 
     const imports = packageImports(root, scriptFiles(root))
     expect([...imports.keys()].sort()).toEqual(["@claxedo/self", "@scope/pkg", "dyn-pkg", "req-pkg", "zod"])
