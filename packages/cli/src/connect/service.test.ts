@@ -243,7 +243,7 @@ describe("service units", () => {
     expect(calls, "writing the script starts nothing").toEqual([])
     expect(files.get(script)).toBe(windowsWrapperScript(deps, { alongsideDesktop: true }))
     expect(files.get(script)).toContain(
-      `& 'C:\\Program Files\\nodejs\\node.exe' 'C:\\Users\\svc\\cli\\it''s.mjs' 'connect' '--foreground' '--alongside-desktop' *>> 'C:\\Users\\svc\\AppData\\Roaming\\Claxedo\\claxedo-connect.log'`,
+      `& 'C:\\Program Files\\nodejs\\node.exe' 'C:\\Users\\svc\\cli\\it''s.mjs' 'connect' '--foreground' '--alongside-desktop' 2>&1 | ForEach-Object { $_.ToString() } | Out-File -Append -Encoding utf8 'C:\\Users\\svc\\AppData\\Roaming\\Claxedo\\claxedo-connect.log'`,
     )
     expect(files.get(script)).toContain("$env:CLAXEDO_HOME = 'C:\\Users\\svc\\.claxedo'")
     expect(files.get(script)).toContain("if ($code -eq 78) { schtasks.exe /Change /TN ClaxedoConnect /Disable | Out-Null; exit 78 }")
