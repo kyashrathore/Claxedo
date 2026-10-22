@@ -186,7 +186,7 @@ const ENTRIES = [
   // as a machine subscriber (`hosted-workerd/live-sync-subscriber.ts`, the
   // subscriber identity split out of the room), the machine caller's
   // admission the stream shares with the heartbeat
-  // (`platform/auth/machine-caller.ts`), the ring the host routes publish
+  // (`workspace/machine-caller.ts`), the ring the host routes publish
   // (`workspace/host-changed-notice.ts`), and the attestation encodings split
   // out of the D1 host authority (`authority/adapters/d1/host-attestation-codec.ts`).
   { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 186, packages: 23 },

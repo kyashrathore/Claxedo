@@ -4,7 +4,7 @@ import type { ControlPlaneServices } from "../authority/services"
 import { connectLiveSyncRoom } from "../deployments/hosted-workerd/live-sync-room.cf"
 import type { LiveSyncMachineSubscriber } from "../deployments/hosted-workerd/live-sync-subscriber"
 import type { LiveSyncRoomNamespace } from "../platform/http/live-sync-publish"
-import { admitMachineCaller, type MachineCallerBudgets } from "../platform/auth/machine-caller"
+import { admitMachineCaller, type MachineCallerBudgets } from "./machine-caller"
 
 /**
  * `GET /api/claxedo/host/enrollments/events` (mounted by `routes/hosted/host-enrollment.ts`): the machine's doorbell, a
