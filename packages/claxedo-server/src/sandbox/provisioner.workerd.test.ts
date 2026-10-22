@@ -125,6 +125,16 @@ describe("a sandbox start on workerd", () => {
     expect((await rootSteps("ws_slow_1_update")).map((row) => row.step)).toEqual(["provision", "provision for the deployment's image"])
   })
 
+  test("a Restart to update of a workspace already serving the deployment's image answers its ready target with no driver step", async () => {
+    await start("ws_slow_1_twice_update")
+    await until(() => start("ws_slow_1_twice_update"), (answer) => answer.status === "ready")
+    await start("ws_slow_1_twice_update", { retry: true, updateImage: true })
+    await until(() => start("ws_slow_1_twice_update"), (answer) => answer.status === "ready")
+
+    expect(await start("ws_slow_1_twice_update", { retry: true, updateImage: true })).toMatchObject({ status: "ready", epoch: 1 })
+    expect((await rootSteps("ws_slow_1_twice_update")).map((row) => row.step)).toEqual(["provision", "provision for the deployment's image"])
+  })
+
   test("a start on a ready lease whose runtime does not answer resumes it on the same epoch, a held ready outcome notwithstanding", async () => {
     await start("ws_slow_1_asleep")
     await until(() => target("ws_slow_1_asleep"), (lease) => lease.status === "ready")

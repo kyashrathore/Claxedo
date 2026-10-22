@@ -293,7 +293,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       // A host that never published a URL never served, so resuming it is the
       // workspace's first start as the person sees it, not a wake.
       const bootMode: SandboxBootMode = resuming && lease.url ? "resume" : ensure.bootSource?.kind === "driver-snapshot" ? "restore" : "cold-start"
-      const start = starts.observe(lease,{ bootMode, enteredAt, labels: ensure.labels })
+      const start = starts.observe(lease, { bootMode, enteredAt, labels: ensure.labels, ...(managerInput.updateImage ? { update: true as const } : {}) })
       await start?.opened()
       ensure.onResource = async (resource) => {
         const recorded = await options.leaseStore.recordTarget(workspaceId, lease.epoch, {
