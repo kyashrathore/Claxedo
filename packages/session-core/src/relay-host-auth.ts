@@ -1,8 +1,9 @@
 import { createMiddleware } from "hono/factory"
-import { createRemoteJWKSet, importSPKI } from "jose"
+import { createRemoteJWKSet, exportJWK, importSPKI, jwksCache, type RemoteJWKSetOptions } from "jose"
 import { sessionScopeReaches, type RelayHostVerifierClaims, type TokenVerifier } from "@claxedo/workspace-relay-protocol"
 import {
   WorkspaceRelayAuthError,
+  deriveRelayHostKid,
   isRelayBacking,
   relayHostTokenAudience,
   relayHostTokenIssuer,
@@ -190,11 +191,31 @@ export type LoadRelayHostVerificationKeyEnv = {
 
 export type RelayHostVerificationKey = CryptoKey | ReturnType<typeof createRemoteJWKSet>
 
+const RELAY_JWKS_COOLDOWN_MS = 30_000
+
 /**
- * `WORKSPACE_RUNTIME_RELAY_JWKS_URL` wins over
- * `WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM`: a remote key set lets the relay
- * rotate its signing key without a host restart, a PEM is one Ed25519 key
- * for the process's life.
+ * jose fetches a remote key set for the first token it verifies, under a 5 s
+ * timeout that also counts time the event loop is held: a 5.5 s hold fails
+ * with ERR_JWKS_TIMEOUT a fetch that answers in 1.1 s, and a just-woken
+ * runtime's first token is the plane's Agent Plugins apply. The delivered key
+ * answers until the set is next due. It is dated one cooldown back so a token
+ * under another key, the relay's after a rotation, reloads the set at once
+ * instead of failing for 30 s.
+ */
+async function deliveredKeySet(verifyPem: string): Promise<RemoteJWKSetOptions> {
+  const key = await importSPKI(verifyPem, "EdDSA", { extractable: true })
+  const jwk = { ...(await exportJWK(key)), kid: await deriveRelayHostKid(key), alg: "EdDSA", use: "sig" }
+  return {
+    cooldownDuration: RELAY_JWKS_COOLDOWN_MS,
+    [jwksCache]: { jwks: { keys: [jwk] }, uat: Date.now() - RELAY_JWKS_COOLDOWN_MS },
+  }
+}
+
+/**
+ * With `WORKSPACE_RUNTIME_RELAY_JWKS_URL` the relay's published key set
+ * verifies, so the relay can rotate its signing key without a host restart,
+ * and `WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM` beside it seeds that set.
+ * Without the URL the PEM is one Ed25519 key for the process's life.
  *
  * Throws when neither is set. A host that accepts any token, or refuses
  * every one silently, is worse than one that will not boot.
@@ -203,10 +224,10 @@ export async function loadRelayHostVerificationKeyOrJwks(
   env: LoadRelayHostVerificationKeyEnv,
 ): Promise<RelayHostVerificationKey> {
   const jwksUrl = trimToUndefined(env.WORKSPACE_RUNTIME_RELAY_JWKS_URL)
-  if (jwksUrl) {
-    return createRemoteJWKSet(new URL(jwksUrl))
-  }
   const verifyPem = pem(env.WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM)
+  if (jwksUrl) {
+    return createRemoteJWKSet(new URL(jwksUrl), verifyPem ? await deliveredKeySet(verifyPem) : undefined)
+  }
   if (!verifyPem) {
     throw new Error(
       "Relay Host Token verification key is not configured: set WORKSPACE_RUNTIME_RELAY_JWKS_URL or WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM",
