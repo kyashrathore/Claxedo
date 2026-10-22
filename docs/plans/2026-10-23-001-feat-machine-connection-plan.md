@@ -84,8 +84,8 @@ why it was or was not built:
 
 | | Verdict |
 |---|---|
-| W3 | Built after decision 1 was accepted (Progress below) |
-| W1 | In progress after W3 |
+| W3 | Built and proven on the hosted stack run locally; the control-plane side is not deployed to staging |
+| W1 | Built and proven on one box; the LAN latency gain is not measured |
 | W2 | Not built as written: most of it already holds, and what is left is small; reshaped below |
 | W4 | Cloud path built for every `claxedo connect` machine and proven on Miniflare; the LAN path follows W1; plan refresh and a deploy remain |
 | W5 | `claxedo doctor`, the service's PATH and Pi's Windows bash built; installers need a Windows box |
@@ -100,15 +100,33 @@ out at enrollment, and falls back to the relay on any failure. It re-checks rout
 Trade-offs: the machine opens a port on its private network (bound to private interfaces only, TLS plus a W3 grant
 required, switchable off per machine). The web app is not covered until W7.
 
-- [ ] The connector serves its runtime routes on its private addresses, TLS only, refusing any request without a
-  valid W3 grant. Progress:
-- [ ] Heartbeat carries the machine's private addresses and certificate fingerprint; the control plane stores
-  neither beyond the enrollment's current state. Progress:
-- [ ] The desktop app's route list: loopback, LAN, tailnet, relay, tried best-first with a short probe; moves back
-  to a better route on network change. Progress:
-- [ ] Live: desktop and machine on one LAN — terminal open ≤ 0.5 s, keystroke echo ≤ 20 ms; pull the LAN cable
-  mid-session and the session continues over the relay. Progress:
-- [ ] A per-machine switch turns the private listener off; with it off, nothing listens. Progress:
+- [x] The connector serves its runtime routes on its private addresses, TLS 1.3 only. Progress: the listener
+  (`claxedo-host-serving/src/direct-listener.ts`) binds only RFC 1918, CGNAT (tailnet) and unique-local addresses,
+  behind a self-signed P-256 certificate of its own key. It admits only the owner's workspace-wide Runtime Access
+  Token, verified against the control plane's key set, with the token's standing asked of the control plane and
+  remembered 10 s as the relay remembers it (`direct-admission.ts`). It refuses session-scoped tokens, strips the
+  relay-only headers, and answers 503 `machine_paused` and closes the terminals it carried while the owner has the
+  machine paused.
+- [x] Heartbeat carries the machine's private addresses and certificate fingerprint. Progress: the control plane
+  keeps only the enrollment's current routes (`host_direct_routes`) and hands them only to the workspace owner's
+  connection, and only while the machine serves.
+- [x] The desktop's route. Progress: the daemon carries HTTP and WebSocket to the machine over TLS pinned to its key
+  (`PUT /api/claxedo/direct-routes/:id`, `/direct/workspaces/:id/*`), so the renderer keeps talking to loopback; the
+  app's route machine (`claxedo-app/src/server/direct-route.ts`) moves between relay, probing, direct and refused,
+  falls back to the relay on any failure, and checks again on the online, focus and visibility signal.
+- [ ] Live: desktop and machine on one LAN, terminal open ≤ 0.5 s, keystroke echo ≤ 20 ms; pull the LAN cable
+  mid-session and the session continues over the relay. Progress: proven on one box over a private alias address:
+  HTTP and terminal sockets went direct (established TCP connections to the alias rose while the direct terminal
+  was open), a token refreshed away was refused on the direct route within 13 ms, a cut LAN port fell back to the
+  relay in 22 ms and came back on a recheck, and a pause closed a direct terminal in 32 ms and refused reads until
+  the resume, 116 ms later. Not measured: the latency gain, which needs a relay that is not on the same box, and a
+  real two-machine LAN or tailnet, macOS, Windows, IPv6 and the signed Electron renderer.
+- [x] A per-machine switch turns the private listener off. Progress: `claxedo connect --direct on|off`, saved, on by
+  default; off, nothing listens and the connection names no routes (proven live).
+
+Rollout order: run `create table host_direct_routes` on the deployed control-plane database, deploy the control
+plane, then release the desktop, and the CLI last. The heartbeat schema is strict, so an older control plane
+refuses a beat that reports routes, and the connector treats that 400 as a decision and stops.
 
 **Assessment.** The dependency on W3 is harder than stated. The daemon's ingress (`localHostRelayActor`), the
 runtime's `createRelayHostAuthMiddleware` and the control plane's session authority each admit only a
@@ -117,10 +135,9 @@ Without W3 a LAN terminal still pays the machine's authority call to the control
 10 ms but a terminal open keeps that call's 0.4–1.9 s from India (inferred from §1, not measured on a LAN). The renderer path is costly: `connect-src` lists exact origins
 stamped at load, the runtime sends no CORS headers, Chromium's Local Network Access gating may apply, certificate
 pinning is possible only in main (`setCertificateVerifyProc`), and the repository has no certificate library.
-Proposed shape once W3 lands: the direct route lives in the daemon, which reaches the LAN address over Node TLS
-pinning the enrollment key's SPKI the control plane already stores, so the renderer keeps talking to loopback. The
-heartbeat field ships on the control plane before any connector sends it, because the schema is strict and a 400
-stops the connector. Size: 8–9 packages, 30–40 files.
+Built in that shape: the direct route lives in the daemon, which reaches the LAN address over Node TLS pinning the
+listener's own key, so the renderer keeps talking to loopback; with W3 a terminal reuses the machine's authority
+answer, and the direct admission asks the control plane once per token per 10 s.
 
 ### W2 — One connection per workspace
 
@@ -148,29 +165,46 @@ keystrokes on it.
 
 ### W3 — Access checked on the machine, revoked live
 
-The machine verifies a short-lived signed grant itself instead of asking the control plane on every request.
-Revocation is pushed over the host-changed event stream; a grant expires in about 60 s regardless. Blocks W1.
+A connected machine reuses the control plane's allowed answers for up to a minute instead of asking on every
+request, and forgets every one of them the moment the control plane rings that someone's access may have narrowed.
+Decision 1 accepted the bound: revoked within about a second, a minute at worst.
 
-Trade-off: owner decision 1.
+- [x] Answers the machine may reuse. Progress: the oracle (`routes/runtime-session-authority.ts`) answers a host
+  read, a host admin check and a plain session read or write with `grantTtlMs`, 60 s and never past the runtime
+  access token's expiry. The machine holds an allowed answer that long (`session-core/src/authority-grants.ts`, 60 s
+  at most whatever the answer says), keyed by the relay token's verified `parent_jti`, the actor, the workspace, the
+  session, the action and the write class. Refusals, stream and turn leases, starts and registrations are asked
+  every time. Only a host the control plane rings holds answers: the CLI's listener and the desktop's local server.
+  A cloud runtime or a session host asks on every request as before. Signed grants verified with delivered keys
+  were not built: reusing the plane's own answer needs no new audience, key or per-session share encoding.
+- [x] Revoking a share, removing a member or pausing pushes to the machine. Progress: each rings `host.changed` to
+  every machine serving an affected workspace (`workspace/host-changed-notice.ts`); the machine forgets every held
+  answer, and each open terminal checks again at once. An answer to a question asked before the ring is dropped,
+  so a ring that lands mid-question is not undone. The desktop's ring reaches its local server through
+  `POST /api/claxedo/host-serving/access-changed`. Revoking the machine already stopped it.
+- [x] With the push path cut, a revoked answer lapses within 60 s. Progress: unit-tested
+  (`remote-session-authority.test.ts`, `authority-grants`).
+- [x] Live: a terminal no longer pays the authority round trip each time, and a narrowing is refused within 2 s.
+  Progress, on the hosted control plane and relay run locally under Miniflare, with the CLI built from this branch
+  enrolled by invitation (driver: the scratch `local-w3.ts`, not a committed flow):
+  - six terminals cost one authority call (the published CLI 0.2.1: 18), five reads of a shared session one (0.2.1:
+    five);
+  - after the owner revoked the share, the colleague's next read was refused 52–69 ms after the revoke; after the
+    colleague was removed from the organization, 57–70 ms;
+  - a pause was heard in 24–46 ms and a resume in 30–50 ms, with the process running throughout.
+  On staging (`claxedo-64bf4618d99a`, without this control-plane side) the same machine asked on every request
+  (30 calls for 10 terminals), as an older control plane gives no `grantTtlMs`; first-terminal mint to prompt was
+  1.25 s p50 and a second terminal 0.61 s, from IAD. A build from just before the pause reached the direct route
+  (712b47f), driven the same way, kept a paused machine's direct terminal open and answered its reads; this
+  branch closes it in 32 ms. Deploying the control-plane side to staging was blocked: the
+  GitHub token in the agent's environment cannot dispatch workflows (403) and the deploy secrets are not there.
 
-- [ ] Grants name the person, the workspace, the scopes and an expiry; the machine verifies them with keys the
-  control plane delivered. Progress:
-- [ ] Revoking a share, removing a member or revoking the machine pushes to the machine; the next request is
-  refused within 2 s. Progress:
-- [ ] With the push path cut, a revoked grant is refused at its expiry. Progress:
-- [ ] Live: a terminal attach no longer pays the 0.4–1.9 s authority round trip. Progress:
-
-**Assessment.** The machine already verifies a short-lived grant, the relay's 60 s RHT, and asks the control plane
-anyway, because an RHT keeps verifying after the runtime access token it came from is revoked
-(`pty/terminal-authority.ts`). That per-request question is what makes revocation immediate for new requests; open
-relay sockets already lag by up to a 30 s check plus a 10 s cache. A machine-side grant needs its own audience or
-key (the control plane's one Ed25519 key signs many audiences), per-session share levels or a remote answer for
-shared sessions, a revocation payload on `host.changed` (live-sync admission drops every field but type, host,
-owner and time, and a share revoke, a member removal, a pause or a token refresh rings nothing), and changes at the
-daemon, the runtime and the control plane's oracle. Turn leases and every write stay remote. An alternative that
-keeps revocation decided live: grants for read-only decisions only, and a revocation that completes only once the
-machine acknowledges it, the relay refusing that machine's tunnel until it does. The relay route then stays
-immediate, and only a direct route (W1) is bounded by the grant's life.
+A pause no longer stops a `claxedo connect` machine: it withdraws serving, so its relay tunnels and its direct route
+(W1) close at once, keeps beating, says so once, and serves again when a beat finds it resumed. One started while
+paused waits instead of exiting with a decision its service manager would not restart. `claxedo status` and
+`claxedo doctor` report the pause. A machine whose doorbell was refused while paused, or that started paused, hears
+the resume at its next beat, up to 20 s (22.3 s measured on staging); admitting a paused machine to the doorbell,
+which carries only rings, would make that about a second.
 
 ### W4 — The owner's accounts on connected machines
 
@@ -306,9 +340,11 @@ runtime-version floor and skew test (`MINIMUM_SERVED_WORKSPACE_RUNTIME_VERSION`)
 ### W12 — Audit trail and a local kill switch
 
 - [ ] The owner sees, per machine, who connected and what ran, and can stop everything from the machine itself
-  (`claxedo pause` or a tray icon). Progress: pausing (`POST /api/claxedo/host/enrollments/pause`) has no caller in
-  the app or the CLI yet and rings nothing, so a paused machine stops at its next beat, up to 20 s later. The kill
-  switch should ring `host.changed` there, as revoking does.
+  (`claxedo pause` or a tray icon). Progress: the owner pauses, resumes or removes a machine from its Details in
+  Settings → Machines (`machines.pause`, `machines.resume`, `machines.remove`) or with `claxedo host pause|resume
+  --machine`, and the pause rings the machine, which closes everything it serves within about 50 ms. Details also
+  checks the connection hop by hop (this device, the control plane, the machine through the relay) and copies
+  diagnostics. Not built: a pause from the machine itself, and the audit trail.
 
 ## 4. Order
 
