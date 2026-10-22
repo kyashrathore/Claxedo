@@ -34,6 +34,8 @@ import {
   hostServingState,
   type HostServingCredential,
 } from "@claxedo/host-serving/serving"
+import { privateNetworkAddresses, startDirectListener, type DirectListener } from "@claxedo/host-serving/direct-listener"
+import { createDirectTlsKey, directTlsIdentity } from "@claxedo/host-serving/direct-certificate"
 import { createKeyedSerializer } from "@claxedo/helpers"
 import { Pty } from "@claxedo/workspace-runtime"
 import { asFiniteNumber, asRecordOrEmpty } from "@claxedo/helpers/guards"
@@ -44,6 +46,8 @@ import { DRAIN_TIMEOUT_MS, LEASE_TTL_MS, RUNTIME_CLOSE_TIMEOUT_MS } from "./path
 export type HostDeps = {
   fetch: FetchLike
   createListener: () => Promise<HostRuntimeListener>
+  /** This machine's private-network addresses, re-read before every beat while the direct route is on. */
+  directAddresses: () => string[]
   setServing: typeof setHostServing
   servingState: typeof hostServingState
   stopServing: typeof stopHostServing
@@ -66,6 +70,7 @@ export function defaultHostDeps(): HostDeps {
     fetch: (input, init) => fetch(input, init),
     createListener: () =>
       createHostRuntimeListener({ hostname: "127.0.0.1", port: 0, drainTimeoutMs: RUNTIME_CLOSE_TIMEOUT_MS }),
+    directAddresses: () => privateNetworkAddresses(),
     setServing: setHostServing,
     servingState: hostServingState,
     stopServing: stopHostServing,
@@ -197,6 +202,38 @@ function credentialWithout(credential: HostServingCredential | null, workspaceId
   return workspaceIds.length ? { ...credential, workspaceIds } : null
 }
 
+/**
+ * The private-network listener while the switch is on. Its key is on disk
+ * before any beat reports its pin, so a restart keeps the pin a client holds.
+ */
+async function startDirectRoute(input: {
+  state: HostState
+  listener: HostRuntimeListener
+  deps: Pick<HostDeps, "directAddresses" | "log">
+  persistKey: (direct: NonNullable<HostState["direct"]>) => Promise<void>
+  persistPort: (direct: NonNullable<HostState["direct"]>) => Promise<void>
+}): Promise<DirectListener | undefined> {
+  const recorded = input.state.direct
+  if (recorded?.enabled === false) {
+    input.deps.log("direct route: off; `claxedo connect --direct on` turns it on")
+    return undefined
+  }
+  const tlsKey = recorded?.tls_private_key_jwk ?? (await createDirectTlsKey())
+  let direct: NonNullable<HostState["direct"]> = { ...recorded, enabled: true, tls_private_key_jwk: tlsKey }
+  if (!recorded?.tls_private_key_jwk) await input.persistKey(direct)
+  return startDirectListener({
+    identity: await directTlsIdentity(tlsKey),
+    runtime: input.listener,
+    ...(recorded?.port === undefined ? {} : { port: recorded.port }),
+    onPort: (port) => {
+      direct = { ...direct, port }
+      void input.persistPort(direct)
+    },
+    addresses: input.deps.directAddresses,
+    log: input.deps.log,
+  })
+}
+
 export type HostRunInput = {
   store: HostStateStore
   /** Enrolled; `run` is rewritten by this loop and cleared when it returns. */
@@ -285,6 +322,13 @@ export async function runHost(input: HostRunInput): Promise<number> {
   // start is what the next record carries, never the dead one's.
   const startedAt = deps.now()
   const listener = await deps.createListener()
+  const direct = await startDirectRoute({
+    state,
+    listener,
+    deps,
+    persistKey: (next) => persistOrThrow({ ...state, direct: next }),
+    persistPort: (next) => persist({ ...state, direct: next }),
+  })
   const composition = { localBaseUrl: listener.url, sessionAuthority: () => "managed-private" as const }
   const owned = new Map<string, { directory: string }>()
   let credential: HostServingCredential | null = null
@@ -354,6 +398,7 @@ export async function runHost(input: HostRunInput): Promise<number> {
       hostId: state.host_id,
       relay: { jwksUrl: relay.jwksUrl },
       sessionAuthorityUrl: authority.sessionAuthorityUrl,
+      ...(direct ? { runtimeAccessJwksUrl: `${state.control_plane_url}/.well-known/jwks.json` } : {}),
       storeRoot: path.join(state.storage_root, workspaceId),
     })
   }
@@ -371,6 +416,7 @@ export async function runHost(input: HostRunInput): Promise<number> {
     heartbeatIntervalMs: BEAT_INTERVAL_MS,
     sessionAuthority: "managed-private",
     sealingPublicKey,
+    ...(direct ? { directRoutes: () => direct.routes() } : {}),
     ...(declaredProviderConfigRevision === undefined ? {} : { providerConfigRevision: declaredProviderConfigRevision }),
     // The stored revision is the fence a restart keeps: without it the first
     // beat would accept whatever scope the answer carried, including an older
@@ -529,6 +575,7 @@ export async function runHost(input: HostRunInput): Promise<number> {
   await drainWithin(connector.drain(), deps)
   connector.close()
   deps.stopServing()
+  await direct?.close()
   // Terminals belong to the process, not to a runtime the listener retires,
   // and a live one's shell keeps Node from exiting.
   await Pty.dispose()

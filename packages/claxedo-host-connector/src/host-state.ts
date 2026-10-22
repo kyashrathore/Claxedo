@@ -53,6 +53,14 @@ export type HostState = {
    * a restart states the revision it has rather than asking for the blob again.
    */
   provider_config?: { revision: number; sealed: string | null }
+  /**
+   * The private-network listener (`claxedo connect --direct`). Absent is on.
+   * `tls_private_key_jwk` is a P-256 key of its own, never the identity key:
+   * its public half is what a client pins, and it signs nothing the control
+   * plane verifies. `port` is the one the listener last bound, kept so the
+   * routes a client holds stay valid across restarts.
+   */
+  direct?: { enabled: boolean; port?: number; tls_private_key_jwk?: JsonWebKey }
   created_at: number
   /** Frozen at first redeem; a different URL is a different host state. */
   control_plane_url: string
@@ -288,6 +296,20 @@ function providerConfigRecord(value: unknown): NonNullable<HostState["provider_c
   return { revision: stateNumber(record.revision, "provider_config.revision"), sealed }
 }
 
+function directRecord(value: unknown): NonNullable<HostState["direct"]> {
+  const record = stateRecord(value, "direct")
+  if (typeof record.enabled !== "boolean") stateFieldError("direct.enabled", "must be true or false")
+  const port = stateNumberOrUndefined(record.port)
+  if (port !== undefined && !(Number.isInteger(port) && port > 0 && port < 65_536)) stateFieldError("direct.port", "must be a TCP port")
+  return {
+    enabled: record.enabled,
+    ...(port === undefined ? {} : { port }),
+    ...(record.tls_private_key_jwk === undefined
+      ? {}
+      : { tls_private_key_jwk: privateKeyJwk(record.tls_private_key_jwk, "direct.tls_private_key_jwk") }),
+  }
+}
+
 function scopeRecord(value: unknown): HostScope {
   const record = stateRecord(value, "scope")
   return {
@@ -388,6 +410,7 @@ export function parseHostState(text: string): HostState {
     state.sealing_private_key_jwk = privateKeyJwk(value.sealing_private_key_jwk, "sealing_private_key_jwk")
   }
   if (value.provider_config !== undefined) state.provider_config = providerConfigRecord(value.provider_config)
+  if (value.direct !== undefined) state.direct = directRecord(value.direct)
   if (value.scope !== undefined) state.scope = scopeRecord(value.scope)
   if (value.roots_canonical !== undefined) {
     const record = stateRecord(value.roots_canonical, "roots_canonical")

@@ -134,6 +134,9 @@ describe("parseHostState", () => {
     [`${SEALING_BASE},"sealing_private_key_jwk":{"kty":"EC","crv":"P-256","x":"x","y":"y"}}`, /sealing_private_key_jwk.d/],
     [`${SEALING_BASE},"provider_config":{"sealed":"mseal1.a.b.c"}}`, /provider_config.revision/],
     [`${SEALING_BASE},"provider_config":{"revision":1,"sealed":7}}`, /provider_config.sealed/],
+    [`${SEALING_BASE},"direct":{}}`, /direct.enabled/],
+    [`${SEALING_BASE},"direct":{"enabled":true,"port":70000}}`, /direct.port/],
+    [`${SEALING_BASE},"direct":{"enabled":true,"tls_private_key_jwk":{"kty":"EC","crv":"P-256","x":"x","y":"y"}}}`, /direct.tls_private_key_jwk.d/],
   ])("names the missing field in %s", (text, message) => {
     expect(() => parseHostState(text)).toThrow(message)
   })
@@ -144,6 +147,14 @@ describe("parseHostState", () => {
     )
     expect(state.sealing_private_key_jwk).toEqual({ kty: "EC", crv: "P-256", x: "sx", y: "sy", d: "sd" })
     expect(state.provider_config).toEqual({ revision: 4, sealed: "mseal1.a.b.c" })
+  })
+
+  test("carries the direct switch, its port and its TLS key back unchanged, and leaves an absent switch absent", () => {
+    const state = parseHostState(
+      `${SEALING_BASE},"direct":{"enabled":false,"port":44321,"tls_private_key_jwk":{"kty":"EC","crv":"P-256","x":"tx","y":"ty","d":"td"}}}`,
+    )
+    expect(state.direct).toEqual({ enabled: false, port: 44321, tls_private_key_jwk: { kty: "EC", crv: "P-256", x: "tx", y: "ty", d: "td" } })
+    expect(parseHostState(`${SEALING_BASE}}`).direct).toBeUndefined()
   })
 
   test("a recorded withdrawal is a revision with no blob, not an absent record", () => {

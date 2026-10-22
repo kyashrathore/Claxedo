@@ -10,9 +10,10 @@ export type ConnectArgs = {
   alongsideDesktop: boolean
   reset: boolean
   resetRoots: boolean
+  direct?: boolean
 }
 
-export const connectUsage = `claxedo connect [--token-file F] [--root DIR]... [--name N] [--install-service] [--uninstall-service] [--foreground] [--alongside-desktop] [--reset] [--reset-roots]`
+export const connectUsage = `claxedo connect [--token-file F] [--root DIR]... [--name N] [--direct on|off] [--install-service] [--uninstall-service] [--foreground] [--alongside-desktop] [--reset] [--reset-roots]`
 
 /** `--flag value` and `--flag=value` both read; a flag with no value is an error, not an empty string. */
 export function takeValue(args: string[], index: number, flag: string): { value: string; next: number } {
@@ -54,6 +55,13 @@ export function parseConnectArgs(args: string[]): ConnectArgs {
       i = taken.next
       continue
     }
+    if (arg === "--direct" || arg.startsWith("--direct=")) {
+      const taken = takeValue(args, i, "--direct")
+      if (taken.value !== "on" && taken.value !== "off") throw new Error(`--direct takes on or off: ${taken.value}`)
+      parsed.direct = taken.value === "on"
+      i = taken.next
+      continue
+    }
     if (arg === "--install-service") {
       parsed.installService = true
       continue
@@ -83,7 +91,7 @@ export function parseConnectArgs(args: string[]): ConnectArgs {
   if (parsed.installService && parsed.uninstallService) {
     throw new Error("--install-service and --uninstall-service cannot be combined")
   }
-  const others = parsed.tokenFile || parsed.roots.length > 0 || parsed.installService || parsed.uninstallService || parsed.foreground || parsed.alongsideDesktop
+  const others = parsed.tokenFile || parsed.roots.length > 0 || parsed.installService || parsed.uninstallService || parsed.foreground || parsed.alongsideDesktop || parsed.direct !== undefined
   if (parsed.reset && (others || parsed.resetRoots)) throw new Error("--reset takes no other options")
   if (parsed.resetRoots && others) throw new Error("--reset-roots takes no other options")
   return parsed
