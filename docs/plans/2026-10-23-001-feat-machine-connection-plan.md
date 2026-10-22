@@ -19,26 +19,22 @@ Decided by the owner on 2026-10-23:
   that machine. A broker inside the connected machine's own connector is not built.
 - **The hosted broker serves plan accounts** (Claude Pro/Max, ChatGPT plans), not only API keys.
 
-Default taken here until the owner says otherwise:
+Decided by the owner on 2026-10-22, answering the open questions below:
 
-- **A LAN machine whose main machine is away pauses its model calls** with one line ("<main machine> is offline;
-  model access resumes when it is back"). It does not fall back to the hosted broker; that would be a fallback,
-  which needs an explicit request.
+- **Revocation on the machine (W3):** "revoked within about a second, a minute at worst" is accepted.
+- **Which machines are LAN machines (W4):** none is marked. A machine the owner's desktop reaches directly on the
+  network (W1) spends through the desktop's broker; any other spends through the hosted broker. This replaces the
+  earlier default of pausing a LAN machine's model calls while its main machine is away: the owner asked for the
+  hosted broker in that case.
+- **W6** is closed (rooms already follow the machine). **W2** is reshaped as its Assessment says.
 
 Open, for the owner (each blocks only its own workstream):
 
-1. **W3, access checked on the machine.** Revocation reaches the machine by push within about a second; if the push
-   is lost, a grant still lives until it expires (about 60 s). Is "revoked within a second, 60 s at worst"
-   acceptable?
-2. **W9, end-to-end encryption.** The relay could then not read traffic; shared sessions need keys handed to every
+1. **W9, end-to-end encryption.** The relay could then not read traffic; shared sessions need keys handed to every
    viewer. Wanted, and when?
-3. **W10, agents without admin.** A separate low-privilege OS user stops an agent reading the connector's memory
+2. **W10, agents without admin.** A separate low-privilege OS user stops an agent reading the connector's memory
    or damaging the machine, but tasks such as installing a printer driver need admin. Default on or off per
    machine?
-4. **W4, which machines are cloud machines.** The decision above splits model access by machine kind, but nothing
-   records a machine's kind. Is it a flag the owner sets per machine, a property of the invitation, or does every
-   machine use the hosted broker until W1 gives LAN machines a route to the main machine? Building W4 for every
-   machine now would send LAN machines through the hosted broker, against that decision.
 
 ## 1. Where it stands (measured 2026-10-22, from India)
 
@@ -88,10 +84,10 @@ why it was or was not built:
 
 | | Verdict |
 |---|---|
-| W3 | Not built: decision 1. The owner withdrew a 10 s lease window on the same grounds; an alternative is below |
-| W1 | Not built: needs W3 at three verifiers, and a LAN with the desktop to prove |
+| W3 | Built after decision 1 was accepted (Progress below) |
+| W1 | In progress after W3 |
 | W2 | Not built as written: most of it already holds, and what is left is small; reshaped below |
-| W4 | Not built: decision 4, and only a server deploy proves it. The most valuable next lane |
+| W4 | Cloud path in progress; the LAN path follows W1 |
 | W5 | `claxedo doctor`, the service's PATH and Pi's Windows bash built; installers need a Windows box |
 | W6 | Already met by how rooms are placed |
 
