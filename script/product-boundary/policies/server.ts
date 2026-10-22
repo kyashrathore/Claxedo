@@ -295,8 +295,12 @@ export const serverWorkerd: Policy = {
   // attestation encodings split out of the D1 host authority
   // (`authority/adapters/d1/host-attestation-codec.ts`). It adds no package
   // edge.
-  // 186/23, no headroom.
-  ceilings: { modules: 186, packages: 23 },
+  // +1 module (owner: the D1 host access authority's beat): the direct routes
+  // a machine's latest beat reports, kept in a table and a module of their
+  // own and read only for the workspace owner's connection
+  // (`authority/adapters/d1/host-direct-routes.ts`). It adds no package edge.
+  // 187/23, no headroom.
+  ceilings: { modules: 187, packages: 23 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

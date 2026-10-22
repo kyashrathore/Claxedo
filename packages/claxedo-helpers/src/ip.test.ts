@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { isLoopbackIpAddress, isPrivateIpAddress, parseIpAddress } from "./ip"
+import { isLoopbackIpAddress, isPrivateIpAddress, isPrivateNetworkAddress, parseIpAddress } from "./ip"
 
 describe("parseIpAddress", () => {
   test("reads dotted, hex, octal, and shorthand IPv4 to one value", () => {
@@ -57,6 +57,20 @@ describe("isPrivateIpAddress", () => {
   test("permits public IPv4, public IPv6, and public addresses in embeddings", () => {
     for (const spelling of ["8.8.8.8", "93.184.216.34", "2606:4700:4700::1111", "::ffff:8.8.8.8", "64:ff9b::808:808", "2002:808:808::1"]) {
       expect(isPrivateIpAddress(parseIpAddress(spelling)!), spelling).toBe(false)
+    }
+  })
+})
+
+describe("isPrivateNetworkAddress", () => {
+  test("is RFC 1918, CGNAT and unique-local IPv6", () => {
+    for (const spelling of ["10.0.0.1", "172.16.0.1", "172.31.255.254", "192.168.1.20", "100.64.0.1", "100.127.255.254", "fd7a:115c:a1e0::1", "fc00::1"]) {
+      expect(isPrivateNetworkAddress(parseIpAddress(spelling)!), spelling).toBe(true)
+    }
+  })
+
+  test("is not loopback, link-local, unspecified, reserved, public or an embedded spelling", () => {
+    for (const spelling of ["127.0.0.1", "0.0.0.0", "169.254.1.1", "198.18.0.1", "192.0.2.1", "8.8.8.8", "::1", "::", "fe80::1", "2606:4700::1", "::ffff:10.0.0.1"]) {
+      expect(isPrivateNetworkAddress(parseIpAddress(spelling)!), spelling).toBe(false)
     }
   })
 })

@@ -123,6 +123,9 @@ export async function hostTunnelConnectionInfo(
   if (previousJti) {
     await authority.revokeRuntimeAccessToken(auth, { jti: previousJti, workspaceId })
   }
+  // Read only here, past the mint: this answer is the workspace owner's, and
+  // a share holder's connection is minted elsewhere and names no route.
+  const directRoutes = await authority.hostDirectRoutes?.({ workspaceId })
   return {
     connection: {
       backing: "local-worktree" as const,
@@ -151,6 +154,7 @@ export async function hostTunnelConnectionInfo(
       runtimeAccessToken: token.runtimeAccessToken,
       tokenExpiresAt: token.tokenExpiresAt,
       role,
+      ...(directRoutes ? { directRoutes } : {}),
     },
   } as const
 }

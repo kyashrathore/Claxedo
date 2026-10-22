@@ -189,7 +189,10 @@ const ENTRIES = [
   // (`workspace/machine-caller.ts`), the ring the host routes publish
   // (`workspace/host-changed-notice.ts`), and the attestation encodings split
   // out of the D1 host authority (`authority/adapters/d1/host-attestation-codec.ts`).
-  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 186, packages: 23 },
+  // Every entry keeps the direct routes a machine's beat reports, in a table
+  // and a D1 module of their own, and hands them to the workspace owner's
+  // connection (`authority/adapters/d1/host-direct-routes.ts`).
+  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 187, packages: 23 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the
   // manifest, and `cloudflare:workers` for the supervisor and its entrypoints,
@@ -216,7 +219,7 @@ const ENTRIES = [
   // The hosted connections setup picks which code-host connection can read a
   // pasted repository by the rule the local connections host shares
   // (`connections/repository-access.ts`).
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 239, packages: 27 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 240, packages: 27 },
   // The full-hosted entry alone carries the session rows pass
   // (`session/session-rows-pass.ts`) and its wiring to the sandbox and the
   // relay (`hosted-workerd/full-hosted-sandbox.ts`): it delivers the pass to a
@@ -231,7 +234,7 @@ const ENTRIES = [
   // their readers (`workspace/runtime-lost.ts`,
   // `authority/adapters/d1/runtime-lost-sessions.ts`), since only this entry
   // has cloud runtimes to lose.
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 251, packages: 27 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 252, packages: 27 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {

@@ -34,6 +34,7 @@ import type { ProviderDirect, ProviderProjectionSource } from "@claxedo/agent-ru
 
 import { Hono, type Context } from "hono"
 import { routeParam } from "@claxedo/helpers/route-param"
+import { isPrivateNetworkAddress, parseIpAddress } from "@claxedo/helpers"
 import { bodyLimit } from "hono/body-limit"
 import { z } from "zod"
 import {
@@ -89,6 +90,19 @@ const enrollBody = z
   })
   .strict()
 
+const privateNetworkAddress = z.string().min(1).max(64).refine((value) => {
+  const ip = parseIpAddress(value)
+  return ip !== undefined && isPrivateNetworkAddress(ip)
+}, "must be a private-network IP address")
+
+const directRoutesBody = z
+  .object({
+    port: z.number().int().min(1).max(65_535),
+    addresses: z.array(privateNetworkAddress).min(1).max(16),
+    spkiSha256: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+  })
+  .strict()
+
 /**
  * Heartbeat v3, machine callers. No payload signature: the request signature
  * (`verifyMachineRequest`) already covers the whole body. `keyVersion` lets a
@@ -105,6 +119,7 @@ const machineHeartbeatBody = z
     sessionAuthority: z.enum(["local", "managed-private"]).optional(),
     sealingPublicKey: z.string().min(1).max(4_000).optional(),
     providerConfigRevision: z.number().int().min(0).optional(),
+    directRoutes: directRoutesBody.optional(),
   })
   .strict()
 
@@ -429,6 +444,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
       ...(body.sealingPublicKey ? { sealingPublicKey: body.sealingPublicKey } : {}),
       ...(body.providerConfigRevision === undefined ? {} : { providerConfigAckedRevision: body.providerConfigRevision }),
     })
+    await authority.recordHostDirectRoutes?.(caller, body.directRoutes)
     // Exactly the set the batch just made ready: an ack at the assignment's
     // current revision. A stale ack renews the lease but earns no credential
     // for that workspace, the same answer every other routability reader gives.

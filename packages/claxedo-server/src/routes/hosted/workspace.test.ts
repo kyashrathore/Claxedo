@@ -479,6 +479,21 @@ describe("hosted connection", () => {
     expect(JSON.stringify(capture.mock.calls)).not.toMatch(/rat-token|jti_rat|relay\.test/)
   })
 
+  test("hands the owner the direct routes of the machine serving the workspace, and nothing when it reports none", async () => {
+    const routes = { port: 44_321, addresses: ["192.168.1.20"], spkiSha256: "A".repeat(43) }
+    const hostDirectRoutes = vi.fn(async (): Promise<typeof routes | undefined> => routes)
+    const { app } = buildApp({ authority: fakeAuthority({ hostDirectRoutes }) })
+
+    const withRoutes = await app.fetch(get("/ws_1/connection"))
+    expect(withRoutes.status).toBe(200)
+    expect(await withRoutes.json()).toMatchObject({ runtimeAccessToken: "rat-token", directRoutes: routes })
+    expect(hostDirectRoutes).toHaveBeenCalledWith({ workspaceId: "ws_1" })
+
+    hostDirectRoutes.mockResolvedValueOnce(undefined)
+    const without = await app.fetch(get("/ws_1/connection"))
+    expect(await without.json()).not.toHaveProperty("directRoutes")
+  })
+
   test("uses the workspace home_region to choose the regional relay endpoint", async () => {
     const authority = fakeAuthority({
       openWorkspace: vi.fn(async () => ({
@@ -1064,6 +1079,22 @@ describe("a session share holder's connection", () => {
     expect(authority.recordRuntimeAccessToken).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ role: "viewer", sessionId: "ses_shared" }))
     expect(authority.openWorkspace).not.toHaveBeenCalled()
     expect(authority.activeWorkspaceHost).not.toHaveBeenCalled()
+  })
+
+  test("names no direct route, whatever the serving machine reports", async () => {
+    const hostDirectRoutes = vi.fn(async () => ({ port: 44_321, addresses: ["192.168.1.20"], spkiSha256: "A".repeat(43) }))
+    const authority = fakeAuthority({
+      hostDirectRoutes,
+      authorizeSessionRead: vi.fn(async () => {}),
+      resolveWorkspaceOwner: vi.fn(async () => ({ userId: "user_owner", actorId: "act_owner", orgId: "org_owner", projectId: "prj_1" })),
+    })
+    const app = sessionApp({ authority, hostTunnelResolver: async () => ({ active: true, hostId: "host_1", backing: "local-worktree" }) })
+
+    const res = await app.fetch(get("/ws_1/connection?sessionId=ses_shared", "user_share"))
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).not.toHaveProperty("directRoutes")
+    expect(hostDirectRoutes).not.toHaveBeenCalled()
   })
 
   test("is refused before anything is minted when the caller may not read the session", async () => {

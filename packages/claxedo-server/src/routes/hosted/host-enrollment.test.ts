@@ -633,6 +633,36 @@ describe("POST /heartbeat, machine caller (v3)", () => {
     expect(api.heartbeatHostEnrollmentByMachine).not.toHaveBeenCalled()
   })
 
+  test("records the direct routes a beat reports, clears them on a beat that reports none, and refuses routes it cannot hand a client", async () => {
+    const key = await machineKey()
+    const recordHostDirectRoutes = vi.fn(async () => {})
+    const api = machineAuthority(enrollmentRow(key), { recordHostDirectRoutes })
+    const { signedCall } = await mountedRoutes(api)
+    const routes = { port: 44_321, addresses: ["192.168.1.20", "100.101.102.103", "fd7a:115c:a1e0::1"], spkiSha256: "A".repeat(43) }
+    const machine = expect.objectContaining({ enrollmentId: "enr_1", hostId: "host_1" })
+
+    expect((await signedCall(key, "/heartbeat", beat({ directRoutes: routes }))).status).toBe(200)
+    expect(recordHostDirectRoutes).toHaveBeenLastCalledWith(machine, routes)
+    expect((await signedCall(key, "/heartbeat", beat())).status).toBe(200)
+    expect(recordHostDirectRoutes).toHaveBeenLastCalledWith(machine, undefined)
+
+    const refused = [
+      { ...routes, addresses: ["8.8.8.8"] },
+      { ...routes, addresses: ["127.0.0.1"] },
+      { ...routes, addresses: ["fe80::1"] },
+      { ...routes, addresses: [] },
+      { ...routes, port: 0 },
+      { ...routes, spkiSha256: "short" },
+      { ...routes, extra: true },
+    ]
+    for (const directRoutes of refused) {
+      const response = await signedCall(key, "/heartbeat", beat({ directRoutes }))
+      expect(response.status, JSON.stringify(directRoutes)).toBe(400)
+    }
+    expect(recordHostDirectRoutes).toHaveBeenCalledTimes(2)
+    expect(api.heartbeatHostEnrollmentByMachine).toHaveBeenCalledTimes(2)
+  })
+
   test("spends a per-enrollment budget only after verification, 120 a minute keyed machine:<enrollment_id>", async () => {
     const key = await machineKey()
     const api = machineAuthority(enrollmentRow(key))

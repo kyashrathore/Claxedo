@@ -1,5 +1,6 @@
 import {
   createRemoteJWKSet,
+  decodeJwt,
   importJWK,
   importPKCS8,
   importSPKI,
@@ -8,8 +9,10 @@ import {
   type JWTVerifyGetKey,
 } from "jose"
 import type { PrivateSessionRuntimePrincipal, RelayHostPrivateSessionClaims } from "@claxedo/server-core/platform/auth/private-session-authority"
-import { SESSION_STREAM_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
+import { SESSION_STREAM_LEASE_TTL_MS, sessionHostRootOf } from "@claxedo/workspace-relay-protocol"
+import { runtimeAccessTokenAudience, runtimeAccessTokenIssuer } from "@claxedo/workspace-relay"
 import { trimToUndefined } from "@claxedo/helpers/string"
+import { asRecord } from "@claxedo/helpers/guards"
 import { finiteTimestamp, positiveInteger } from "./runtime-authority-request"
 
 /** The signed proofs the session authority mints for a runtime and reads back: stream leases, turn leases and the relay's host tokens. */
@@ -282,8 +285,69 @@ async function readTurnClaims(env: Record<string, string | undefined>, lease: st
 type RelayProofKey = JWTVerifyGetKey
 const relayKeys = new Map<string, RelayProofKey | Promise<RelayProofKey>>()
 
-export function relayProofVerifier(env: Record<string, string | undefined>) {
+export type RuntimeAccessTokenRows = {
+  runtimeAccessTokenActive: (input: { jti: string; workspaceId: string; hostId: string }) => Promise<unknown>
+}
+
+/**
+ * The workspace owner's own Runtime Access Token, presented by a machine that
+ * admitted it on its direct route. It names its own row, so its `jti` is the
+ * parent every caller rechecks. Only the token a machine's direct route
+ * admits is a proof: workspace-wide, minted for a machine's host, for no
+ * purpose, cloud routing or channel. A relay host token dies in 60 s, while
+ * this token lives for its full term, so its row is read on every proof, not
+ * only where a caller rechecks the parent.
+ */
+async function runtimeAccessProofClaims(
+  env: Record<string, string | undefined>,
+  rows: RuntimeAccessTokenRows | undefined,
+  token: string,
+): Promise<RelayHostPrivateSessionClaims> {
+  if (!rows) throw new Error("This oracle cannot recheck a Runtime Access Token's row")
+  const pem = keyPem(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM)
+  if (!pem) throw new Error("Runtime Access Token verification key is unavailable")
+  const { payload } = await jwtVerify(token, await importSPKI(pem, "EdDSA"), {
+    algorithms: ["EdDSA"],
+    issuer: runtimeAccessTokenIssuer,
+    audience: runtimeAccessTokenAudience,
+  })
+  const principalKind = payload.principal_kind
+  const actorKind = payload.actor_kind
+  const role = payload.role
+  const actorId = trimToUndefined(payload.actor_id)
+  const orgId = trimToUndefined(payload.org_id)
+  const workspaceId = trimToUndefined(payload.workspace_id)
+  const hostId = trimToUndefined(payload.host_id)
+  const jti = trimToUndefined(payload.jti)
+  if (
+    (principalKind !== "user" && principalKind !== "service")
+    || (actorKind !== "human" && actorKind !== "agent")
+    || !actorId || !orgId || !workspaceId || !hostId || !jti
+    || (role !== "viewer" && role !== "editor" && role !== "admin" && role !== "owner")
+    || payload.scope !== "workspace" || payload.session_id !== undefined
+    || payload.purpose !== undefined || payload.routing_id !== undefined || payload.channel_identity !== undefined
+    || sessionHostRootOf(hostId)
+  ) throw new Error("Runtime Access Token proof claims are invalid")
+  if (asRecord(await rows.runtimeAccessTokenActive({ jti, workspaceId, hostId }))?.active !== true) {
+    throw new Error("Runtime Access Token is inactive")
+  }
+  return {
+    principal_kind: principalKind,
+    actor_id: actorId,
+    actor_kind: actorKind,
+    org_id: orgId,
+    workspace_id: workspaceId,
+    host_id: hostId,
+    jti,
+    parent_jti: jti,
+    role,
+  }
+}
+
+/** A relay host token, or, where `rows` can recheck it, the owner's Runtime Access Token a machine admitted directly. */
+export function relayProofVerifier(env: Record<string, string | undefined>, rows?: RuntimeAccessTokenRows) {
   return async (token: string): Promise<RelayHostPrivateSessionClaims> => {
+    if (decodeJwt(token).aud === runtimeAccessTokenAudience) return await runtimeAccessProofClaims(env, rows, token)
     const { payload } = await jwtVerify(token, await relayProofKey(env), {
       algorithms: ["EdDSA", "ES256", "RS256"],
       issuer: "workspace-relay",
