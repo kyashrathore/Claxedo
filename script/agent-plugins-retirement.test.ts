@@ -33,22 +33,38 @@ export function retiredAgentExtensionFindings(files: Array<{ file: string; text:
   }))
 }
 
-async function repositorySources() {
-  const files: Array<{ file: string; text: string }> = []
+/**
+ * Every retired name contains "extension" in some case, so one scan for it
+ * picks the files worth matching: about 185 of the 8,200 the scan reads.
+ */
+const CANDIDATE = /extension/i
+
+function scannedFiles() {
   const listed = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], {
     cwd: ROOT,
     encoding: "utf8",
   })
-  for (const file of listed.split("\n").filter(Boolean)) {
-    if (file === THIS_FILE
-      || file === TRANSCRIPT_LAB_FIXTURE
-      || file.startsWith("docs/plans/")
-      || (!TEXT_EXTENSIONS.has(path.extname(file)) && !ROOT_TEXT_FILES.has(file))) continue
-    const absolute = path.join(ROOT, file)
-    if (!fs.existsSync(absolute) || !fs.statSync(absolute).isFile()) continue
-    files.push({ file, text: await Bun.file(absolute).text() })
-  }
-  return files
+  return listed.split("\n").filter((file) => file
+    && file !== THIS_FILE
+    && file !== TRANSCRIPT_LAB_FIXTURE
+    && !file.startsWith("docs/plans/")
+    && (TEXT_EXTENSIONS.has(path.extname(file)) || ROOT_TEXT_FILES.has(file)))
+}
+
+/** Synchronous: awaiting each of the 8,200 reads took 1.7 s here, one synchronous pass 0.16 s. */
+function candidateSources(files: string[]) {
+  return files.flatMap((file) => {
+    let text: string
+    try {
+      text = fs.readFileSync(path.join(ROOT, file), "utf8")
+    } catch (error) {
+      // A file git still lists but the working tree deleted, or a submodule's directory.
+      const code = error instanceof Error && "code" in error ? error.code : undefined
+      if (code === "ENOENT" || code === "EISDIR") return []
+      throw error
+    }
+    return CANDIDATE.test(text) ? [{ file, text }] : []
+  })
 }
 
 describe("Agent Extensions hard-cut retirement ratchet", () => {
@@ -65,14 +81,17 @@ describe("Agent Extensions hard-cut retirement ratchet", () => {
     )
   })
 
-  test("scans every expected repository root and permits no retired production contract", async () => {
-    const sources = await repositorySources()
-    for (const root of EXPECTED_ROOTS) expect(sources.some((source) => source.file.startsWith(`${root}/`))).toBe(true)
-    expect(sources.some((source) => source.file === ".gitignore")).toBe(true)
-    expect(sources.some((source) => source.file === "README.md")).toBe(true)
-    expect(sources.some((source) => source.file.includes("/.workspace-runtime/"))).toBe(true)
+  test("every retired name is a candidate for the scan", () => {
+    for (const pattern of RETIRED) expect(CANDIDATE.test(pattern.source)).toBe(true)
+  })
 
-    const findings = retiredAgentExtensionFindings(sources)
-    expect(findings).toEqual([])
+  test("scans every expected repository root and permits no retired production contract", () => {
+    const files = scannedFiles()
+    for (const root of EXPECTED_ROOTS) expect(files.some((file) => file.startsWith(`${root}/`))).toBe(true)
+    expect(files).toContain(".gitignore")
+    expect(files).toContain("README.md")
+    expect(files.some((file) => file.includes("/.workspace-runtime/"))).toBe(true)
+
+    expect(retiredAgentExtensionFindings(candidateSources(files))).toEqual([])
   })
 })
