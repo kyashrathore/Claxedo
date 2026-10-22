@@ -551,8 +551,11 @@ export const desktopRenderer: Policy = {
   // `i18n/with-translations.tsx`), and the settings domain's dictionary loader
   // and lazy connect-machine drawer (`settings/translations.ts`,
   // `settings/connect-machine.tsx`). They add no package edge.
-  // 1555/37, no headroom.
-  ceilings: { modules: 1555, packages: 37 },
+  // The terminal's one loader of its xterm backend, which the terminal pane's
+  // mount and the terminal creator's preload share (owner: the app's terminal
+  // domain, `terminal/backend/load.ts`). It adds no package edge.
+  // 1556/37, no headroom.
+  ceilings: { modules: 1556, packages: 37 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

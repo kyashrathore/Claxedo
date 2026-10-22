@@ -12,6 +12,10 @@ function decodeTerminalPaneState(value: Json): TerminalPaneState | undefined {
   return { placementId: placementId(placement), terminalId: terminalId(terminal) }
 }
 
+const terminalPaneView = lazyView(() => import("./view/terminal-pane").then((module) => module.TerminalPane))
+
+export const preloadTerminalPane = () => terminalPaneView.preload()
+
 export const terminalPaneKind: PaneKind<TerminalPaneState> = {
   kind: "terminal",
   keepMounted: true,
@@ -20,7 +24,7 @@ export const terminalPaneKind: PaneKind<TerminalPaneState> = {
     return terminals.store(state.placementId).row(state.terminalId)?.title ?? terminals.defaultTitle()
   },
   icon: "terminal",
-  view: lazyView(() => import("./view/terminal-pane").then((module) => module.TerminalPane)),
+  view: terminalPaneView,
   encode: (state) => ({ placementId: state.placementId, terminalId: state.terminalId }),
   decode: decodeTerminalPaneState,
   fromRoute: (route) =>

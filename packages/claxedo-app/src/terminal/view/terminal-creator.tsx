@@ -1,4 +1,4 @@
-import { createSignal, For, Show, type JSX } from "solid-js"
+import { createSignal, For, onMount, Show, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useWakeProgress, useWorkspaceName } from "@/cloud"
 import { useErrorCopy, useTranslator } from "@/i18n"
@@ -9,6 +9,8 @@ import { ClaxedoIcon, ClaxedoLogo } from "@/ui"
 import { useWorkbench } from "@/workbench"
 import { useTerminalRuntime } from "../context"
 import { terminalCreatorPaneKind } from "../creator-pane"
+import { preloadTerminalPane } from "../pane"
+import { loadTerminalBackend } from "../backend/load"
 import { agentsNote } from "../agents"
 import { terminalDictionary } from "../i18n"
 import { terminalLaunchers, type TerminalLauncher } from "../launchers"
@@ -94,6 +96,9 @@ export function TerminalCreator(props: PaneProps<TerminalCreatorState>): JSX.Ele
   const [error, setError] = createSignal<string>()
   const [creating, setCreating] = createSignal<WhereCreation>()
   const draft = createDraftPlacementResolver()
+  onMount(() => {
+    for (const load of [preloadTerminalPane, loadTerminalBackend]) load().catch((error: unknown) => console.warn("Terminal code could not be fetched ahead of a new terminal", { error }))
+  })
   const launch = async (launcher: TerminalLauncher) => {
     if (starting()) return
     setStarting(launcher.id)

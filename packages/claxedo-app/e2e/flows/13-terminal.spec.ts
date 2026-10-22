@@ -96,6 +96,22 @@ test("13 terminal: run a command in a shell that declares no sandbox, its output
   })
 })
 
+test("13 terminal: the terminal's code is fetched while the creator is open, so the first terminal waits only on its create", async ({ stack, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("terminal", "Terminal")
+  await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
+  const requested: string[] = []
+  app.on("request", (request) => {
+    const url = new URL(request.url())
+    if (/\/assets\/(terminal-pane|xterm)-/.test(url.pathname) || (request.method() === "POST" && url.pathname === "/api/wr/pty")) requested.push(`${request.method()} ${url.pathname}`)
+  })
+  await app.getByRole("button", { name: "New Terminal", exact: true }).click()
+  await expect.poll(() => requested.filter((entry) => /terminal-pane-|xterm-.*\.js/.test(entry)).length).toBe(2)
+  expect(requested.some((entry) => entry.startsWith("POST")), "nothing is created before a launcher is picked").toBe(false)
+  await app.getByRole("button", { name: /^Shell\b/ }).click()
+  await expect(app).toHaveURL(TERMINAL_URL)
+  expect(requested.filter((entry) => entry.startsWith("POST"))).toHaveLength(1)
+})
+
 async function expectNoTerminalTab(app: Page) {
   await expect(app.getByRole("button", { name: /^Close terminal: / })).toHaveCount(0)
   await app.getByRole("button", { name: "Hide Sidebar" }).click()

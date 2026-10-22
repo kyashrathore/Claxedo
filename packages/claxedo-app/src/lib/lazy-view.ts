@@ -61,6 +61,6 @@ export async function loadChunk<T>(load: () => Promise<T>): Promise<T> {
   }
 }
 
-export function lazyView<Props extends Record<string, unknown>>(load: () => Promise<Component<Props>>): Component<Props> {
+export function lazyView<Props extends Record<string, unknown>>(load: () => Promise<Component<Props>>) {
   return lazy(async () => ({ default: await loadChunk(load) }))
 }

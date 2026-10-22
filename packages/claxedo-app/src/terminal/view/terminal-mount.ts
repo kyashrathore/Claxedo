@@ -3,6 +3,7 @@ import { resolveWorkspaceFileFocus, type WorkspaceFileFocusTarget } from "@/lib/
 import { toAppError, type PlacementId, type Server, type TerminalId } from "@/server"
 import type { RendererBudget } from "../backend/renderer-budget"
 import type { TerminalBackend, TerminalBackendOptions } from "../backend/types"
+import { loadTerminalBackend } from "../backend/load"
 import { attachTerminal, type Attachment } from "../attach"
 import { type TerminalConnection, type TerminalConnectionEvent, type TerminalRow } from "../model"
 import { isLikelyTui } from "../resize"
@@ -85,7 +86,7 @@ export function mountTerminal(input: TerminalMountInput): TerminalMount {
   const likelyAgent = isLikelyTui({ command: input.row()?.command, title: input.row()?.title })
 
   const start = async () => {
-    const { createBackend } = await import("#terminal-backend")
+    const { createBackend } = await loadTerminalBackend()
     if (disposed) return
     const created = await createBackend(input.host, backendOptions(input, likelyAgent))
     if (disposed) return created.dispose()
