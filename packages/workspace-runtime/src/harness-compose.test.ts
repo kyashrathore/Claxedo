@@ -7,6 +7,7 @@ import { createHarnessComposer } from "@claxedo/harness/compose"
 import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
 import { createHarnessServices } from "./harness-services"
 import { requireCursorWorker } from "./host/executables/cursor"
+import { requirePiRunner } from "./host/executables/pi-runner"
 import { removeTempRoot } from "@claxedo/harness/testing"
 
 const peerSource = `#!/usr/bin/env node
@@ -44,7 +45,7 @@ test("harness package composition starts ACP, Pi, Codex, Claude and OpenCode and
   const clock = { now: () => Date.now(), setTimeout, clearTimeout }
   const services = createHarnessServices({ ownership: volatileLaunchOwnership(), log, clock, patternEvaluator: async () => {}, healthChanged: () => {} })
   const composer = createHarnessComposer(services, {
-    pi: () => ({ stateRoot: path.join(root, "pi-state"), env: process.env }),
+    pi: () => ({ stateRoot: path.join(root, "pi-state"), env: process.env, runner: () => requirePiRunner(process.env) }),
     codex: () => ({ binary: codexBinary, homeRoot: path.join(root, "codex-homes"), ownerHome: path.join(root, "codex-owner"),
       env: { ...process.env, COMPOSE_PEER_KIND: "codex" } }),
     claude: () => ({ executable: "claude", configRoot: path.join(root, "claude-homes"),

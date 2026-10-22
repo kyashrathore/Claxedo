@@ -13,6 +13,7 @@ import { ClaudeSdkTransport } from "./transports/claude-sdk"
 import type { ClaudeSdkOptions } from "./transports/claude-sdk/launch-context"
 import { CursorSdkTransport, type CursorSdkTransportOptions } from "./transports/cursor-sdk"
 export { CURSOR_WORKER_FILE } from "./transports/cursor-sdk"
+export { PI_RUNNER_FILE } from "./transports/pi-durable/runner-file"
 import { OpenCodeSdkTransport, type OpenCodeSdkTransportOptions } from "./transports/opencode-sdk/transport"
 
 export type HarnessCompositionOptions = {

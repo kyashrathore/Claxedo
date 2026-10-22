@@ -6,7 +6,7 @@ import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
 import type { PluginProjection } from "@claxedo/harness/contract"
 import { createRelayHostAuthMiddleware } from "@claxedo/session-core/relay-host"
 import { mintRelayHostToken, relayHostInputFromRuntimeClaims, verifyRuntimeAccessToken } from "@claxedo/workspace-relay"
-import { createSpawnService, ExecutionEnvRoutes } from "@claxedo/workspace-runtime/execution-env"
+import { createSpawnService, ExecutionEnvRoutes, requirePiRunner } from "@claxedo/workspace-runtime/execution-env"
 import { MACHINE_HOST, WORKSPACE_ID } from "./control-plane"
 
 const PREFIX = `/workspaces/${WORKSPACE_ID}`
@@ -28,6 +28,7 @@ export async function startWorkspaceMachine(input: {
   const machine = new Hono()
   machine.use("*", createRelayHostAuthMiddleware({ key: input.relayHostKeys.publicKey, workspaceId: WORKSPACE_ID, hostId: MACHINE_HOST }))
   const routes = ExecutionEnvRoutes({
+    runner: () => requirePiRunner(process.env),
     directory: input.directory, env: { PATH: process.env.PATH, HOME: input.directory },
     services: { spawn: createSpawnService(volatileLaunchOwnership()), clock: { now: Date.now, setTimeout, clearTimeout }, log: console },
     piProjection: input.projection, upgradeWebSocket: sockets.upgradeWebSocket,

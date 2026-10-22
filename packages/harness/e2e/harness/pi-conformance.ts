@@ -54,8 +54,10 @@ export async function piBackend(name = "pi-durable"): Promise<PiBackend> {
   }
 }
 
+export const PI_RUNNER = () => ({ file: process.execPath, args: [path.join(import.meta.dirname, "../../src/transports/pi-durable/runner-child.ts")] })
+
 export function piTransport(services: TestServices, backend: { root: string }) {
-  return new PiDurableTransport(services, createNodePiPlacement({ stateRoot: path.join(backend.root, "state"), services,
+  return new PiDurableTransport(services, createNodePiPlacement({ stateRoot: path.join(backend.root, "state"), services, runner: PI_RUNNER,
     env: { PATH: process.env.PATH, HOME: path.join(backend.root, "home"), CLAXEDO_SERVER_TOKEN: "daemon-secret" } }))
 }
 

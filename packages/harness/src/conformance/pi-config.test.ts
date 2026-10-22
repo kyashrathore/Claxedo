@@ -1,6 +1,6 @@
 import path from "node:path"
 import { expect, test } from "bun:test"
-import { piBackend, type PiBackend } from "../../e2e/harness/pi-conformance"
+import { PI_RUNNER, piBackend, type PiBackend } from "../../e2e/harness/pi-conformance"
 import { PiDurableTransport } from "../transports/pi-durable"
 import { createNodePiPlacement } from "../transports/pi-durable/node"
 import { setupConformance } from "./test-support/run"
@@ -10,7 +10,7 @@ test("Pi publishes its actual model catalog after turn-scoped credentials arrive
     name: "pi-turn-config", backend: () => piBackend("pi-turn-config"),
     makeTransport: (services, backend) => {
       const pi = backend as PiBackend
-      const placement = createNodePiPlacement({ services, stateRoot: path.join(pi.root, "state"), env: { PATH: process.env.PATH } })
+      const placement = createNodePiPlacement({ services, stateRoot: path.join(pi.root, "state"), env: { PATH: process.env.PATH }, runner: PI_RUNNER })
       return new PiDurableTransport(services, { ...placement, prepareTurn: async () => ({ credentials: pi.credentials,
         projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] }, providerDefinitions: [] }) })
     },
@@ -36,7 +36,7 @@ test("Pi keeps its delivered model choices across a restart without retaining tu
     name: "pi-restored-config", backend: () => piBackend("pi-restored-config"),
     makeTransport: (services, backend) => {
       const pi = backend as PiBackend
-      const placement = createNodePiPlacement({ services, stateRoot: path.join(pi.root, "state"), env: { PATH: process.env.PATH } })
+      const placement = createNodePiPlacement({ services, stateRoot: path.join(pi.root, "state"), env: { PATH: process.env.PATH }, runner: PI_RUNNER })
       return new PiDurableTransport(services, { ...placement, prepareTurn: async () => ({ credentials: pi.credentials,
         projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] }, providerDefinitions: [] }) })
     },

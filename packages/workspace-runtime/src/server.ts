@@ -27,6 +27,7 @@ import { WorktreeRoutes } from "./routes/worktree"
 import { workspaceRuntimeLivenessResponse, workspaceRuntimeProbeResponse } from "./routes/health"
 import { CheckpointRoutes } from "./routes/checkpoint"
 import { ExecutionEnvRoutes } from "./routes/execution-env"
+import { requirePiRunner } from "./host/executables/pi-runner"
 import {
   assertWorkspaceRuntimeExposure,
   createWorkspaceRuntimeExposureMiddleware,
@@ -600,7 +601,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
   })
   const executionEnv = options.exposure?.kind === "relay"
     ? ExecutionEnvRoutes({ directory: options.target?.directory ?? workspaceDir(), env: options.env ?? process.env,
-      services: host.shellServices, piProjection: host.piProjection, upgradeWebSocket: nodeWebSocket.upgradeWebSocket })
+      runner: () => requirePiRunner(options.env ?? process.env), services: host.shellServices, piProjection: host.piProjection, upgradeWebSocket: nodeWebSocket.upgradeWebSocket })
     : undefined
   if (executionEnv) app.route(WorkspaceRuntimeRoutes.executionEnv, executionEnv.routes)
 

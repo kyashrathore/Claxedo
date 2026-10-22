@@ -19,6 +19,7 @@ import { rollup } from "rollup"
 import dts from "rollup-plugin-dts"
 import { z } from "zod"
 import { bundleCursorWorker } from "../../harness/scripts/cursor-worker"
+import { bundlePiRunner } from "../../harness/scripts/pi-runner"
 import { OPENCODE_SDK_EXTERNALS } from "./stage-opencode-sdk"
 import { stageOpenCodePatches } from "./stage-opencode-patches"
 
@@ -220,6 +221,7 @@ async function bundlePublishedJS() {
   })
   fs.chmodSync(path.join(DIST, "cli.mjs"), 0o755)
   await bundleCursorWorker(DIST)
+  await bundlePiRunner(DIST)
 }
 
 function emitDeclarations() {

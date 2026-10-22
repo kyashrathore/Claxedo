@@ -6,11 +6,13 @@ import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/conte
 import { boundedJsonBody, errorBody } from "@claxedo/session-core"
 import type { RelayHostAuthContext } from "@claxedo/session-core/relay-host"
 import type { PluginProjection } from "@claxedo/harness/contract"
-import { ownedExecutionEnv, resolvedPiShell, sessionCommands, type PiShellServices } from "@claxedo/harness/pi-durable/shell"
+import { ownedExecutionEnv, resolvedPiShell, sessionCommands, type PiShellServices, type RunnerCommand } from "@claxedo/harness/pi-durable/shell"
+import { harnessSpawnEnv } from "@claxedo/process-ownership/spawn-env"
 import { runFileSystemOperation } from "./execution-env-fs"
 import { McpStdioRelayRoutes } from "./mcp-stdio-relay"
 
 export type ExecutionEnvRouteOptions = {
+  runner: RunnerCommand
   directory: string
   env: NodeJS.ProcessEnv
   services: PiShellServices
@@ -67,15 +69,15 @@ function cappedOutput(write: (text: string) => void) {
 }
 
 function stringEnv(env: NodeJS.ProcessEnv): Record<string, string> {
-  return Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined))
+  return Object.fromEntries(Object.entries(harnessSpawnEnv(env)).filter((entry): entry is [string, string] => entry[1] !== undefined))
 }
 
 export function ExecutionEnvRoutes(options: ExecutionEnvRouteOptions) {
   const env = stringEnv(options.env)
-  const commands = sessionCommands(options.services)
+  const commands = sessionCommands(options.services, options.runner, env)
   const shell = resolvedPiShell(env)
   const executionEnv = (sessionId: string) =>
-    ownedExecutionEnv({ sessionId, services: options.services, env, live: commands.of(sessionId), shell }, options.directory)
+    ownedExecutionEnv({ sessionId, services: options.services, env, runner: commands.of(sessionId, options.directory), shell }, options.directory)
   const app = new Hono<Env>()
   app.use("*", executionEnvAccess)
   app.post("/fs", async (c) => {

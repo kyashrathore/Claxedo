@@ -1,24 +1,18 @@
-import { once } from "node:events"
 import { existsSync } from "node:fs"
+import os from "node:os"
 import path from "node:path"
-import { errorMessage } from "@claxedo/helpers"
 import type { Context } from "@earendil-works/chord"
 import { ExecutionError, type ExecutionEnv, type Result, type ShellExecOptions, type ShellExecResult } from "@earendil-works/pi-durable/env"
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node"
-import { deadlineAfter, type HarnessServices, type OwnedProcess } from "../../contract/node"
-import { exitMarker, type ExitMarker } from "./exit-marker"
+import { SessionRunner, type RunnerCommand, type RunnerServices, type RunOutcome } from "./runner"
 
-const SCRIPT = `eval "$1"
-printf '%s%d\\n' "$2" "$?" >&2
-wait`
+export { RUNNER_RESTARTED_NOTICE, type RunnerCommand } from "./runner"
+
 const EXIT_STDIO_GRACE_MS = 2_000
-const RETIRE_MS = 5_000
 
-export type PiShellServices = Pick<HarnessServices, "spawn" | "clock" | "log">
+export type PiShellServices = RunnerServices
 
-export type LiveProcesses = { add(owned: OwnedProcess): unknown; delete(owned: OwnedProcess): unknown }
-
-export type PiShellHost = { sessionId: string; services: PiShellServices; env: Readonly<Record<string, string>>; live: LiveProcesses; shell: string | undefined }
+export type PiShellHost = { sessionId: string; services: PiShellServices; env: Readonly<Record<string, string>>; runner: SessionRunner; shell: string | undefined }
 
 export const NO_SHELL_MESSAGE = "Shell commands need Git for Windows (git-scm.com) on this machine; install it and restart claxedo connect"
 
@@ -38,55 +32,15 @@ export function resolvedPiShell(env: Readonly<Record<string, string | undefined>
   return piShell({ platform: process.platform, env, exists: existsSync })
 }
 
-type Exec = { owned: OwnedProcess; options: ShellExecOptions | undefined; context: Context; marker: ExitMarker; settled: boolean;
-  drained: Promise<void> }
-
 const execFailure = (code: ExecutionError["code"], message: string): Result<ShellExecResult, ExecutionError> =>
   ({ ok: false, error: new ExecutionError(code, message) })
 
-function forward(exec: Exec): void {
-  const emit = (text: string) => { if (text && !exec.settled) exec.options?.onOutput?.(text, exec.context) }
-  const stdout = new TextDecoder()
-  const stderr = new TextDecoder()
-  exec.owned.stdout.on("data", (chunk: Uint8Array) => emit(stdout.decode(chunk, { stream: true })))
-  exec.owned.stderr.on("data", (chunk: Uint8Array) => emit(exec.marker.filter(stderr.decode(chunk, { stream: true }))))
-}
+const SIGNAL_NUMBERS: Readonly<Record<string, number | undefined>> = os.constants.signals
 
-async function exitCode(exec: Exec, grace: () => Promise<void>): Promise<number> {
-  const code = await Promise.race([exec.marker.code, exec.owned.exited.then((exit) => exit.code ?? 1)])
-  await grace()
-  return code
-}
-
-function retireWhenExited(host: PiShellHost, owned: OwnedProcess): void {
-  host.live.add(owned)
-  void owned.exited.then(async () => {
-    host.live.delete(owned)
-    await owned.retire(deadlineAfter(host.services.clock, RETIRE_MS))
-  }).then(undefined, (error: unknown) => host.services.log.error("Pi bash retirement failed", { error: errorMessage(error) }))
-}
-
-async function settleExec(host: PiShellHost, exec: Exec): Promise<Result<ShellExecResult, ExecutionError>> {
-  const { clock } = host.services
-  let stopped: "aborted" | "timeout" | undefined
-  const stop = (reason: "aborted" | "timeout") => { stopped ??= reason; void exec.owned.retire(deadlineAfter(clock, RETIRE_MS)) }
-  const onAbort = () => stop("aborted")
-  exec.context.abortSignal?.addEventListener("abort", onAbort, { once: true })
-  const seconds = exec.options?.timeout
-  const timer = seconds === undefined ? undefined : clock.setTimeout(() => stop("timeout"), seconds * 1000)
-  const grace = () => Promise.race([exec.drained,
-    new Promise<void>((resolve) => { clock.setTimeout(() => resolve(), EXIT_STDIO_GRACE_MS) })])
-  try {
-    const code = await exitCode(exec, grace)
-    if (stopped) return execFailure(stopped, stopped === "timeout" ? `Command timed out after ${seconds} seconds` : "Command aborted")
-    return { ok: true, value: { exitCode: code } }
-  } finally {
-    exec.settled = true
-    clock.clearTimeout(timer)
-    exec.context.abortSignal?.removeEventListener("abort", onAbort)
-    if (stopped) await exec.owned.retire(deadlineAfter(clock, RETIRE_MS))
-    else retireWhenExited(host, exec.owned)
-  }
+function exitCode(exit: { code: number | null; signal: string | null }): number {
+  if (exit.code !== null) return exit.code
+  const signal = exit.signal ? SIGNAL_NUMBERS[exit.signal] : undefined
+  return signal === undefined ? 1 : 128 + signal
 }
 
 async function ownedExec(host: PiShellHost, cwd: string, command: string, options: ShellExecOptions | undefined,
@@ -96,40 +50,49 @@ async function ownedExec(host: PiShellHost, cwd: string, command: string, option
     return execFailure("timeout", "Invalid timeout: must be a finite number of seconds")
   }
   if (host.shell === undefined) return execFailure("spawn_error", NO_SHELL_MESSAGE)
+  const { clock } = host.services
   const env = options?.inheritEnv === false ? { ...options.env } : { ...host.env, ...options?.env }
-  const marker = exitMarker()
-  let owned: OwnedProcess
+  let settled = false
+  const emit = (text: string) => { if (text && !settled) options?.onOutput?.(text, context) }
+  const started = await host.runner.start({ file: host.shell, args: ["-c", command], cwd: options?.cwd ? path.resolve(cwd, options.cwd) : cwd, env, onOutput: emit })
+  if ("failed" in started) return execFailure("spawn_error", started.failed)
+  let stopped: "aborted" | "timeout" | undefined
+  const stop = (reason: "aborted" | "timeout") => { stopped ??= reason; host.runner.kill(started.id) }
+  const onAbort = () => stop("aborted")
+  context.abortSignal?.addEventListener("abort", onAbort, { once: true })
+  const seconds = options?.timeout
+  const timer = seconds === undefined ? undefined : clock.setTimeout(() => stop("timeout"), seconds * 1000)
+  let outcome: RunOutcome
   try {
-    owned = await host.services.spawn({ file: host.shell, args: ["-c", SCRIPT, "pi-bash", command, marker.text],
-      cwd: options?.cwd ? path.resolve(cwd, options.cwd) : cwd, env },
-    { role: "harness", label: "Pi bash", sessionId: host.sessionId, signal: context.abortSignal ?? new AbortController().signal })
-  } catch (error) {
-    return execFailure("spawn_error", errorMessage(error))
+    outcome = await started.outcome
+  } finally {
+    clock.clearTimeout(timer)
+    context.abortSignal?.removeEventListener("abort", onAbort)
   }
-  owned.stdin.end()
-  const drained = Promise.all([once(owned.stdout, "close"), once(owned.stderr, "close")])
-    .then(() => undefined, (error: unknown) => host.services.log.warn("Pi bash output stream failed", { error: errorMessage(error) }))
-  const exec = { owned, options, context, marker, settled: false, drained }
-  forward(exec)
-  return settleExec(host, exec)
+  if ("exit" in outcome) await new Promise<void>((resolve) => { clock.setTimeout(() => resolve(), EXIT_STDIO_GRACE_MS) })
+  settled = true
+  host.runner.release(started.id)
+  if (stopped) return execFailure(stopped, stopped === "timeout" ? `Command timed out after ${seconds} seconds` : "Command aborted")
+  if ("failed" in outcome) return execFailure("spawn_error", outcome.failed)
+  if ("ended" in outcome) return execFailure("spawn_error", outcome.ended)
+  return { ok: true, value: { exitCode: exitCode(outcome.exit) } }
 }
 
-export function sessionCommands(services: PiShellServices) {
-  const live = new Map<string, Set<OwnedProcess>>()
-  const of = (sessionId: string): LiveProcesses => ({
-    add: (owned) => live.get(sessionId)?.add(owned) ?? live.set(sessionId, new Set([owned])),
-    delete: (owned) => {
-      const running = live.get(sessionId)
-      running?.delete(owned)
-      if (running?.size === 0) live.delete(sessionId)
-    },
-  })
-  const retire = async (sessionId: string): Promise<void> => {
-    const running = [...live.get(sessionId) ?? []]
-    live.delete(sessionId)
-    await Promise.all(running.map((owned) => owned.retire(deadlineAfter(services.clock, RETIRE_MS))))
+export function sessionCommands(services: PiShellServices, command: RunnerCommand, env: Readonly<Record<string, string>>) {
+  const runners = new Map<string, SessionRunner>()
+  const of = (sessionId: string, cwd: string): SessionRunner => {
+    const existing = runners.get(sessionId)
+    if (existing) return existing
+    const runner = new SessionRunner(services, command, sessionId, cwd, env)
+    runners.set(sessionId, runner)
+    return runner
   }
-  return { of, retire, sessions: () => [...live.keys()], retireAll: async () => { await Promise.all([...live.keys()].map(retire)) } }
+  const retire = async (sessionId: string): Promise<void> => {
+    const runner = runners.get(sessionId)
+    runners.delete(sessionId)
+    await runner?.end()
+  }
+  return { of, retire, sessions: () => [...runners.keys()], retireAll: async () => { await Promise.all([...runners.keys()].map(retire)) } }
 }
 
 export function ownedExecutionEnv(host: PiShellHost, cwd: string): ExecutionEnv {
