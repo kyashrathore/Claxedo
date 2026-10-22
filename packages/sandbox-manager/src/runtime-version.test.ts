@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "vitest"
-import { workspaceRuntimeVersion } from "./runtime-version"
+import { readFileSync } from "node:fs"
+import { MINIMUM_SERVED_WORKSPACE_RUNTIME_VERSION, workspaceRuntimeVersion } from "./runtime-version"
 
 describe("workspaceRuntimeVersion", () => {
   const original = process.env.WORKSPACE_RUNTIME_VERSION
@@ -34,4 +35,14 @@ describe("workspaceRuntimeVersion", () => {
     process.env.WORKSPACE_RUNTIME_VERSION = ""
     expect(workspaceRuntimeVersion()).toBe(baked)
   })
+})
+
+const versionParts = (version: string) => version.split(".").map(Number)
+
+test("the oldest runtime the control plane serves is never newer than the runtime this tree builds", () => {
+  const built = (JSON.parse(readFileSync(new URL("../../workspace-runtime/package.json", import.meta.url), "utf8")) as { version: string }).version
+  const [floor, current] = [versionParts(MINIMUM_SERVED_WORKSPACE_RUNTIME_VERSION), versionParts(built)]
+  expect(floor.every(Number.isSafeInteger) && floor.length === 3).toBe(true)
+  const newer = floor.findIndex((part, index) => part !== current[index])
+  expect(newer === -1 || (floor[newer] ?? 0) < (current[newer] ?? 0), `${MINIMUM_SERVED_WORKSPACE_RUNTIME_VERSION} is above ${built}`).toBe(true)
 })
