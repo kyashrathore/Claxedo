@@ -92,9 +92,11 @@ command -v git >/dev/null 2>&1 || fail "git is required: the workspace runtime a
 # `npm prefix -g` is the directory whose lib/node_modules and bin the install
 # writes to; a system Node (apt, brew on Linux) usually owns it as root.
 global_prefix="$(npm prefix -g)"
+install_prefix="$global_prefix"
 prefix_args=""
 bin_dir="$global_prefix/bin"
 if [ ! -w "$global_prefix/lib/node_modules" ] && [ ! -w "$global_prefix/lib" ] && [ ! -w "$global_prefix" ]; then
+  install_prefix="$NPM_PREFIX"
   prefix_args="--prefix $NPM_PREFIX"
   bin_dir="$NPM_PREFIX/bin"
   mkdir -p "$NPM_PREFIX"
@@ -117,8 +119,8 @@ else
     || fail "npm install of $spec failed"
 fi
 
-# shellcheck disable=SC2086
-global_root="$(npm root -g $prefix_args)"
+# Not `npm root -g`: npm 11 prints a UUID-shaped path segment as `***`.
+global_root="$install_prefix/lib/node_modules"
 runtime_dir="$global_root/@claxedo/cli/node_modules/@claxedo/workspace-runtime"
 [ -d "$runtime_dir" ] || runtime_dir="$global_root/@claxedo/workspace-runtime"
 node "$runtime_dir/scripts/install-opencode-node.mjs" >/dev/null \
