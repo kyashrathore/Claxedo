@@ -61,7 +61,9 @@ claxedo connect --token-file ./invite.txt --install-service
 
 The machine enrolls, starts a background service (a systemd user unit, a
 LaunchAgent, or a scheduled task on Windows), and appears in Settings →
-Machines within a few seconds. `--root` decides which folders that machine may
+Machines within a few seconds. On Windows the task runs only while that user
+is logged on: a headless Windows server needs automatic logon for the user,
+or run `claxedo connect --foreground` under a service manager of your own. `--root` decides which folders that machine may
 ever serve; you can widen or narrow it later with `claxedo host scope`.
 
 If the machine already runs the desktop app, do not run `claxedo connect` on it.

@@ -12,13 +12,16 @@
 export type HostPathKind = "posix" | "windows"
 
 const WINDOWS_DRIVE = /^[A-Za-z]:[\\/]/
-// `\\server\share`, and not the `\\?\` and `\\.\` device namespaces, whose
-// paths bypass normalization in the Win32 layer itself.
-const WINDOWS_UNC = /^\\\\([^\\/?.][^\\/]*)\\([^\\/]+)/
+// `\\server\share` in either separator (`//server/share` is how a Windows
+// shell spells it too), and not the `\\?\` and `\\.\` device namespaces,
+// whose paths bypass normalization in the Win32 layer itself. A POSIX path
+// starting with `//` names the same thing on no POSIX system that matters,
+// while three or more slashes, or `//name` with no share, stay POSIX.
+const WINDOWS_UNC = /^[\\/]{2}([^\\/?.][^\\/]*)[\\/]([^\\/]+)/
 
 export function hostPathKind(path: string): HostPathKind | undefined {
-  if (path.startsWith("/")) return "posix"
   if (WINDOWS_DRIVE.test(path) || WINDOWS_UNC.test(path)) return "windows"
+  if (path.startsWith("/")) return "posix"
   return undefined
 }
 

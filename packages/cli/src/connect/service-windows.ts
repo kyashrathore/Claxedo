@@ -64,14 +64,16 @@ export function xmlTextNode(value: string) {
  * `whoami.exe` answers), in that user's session, at that user's logon
  * (`InteractiveToken`), and so only while someone is logged on.
  * `ExecutionTimeLimit` PT0S lifts the three-day default that would otherwise
- * kill the host mid-serve. No XML declaration: schtasks reads a declared
- * UTF-8 file as UTF-16 and refuses it ("unable to switch the encoding"), and
- * takes an undeclared ASCII one.
+ * kill the host mid-serve. The text is UTF-16 with a byte-order mark, the
+ * form `schtasks /Query /XML` itself exports and the one it reads back whatever
+ * the user name or profile path holds: written with `encoding: "utf16le"`,
+ * which puts the mark first.
  */
 export function windowsTaskXml(deps: Pick<ServiceDeps, "homedir" | "env">, userId: string) {
   const user = xmlTextNode(userId)
   const script = xmlTextNode(windowsScriptPath(deps))
   return [
+    `\uFEFF<?xml version="1.0" encoding="UTF-16"?>`,
     `<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">`,
     `  <RegistrationInfo><Description>Claxedo connect host</Description></RegistrationInfo>`,
     `  <Triggers>`,

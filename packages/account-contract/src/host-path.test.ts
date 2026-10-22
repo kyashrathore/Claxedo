@@ -14,7 +14,10 @@ import {
 describe("hostPathKind", () => {
   test.each([
     ["/srv", "posix"],
-    ["//server/share", "posix"],
+    ["//server/share", "windows"],
+    ["//server/share/x", "windows"],
+    ["//server", "posix"],
+    ["///server/share", "posix"],
     ["C:\\work", "windows"],
     ["c:/work", "windows"],
     ["\\\\server\\share", "windows"],
@@ -56,6 +59,9 @@ describe("normalizeHostPath", () => {
     expect(normalizeHostPath("\\\\server\\share")).toBe("\\\\server\\share\\")
     expect(normalizeHostPath("\\\\server\\share\\app\\")).toBe("\\\\server\\share\\app")
     expect(normalizeHostPath("\\\\server\\share\\app\\..\\..\\other")).toBe("\\\\server\\share\\other")
+    expect(normalizeHostPath("//server/share/app/")).toBe("\\\\server\\share\\app")
+    expect(normalizeHostPath("//server")).toBe("/server")
+    expect(normalizeHostPath("///server/share")).toBe("/server/share")
   })
 
   test("agrees with path.win32 and path.posix where they overlap", () => {
@@ -97,6 +103,8 @@ describe("hostPathWithin", () => {
     ["C:\\", "C:\\", true],
     ["\\\\server\\share\\app\\x", "\\\\SERVER\\Share\\app", true],
     ["\\\\server\\share\\app", "\\\\server\\share", true],
+    ["//server/share/app", "\\\\SERVER\\share", true],
+    ["//server/share/app", "/server", false],
     ["\\\\server\\other\\app", "\\\\server\\share", false],
     ["C:\\work\\is", "/work", false],
     ["/work/is", "C:\\work", false],

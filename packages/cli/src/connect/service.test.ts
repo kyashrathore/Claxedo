@@ -28,6 +28,7 @@ type Box = {
 function fakeDeps(platform: NodeJS.Platform, claxedoHome?: string, box: Box = {}) {
   const calls: string[] = []
   const files = new Map<string, string>()
+  const encodings = new Map<string, string>()
   const deps: ServiceDeps = {
     platform,
     homedir: "/home/svc",
@@ -41,15 +42,16 @@ function fakeDeps(platform: NodeJS.Platform, claxedoHome?: string, box: Box = {}
       if (args.includes("is-system-running")) return box.manager ?? { code: 0, stdout: "running\n" }
       return { code: 0, stdout: "" }
     },
-    writeFile: async (file, text) => {
+    writeFile: async (file, text, options) => {
       files.set(file, text)
+      if (options) encodings.set(file, options.encoding)
     },
     unlink: async (file) => {
       files.delete(file)
     },
     now: () => 42,
   }
-  return { deps, calls, files }
+  return { deps, calls, files, encodings }
 }
 
 describe("service units", () => {
@@ -230,7 +232,7 @@ describe("service units", () => {
   })
 
   test("Windows gets a per-user scheduled task whose script restarts connect and disables the task on exit 78", async () => {
-    const { deps, calls, files } = fakeDeps("win32", "C:\\Users\\svc\\.claxedo")
+    const { deps, calls, files, encodings } = fakeDeps("win32", "C:\\Users\\svc\\.claxedo")
     deps.homedir = "C:\\Users\\svc"
     deps.command = ["C:\\Program Files\\nodejs\\node.exe", "C:\\Users\\svc\\cli\\it's.mjs"]
     deps.env = { USERDOMAIN: "WIN-BOX" }
@@ -249,10 +251,14 @@ describe("service units", () => {
     expect(files.get(script)).toContain("Start-Sleep -Seconds 5")
 
     let registered: string | undefined
+    let registeredEncoding: string | undefined
     deps.run = async (file, args) => {
       calls.push([file, ...args].join(" "))
       if (file === "whoami.exe") return { code: 0, stdout: "win-box\\svc\r\n" }
-      if (args[0] === "/Create") registered = files.get(args[4])
+      if (args[0] === "/Create") {
+        registered = files.get(args[4])
+        registeredEncoding = encodings.get(args[4])
+      }
       return { code: 0, stdout: "" }
     }
     const { started, lines } = await startService(deps, service)
@@ -263,7 +269,11 @@ describe("service units", () => {
       "schtasks.exe /Run /TN ClaxedoConnect",
     ])
     expect(registered).toBe(windowsTaskXml(deps, "win-box\\svc"))
-    expect(registered?.startsWith("<Task version"), "no XML declaration, which schtasks misreads as UTF-16").toBe(true)
+    expect(registeredEncoding).toBe("utf16le")
+    expect(registered?.startsWith('\uFEFF<?xml version="1.0" encoding="UTF-16"?>\r\n<Task version')).toBe(true)
+    const bytes = Buffer.from(registered ?? "", "utf16le")
+    expect([...bytes.subarray(0, 4)], "a UTF-16LE byte-order mark, then '<'").toEqual([0xff, 0xfe, 0x3c, 0x00])
+    expect(encodings.get(script), "the PowerShell script stays UTF-8").toBeUndefined()
     expect(registered).toContain("<LogonTrigger><Enabled>true</Enabled><UserId>win-box\\svc</UserId></LogonTrigger>")
     expect(registered).toContain("<Principal id=\"Author\"><UserId>win-box\\svc</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal>")
     expect(registered).toContain("<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>")
