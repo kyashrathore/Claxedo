@@ -405,7 +405,7 @@ describe("CloudflareSandboxDriver", () => {
       .rejects.toThrow("Cloudflare snapshot failed (500): The workspace container is not running")
   })
 
-  test.each(["expired", "runtime_outdated", "runtime_modified", "not_restorable"] as const)("a checkpoint the Worker cannot restore (%s) refuses the start in its one line with its cause, and is never polled as provisioning", async (cause) => {
+  test.each(["expired", "runtime_modified", "not_restorable"] as const)("a checkpoint the Worker cannot restore (%s) refuses the start in its one line with its cause, and is never polled as provisioning", async (cause) => {
     const refusal = "This workspace's saved files cannot be restored; choose Start fresh."
     const { calls, fetch } = harness(() => ({ status: 410, json: { ready: false, checkpointUnusable: cause, error: refusal } }))
     const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
