@@ -28,6 +28,16 @@ type World = {
   calls: { method: string; path: string; body?: unknown }[]
 }
 
+function pairingAnswer(url: URL, method: string, world: World): Response | undefined {
+  if (url.pathname === "/api/claxedo/host/pairings" && method === "POST") return Response.json({ pairing_id: "pair_1", code: "K7QM4PXD9R2TWB6HJ3NF", expires_at: 9_000, commands: { posix: "curl posix", windows: "irm windows" } })
+  if (url.pathname === "/api/claxedo/host/pairings" && method === "GET") return Response.json({ requests: [asking, { pairing_id: "pair_broken" }] })
+  if (url.pathname === "/api/claxedo/host/pairings" && method === "DELETE") return Response.json({ cancelled: 2 })
+  if (url.pathname === "/api/claxedo/host/pairings/pair_1") return Response.json({ pairing: asking })
+  if (url.pathname.startsWith("/api/claxedo/host/pairings/pair_1/")) return Response.json({ pairing: { ...asking, stage: "approved" } })
+  if (url.pathname === "/api/claxedo/host/invitations" && method === "POST") return Response.json(world.invitation)
+  return undefined
+}
+
 function worker(world: World) {
   globalThis.fetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(input instanceof Request ? input.url : input)
@@ -48,12 +58,8 @@ function worker(world: World) {
       world.devices = []
       return Response.json({ revoked: true })
     }
-    if (url.pathname === "/api/claxedo/host/pairings" && method === "POST") return Response.json({ pairing_id: "pair_1", code: "K7QM4PXD9R2TWB6HJ3NF", expires_at: 9_000, commands: { posix: "curl posix", windows: "irm windows" } })
-    if (url.pathname === "/api/claxedo/host/pairings" && method === "GET") return Response.json({ requests: [asking, { pairing_id: "pair_broken" }] })
-    if (url.pathname === "/api/claxedo/host/pairings" && method === "DELETE") return Response.json({ cancelled: 2 })
-    if (url.pathname === "/api/claxedo/host/pairings/pair_1") return Response.json({ pairing: asking })
-    if (url.pathname.startsWith("/api/claxedo/host/pairings/pair_1/")) return Response.json({ pairing: { ...asking, stage: "approved" } })
-    if (url.pathname === "/api/claxedo/host/invitations" && method === "POST") return Response.json(world.invitation)
+    const pairing = pairingAnswer(url, method, world)
+    if (pairing) return pairing
     if (url.pathname === "/api/claxedo/remote-access/devices/host_box" && method === "PATCH") {
       const name = (JSON.parse(typeof init?.body === "string" ? init.body : "{}") as { display_name: string }).display_name
       world.devices = world.devices.map((device) => ({ ...device, display_name: name }))

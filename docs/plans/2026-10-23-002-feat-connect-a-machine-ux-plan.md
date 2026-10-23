@@ -379,7 +379,7 @@ takes over [Remote machine connection](./2026-09-14-003-feat-connect-implementat
   machine).
 - [ ] Each failure in C1, C3 and C6 shows its one-line cause in the app and on the machine, and its recovery is
   exercised live.
-- [ ] e2e flow 15 (`15-settings-machines`) covers pairing, approval, denial and expiry on the web and the desktop. The nightly real-machine run in the machine-connection plan's definition of done runs this journey.
+- [ ] e2e flow 15 (`15-settings-connect-machine`, beside `15-settings-machines`) covers pairing, approval, denial and expiry on the web and the desktop. The nightly real-machine run in the machine-connection plan's definition of done runs this journey.
 - [ ] The behaviour is documented where it lives (`claxedo-app/src/settings/README.md`, `packages/cli/README.md`),
   and this plan is deleted once the work ships.
 
