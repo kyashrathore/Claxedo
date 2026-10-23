@@ -327,7 +327,23 @@ takes over [Remote machine connection](./2026-09-14-003-feat-connect-implementat
   a desktop that serves its folders to other devices through remote access does not mount host management, so
   another device cannot run these operations on it.
 - [ ] **Parity proof.** e2e flow 2 (add a folder, clone, edit, remove, deep link, worktree branches) passes against a
-  connected machine as it does against this computer, on the web and the desktop. Progress:
+  connected machine as it does against this computer, on the web and the desktop. Progress: 2026-10-23 (lane C5),
+  partly. Covered on web and phone (`02-projects-machine`, 5 flows, 10 runs green, each with a recorded red run):
+  - add a folder;
+  - clone, beside the shared folder or into a picked one;
+  - deep link to the project's settings;
+  - remove from the machine;
+  - Clone at this location for a gone folder;
+  - a new worktree from a chosen base;
+  - a gone base kept for a corrected retry.
+
+  Open, each for its own reason:
+  - edit: the hosted plane serves no project configuration for any project, its own or a machine's;
+  - the worktree cases that run a turn on the machine (a refused session kept for retry, dirty-source and tag
+    cases with sessions): the machine runtime has no scripted ACP connection, "Connection scripted-acp is not
+    configured on this runtime";
+  - the desktop app as the client: `packages/claxedo-desktop` is lane C9's, and the desktop's own folders are not
+    reachable through host management.
 - [x] The terminal never lists folders; in the app, folders appear only through the folder dialog's search and one
   level at a time, as on this computer. Progress: done 2026-10-23 (lane C5). A machine answers folder reads only as
   its home, one folder's subfolders, or a search under one folder (at most 200 results, three levels deep, 400

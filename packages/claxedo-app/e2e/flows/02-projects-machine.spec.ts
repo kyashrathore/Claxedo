@@ -23,7 +23,7 @@ async function openCreateDialog(page: Page) {
   return page.getByRole("dialog", { name: "Create project" })
 }
 
-test("02 projects on a connected machine: the machine's own folder dialog picks a folder there, it becomes a project served by that machine, and Remove takes it off the machine and leaves the folder", async ({ signed, page }, testInfo) => {
+test("02 projects on a connected machine: the machine's own folder dialog picks a folder there, it becomes a project served by that machine, its settings open by link, and Remove takes it off the machine and leaves the folder", async ({ signed, page }, testInfo) => {
   test.setTimeout(180_000)
   const machine = await connectMachine(signed, "build-box", testInfo)
   try {
@@ -50,8 +50,9 @@ test("02 projects on a connected machine: the machine's own folder dialog picks 
     expect(row?.workspace_id).not.toBe(machine.firstWorkspaceId)
     await expect.poll(() => machine.servedWorkspaceIds(), { timeout: 30_000 }).toContain(row?.workspace_id)
 
-    await page.goto(`${signed.url}/settings/projects`)
-    await page.getByRole("region", { name: "Projects" }).getByRole("link", { name: "alpha", exact: true }).click()
+    await page.goto(`${signed.url}/settings/projects?project=${encodeURIComponent(row?.project_id ?? "")}`)
+    await expect(page.getByRole("heading", { level: 2, name: "alpha" })).toBeVisible()
+    await expect(page.getByRole("group", { name: "Where it runs" })).toContainText("build-box")
     await page.getByRole("group", { name: "Where it runs" }).getByRole("button", { name: "Remove", exact: true }).click()
     const confirm = page.getByRole("dialog", { name: "Remove alpha from build-box?" })
     await expect(confirm).toContainText("The folder and its files stay there.")
@@ -152,6 +153,51 @@ test("02 projects on a connected machine: a new worktree picked in the Where chi
     expect(row?.git_branch).toBe(created.branch)
     await expect.poll(() => machine.servedWorkspaceIds(), { timeout: 30_000 }).toContain(row?.workspace_id)
     await expect(page, "the draft's route names the worktree it now runs in").toHaveURL(new RegExp(`/w/${row?.workspace_id}/session`))
+  } finally {
+    await machine.close()
+  }
+})
+
+async function chooseBase(page: Page, name: string) {
+  await page.getByRole("button", { name: "Base branch", exact: true }).click()
+  await page.getByRole("textbox", { name: "Search branches" }).fill(name)
+  await page.keyboard.press("Enter")
+}
+
+function machineWorktreeCreate(page: Page) {
+  return page.waitForResponse((response) => response.url().endsWith("/worktree") && response.url().includes("/api/claxedo/host/machines/") && response.request().method() === "POST")
+}
+
+test("02 projects on a connected machine: a base branch gone from the machine leaves the draft and its destination intact for a corrected retry", async ({ signed, page }, testInfo) => {
+  test.setTimeout(180_000)
+  const machine = await connectMachine(signed, "build-box", testInfo)
+  try {
+    await gitFolder(machine.home, "app")
+    await git(machine.folder, "branch", "dev")
+    await signed.signIn(page, signed.owner)
+    await page.goto(`${signed.url}${sessionRoute(machine.firstWorkspaceId)}`)
+    await page.getByRole("button", { name: "Where it runs", exact: true }).click()
+    await page.getByRole("button", { name: "New worktree on build-box", exact: true }).click()
+    await chooseBase(page, "dev")
+    await chooseScriptedHarness(page)
+    await git(machine.folder, "branch", "-D", "dev")
+
+    const failed = machineWorktreeCreate(page)
+    await sendPrompt(page, "Retry the chosen base")
+    expect((await failed).status()).toBe(400)
+    const failure = page.locator('[data-notice="first-send"]')
+    await expect(failure).toContainText("Your message was not sent")
+    await expect(page.getByRole("button", { name: "Where it runs", exact: true, includeHidden: true })).toHaveText("New worktree")
+    await expect(page.getByRole("button", { name: "Base branch", exact: true, includeHidden: true })).toHaveText("From dev")
+    expect((await git(machine.folder, "worktree", "list", "--porcelain")).trim().split("\n").filter((line) => line.startsWith("worktree "))).toHaveLength(1)
+
+    await git(machine.folder, "branch", "dev")
+    const retried = machineWorktreeCreate(page)
+    await failure.getByRole("button", { name: "Retry", exact: true }).click()
+    const answer = await retried
+    expect(answer.status()).toBe(200)
+    const created = await answer.json() as { directory: string }
+    expect((await git(created.directory, "rev-parse", "HEAD")).trim()).toBe((await git(machine.folder, "rev-parse", "dev")).trim())
   } finally {
     await machine.close()
   }
