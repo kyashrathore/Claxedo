@@ -358,6 +358,11 @@ const NAME_FREE_ROUTES: readonly string[] = [
   // name, so a stranger's names change nothing about the answer.
   "GET /api/claxedo/bootstrap",
   "GET /api/claxedo/compatibility",
+  // The connect scripts a pasted command fetches before anyone signs in on
+  // the machine: the CLI's installers with this plane's origin and accepted
+  // CLI version, and no tenant name.
+  "GET /api/claxedo/connect",
+  "GET /api/claxedo/connect.ps1",
   "GET /api/claxedo/health",
   "GET /api/claxedo/mode",
   "GET /api/workspace/resolve",
@@ -379,13 +384,15 @@ const ECHO_ROUTES: readonly string[] = ["GET /path"]
  */
 const UNAVAILABLE_ROUTES: Record<string, number> = {
   // The fixture's authority admits no machine caller and redeems no
-  // invitation; none of these four takes an account credential, and each
-  // says so before it looks at one. The beat and the doorbell stream are on
-  // this list because a machine is the only caller they have.
+  // invitation. A machine is the only caller each of these has, so none takes
+  // an account credential, and each says so before it looks at one.
   "POST /api/claxedo/host/enrollments/acquire": 501,
   "GET /api/claxedo/host/enrollments/events": 501,
   "POST /api/claxedo/host/enrollments/heartbeat": 501,
   "POST /api/claxedo/host/enrollments/redeem": 501,
+  "POST /api/claxedo/host/enrollments/report": 501,
+  "POST /api/claxedo/host/pairings/folder": 501,
+  "POST /api/claxedo/host/pairings/self": 501,
 }
 
 /** Path segments that carry a scope name, and the ones that carry an opaque row id. */
