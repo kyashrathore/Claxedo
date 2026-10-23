@@ -565,7 +565,14 @@ export const desktopRenderer: Policy = {
   // `machine-actions.tsx`, `machine-status.tsx`; and its server adapter,
   // `server/wire/machines.ts`). They add no package edge.
   // 1563/37, no headroom.
-  ceilings: { modules: 1563, packages: 37 },
+  // The connect drawer's pairing: the code's lifecycle, its countdown and the
+  // stage it shows (owner: the app's settings domain, `settings/pairing.ts`),
+  // the approval card the drawer and the Machines section share
+  // (`settings/view/pairing-request.tsx`), and the decoder of the pairing
+  // answers (owner: the app's server adapter, `server/wire/pairings.ts`). They
+  // add no package edge.
+  // 1566/37, no headroom.
+  ceilings: { modules: 1566, packages: 37 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

@@ -1,5 +1,6 @@
 import { machine as stateMachine, unreachable, type Transition } from "@/lib/machine"
 import { toAppError, type AppError, type MachinesApi, type MintedPairing, type Pairing, type PairingStage } from "@/server"
+import { getFilename } from "@/ui/utils"
 import type { SettingsKey } from "./i18n"
 
 export type ConnectCode =
@@ -61,10 +62,6 @@ export function codeTimeLeft(expiresAt: number, now: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`
 }
 
-export function folderName(folder: string): string {
-  return folder.split(/[\\/]/).filter(Boolean).at(-1) ?? folder
-}
-
 const STAGE_LINE = {
   waiting: "settings.machines.pairing.waiting",
   installing: "settings.machines.pairing.installing",
@@ -82,5 +79,5 @@ export function stageLineKey(stage: PairingStage): SettingsKey {
 
 export function stageLineValues(pairing: Pairing): Record<string, string> {
   const machineName = pairing.name ?? pairing.machine?.hostname ?? pairing.installingOn?.hostname ?? ""
-  return { name: machineName, folder: pairing.machine ? folderName(pairing.machine.folder) : "" }
+  return { name: machineName, folder: pairing.machine ? getFilename(pairing.machine.folder) || pairing.machine.folder : "" }
 }

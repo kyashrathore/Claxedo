@@ -10,6 +10,16 @@ afterEach(() => { globalThis.fetch = originalFetch })
 const bootstrap = { deployment: { serverKind: "hosted", issuesSessions: true }, events: { hostAggregate: false } }
 const box = { host_id: "host_box", enrollment_id: "enr_box", display_name: "build-box", last_seen_at: 1_000, state: "online", workspace_ids: ["ws_box", "ws_unacked"], serving_workspace_ids: ["ws_box"] }
 
+const asking = {
+  pairing_id: "pair_1",
+  expires_at: 9_000,
+  asked_at: 8_000,
+  request: "machine",
+  stage: "awaiting_approval",
+  machine: { hostname: "studio", os: "Ubuntu 24.04", arch: "x64", folder: "/home/ubuntu", folder_kind: "home", country: "IN" },
+  host_id: "host_studio",
+}
+
 type World = {
   devices: Record<string, unknown>[]
   connection: { status: number; body: unknown }
@@ -37,6 +47,11 @@ function worker(world: World) {
       world.devices = []
       return Response.json({ revoked: true })
     }
+    if (url.pathname === "/api/claxedo/host/pairings" && method === "POST") return Response.json({ pairing_id: "pair_1", code: "K7QM4PXD9R2TWB6HJ3NF", expires_at: 9_000, commands: { posix: "curl posix", windows: "irm windows" } })
+    if (url.pathname === "/api/claxedo/host/pairings" && method === "GET") return Response.json({ requests: [asking, { pairing_id: "pair_broken" }] })
+    if (url.pathname === "/api/claxedo/host/pairings" && method === "DELETE") return Response.json({ cancelled: 2 })
+    if (url.pathname === "/api/claxedo/host/pairings/pair_1") return Response.json({ pairing: asking })
+    if (url.pathname.startsWith("/api/claxedo/host/pairings/pair_1/")) return Response.json({ pairing: { ...asking, stage: "approved" } })
     if (url.pathname === "/api/workspace/ws_box/connection") return Response.json(world.connection.body, { status: world.connection.status })
     if (url.href === "https://relay.test/workspaces/ws_box/global/health") return Response.json(world.health)
     throw new Error(`Unexpected request: ${method} ${url.href}`)
@@ -145,4 +160,37 @@ test("the runtime probe reads one served folder's health through the relay, says
     expect(probe).toMatchObject({ kind: "unreachable", error: { class: "conflict", code: "workspace_host_offline" } })
     expect(offline.calls.some((call) => call.path.startsWith("relay:"))).toBe(false)
   })
+})
+
+test("a pairing is minted with the commands the control plane answers, read back in the app's terms, and answered by its id", async () => {
+  const world = scenario()
+  const logged: unknown[] = []
+  const originalError = console.error
+  console.error = (...args: unknown[]) => { logged.push(args) }
+  try {
+    await signedBrowser(async (server) => {
+      expect(await server.machines.pair()).toEqual({ id: "pair_1", code: "K7QM4PXD9R2TWB6HJ3NF", expiresAt: 9_000, commands: { posix: "curl posix", windows: "irm windows" } })
+      const pairing = await server.queryClient.fetchQuery(server.queries.machines.pairing("pair_1"))
+      expect(pairing).toEqual({
+        id: "pair_1",
+        stage: "awaitingApproval",
+        expiresAt: 9_000,
+        askedAt: 8_000,
+        request: "machine",
+        machine: { hostname: "studio", os: "Ubuntu 24.04", arch: "x64", folder: "/home/ubuntu", folderKind: "home", country: "IN" },
+        hostId: "host_studio",
+      })
+      expect((await server.queryClient.fetchQuery(server.queries.machines.pairingRequests())).map((request) => request.id)).toEqual(["pair_1"])
+      expect(JSON.stringify(logged)).toContain("pair_broken")
+      await server.machines.approve("pair_1", "studio-box")
+      await server.machines.deny("pair_1")
+      await server.machines.cancelPairings()
+      expect(world.calls.filter((call) => call.method !== "GET")).toEqual([
+        { method: "POST", path: "/api/claxedo/host/pairings", body: {} },
+        { method: "POST", path: "/api/claxedo/host/pairings/pair_1/approve", body: { displayName: "studio-box" } },
+        { method: "POST", path: "/api/claxedo/host/pairings/pair_1/deny", body: {} },
+        { method: "DELETE", path: "/api/claxedo/host/pairings" },
+      ])
+    })
+  } finally { console.error = originalError }
 })

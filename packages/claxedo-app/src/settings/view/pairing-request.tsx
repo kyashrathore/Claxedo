@@ -4,9 +4,9 @@ import { useAgeClock } from "@/lib/clock"
 import { formatRelativeTime } from "@/lib/relative-time"
 import { toAppError, useServer, type Pairing, type PairingMachine } from "@/server"
 import { Button, TextField } from "@/ui"
+import { getFilename } from "@/ui/utils"
 import { settingsDictionary, type SettingsKey } from "../i18n"
 import { machineActions, type PairingAnswer } from "../machines"
-import { folderName } from "../pairing"
 
 const FAILED_KEY = {
   approve: "settings.machines.approve.failed",
@@ -54,7 +54,7 @@ export function PairingRequestCard(props: { readonly pairing: Pairing; readonly 
   const isFolderRequest = () => props.pairing.request === "folder"
   const machineName = () => props.pairing.name ?? props.machine.hostname
   const title = () => isFolderRequest()
-    ? t("settings.machines.approve.folderTitle", { folder: folderName(props.machine.folder), name: machineName() })
+    ? t("settings.machines.approve.folderTitle", { folder: getFilename(props.machine.folder) || props.machine.folder, name: machineName() })
     : t("settings.machines.approve.title", { name: props.machine.hostname })
   const busy = () => actions.state().kind === "working"
   const failure = () => {

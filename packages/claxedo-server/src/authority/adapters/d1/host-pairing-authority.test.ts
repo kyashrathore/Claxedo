@@ -224,7 +224,7 @@ describe("machine pairing", () => {
     const input = await setup()
     const alice = input.alice.principal?.userId ?? ""
     const personal = await input.database.prepare(`select org_id from orgs where owner_user_id = ? and kind = 'personal'`).bind(alice).first<{ org_id: string }>()
-    expect(await input.workspace.machineOwnerOrgIds(alice), "her personal organization and Acme").toEqual([personal?.org_id, "org_acme"].sort())
+    expect(await input.workspace.machineOwnerOrgIds(alice), "her personal organization and Acme").toEqual([personal?.org_id ?? "", "org_acme"].toSorted((a, b) => a.localeCompare(b)))
     await input.database.prepare(`update org_memberships set revoked_at = 1 where user_id = ?`).bind(alice).run()
     expect(await input.workspace.machineOwnerOrgIds(alice)).toEqual([])
   })
