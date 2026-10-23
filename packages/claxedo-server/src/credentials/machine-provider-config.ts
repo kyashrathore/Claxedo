@@ -41,6 +41,13 @@ export type MachineProviderConfig = {
    * when none is due, or for a machine its owner enrolled from an account.
    */
   beat(machine: MachinePrincipal): Promise<(HostProviderConfigRevision & { sealed: string }) | undefined>
+  /**
+   * On a verified beat that reports a direct listener: the pass the machine
+   * presents to its owner's desktop broker, which serves it over that
+   * listener (`verifyOwnerBrokerPass`); nothing for a machine the hosted
+   * broker would refuse.
+   */
+  ownerBrokerPass(machine: MachinePrincipal, direct: { spkiSha256: string } | undefined): Promise<{ token: string; expires_at: number } | undefined>
   /** `change` with the organization's connected machines added: each one whose owner's accounts the write changed builds again and is rung. */
   credentialChange(change: CredentialChange, ring: (host: HostChangedInput) => Promise<void>): CredentialChange
 }
@@ -71,7 +78,7 @@ export function providerConfigBuildDue(state: MachineProviderConfigState, now: n
 export function createMachineProviderConfig(input: {
   store: MachineProviderConfigStore
   credentials: (orgId: string) => ControlPlaneCredentials
-  broker: Pick<HostedEgressBroker, "machineBinder">
+  broker: Pick<HostedEgressBroker, "machineBinder" | "ownerBrokerPass">
   now?: () => number
 }): MachineProviderConfig {
   const now = input.now ?? Date.now
@@ -141,6 +148,19 @@ export function createMachineProviderConfig(input: {
       } catch (error) {
         failedAt.set(machine.enrollmentId, at)
         log.warn("a connected machine's provider configuration was not built; it keeps what it holds", {
+          enrollmentId: machine.enrollmentId,
+          error: String(error),
+        })
+        return undefined
+      }
+    },
+    async ownerBrokerPass(machine, direct) {
+      if (!direct) return undefined
+      try {
+        const pass = await input.broker.ownerBrokerPass({ enrollmentId: machine.enrollmentId, spkiSha256: direct.spkiSha256 })
+        return pass && { token: pass.token, expires_at: pass.expiresAt }
+      } catch (error) {
+        log.warn("a connected machine's owner broker pass was not minted; its desktop broker refuses it once the last one lapses", {
           enrollmentId: machine.enrollmentId,
           error: String(error),
         })

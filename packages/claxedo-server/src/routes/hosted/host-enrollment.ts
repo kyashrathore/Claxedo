@@ -258,8 +258,8 @@ export type HostEnrollmentRouteOptions = WorkspaceRouteOptions & {
   now?: () => number
   /** The owner's Pi accounts as secrets, sealed beside their pushed rows for a machine enrolled from their account; absent where the plane stores no accounts. */
   ownerPiDirectRows?: (auth: SignedControlPlaneAuth) => Promise<Record<string, ProviderDirect>>
-  /** Builds a `claxedo connect` machine's configuration from its owner's accounts on its beat; absent where the plane has no broker. */
-  machineProviderConfig?: Pick<MachineProviderConfig, "beat">
+  /** Builds a `claxedo connect` machine's configuration from its owner's accounts, and its owner broker pass, on its beat; absent where the plane has no broker. */
+  machineProviderConfig?: Pick<MachineProviderConfig, "beat" | "ownerBrokerPass">
   /** Where a machine's doorbell stream is held (`workspace/host-events.ts`); absent, the stream route answers 503. */
   liveSyncRoom?: LiveSyncRoomNamespace
   /** The doorbell stream's heartbeat cadence (tests shrink it). */
@@ -460,7 +460,8 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
       .sort()
     const endpoints = hostEndpoints()
     const built = await options.machineProviderConfig?.beat(caller)
-    const response: Record<string, unknown> = { ...result, ...(built ? { provider_config: built } : {}), ...endpoints, serving_generation: caller.generation }
+    const pass = ready.length > 0 ? await options.machineProviderConfig?.ownerBrokerPass(caller, body.directRoutes) : undefined
+    const response: Record<string, unknown> = { ...result, ...(built ? { provider_config: built } : {}), ...(pass ? { owner_broker_pass: pass } : {}), ...endpoints, serving_generation: caller.generation }
     const signer = configuredHostTunnelTokenSigner(options)
     if (!signer || ready.length === 0) return response
     const input: HostTunnelTokenSignerInput = {

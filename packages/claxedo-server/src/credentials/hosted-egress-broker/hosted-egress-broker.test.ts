@@ -1,12 +1,13 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Hono } from "hono"
-import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
+import { exportPKCS8, exportSPKI, generateKeyPair, importSPKI } from "jose"
 import type { D1Database } from "@cloudflare/workers-types"
 import { createSandboxManager, type SandboxDriver, type SandboxManager } from "@claxedo/sandbox-manager"
 import { sandboxDriverCatalog } from "@claxedo/sandbox-manager/driver-catalog"
 import { createMemoryLeaseStore } from "@claxedo/sandbox-manager/stores/memory"
 import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
 import { builtInProviderDestination } from "@claxedo/server-core/credentials/built-in-destinations"
+import { verifyOwnerBrokerPass } from "@claxedo/server-core/credentials/owner-broker-pass"
 import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
 import { hostTunnelTokenVerifier } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { createHostedCoreApp } from "../../deployments/hosted-shared/hosted-core-app"
@@ -708,6 +709,27 @@ describe("a connected machine spending its owner's accounts through the hosted b
     machines.set(MACHINE.enrollmentId, undefined)
     expect(await refusal(await send())).toEqual([403, "binding_unavailable"])
     expect(upstream.seen.map((sent) => sent.request.headers.get("x-api-key"))).toEqual(["sk-ant-api03-team-key"])
+  })
+
+  test("the owner broker pass is this broker's admission of the machine for its owner's desktop: none once the enrollment is revoked or paused, and it names the owner, enrollment, host and key for a minute", async () => {
+    const { broker, signing, store, deliveredToMachine } = await composition()
+    const keySet = async () => await importSPKI(signing.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM, "EdDSA")
+    machines.set(MACHINE.enrollmentId, undefined)
+    expect(await broker.ownerBrokerPass({ enrollmentId: MACHINE.enrollmentId, spkiSha256: "spki-of-the-listener" })).toBeUndefined()
+
+    machines.set(MACHINE.enrollmentId, LIVE)
+    const before = Date.now()
+    const minted = await broker.ownerBrokerPass({ enrollmentId: MACHINE.enrollmentId, spkiSha256: "spki-of-the-listener" })
+    if (!minted) throw new Error("a live machine was minted no pass")
+
+    const pass = await verifyOwnerBrokerPass(minted.token, keySet)
+    expect(pass).toEqual({ ownerUserId: "alice", orgId: "org-1", enrollmentId: MACHINE.enrollmentId, hostId: "host_machine", spkiSha256: "spki-of-the-listener", expiresAt: minted.expiresAt })
+    expect(minted.expiresAt - before).toBeLessThanOrEqual(61_000)
+    const other = await generateKeyPair("EdDSA", { extractable: true })
+    expect(await verifyOwnerBrokerPass(minted.token, async () => other.publicKey)).toBeUndefined()
+    const key = await store.putCredential({ owner: "alice", provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-machine-key" })
+    const { placeholder } = await deliveredToMachine(key, MACHINE)
+    expect(await verifyOwnerBrokerPass(placeholder, keySet)).toBeUndefined()
   })
 
   test("a ChatGPT plan's stand-in names the plan's account the way the plan's token does, and the vendor gets the real token beside the account header the broker sets", async () => {

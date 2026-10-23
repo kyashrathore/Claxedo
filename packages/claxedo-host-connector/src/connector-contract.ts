@@ -58,7 +58,12 @@ export type HeartbeatResponse = {
   scope?: HostScope
   /** Present only when the control plane holds a revision this machine has not acked. */
   providerConfig?: ProviderConfigRevision
+  /** The pass this machine presents to its owner's desktop broker, while it serves and reports a direct listener. */
+  ownerBrokerPass?: OwnerBrokerPass
 } & HostEndpoints
+
+/** Opaque here, like `sealed`: only the owner's desktop broker reads it. */
+export type OwnerBrokerPass = { token: string; expiresAt: number }
 
 /**
  * Where a client on this machine's own network reaches it without the relay:

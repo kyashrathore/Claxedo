@@ -324,6 +324,42 @@ function authErrorCode(error: unknown, fallback: string): string {
   return error && typeof error === "object" && "code" in error && typeof error.code === "string" ? error.code : fallback
 }
 
+export type OwnerRuntimeAccess =
+  | { admitted: true; claims: RuntimeAccessTokenClaims }
+  | { admitted: false; status: 401 | 403 | 503; code: string; message: string }
+
+/**
+ * The workspace owner's own Runtime Access Token, presented to this host
+ * without the relay: signed for this workspace and host, workspace-wide, for
+ * no purpose, cloud routing or channel, and still standing at the control
+ * plane when `access` is asked.
+ */
+export async function admitOwnerRuntimeAccess(
+  token: string,
+  access: RuntimeAccessAdmission,
+  target: { workspaceId: string; hostId: string },
+): Promise<OwnerRuntimeAccess> {
+  let claims: RuntimeAccessTokenClaims
+  try {
+    claims = await verifyRuntimeAccessToken(token, access.key, target)
+  } catch (error) {
+    const code = authErrorCode(error, "runtime_access_token_invalid")
+    return { admitted: false, status: code.includes("mismatch") ? 403 : 401, code, message: "Runtime Access Token is invalid" }
+  }
+  if (claims.scope !== "workspace" || claims.purpose || claims.routing_id !== undefined || claims.channel_identity) {
+    return { admitted: false, status: 403, code: "runtime_access_token_scope_denied", message: "Only the workspace owner's own token reaches this host directly" }
+  }
+  const state = await access.active({ token, claims }).catch((): RuntimeAccessTokenState => ({
+    active: false,
+    code: "runtime_access_token_state_unavailable",
+    message: "Whether the Runtime Access Token still stands could not be read",
+  }))
+  if (!state.active) {
+    return { admitted: false, status: state.code === "runtime_access_token_state_unavailable" ? 503 : 401, code: state.code, message: state.message }
+  }
+  return { admitted: true, claims }
+}
+
 async function admitRuntimeAccessToken(
   c: Context<{ Variables: RelayHostAuthContext }>,
   next: Next,
@@ -332,29 +368,12 @@ async function admitRuntimeAccessToken(
   token: string,
 ) {
   const request = { path: c.req.path, method: c.req.method }
-  const refuse = async (status: 401 | 403 | 503, code: string, message: string) => {
-    await audit(options, { action: "runtime_access_token.rejected", result: "deny", reason: code, ...request })
-    return c.json(errorBody(code, message), status)
+  const admitted = await admitOwnerRuntimeAccess(token, access, { workspaceId: options.workspaceId, hostId: options.hostId })
+  if (!admitted.admitted) {
+    await audit(options, { action: "runtime_access_token.rejected", result: "deny", reason: admitted.code, ...request })
+    return c.json(errorBody(admitted.code, admitted.message), admitted.status)
   }
-  let claims: RuntimeAccessTokenClaims
-  try {
-    claims = await verifyRuntimeAccessToken(token, access.key, { workspaceId: options.workspaceId, hostId: options.hostId })
-  } catch (error) {
-    const code = authErrorCode(error, "runtime_access_token_invalid")
-    return await refuse(code.includes("mismatch") ? 403 : 401, code, "Runtime Access Token is invalid")
-  }
-  if (claims.scope !== "workspace" || claims.purpose || claims.routing_id !== undefined || claims.channel_identity) {
-    return await refuse(403, "runtime_access_token_scope_denied", "Only the workspace owner's own token reaches this host directly")
-  }
-  const state = await access.active({ token, claims }).catch((): RuntimeAccessTokenState => ({
-    active: false,
-    code: "runtime_access_token_state_unavailable",
-    message: "Whether the Runtime Access Token still stands could not be read",
-  }))
-  if (!state.active) {
-    return await refuse(state.code === "runtime_access_token_state_unavailable" ? 503 : 401, state.code, state.message)
-  }
-  c.set("relayHostAuth", claims)
+  c.set("relayHostAuth", admitted.claims)
   await audit(options, { action: "runtime_access_token.accepted", result: "allow", ...request })
   return await next()
 }

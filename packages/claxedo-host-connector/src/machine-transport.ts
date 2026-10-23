@@ -22,6 +22,7 @@ import type {
   HeartbeatResponse,
   MachineHeartbeatInput,
   MachineTransport,
+  OwnerBrokerPass,
   ProviderConfigRevision,
 } from "./connector"
 
@@ -258,6 +259,12 @@ export function decodeProviderConfig(value: unknown): ProviderConfigRevision | u
   return { revision: requireNumber(value.revision, "providerConfig.revision"), sealed }
 }
 
+/** A pass this machine cannot read is no pass: the owner's desktop then serves it nothing, and its serving is untouched. */
+function decodeOwnerBrokerPass(value: unknown): OwnerBrokerPass | undefined {
+  if (!isPlainRecord(value) || typeof value.token !== "string" || !value.token || typeof value.expires_at !== "number") return undefined
+  return { token: value.token, expiresAt: value.expires_at }
+}
+
 export function decodeHeartbeatResponse(value: unknown): HeartbeatResponse {
   if (!isPlainRecord(value)) throw new Error("control plane returned no heartbeat body")
   const assigned = Array.isArray(value.assigned_workspace_ids)
@@ -266,6 +273,7 @@ export function decodeHeartbeatResponse(value: unknown): HeartbeatResponse {
   const assignments = decodeAssignments(value.assignments)
   const scope = decodeScope(value.scope)
   const providerConfig = decodeProviderConfig(value.provider_config)
+  const ownerBrokerPass = decodeOwnerBrokerPass(value.owner_broker_pass)
   return {
     expires_at: requireNumber(value.expires_at, "expires_at"),
     ...(assigned ? { assigned_workspace_ids: assigned } : {}),
@@ -273,6 +281,7 @@ export function decodeHeartbeatResponse(value: unknown): HeartbeatResponse {
     ...(assignments ? { assignments } : {}),
     ...(scope ? { scope } : {}),
     ...(providerConfig ? { providerConfig } : {}),
+    ...(ownerBrokerPass ? { ownerBrokerPass } : {}),
     ...decodeEndpoints(value),
   }
 }

@@ -25,7 +25,12 @@ and nothing else. Two compositions mount it:
   `createLocalApp` / `startLocalServer`; `loopbackBrokerRoutes` is the one
   gate they mount it behind, and `isBrokerPath` is the matching CORS
   carve-out. `listenLoopbackBroker` from `@claxedo/egress-broker/node` owns a
-  Node listener bound to `127.0.0.1` instead; close it during shutdown.
+  Node listener bound to `127.0.0.1` instead; close it during shutdown. The
+  same handler, called in process, serves the owner's `claxedo connect`
+  machines the desktop reaches on its network, over a channel the desktop
+  opens to each (`workspace/owner-broker-dialer.ts`): the desktop's own
+  placeholder is set on each call there and never leaves the process, and a
+  call is admitted only with the machine's current owner broker pass.
 - The hosted control plane: `@claxedo/server`'s
   `credentials/hosted-egress-broker/` mounts the handler at `/bindings/*` on
   the API Worker for cloud sandboxes whose driver has no provider edge (Boat,

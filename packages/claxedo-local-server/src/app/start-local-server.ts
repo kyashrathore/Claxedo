@@ -51,6 +51,7 @@ import { createClaxedoMcpClient } from "@claxedo/mcp/client"
 import { projectLocalSessionMetaFromEvent, sessionMetaProjectionTap } from "../session/session-meta-tap"
 import { startSessionRowsPublisher } from "../session/publish/start-session-rows-publisher"
 import { createLocalCredentialBroker } from "../credentials/broker"
+import { createOwnerBrokerDialer, ownerBrokerRows, ownerBrokerWorkspace } from "../workspace/owner-broker-dialer"
 import { hostCredentialProjectAuth, localMachineOwnerUserId } from "../workspace/host-provider-config"
 import { requestActor, requestOrg } from "@claxedo/server-core/credentials/routes/credential"
 import { createUsageQuotaReader } from "@claxedo/server-core/usage/quota"
@@ -202,6 +203,16 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     brokerOrigin: firstPartyMcpBaseUrl,
     machineOwnerUserId: localMachineOwnerUserId,
   })
+  // The key set the owner's connected machines' passes are signed under; Electron
+  // main names it for a signed desktop, and without it no machine is served.
+  const controlPlaneJwksUrl = (options.env ?? process.env).CLAXEDO_CONTROL_PLANE_JWKS_URL?.trim()
+  const ownerBroker = controlPlaneJwksUrl
+    ? createOwnerBrokerDialer({
+        jwksUrl: controlPlaneJwksUrl,
+        project: async (hostId) => ownerBrokerRows(await credentialBroker.projectAuth({ workspaceId: ownerBrokerWorkspace(hostId) })),
+        broker: credentialBroker.handler,
+      })
+    : undefined
   configureAgentConfig({
     connectionConfigs: defaultConnectionConfigs(),
     // The broker answers with this machine's rows, the operator's named for
@@ -327,6 +338,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     ...options,
     runtimeProxyOptions,
     egressBroker: credentialBroker.handler,
+    ...(ownerBroker ? { ownerBroker } : {}),
     services,
     usage,
     workspaceRelayProxy,

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
-  "description": "The serving half of machine-wide remote access: one relay connection per served workspace, the private-network TLS listener beside it, the surface either caller may reach on this machine, and the relay-exposed workspace runtime composition a host answers with",
+  "description": "The serving half of machine-wide remote access: one relay connection per served workspace, the private-network TLS listener beside it, the surface either caller may reach on this machine, the relay-exposed workspace runtime composition a host answers with, and the channel over which the owner's desktop serves the machine its broker",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -38,6 +38,27 @@
       "development": "./src/direct-listener.ts",
       "import": "./src/direct-listener.ts",
       "default": "./src/direct-listener.ts"
+    },
+    "./owner-broker-channel": {
+      "types": "./src/owner-broker-channel.ts",
+      "bun": "./src/owner-broker-channel.ts",
+      "development": "./src/owner-broker-channel.ts",
+      "import": "./src/owner-broker-channel.ts",
+      "default": "./src/owner-broker-channel.ts"
+    },
+    "./owner-broker-shim": {
+      "types": "./src/owner-broker-shim.ts",
+      "bun": "./src/owner-broker-shim.ts",
+      "development": "./src/owner-broker-shim.ts",
+      "import": "./src/owner-broker-shim.ts",
+      "default": "./src/owner-broker-shim.ts"
+    },
+    "./owner-broker-wire": {
+      "types": "./src/owner-broker-wire.ts",
+      "bun": "./src/owner-broker-wire.ts",
+      "development": "./src/owner-broker-wire.ts",
+      "import": "./src/owner-broker-wire.ts",
+      "default": "./src/owner-broker-wire.ts"
     },
     "./direct-certificate": {
       "types": "./src/direct-certificate.ts",

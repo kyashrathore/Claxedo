@@ -56,7 +56,7 @@ import { findFreePort, resolveBaseServerPort } from "./server-port"
 import { restartBehavior, runRestart } from "../shared/restart-policy"
 import { CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME } from "../shared/compile-cache"
 import { readString } from "@claxedo/helpers/readers"
-import { claxedoServerForkOptions } from "./server-child-process"
+import { claxedoServerChildEnv, claxedoServerForkOptions } from "./server-child-process"
 import { setupAgentPluginsSignedSync, type AgentPluginsSignedSync } from "./agent-plugins-signed-sync"
 import { CLAXEDO_DAEMON_PROTOCOL } from "@claxedo/helpers/claxedo-daemon"
 import {
@@ -282,21 +282,17 @@ async function startClaxedoServer(
     const child = fork(
       serverPath,
       [],
-      claxedoServerForkOptions({
-        ...Object.fromEntries(
-          Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
-        ),
-        CLAXEDO_CHILD_PORT: String(claxedoPort),
-        CLAXEDO_DATA_DIR: serverDataDir,
-        CLAXEDO_DAEMON_PROTOCOL: String(CLAXEDO_DAEMON_PROTOCOL),
-        CLAXEDO_DAEMON_TOKEN: daemonToken,
-        CLAXEDO_DAEMON_GENERATION: serverGeneration,
-        CLAXEDO_DAEMON_BUILD: app.getVersion(),
-        CLAXEDO_DAEMON_DISCOVERY_PATH: daemonDiscovery,
-        ...(existsSync(claxedoServerCompileCachePath)
-          ? { CLAXEDO_CHILD_SERVER_COMPILE_CACHE_DIR: claxedoServerCompileCachePath }
-          : {}),
-      }, serverLog.fd),
+      claxedoServerForkOptions(claxedoServerChildEnv({
+        port: claxedoPort,
+        dataDir: serverDataDir,
+        protocol: CLAXEDO_DAEMON_PROTOCOL,
+        token: daemonToken,
+        generation: serverGeneration,
+        build: app.getVersion(),
+        discoveryPath: daemonDiscovery,
+        ...(existsSync(claxedoServerCompileCachePath) ? { compileCacheDir: claxedoServerCompileCachePath } : {}),
+        ...(accountConfig.configured ? { controlPlaneOrigin: accountConfig.coreOrigin } : {}),
+      }), serverLog.fd),
     )
     closeSync(serverLog.fd)
     const listening = defer<void>()
@@ -628,6 +624,8 @@ const account = setupLazyAccount({
     // never auto-undone by a later sign-in.
     const follow = remoteAccessFollow(previous, next)
     if (follow === "suspend") {
+      // The daemon serves the owner's connected machines its broker only while the owner is signed in.
+      void daemon("/api/claxedo/direct-routes", { method: "DELETE" }).catch((error: unknown) => logger.warn(`[direct-routes] forget: ${String(error)}`))
       if (hostConnector?.suspendForAuthLapse()) {
         logger.warn(
           `[host-connector] auth-lapse-suspend: account left "signed" (now "${next.status}") — remote access stopped; it will resume if the account returns`,

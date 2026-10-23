@@ -36,6 +36,8 @@ import {
   type HostServingCredential,
 } from "@claxedo/host-serving/serving"
 import { privateNetworkAddresses, startDirectListener, type DirectListener } from "@claxedo/host-serving/direct-listener"
+import { createOwnerBrokerChannels, type OwnerBrokerChannels } from "@claxedo/host-serving/owner-broker-channel"
+import { startOwnerBrokerShim } from "@claxedo/host-serving/owner-broker-shim"
 import { createDirectTlsKey, directTlsIdentity } from "@claxedo/host-serving/direct-certificate"
 import { createKeyedSerializer } from "@claxedo/helpers"
 import { Pty } from "@claxedo/workspace-runtime"
@@ -210,6 +212,7 @@ function credentialWithout(credential: HostServingCredential | null, workspaceId
 async function startDirectRoute(input: {
   state: HostState
   listener: HostRuntimeListener
+  ownerBroker: OwnerBrokerChannels | undefined
   deps: Pick<HostDeps, "directAddresses" | "log">
   persistKey: (direct: NonNullable<HostState["direct"]>) => Promise<void>
   persistPort: (direct: NonNullable<HostState["direct"]>) => Promise<void>
@@ -232,6 +235,7 @@ async function startDirectRoute(input: {
     },
     addresses: input.deps.directAddresses,
     log: input.deps.log,
+    ...(input.ownerBroker ? { ownerBroker: input.ownerBroker } : {}),
   })
 }
 
@@ -278,7 +282,24 @@ export async function runHost(input: HostRunInput): Promise<number> {
       deps.log(`could not write host state: ${errorMessage(error)}`)
     })
 
-  installHostProviderConfigAuthority()
+  // The owner's desktop broker rides the direct route, so it exists only while that is on.
+  const ownerBroker = state.direct?.enabled === false ? undefined : createOwnerBrokerChannels({
+    hostId: state.host_id,
+    runtimeAccessJwksUrl: `${state.control_plane_url}/.well-known/jwks.json`,
+    sessionAuthorityUrl: () => state.authority?.sessionAuthorityUrl,
+    log: deps.log,
+  })
+  const ownerBrokerShim = ownerBroker
+    ? await startOwnerBrokerShim({
+        channels: ownerBroker,
+        ...(state.direct?.owner_broker_port === undefined ? {} : { port: state.direct.owner_broker_port }),
+      })
+    : undefined
+  const ownerBrokerPort = ownerBrokerShim ? Number(new URL(ownerBrokerShim.url).port) : undefined
+  if (ownerBrokerPort !== undefined && state.direct?.owner_broker_port !== ownerBrokerPort) {
+    await persistOrThrow({ ...state, direct: { enabled: true, ...state.direct, owner_broker_port: ownerBrokerPort } })
+  }
+  installHostProviderConfigAuthority(ownerBrokerShim)
   // The public half is derived from the stored private JWK on every boot, so
   // the key the control plane seals for can only be the key on disk; it is
   // on disk before the first beat declares it.
@@ -331,6 +352,7 @@ export async function runHost(input: HostRunInput): Promise<number> {
   const direct = await startDirectRoute({
     state,
     listener,
+    ownerBroker,
     deps,
     persistKey: (next) => persistOrThrow({ ...state, direct: next }),
     persistPort: (next) => persist({ ...state, direct: next }),
@@ -491,7 +513,8 @@ export async function runHost(input: HostRunInput): Promise<number> {
         }
       }
     },
-    onServing: (tunnel) => {
+    onServing: (tunnel, ownerBrokerPass) => {
+      ownerBroker?.setPass(ownerBrokerPass?.token)
       const credential = servingCredential(tunnel, state.relay?.url)
       const owner = trimToUndefined(asRecordOrEmpty(tunnel).ownerUserId)
       if (credential && !owner) deps.log("relay serving refused: the ack names no enrolled owner")
@@ -594,7 +617,9 @@ export async function runHost(input: HostRunInput): Promise<number> {
   await drainWithin(connector.drain(), deps)
   connector.close()
   deps.stopServing()
+  ownerBroker?.close()
   await direct?.close()
+  await ownerBrokerShim?.close()
   // Terminals belong to the process, not to a runtime the listener retires,
   // and a live one's shell keeps Node from exiting.
   await Pty.dispose()

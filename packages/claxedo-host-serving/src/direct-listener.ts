@@ -1,10 +1,12 @@
 /**
  * This machine's inbound route beside the relay tunnel: one TLS port on each
  * private-network address, serving the surface the tunnel replays onto
- * (`hostServingSurface` over the runtime listener) for HTTP and WebSocket.
+ * (`hostServingSurface` over the runtime listener) for HTTP and WebSocket, and
+ * the channel the owner's desktop opens to serve this machine its broker
+ * (`owner-broker-channel.ts`).
  *
- * It decides no access itself; the runtime admits the owner's Runtime Access
- * Token. It does let through only a bearer shaped as one, so the runtime's
+ * It decides no access itself; the runtime and the channel each admit the
+ * owner's Runtime Access Token. It does let through only a bearer shaped as one, so the runtime's
  * other bearers (a harness's, a terminal hook's) never meet the network, and
  * it drops the relay's marker, so a Relay Host Token cannot be replayed around
  * the relay.
@@ -22,6 +24,8 @@ import { loopbackReplayHeaders } from "@claxedo/server-core/platform/http/peer-a
 import type { DirectTlsIdentity } from "./direct-certificate"
 import type { HostRuntimeListener } from "./runtime"
 import { hostServingSurface } from "./surface"
+import type { OwnerBrokerChannels } from "./owner-broker-channel"
+import { OWNER_BROKER_PATH } from "./owner-broker-wire"
 
 export type DirectRoutes = { port: number; addresses: string[]; spkiSha256: string }
 
@@ -45,6 +49,8 @@ export type DirectListenerOptions = {
   onPort?: (port: number) => void
   addresses?: () => string[]
   log?: (line: string) => void
+  /** The owner's desktop broker channel, upgraded at `OWNER_BROKER_PATH`; absent, that path is not served. */
+  ownerBroker?: Pick<OwnerBrokerChannels, "upgrade" | "withhold">
 }
 
 const RUNTIME_ACCESS_TOKEN_PROTOCOL = "claxedo-rat."
@@ -134,10 +140,14 @@ function requestApp(runtime: DirectListenerOptions["runtime"], gate: Gate) {
   return app
 }
 
-function upgradeHandler(runtime: DirectListenerOptions["runtime"], gate: Gate) {
+function upgradeHandler(runtime: DirectListenerOptions["runtime"], gate: Gate, ownerBroker: DirectListenerOptions["ownerBroker"]) {
   return (request: IncomingMessage, socket: Duplex, head: Buffer) => {
     if (gate.withheld) {
       socket.end("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n")
+      return
+    }
+    if (ownerBroker && new URL(request.url ?? "/", "https://direct.invalid").pathname === OWNER_BROKER_PATH) {
+      ownerBroker.upgrade(request, socket, head)
       return
     }
     const routed = routeDirectRequest(request.url ?? "/", upgradeBearer(request), runtime.url)
@@ -177,7 +187,7 @@ function closeServer(server: Server): Promise<void> {
 export function startDirectListener(options: DirectListenerOptions): DirectListener {
   const gate: Gate = { withheld: false, carried: new Set() }
   const listener = getRequestListener(requestApp(options.runtime, gate).fetch)
-  const upgrade = upgradeHandler(options.runtime, gate)
+  const upgrade = upgradeHandler(options.runtime, gate, options.ownerBroker)
   const servers = new Map<string, Server>()
   const log = options.log ?? (() => undefined)
   let port = options.port
@@ -217,6 +227,7 @@ export function startDirectListener(options: DirectListenerOptions): DirectListe
     },
     withhold: (withheld) => {
       gate.withheld = withheld
+      options.ownerBroker?.withhold(withheld)
       if (!withheld) return
       for (const socket of gate.carried) socket.destroy()
       gate.carried.clear()

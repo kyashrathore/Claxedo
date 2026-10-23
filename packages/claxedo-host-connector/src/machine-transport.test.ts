@@ -9,6 +9,7 @@ import {
   createMachineSignedTransport,
   decisionCode,
   decodeEndpoints,
+  decodeHeartbeatResponse,
   decodeProviderConfig,
   HostedHttpError,
   HostedRedirectError,
@@ -513,6 +514,15 @@ describe("the endpoints a control-plane body delivers", () => {
     const beat = await transport.heartbeat({ generation, acks: [] })
 
     expect(beat.relay).toEqual({ url: "http://127.0.0.1:4100", jwksUrl: "http://127.0.0.1:4100/.well-known/jwks.json" })
+  })
+})
+
+describe("the owner broker pass on the wire", () => {
+  test("rides the beat's answer, and one this machine cannot read is no pass rather than a failed beat", () => {
+    expect(decodeHeartbeatResponse({ expires_at: 1, owner_broker_pass: { token: "the-pass", expires_at: 2 } }).ownerBrokerPass).toEqual({ token: "the-pass", expiresAt: 2 })
+    expect(decodeHeartbeatResponse({ expires_at: 1 }).ownerBrokerPass).toBeUndefined()
+    expect(decodeHeartbeatResponse({ expires_at: 1, owner_broker_pass: { token: "", expires_at: 2 } }).ownerBrokerPass).toBeUndefined()
+    expect(decodeHeartbeatResponse({ expires_at: 1, owner_broker_pass: "the-pass" }).ownerBrokerPass).toBeUndefined()
   })
 })
 

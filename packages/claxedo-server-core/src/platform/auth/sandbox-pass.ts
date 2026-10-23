@@ -1,4 +1,4 @@
-import { jwtVerify, SignJWT, type JWTPayload } from "jose"
+import { jwtVerify, SignJWT, type JWTPayload, type JWTVerifyGetKey } from "jose"
 import { runtimeAccessTokenIssuer } from "@claxedo/workspace-relay"
 import { randomToken } from "@claxedo/server-core/platform/auth/web-crypto"
 import { RUNTIME_ACCESS_TOKEN_ALGORITHM, resolveMintKid } from "@claxedo/server-core/platform/auth/runtime-access-token"
@@ -209,6 +209,8 @@ type PassVerification = {
   audience: string
   fault: CredentialFault
   now?: () => number
+  /** Seconds of clock difference forgiven on `iat` and `exp`, for a verifier on another machine than the signer. */
+  clockToleranceSeconds?: number
   /** Asked only for a well-signed, unexpired pass; a verifier given none answers for the signature alone. */
   revoked?: (jti: string) => Promise<boolean>
 }
@@ -232,12 +234,26 @@ export async function verifyScopedPass(
   options: PassVerification,
 ): Promise<ScopedPass<SandboxPassScope | MachinePassScope>> {
   const { key } = await runtimeTokenVerificationKey(env, options.fault)
+  return await verifyScopedPassWith(token, async () => key, options)
+}
+
+/**
+ * The same reading of a pass, for a verifier holding the control plane's
+ * published key set instead of its configured public key: a process on
+ * another machine than the plane.
+ */
+export async function verifyScopedPassWith(
+  token: string,
+  key: JWTVerifyGetKey,
+  options: PassVerification,
+): Promise<ScopedPass<SandboxPassScope | MachinePassScope>> {
   const { payload } = await jwtVerify(token, key, {
     algorithms: [RUNTIME_ACCESS_TOKEN_ALGORITHM],
     issuer: runtimeAccessTokenIssuer,
     audience: options.audience,
     requiredClaims: ["sub", "iat", "exp"],
     ...(options.now ? { currentDate: new Date(options.now()) } : {}),
+    ...(options.clockToleranceSeconds ? { clockTolerance: options.clockToleranceSeconds } : {}),
   })
   const jti = claimString(payload, "jti")
   if (!jti) throw new SandboxPassError(options.audience, "has no jti")

@@ -87,7 +87,7 @@ why it was or was not built:
 | W3 | Built and proven on the hosted stack run locally; the control-plane side is not deployed to staging |
 | W1 | Built and proven on one box; the LAN latency gain is not measured |
 | W2 | Not built as written: most of it already holds, and what is left is small; reshaped below |
-| W4 | Cloud path built for every `claxedo connect` machine and proven on Miniflare; the LAN path follows W1; plan refresh and a deploy remain |
+| W4 | Cloud path built for every `claxedo connect` machine; LAN path built: a machine its owner's desktop reaches spends through the desktop's broker. Both proven on the hosted stack run locally; plan refresh and a deploy remain |
 | W5 | `claxedo doctor`, the service's PATH and Pi's Windows bash built; installers need a Windows box |
 | W6 | Already met by how rooms are placed |
 
@@ -208,14 +208,15 @@ resume and one restarted while paused 130 ms after it, where staging, without th
 
 ### W4 — The owner's accounts on connected machines
 
-Cloud machines spend through the hosted broker (`/bindings/*` on the control plane, the same one Boat, Modal and
-Docker sandboxes use) with a stand-in bound to the machine's enrollment instead of a sandbox lease. LAN machines
-spend through the desktop app's broker, reached over W1's direct route. Push-config delivers `{baseUrl,
-placeholder}` rows, a shape it already carries. The hosted broker gains plan accounts: refresh state kept per
-account in a Durable Object.
+Every `claxedo connect` machine spends through the hosted broker (`/bindings/*` on the control plane, the same one
+Boat, Modal and Docker sandboxes use) with a stand-in bound to the machine's enrollment instead of a sandbox lease.
+While the owner's desktop reaches the machine over W1's direct route, the machine spends through the desktop's
+broker instead, call by call, and through the hosted broker again the moment the desktop is not there ("LAN path"
+below). The hosted broker gains plan accounts: refresh state kept per account in a Durable Object.
 
-Trade-offs: cloud machines' model calls pass through our Worker (a few ms from an AWS box near the edge; streamed,
-not stored). LAN machines depend on the main machine being on (default above).
+Trade-offs: a machine's model calls pass through our Worker whenever no desktop serves it (a few ms from an AWS box
+near the edge; streamed, not stored). Through the desktop they spend the desktop's own account for that provider:
+the owner's, but not necessarily the same stored account the control plane holds.
 
 - [x] The control plane mints machine-bound stand-ins (enrollment, served workspace, generation) and refuses them
   once the enrollment is revoked, paused or no longer serves that workspace. Progress: a stand-in names the
@@ -233,8 +234,9 @@ not stored). LAN machines depend on the main machine being on (default above).
 - [ ] The hosted broker serves Claude and ChatGPT plan accounts, refresh state in a Durable Object. Progress: the
   ChatGPT plan is delivered brokered, and its stand-in names the plan's account for pi-ai. Not built: Claude plan
   refresh, and refresh coordinated across isolates.
-- [ ] A LAN machine's agents spend through the main machine's broker over W1; with the main machine asleep they
-  pause with the one-line notice. Progress:
+- [x] A machine the owner's desktop reaches on the network spends through the desktop's broker; when the desktop
+  is away (asleep, off the network, route broken) it spends through the hosted broker, as decided on 2026-10-22,
+  in place of the earlier pause. Progress: built as "LAN path" below and proven on one box.
 - [ ] Live: revoke the machine and its next model call is refused; rotate the key in the app and the next call
   uses the new one; nothing on the machine changes. Progress: on the hosted control plane on Miniflare, with a
   machine enrolled by invitation and a scripted upstream, its first beat delivered bound rows with no key. A
@@ -242,12 +244,90 @@ not stored). LAN machines depend on the main machine being on (default above).
   generation) and revoke each refused the stand-in it held (403 `binding_unavailable`). After a key rotation, the
   stand-in the machine already held spent the new key. Not yet proven on a deploy.
 
+**LAN path.** How each hard question is answered, and why:
+
+1. **Direction: the desktop dials the machine; nothing listens on the desktop.** While the daemon carries the
+   owner's direct route to a machine (W1) it also opens TLS to the machine's direct listener, pinned to the
+   machine's key, upgrades `GET /owner-broker` with the owner's Runtime Access Token, and serves its credential
+   broker on that socket as an HTTP/2 server. The machine is the HTTP/2 client, so its model calls travel back
+   over a connection the desktop opened (`claxedo-host-serving/src/owner-broker-wire.ts` and
+   `owner-broker-channel.ts`; `claxedo-local-server/src/workspace/owner-broker-dialer.ts`). A listener on the
+   desktop was rejected: the desktop holds every key and would expose a port on whatever network a laptop joins;
+   an inbound listener meets the Windows firewall prompt (admin) and macOS's application firewall;
+   machine-to-desktop reachability fails where desktop-to-machine works (a Windows "Public" profile, client
+   isolation, a roaming address); and the owner's rule is "the desktop reaches the machine", which the channel's
+   existence states exactly. HTTP/2 is Node's own and gives streaming both ways, per-call cancel and flow control;
+   the relay's JSON tunnel frames were rejected because they carry a request body whole.
+2. **Admission, both ends.** The machine admits a channel only with the owner's own token for a workspace it
+   serves, checked as the direct route checks it (`admitOwnerRuntimeAccess`, now the one owner of that check in
+   session-core); it asks the token's standing again on every offer (5 s) and closes the channel at the token's
+   expiry, on a pause (the listener withholds) and on stop. The desktop admits each call only with the machine's
+   owner broker pass: minted by the control plane on each beat that serves and reports a direct listener, from the
+   admission the hosted broker applies per request (`machineBrokerSubject`: invited, live, unpaused, owner active
+   and in the organization), as a pass of the sandbox-pass family (`claxedo-owner-broker` audience, 60 s,
+   `claxedo-server-core/src/credentials/owner-broker-pass.ts`) naming the owner, enrollment, host and the
+   listener's key hash. The desktop verifies it against the control plane's published key set (Electron main names
+   it to the daemon as `CLAXEDO_CONTROL_PLANE_JWKS_URL`) and refuses one that has lapsed or names another key, host
+   or owner than the channel's, so a revoked or paused machine is refused within a minute even if it keeps its
+   channel open, and at once when it does not. Signing out makes main tell the daemon to forget every route
+   (`DELETE /api/claxedo/direct-routes`), which closes every channel. The stand-in the desktop's broker spends is
+   minted by the desktop for the machine (`owner-broker:<hostId>`), set on each call inside the daemon and never
+   sent; no key and no desktop stand-in reaches the machine.
+3. **Choice at the machine, per call.** A loopback shim (`owner-broker-shim.ts`) fronts every row the control plane
+   built, so a harness keeps one base URL whatever the route and a route change never changes a row or restarts a
+   harness; its port is kept in the host state. While the current channel's last offer names the call's
+   provider, the call goes to the desktop and the desktop's answer is final, refusals included; otherwise it goes
+   to the row's own hosted binding with the row's own stand-in. Only a call that found no channel goes hosted; one
+   whose channel broke after it was sent fails once (502 `owner_broker_unreachable`) and the client's retry finds
+   the hosted broker. A caller must present the stand-in its row carries, so a process on the machine that was
+   handed no row spends nothing through either broker.
+4. **Discovery and pinning: none.** The channel's arrival is the discovery and W1's pin is the pin. Carrying the
+   desktop's address and key hash in the owner's push was rejected: the plane seals that push from plaintext it
+   sees, a laptop's address moves, and it needs the desktop listener rejected in 1.
+5. **Slots.** Unchanged: the machine keeps the control plane's build and the owner's push and spends them layered.
+   Only built rows are fronted; a provider the owner pushed by hand goes where the push says.
+
+Live, on the hosted control plane and relay run locally under Miniflare, with this branch's `claxedo connect` on
+Node 24 enrolled by invitation and serving on the private alias 10.77.0.2, and the real desktop daemon run from
+source with the vendor host pointed at the scripted model server (driver: the scratch `live-w4.ts`, not a
+committed flow). Which stored key reached the vendor says which broker spent a call. Final run, with ranges over
+three runs where they differ:
+- before any desktop, a call through the shim went hosted (36–61 ms); the channel was up 164–365 ms after the
+  daemon first carried the owner's token; ten calls then reached the vendor with the desktop's key, median
+  10.6–15.7 ms (the hosted binding from the same box: 14.2–29.7 ms); a real Pi turn on the machine finished in
+  349–458 ms and both its model calls were spent by the desktop;
+- stopping the daemon closed the channel in 61–90 ms and the next call went hosted; a restarted daemon served
+  again 6.1–9.0 s after it started, its own boot;
+- cutting the machine's port with the channel up: the call in flight failed once after 8.0 s, the next call went
+  hosted in 33 ms; in two of the three runs the desktop had already spent the failed call, so the client's retry
+  spends it a second time; restored, the desktop served again in 4.0 s;
+- the desktop withdrawing its account: the next call got the desktop's 403 `binding_unavailable` and the hosted
+  broker saw nothing; once the desktop stopped offering the provider, calls went hosted;
+- a pause closed the channel in 26–52 ms, the next call got the hosted broker's 403, and the desktop's redial got
+  503; a resume served from the desktop again in 4.0 s; the daemon forgetting its routes (sign-out) closed the
+  channel in 3–4 ms;
+- no key in any file under the machine's home or in its log; a revoke ended the machine (exit 78) and the hosted
+  broker refused its stand-in.
+
+Not proven: two machines on a real LAN or tailnet, macOS and Windows, the signed Electron app (the daemon ran with
+the variable set by hand, and main's sign-out call was not driven, only the route it calls), the desktop refusing
+a machine that keeps its channel past a pause (proven in `owner-broker-dialer.test.ts`, not live), Claude Code,
+Codex and OpenCode turns, and latency on a real network.
+
+Rollout: no schema change. Deploy the control plane (the pass rides the beat's answer), then release the desktop,
+then the CLI. Any order is safe: an older CLI ignores the pass; with no pass, or an older desktop, the desktop
+offers nothing and the machine spends through the hosted broker.
+
 **Assessment.** The cloud path is built: the machine-shaped stand-in, the per-request check, the row builder,
-renewal on the beat, and Pi spending a binding. Still missing:
+renewal on the beat, and Pi spending a binding. The LAN path is built as above. Still missing:
 
 - Claude plan refresh, which has no code anywhere;
 - refresh coordinated across isolates: today it is per isolate, and OpenAI rotates refresh tokens;
-- the LAN path through the main machine (W1);
+- the desktop serves a machine only while its renderer carries that machine's direct route with fresh tokens, so
+  a machine whose workspace nobody has open in the app spends through the hosted broker; a machine-scoped
+  credential the daemon could hold itself would lift that;
+- the desktop serves only providers the machine already has a built row for, so a provider only the desktop
+  holds (a Claude plan today) is not offered, and a turn it spends reports the built row's account;
 - a Pi direct row an owner pushed to a machine before this change stays on that machine until the owner pushes
   again or clears the configuration.
 

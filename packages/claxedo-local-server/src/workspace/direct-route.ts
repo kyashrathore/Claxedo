@@ -11,6 +11,10 @@
  * (503), answered before anything was sent, and the renderer sends that
  * request through the relay. A request that fails after it was sent is that
  * request's failure, not a cue to send it twice.
+ *
+ * Each machine it reaches with the owner's token is handed to the owner
+ * broker dialer (`owner-broker-dialer.ts`), which serves that machine this
+ * desktop's broker for as long as the route is carried.
  */
 
 import type { EventEmitter } from "node:events"
@@ -22,6 +26,7 @@ import type { Context, Hono } from "hono"
 import { z } from "zod"
 import { bearerToken, isPrivateNetworkAddress, parseIpAddress, type IpAddress } from "@claxedo/helpers"
 import { DirectRouteUnreachable, PinnedAgent, pinnedConnection, type DirectTarget } from "./direct-connection"
+import type { OwnerBrokerDialer } from "./owner-broker-dialer"
 
 export const DIRECT_ROUTE_UNAVAILABLE = "direct_route_unavailable"
 const DIRECT_PATH = /^\/direct\/workspaces\/([^/?]+)(\/[^?]*)?/
@@ -159,7 +164,11 @@ function carriedIncoming(env: unknown): IncomingMessage | undefined {
   return env.incoming instanceof IncomingMessage ? env.incoming : undefined
 }
 
-export function createDirectRouteCarrier(options: { interfaces?: () => NetworkInterfaces } = {}) {
+export function createDirectRouteCarrier(options: {
+  interfaces?: () => NetworkInterfaces
+  /** Handed every machine this carrier reaches with the owner's token, to serve it this desktop's broker. */
+  ownerBroker?: OwnerBrokerDialer
+} = {}) {
   const interfaces = options.interfaces ?? (() => os.networkInterfaces())
   const registered = new Map<string, DirectRoutes>()
   const answering = new Map<string, { address: string; network: string }>()
@@ -242,6 +251,7 @@ export function createDirectRouteCarrier(options: { interfaces?: () => NetworkIn
     if (!token) return directRouteRefusal("direct_route_token_required", 401, "A direct request carries the workspace's runtime access token")
     const target = await reachable(workspaceId)
     if (!target) return unavailable()
+    options.ownerBroker?.offer({ target, token })
     const path = `/workspaces/${encodeURIComponent(workspaceId)}${match?.[2] ?? "/"}${new URL(c.req.url).search}`
     if (!upgrading) return await forward(c, target, path, token)
     const incoming = carriedIncoming(c.env)
@@ -285,9 +295,20 @@ export function createDirectRouteCarrier(options: { interfaces?: () => NetworkIn
     upstream.end()
   }
 
+  const forgetAll = (c: Context) => {
+    registered.clear()
+    answering.clear()
+    for (const agent of agents.values()) agent.destroy()
+    agents.clear()
+    options.ownerBroker?.forget()
+    return c.body(null, 204)
+  }
+
   return {
     register,
     route,
+    /** Forgets every route and token it was handed, as when the owner signs out; the renderer registers again when it carries one. */
+    forgetAll,
     /** Takes the upgrades this route answers off the server; every other upgrade reaches `others` as it would have reached the server. */
     injectWebSocket: (server: EventEmitter, app: Pick<Hono, "request">, others: EventEmitter) => {
       server.on("upgrade", (request: IncomingMessage, socket: Duplex, head: Buffer) => {

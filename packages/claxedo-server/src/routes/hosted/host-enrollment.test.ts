@@ -701,6 +701,22 @@ describe("POST /heartbeat, machine caller (v3)", () => {
     expect(api.heartbeatHostEnrollmentByMachine).toHaveBeenCalledTimes(2)
   })
 
+  test("hands a serving machine the owner broker pass for the direct listener it reports, and none while it serves nothing", async () => {
+    const key = await machineKey()
+    const ownerBrokerPass = vi.fn(async (_machine: unknown, direct: { spkiSha256: string } | undefined) =>
+      direct ? { token: `pass-for-${direct.spkiSha256.slice(0, 4)}`, expires_at: NOW + 60_000 } : undefined)
+    const { signedCall } = await mountedRoutes(machineAuthority(enrollmentRow(key)), { machineProviderConfig: { beat: async () => undefined, ownerBrokerPass } })
+    const routes = { port: 44_321, addresses: ["192.168.1.20"], spkiSha256: "A".repeat(43) }
+
+    const reporting = await (await signedCall(key, "/heartbeat", beat({ directRoutes: routes }))).json() as Record<string, unknown>
+    expect(reporting.owner_broker_pass).toEqual({ token: "pass-for-AAAA", expires_at: NOW + 60_000 })
+    expect(ownerBrokerPass).toHaveBeenLastCalledWith(expect.objectContaining({ enrollmentId: "enr_1", hostId: "host_1" }), routes)
+    expect(await (await signedCall(key, "/heartbeat", beat())).json()).not.toHaveProperty("owner_broker_pass")
+    const idle = await (await signedCall(key, "/heartbeat", beat({ acks: [], directRoutes: routes }))).json()
+    expect(idle).not.toHaveProperty("owner_broker_pass")
+    expect(ownerBrokerPass).toHaveBeenCalledTimes(2)
+  })
+
   test("spends a per-enrollment budget only after verification, 120 a minute keyed machine:<enrollment_id>", async () => {
     const key = await machineKey()
     const api = machineAuthority(enrollmentRow(key))
