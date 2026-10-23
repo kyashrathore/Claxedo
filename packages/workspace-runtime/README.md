@@ -140,7 +140,7 @@ Root runtime value exports:
 `isPtyStreamSocket`, `ptyAccessRefusalResponse`, `ptyStreamAccess`, 
 `createRuntimeCredentialIssuer`, `createWorkspaceHost`,
 `createWorkspaceRuntimeApp`, `createWorkspaceRuntimeJwtManagementAuth`, `embeddedWorkspaceRuntimeExposure`,
-`firstPartyMcpServerFor`, `isLoopbackHostname`,
+`firstPartyMcpServerFor`, `installedTerminalAgents`, `isLoopbackHostname`,
 `loadWorkspaceRuntimeManagementVerificationKey`, `loopbackWorkspaceRuntimeExposure`,
 `normalizeRuntimeSnapshot`, `privateNetworkDevUnsafeWorkspaceRuntimeExposure`,
 `privateNetworkWorkspaceRuntimeExposure`, `relayWorkspaceRuntimeExposure`,
