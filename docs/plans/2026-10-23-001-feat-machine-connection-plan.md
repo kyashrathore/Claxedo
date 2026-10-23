@@ -371,7 +371,12 @@ renewal on the beat, and Pi spending a binding. The LAN path is built as above. 
   runtime's setup, proven on a fresh Windows Server from npm. Progress:
 - [ ] Add a machine over SSH from the desktop app: install, start and enroll, with a checksum-verified release.
   Progress:
-- [ ] The 29-minute Windows install is explained and fixed or documented with evidence. Progress:
+- [ ] The 29-minute Windows install is explained and fixed or documented with evidence. Progress: an install writes
+  568 packages, 56,007 files and 824 MB, 52,419 of the files from OpenCode's dependency tree; the runtime no longer
+  installs the Claude Agent SDK's 230 MB binary (850a3a1d; 574 MB packed). On Linux an install takes 70 s cold, 41 s
+  of it npm resolving the tree, and an update rewrites the whole tree (`npm install -g`, 79 s for an unchanged
+  version). `packages/cli/scripts/measure-install.mjs` times each phase; the CI job that runs it on Windows waits on
+  the owner, since GitHub refuses workflow changes from the agent. Not measured on Windows yet.
 
 ### W6 — Relay placement
 
