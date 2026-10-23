@@ -93,3 +93,15 @@ export function machineProjectCreator(
     return project
   }
 }
+
+export function machineRecloner(account: HostedAccount | undefined, workspaces: Pick<Workspaces, "byId">, cloned: (machine: MachineId, directory: string) => void) {
+  return async (id: PlacementId): Promise<void> => {
+    const placement = workspaces.byId(id)
+    const machine = placement?.onThisMachine ? undefined : placement?.machineId
+    if (!account || !machine || !placement?.path || !placement.gitRemote) {
+      throw new ServerError({ class: "invalid", message: "Only a connected machine's folder with a recorded remote is cloned back there" })
+    }
+    await account.run("machines.clone", { enrollmentId: machine, directory: placement.path, repoUrl: placement.gitRemote })
+    cloned(machine, placement.path)
+  }
+}

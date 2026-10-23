@@ -1,6 +1,6 @@
 import { createMemo, type Accessor } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { useServer, type AppError, type Placement, type Project, type ProjectEnvironment, type ProjectId } from "@/server"
+import { useServer, type AppError, type Placement, type PlacementId, type Project, type ProjectEnvironment, type ProjectId } from "@/server"
 import { folderPlacesOf, type FolderPlace } from "./folder-places"
 
 export type Loaded<T> =
@@ -63,5 +63,6 @@ export function useProjectCommands() {
   return {
     remove: (id: ProjectId) => server.projects.remove(id),
     reclone: (id: ProjectId) => server.projects.reclone(id),
+    recloneOnMachine: (id: PlacementId) => server.placements.recloneOnMachine(id),
   }
 }

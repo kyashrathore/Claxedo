@@ -5,12 +5,12 @@ import type { CloudSourceCreateInput, CloudWorkspace } from "./cloud-types"
 import { ServerError } from "./errors"
 import type { HostedAccount } from "./account"
 import { machineId, placementId, projectId } from "./ids"
-import { machineProjectCreator } from "./machine-projects"
+import { machineProjectCreator, machineRecloner } from "./machine-projects"
 import type { Machine } from "./machine-types"
 import { createProjectsApi } from "./projects"
 import { queryKeys } from "./query-keys"
 import type { Transport } from "./transport"
-import type { Project, ProjectSource } from "./types"
+import type { Placement, Project, ProjectSource } from "./types"
 import type { Workspaces } from "./workspaces"
 
 const serverUrl = "http://127.0.0.1:4096"
@@ -136,4 +136,25 @@ test("a repository cloned onto a connected machine lands in a folder named for i
     { hostId: "host_box", displayName: "Spoon-Knife", repoName: "Spoon-Knife", remoteDirectory: "/home/ada/code/Spoon-Knife", repoUrl: repository.url },
     { hostId: "host_box", displayName: "Private", repoName: "Private", remoteDirectory: "/home/ada/code/private", repoUrl: "https://github.com/acme/private.git" },
   ])
+})
+
+test("a connected machine's gone checkout is cloned back at its folder from the remote it records, and nothing else is", async () => {
+  const runs: Array<[string, Readonly<Record<string, unknown>>]> = []
+  const account = {
+    run: async (operation: string, input: Readonly<Record<string, unknown>>) => {
+      runs.push([operation, input])
+      return { repoUrl: input.repoUrl, directory: input.directory }
+    },
+  } as unknown as HostedAccount
+  const gone: Placement = { id: placementId("ws_gamma"), projectId: accountProject.id, kind: "worktree", label: "gamma", path: "/home/ada/gamma", machineId: buildBox.id, onThisMachine: false, reachable: true, gitRemote: "https://example.test/gamma.git" }
+  const here: Placement = { ...gone, id: placementId("ws_here"), onThisMachine: true }
+  const bare: Placement = { ...gone, id: placementId("ws_bare"), gitRemote: undefined }
+  const listed = new Map([gone, here, bare].map((placement) => [placement.id, placement]))
+  const cloned: string[] = []
+  const reclone = machineRecloner(account, { byId: (id) => listed.get(id) }, (machine, directory) => cloned.push(`${machine}:${directory}`))
+  await reclone(gone.id)
+  expect(runs).toEqual([["machines.clone", { enrollmentId: "enr_box", directory: "/home/ada/gamma", repoUrl: "https://example.test/gamma.git" }]])
+  expect(cloned).toEqual(["enr_box:/home/ada/gamma"])
+  for (const placement of [here, bare]) await expect(reclone(placement.id)).rejects.toMatchObject({ class: "invalid" })
+  expect(runs).toHaveLength(1)
 })

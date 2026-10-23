@@ -62,6 +62,7 @@ export const freshness = {
   marketplaceSkill: { kind: "once", reason: "a skill document changes only with its plugin; nothing in this app refreshes it after the first read" },
   folderPaths: { kind: "once", reason: "the folder picker's starting paths are read once; nothing in this app refreshes them" },
   folderChildren: { kind: "once", reason: "the folder picker lists a directory once; a folder created outside the app is missed until restart" },
+  folderPresence: { kind: "ttl", ms: 30_000, reason: "a connected machine sends no event when a checkout's folder goes, so Where it runs asks again once the answer is 30 s old; cloning it back there sets it" },
   harnessOptions: { kind: "once", reason: "a harness's agent and model options for a placement are read once; nothing in this app refreshes them" },
   harnessCommands: { kind: "once", reason: "a harness's saved and declared commands for a placement are read once; nothing in this app refreshes them" },
   stopsBackgroundTasks: { kind: "once", reason: "whether a session's harness stops one background task is fixed by its harness; the read waits for a running background task" },

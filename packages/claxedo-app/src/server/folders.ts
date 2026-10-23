@@ -3,6 +3,7 @@ import { readArray, readString } from "@claxedo/helpers/readers"
 import type { HostedAccount } from "./account"
 import { ServerError } from "./errors"
 import { fetchQuery } from "./fetch-query"
+import { freshness } from "./freshness"
 import type { MachineId } from "./ids"
 import { queryKeys } from "./query-keys"
 import { withQuery, type Transport } from "./transport"
@@ -12,9 +13,12 @@ export type FolderEntry = { readonly name: string; readonly absolute: string }
 
 export type ServerPaths = { readonly home: string; readonly directory: string }
 
+export type FolderPresence = "present" | "missing"
+
 export type FolderQueries = {
   readonly paths: (machine?: MachineId) => FetchQuery<ServerPaths>
   readonly children: (directory: string, machine?: MachineId) => FetchQuery<readonly FolderEntry[]>
+  readonly presence: (directory: string, machine: MachineId) => FetchQuery<FolderPresence>
 }
 
 export type FoldersApi = {
@@ -74,11 +78,25 @@ export function createFolderReads(transport: Transport, account: HostedAccount |
   return (machine: MachineId | undefined): FolderReads => (machine === undefined ? attachedReads(transport) : machineReads(account, machine))
 }
 
+async function presenceOf(reads: FolderReads, directory: string): Promise<FolderPresence> {
+  try {
+    await reads.children(directory)
+    return "present"
+  } catch (error) {
+    if (error instanceof ServerError && error.code === "folder_not_found") return "missing"
+    throw error
+  }
+}
+
 export function folderQueries(transport: Transport, account: HostedAccount | undefined): FolderQueries {
   const reads = createFolderReads(transport, account)
   return {
     paths: (machine) => fetchQuery(queryKeys.folderPaths(transport.serverUrl, machine), () => reads(machine).paths()),
     children: (directory, machine) => fetchQuery(queryKeys.folderChildren(transport.serverUrl, machine, directory), () => reads(machine).children(directory)),
+    presence: (directory, machine) => ({
+      ...fetchQuery(queryKeys.folderPresence(transport.serverUrl, machine, directory), () => presenceOf(reads(machine), directory)),
+      staleTime: freshness.folderPresence.ms,
+    }),
   }
 }
 

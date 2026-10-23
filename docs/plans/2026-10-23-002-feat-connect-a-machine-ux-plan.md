@@ -303,8 +303,15 @@ takes over [Remote machine connection](./2026-09-14-003-feat-connect-implementat
   draft's route `/w/<worktree>/session`, on web and phone; red with the machine's worktree route unmounted (502). The
   first turn itself is not run there: the machine runtime has no scripted ACP connection ("Connection scripted-acp
   is not configured on this runtime"), which is the harness on a connected machine, not this item.
-- [ ] **Where it runs.** Settings → Projects → Where it runs offers Open, and "Clone at this location" for a
-  connected machine's folder that is gone, as it does for this computer's. Progress:
+- [x] **Where it runs.** Settings → Projects → Where it runs offers Open, and "Clone at this location" for a
+  connected machine's folder that is gone, as it does for this computer's. Progress: done 2026-10-23 (lane C5).
+  Each connected machine's row has Open. While its machine is online the row also asks the machine whether the
+  folder is still there (`queries.folders.presence`, one level through `machines.folders`, fresh for 30 s). A gone
+  folder reads "Folder missing: <path>" with "Clone at this location", which clones the workspace's recorded
+  remote back into it through `machines.clone`. Live: `02-projects-machine` deletes a clone on a paired machine,
+  finds it missing in Settings → Projects, clones it back, and reads the checkout and its origin on the machine, on
+  web and phone; red with the presence read switched off (no "Folder missing"). A machine reaches host management
+  only through a folder it serves, so a machine whose one folder is gone cannot be asked.
 - [ ] **Again in another folder.** Running the connect command in another folder on a machine that is already
   connected asks the owner in the app to add that folder; it never re-enrolls the machine. Progress:
 - [ ] **One path.** Hosted operations for these (`machines.folders`, `machines.assign`, `machines.unassign`,

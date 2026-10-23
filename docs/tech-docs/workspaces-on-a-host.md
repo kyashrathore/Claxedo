@@ -256,6 +256,13 @@ named project takes that project's repository key
 `packages/claxedo-server/src/authority/adapters/d1/workspace-authority.ts`),
 since a worktree's directory names no repository of its own.
 
+Settings → Projects asks each online connected machine whether a checkout's
+folder is still there (`queries.folders.presence`, a `machines.folders`
+children read that answers `missing` for the machine's `folder_not_found`). A
+gone one is cloned back at that folder from the workspace's recorded remote with
+`machines.clone`; the assignment is unchanged, so the machine serves the folder
+it already had.
+
 ## B. The client sees the machine and its workspace
 
 **B.1 Boot and declaration** — the app learns which machine it is attached to

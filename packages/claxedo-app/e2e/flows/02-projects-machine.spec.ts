@@ -1,7 +1,8 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import type { Page } from "@playwright/test"
-import { connectMachine, expect, git, gitFolder, sendPrompt, sessionRoute, showHarnesses, test, UI, type SignedStack } from "../harness"
+import { connectMachine, expect, git, gitFolder, sendPrompt, sessionRoute, showHarnesses, test, UI, type ConnectedMachine, type SignedStack } from "../harness"
+import { sendJson } from "../../../harness/e2e/harness/transport"
 
 type MachineRow = { workspace_id: string; project_id: string; backing?: string; remote_directory?: string; repo_url?: string; git_branch?: string; placement?: { host_enrollment_id?: string } }
 
@@ -140,6 +141,42 @@ test("02 projects on a connected machine: a new worktree picked in the Where chi
     expect(row?.git_branch).toBe(created.branch)
     await expect.poll(() => machine.servedWorkspaceIds(), { timeout: 30_000 }).toContain(row?.workspace_id)
     await expect(page, "the draft's route names the worktree it now runs in").toHaveURL(new RegExp(`/w/${row?.workspace_id}/session`))
+  } finally {
+    await machine.close()
+  }
+})
+
+async function cloneOnto(signed: SignedStack, machine: ConnectedMachine, directory: string) {
+  const host = `${signed.hosted.workerUrl}/api/claxedo/host/machines/${machine.enrollmentId}/clone`
+  await sendJson(signed.owner.transport, "POST", host, { directory, repoUrl: signed.hosted.gitUrl }, "Cloning onto the machine")
+  const workspaceId = `ws_${crypto.randomUUID().replaceAll("-", "")}`
+  await sendJson(signed.owner.transport, "POST", `${signed.hosted.workerUrl}/api/workspace/${workspaceId}/host-assignment`, {
+    hostId: machine.hostId, displayName: "gamma", repoName: "gamma", repoUrl: signed.hosted.gitUrl, remoteDirectory: directory, addRoot: true,
+  }, "Assigning the clone")
+  await expect.poll(() => machine.servedWorkspaceIds(), { timeout: 30_000 }).toContain(workspaceId)
+  return workspaceId
+}
+
+test("02 projects on a connected machine: a clone whose folder is gone there is cloned back at that folder from Settings → Projects", async ({ signed, page }, testInfo) => {
+  test.setTimeout(180_000)
+  const machine = await connectMachine(signed, "build-box", testInfo)
+  try {
+    const directory = path.join(machine.home, "gamma")
+    const workspaceId = await cloneOnto(signed, machine, directory)
+    await fs.rm(directory, { recursive: true, force: true })
+
+    await signed.signIn(page, signed.owner)
+    await page.goto(`${signed.url}/settings/projects`)
+    await page.getByRole("region", { name: "Projects" }).getByRole("link", { name: "gamma", exact: true }).click()
+    const where = page.getByRole("group", { name: "Where it runs" })
+    await expect(where).toContainText(`Folder missing: ${directory}`)
+    await where.getByRole("button", { name: "Clone at this location", exact: true }).click()
+    await expect(where.getByRole("button", { name: "Clone at this location", exact: true })).toHaveCount(0)
+    await expect(where).not.toContainText("Folder missing")
+
+    expect(await fs.readFile(path.join(directory, "README.md"), "utf8")).toBe("Hosted test repository\n")
+    expect((await git(directory, "config", "--get", "remote.origin.url")).trim()).toBe(signed.hosted.gitUrl)
+    expect(await machine.servedWorkspaceIds()).toContain(workspaceId)
   } finally {
     await machine.close()
   }

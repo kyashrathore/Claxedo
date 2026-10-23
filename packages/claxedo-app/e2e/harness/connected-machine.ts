@@ -9,6 +9,7 @@ type PairingView = { readonly stage: string; readonly workspace_id?: string; rea
 export type ConnectedMachine = {
   readonly name: string
   readonly hostId: string
+  readonly enrollmentId: string
   readonly home: string
   readonly folder: string
   readonly firstWorkspaceId: string
@@ -22,8 +23,12 @@ async function pairing(signed: SignedStack, pairingId: string): Promise<PairingV
   return (JSON.parse(body) as { pairing: PairingView }).pairing
 }
 
+async function deviceOf(signed: SignedStack, hostId: string) {
+  return (await ownerDevices(signed)).find((device) => device.host_id === hostId)
+}
+
 async function servedBy(signed: SignedStack, hostId: string): Promise<readonly string[]> {
-  return (await ownerDevices(signed)).find((device) => device.host_id === hostId)?.serving_workspace_ids ?? []
+  return (await deviceOf(signed, hostId))?.serving_workspace_ids ?? []
 }
 
 export async function connectMachine(signed: SignedStack, name: string, testInfo: TestInfo): Promise<ConnectedMachine> {
@@ -42,7 +47,8 @@ export async function connectMachine(signed: SignedStack, name: string, testInfo
     const hostId = approved.host_id ?? ""
     const firstWorkspaceId = approved.workspace_id ?? ""
     await expect.poll(() => servedBy(signed, hostId), { timeout: 30_000 }).toContain(firstWorkspaceId)
-    return { name, hostId, home: where.home, folder: where.folder, firstWorkspaceId, cli, servedWorkspaceIds: () => servedBy(signed, hostId), close }
+    const enrollmentId = (await deviceOf(signed, hostId))?.enrollment_id ?? ""
+    return { name, hostId, enrollmentId, home: where.home, folder: where.folder, firstWorkspaceId, cli, servedWorkspaceIds: () => servedBy(signed, hostId), close }
   } catch (error) {
     await close()
     throw error

@@ -9,7 +9,7 @@ import { createIntegrationsApi } from "./integrations"
 import { createProviderConnectApi } from "./provider-connect"
 import { createProviderCatalogsApi } from "./provider-catalogs"
 import { createFoldersApi } from "./folders"
-import { machineProjectCreator } from "./machine-projects"
+import { machineProjectCreator, machineRecloner } from "./machine-projects"
 import type { ServerConfig } from "./config"
 import { isRetryableServerError } from "./errors"
 import { createEventIntake, type EventIntake } from "./event-intake"
@@ -68,7 +68,7 @@ export type ServerHandle = Server & {
   readonly dispose: () => void
 }
 
-function placementsApi(transport: Transport, workspaces: Workspaces, machines: MachineWorktrees): PlacementsApi {
+function placementsApi(transport: Transport, workspaces: Workspaces, machines: MachineWorktrees, recloneOnMachine: PlacementsApi["recloneOnMachine"]): PlacementsApi {
   return {
     byId: workspaces.byId,
     list: workspaces.list,
@@ -79,6 +79,7 @@ function placementsApi(transport: Transport, workspaces: Workspaces, machines: M
       return workspaces.list()
     },
     createWorktree: createWorktreeCreator(transport, workspaces, machines),
+    recloneOnMachine,
     locateSession: workspaces.locateSession,
     runtimeRoute: transport.runtimeRoute,
   }
@@ -99,7 +100,9 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
       ...createProjectsApi(transport, queryClient, workspaces, cloud.create, machineProjectCreator(account, workspaces, machines)),
       ...createProjectEnvironmentApi(transport, queryClient, workspaces, account),
     },
-    placements: placementsApi(transport, workspaces, { account, machines }),
+    placements: placementsApi(transport, workspaces, { account, machines }, machineRecloner(account, workspaces, (machine, directory) => {
+      queryClient.setQueryData(queryKeys.folderPresence(transport.serverUrl, machine, directory), "present")
+    })),
     terminals: createTerminalsApi(transport, workspaces, telemetry, wakes),
     git: createGitApi(transport, workspaces, queryClient),
     cloud,
