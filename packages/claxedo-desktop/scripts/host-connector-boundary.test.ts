@@ -49,6 +49,11 @@ test("the import scanner ignores guide examples and follows real imports", () =>
   expect(specifiers('const guide = `import { plugin } from "@claxedo/plugin-api"`; import "real"; export * from "exports"; import("dynamic")')).toEqual(["real", "exports", "dynamic"])
 })
 
+// Under Bun on Windows an encoded readFileSync costs about 6 ms a file; the Buffer read and in-process decode cost 0.03 ms.
+function readSource(file: string) {
+  return fs.readFileSync(file).toString("utf8")
+}
+
 type Closure = { files: Set<string>; packages: Set<string>; unresolved: string[] }
 
 /** The static import closure of one entry file, following package edges. */
@@ -64,7 +69,7 @@ function walk(entry: string): Closure {
     files.add(file)
     let source: string
     try {
-      source = fs.readFileSync(file, "utf8")
+      source = readSource(file)
     } catch {
       continue
     }
@@ -182,10 +187,7 @@ test("no package the renderer is composed from declares or imports Host Connecto
 
   const importers = trees
     .flatMap((tree) => sources(tree))
-    .filter((file) =>
-      // Under Bun on Windows an encoded readFileSync costs about 6 ms a file; the Buffer read and in-process decode cost 0.03 ms.
-      specifiers(fs.readFileSync(file).toString("utf8")).some((s) => s === CONNECTOR || s.startsWith(`${CONNECTOR}/`)),
-    )
+    .filter((file) => specifiers(readSource(file)).some((s) => s === CONNECTOR || s.startsWith(`${CONNECTOR}/`)))
 
   expect(importers).toEqual([])
 
