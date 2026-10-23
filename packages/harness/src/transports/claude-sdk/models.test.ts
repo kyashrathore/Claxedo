@@ -24,14 +24,15 @@ const CLAUDE_SDK_CLOSE_GRACE_MS = 2_000
 test("disposing the transport retires a model probe still waiting on Claude Code at once, so no probe outlives its owner", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "claude-probe-"))
   const probes: ScriptedProcess<unknown>[] = []
-  const { promise: spawned, resolve: markSpawned } = Promise.withResolvers<void>()
+  let spawned = () => {}
+  const firstSpawn = new Promise<"spawned">((resolve) => { spawned = () => resolve("spawned") })
   const services = {
     clock: { now: Date.now, setTimeout, clearTimeout }, firstPartyMcp: () => undefined,
     log: { debug() {}, info() {}, warn() {}, error() {} },
     spawn: async () => {
       const silent = new ScriptedProcess<unknown>(() => {})
       probes.push(silent)
-      markSpawned()
+      spawned()
       return silent.owned()
     },
   } satisfies Partial<HarnessServices>
@@ -39,7 +40,8 @@ test("disposing the transport retires a model probe still waiting on Claude Code
     userConfigRoot: path.join(root, "owner"), env: {} })
   try {
     const listing = transport.config.options({ draft: draft({ directory: root }) }, "probe").then(() => undefined, (error: unknown) => error)
-    await spawned
+    const first = await Promise.race([firstSpawn, listing])
+    expect(first, `the listing settled before Claude Code was spawned: ${String(first)}`).toBe("spawned")
 
     const disposing = Date.now()
     await transport.dispose()

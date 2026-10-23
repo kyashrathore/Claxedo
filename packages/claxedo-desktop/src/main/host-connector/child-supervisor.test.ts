@@ -327,8 +327,9 @@ describe("what an ack tells the daemon", () => {
     const host = harness({
       describeWorkspace: async () => ({ displayName: "Claxedo", directory: "/Users/me/test/opencode" }),
     })
-    await host.connector.start()
-    await until(() => host.servings.length > 0, "the first serving push")
+    const started = await host.connector.start()
+    const enrollmentId = started.status === "enrolled" ? started.enrollment.enrollment_id : ""
+    await until(() => host.cp.eventStreams(enrollmentId) === 1, "the doorbell held open beside the first beat")
     const before = host.hostChanges()
 
     await host.connector.shareWorkspace({ workspaceId: "ws_1" })

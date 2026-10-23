@@ -12,6 +12,7 @@
 
 import { execFileSync } from "child_process"
 import fs from "fs"
+import { createRequire } from "module"
 import path from "path"
 import { fileURLToPath } from "url"
 import { build, type BuildOptions, type Plugin } from "esbuild"
@@ -153,6 +154,15 @@ const INLINED_WHEN_PUBLISHED = [
   "@claxedo/status-hooks",
 ]
 
+/**
+ * npm packages the npm build carries in its dist instead of declaring. The
+ * Claude Agent SDK is a 1.2 MB launcher whose optional per-platform package
+ * holds a 230 MB Claude Code binary: npm installs it beside any package that
+ * declares the SDK, and the runtime never runs it, since it launches the
+ * machine's own `claude`.
+ */
+const BUNDLED_WHEN_PUBLISHED = ["@anthropic-ai/claude-agent-sdk"]
+
 /** Node's lookup, self-reference included: a package imports its own subpaths by name. */
 function packageDir(name: string, from: string) {
   for (let directory = from; ; directory = path.dirname(directory)) {
@@ -195,6 +205,21 @@ function inlineSiblings(names: readonly string[]): Plugin {
   }
 }
 
+/** Resolves each named npm package to its file, which `packages: "external"` would otherwise leave an import. */
+function bundlePackages(names: readonly string[]): Plugin {
+  const bundled = new Set(names)
+  return {
+    name: "bundle-published-packages",
+    setup(builder) {
+      builder.onResolve({ filter: /^[^./]/ }, (args) => {
+        const name = args.path.split("/").slice(0, args.path.startsWith("@") ? 2 : 1).join("/")
+        if (!bundled.has(name)) return undefined
+        return { path: createRequire(path.join(args.resolveDir, "package.json")).resolve(args.path) }
+      })
+    },
+  }
+}
+
 /**
  * The npm build. Every public entry, the `workspace-runtime` bin and the
  * process-ownership launch gate child come out of one split build, so an
@@ -217,7 +242,7 @@ async function bundlePublishedJS() {
     splitting: true,
     chunkNames: "[name]-[hash]",
     packages: "external",
-    plugins: [inlineSiblings(INLINED_WHEN_PUBLISHED)],
+    plugins: [inlineSiblings(INLINED_WHEN_PUBLISHED), bundlePackages(BUNDLED_WHEN_PUBLISHED)],
   })
   fs.chmodSync(path.join(DIST, "cli.mjs"), 0o755)
   await bundleCursorWorker(DIST)

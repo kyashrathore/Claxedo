@@ -173,7 +173,11 @@ and only then run the affected e2e flows at merge.
   separately: install, invite, connect, first folder, first output. Progress: blocked here: it needs fresh Ubuntu, macOS and Windows boxes against staging.
 - [ ] The 29-minute Windows install is reproduced from npm and explained (`npm install --timing --loglevel http`,
   with and without a Defender exclusion on the prefix), or shown not to recur from the registry. Moved from W5.
-  Progress:
+  Progress: on dev, an install writes 568 packages, 56,007 files and 824 MB, 52,419 of the files from OpenCode's
+  dependency tree. On Linux it takes 70 s cold, 41 s of it npm resolving the tree, and an update rewrites the whole
+  tree (`npm install -g`, 79 s for an unchanged version). `packages/cli/scripts/measure-install.mjs` times each
+  phase; the CI job that runs it on Windows waits on the owner, since GitHub refuses workflow changes from the agent.
+  Not measured on Windows yet.
 
 ### C1 — The app mints the command
 
@@ -212,7 +216,8 @@ No second computer, no token file, no roots typed on a laptop.
   240.3 MB is the Claude Agent SDK's native binary, which the runtime never runs. Core only would be 51.5 MB in 4.9 s
   but needs the eight statically imported harness packages made lazy; deferring only today's lazy imports gives
   202.0 MB in 40.2 s. First-use fetches: OpenCode 64.2 s, Pi 14.5 s, Claude 9.4 s, Cursor 2.5 s. Decision 2 is still
-  the owner's; the full install stays.
+  the owner's; the full install stays. Since then dev's 850a3a1d carries the SDK in the runtime's `dist`, so an install
+  no longer writes that binary (574 MB packed).
 - [ ] On a fresh box, the paste-to-approval-card time is ≤ 60 s on Linux and macOS and ≤ 3 min on Windows. These
   targets need decision 2; record the measured time against each. Progress: blocked on decision 2 and on fresh
   Linux, macOS and Windows boxes against staging.

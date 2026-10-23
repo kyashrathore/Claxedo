@@ -166,6 +166,9 @@ runtime itself mints per session:
   without verifying it, so a process hosting several runtimes can pick which
   runtime's verifier to call.
 
+`installedTerminalAgents` names the agent CLIs (Claude Code, Codex, Cursor) a
+terminal on this machine can start, read off what is installed.
+
 Relay host helpers are intentionally exposed from
 `@claxedo/workspace-runtime/relay`, not the package root:
 `startWorkspaceRelayHostTunnel`, `hostTunnelFromEnv`, `relayHostAuthFromEnv`,

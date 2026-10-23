@@ -618,6 +618,7 @@ linuxMachine("provider configuration on a running claxedo connect host", () => {
     ).toBe(first)
     expect(h.cp.providerConfigAckedRevision(id)).toBe(first)
     expect(h.lines.some((line) => line.startsWith("provider-config failed: ") && line.includes("ENOSPC"))).toBe(true)
+    await until(() => h.lines.includes("provider configuration revision 2: claude-sdk"), "the re-delivered revision stored and applied")
     expect(h.lines.filter((line) => line === "provider configuration revision 2: claude-sdk")).toHaveLength(1)
     expect((await h.beat()).providerConfigRevision, "re-delivered, stored, then declared").toBe(second)
     expect(h.cp.providerConfigAckedRevision(id)).toBe(second)

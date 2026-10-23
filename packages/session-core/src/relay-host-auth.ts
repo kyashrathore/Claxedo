@@ -60,8 +60,11 @@ export type RuntimeAccessAdmission = {
   active: (input: { token: string; claims: RuntimeAccessTokenClaims }) => Promise<RuntimeAccessTokenState>
 }
 
+/** The owner's token presented without the relay, naming itself as the token its request's authority descends from. */
+export type DirectRuntimeAccessIdentity = RuntimeAccessTokenClaims & { parent_jti: string }
+
 export type RelayHostAuthContext = {
-  relayHostAuth?: RelayHostTokenClaims | EmbeddedRelayHostIdentity | RuntimeAccessTokenClaims
+  relayHostAuth?: RelayHostTokenClaims | EmbeddedRelayHostIdentity | DirectRuntimeAccessIdentity
   relayHostDirectAuth?: true
 }
 
@@ -373,7 +376,8 @@ async function admitRuntimeAccessToken(
     await audit(options, { action: "runtime_access_token.rejected", result: "deny", reason: admitted.code, ...request })
     return c.json(errorBody(admitted.code, admitted.message), admitted.status)
   }
-  c.set("relayHostAuth", admitted.claims)
+  const identity: DirectRuntimeAccessIdentity = { ...admitted.claims, parent_jti: admitted.claims.jti }
+  c.set("relayHostAuth", identity)
   await audit(options, { action: "runtime_access_token.accepted", result: "allow", ...request })
   return await next()
 }

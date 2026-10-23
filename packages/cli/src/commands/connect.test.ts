@@ -136,7 +136,7 @@ describe("claxedo connect", () => {
       HEARTBEAT_PATH,
       REPORT_PATH,
     ])
-    await until(() => h.cp.eventStreams(enrollmentIdOf(h)) === 1, "the doorbell to be held open")
+    await until(() => h.cp.eventStreams(enrollmentIdOf(h)) === 1, "the doorbell held open beside the first beat")
     expect(await fs.readFile(file, "utf8").catch(() => "gone")).toBe("gone")
     await until(async () => (await h.deps.store.load())?.run?.last_beat_ok_at !== undefined, "run record")
     const enrolled = await h.deps.store.load()
