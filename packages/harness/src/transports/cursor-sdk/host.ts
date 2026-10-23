@@ -1,5 +1,6 @@
 import { createInterface } from "node:readline"
 import { errorMessage } from "@claxedo/helpers"
+import { keepStdoutForProtocol } from "../../rpc/protocol-stdout"
 import type { AgentOptions, Run, SDKAgent } from "@cursor/sdk"
 import { forwardedDelta, HostDeltaOrder } from "./host-deltas"
 import { hostFailure, hostRunError, isHostCommand, type HostCommand, type HostReply, type HostSession } from "./protocol"
@@ -10,14 +11,6 @@ const TITLE_AGENT_NAME = "Claxedo session title"
 type SdkAgent = typeof import("@cursor/sdk").Agent
 type StreamCommand = Extract<HostCommand, { kind: "run" | "title" }>
 
-const protocolOut = process.stdout.write.bind(process.stdout)
-
-function keepStdoutForProtocol() {
-  process.stdout.write = process.stderr.write.bind(process.stderr)
-  console.log = (...args: unknown[]) => console.error(...args)
-  console.info = (...args: unknown[]) => console.error(...args)
-  console.debug = (...args: unknown[]) => console.error(...args)
-}
 
 function agentOptions(session: HostSession): AgentOptions {
   return {
@@ -32,7 +25,7 @@ export class CursorHostRuntime {
   private readonly agents = new Map<string, SDKAgent>()
   private readonly runs = new Map<string, CursorRunState>()
 
-  constructor(private readonly post: (reply: HostReply) => void = (reply) => { protocolOut(`${JSON.stringify(reply)}\n`) },
+  constructor(private readonly post: (reply: HostReply) => void = (reply) => { process.stdout.write(`${JSON.stringify(reply)}\n`) },
     private readonly sdk: () => Promise<Pick<typeof import("@cursor/sdk"), "Agent" | "Cursor">> = () => import("@cursor/sdk")) {}
 
   private discard(sessionId: string): void {
@@ -147,8 +140,8 @@ export class CursorHostRuntime {
 }
 
 if (import.meta.main) {
-  keepStdoutForProtocol()
-  const runtime = new CursorHostRuntime()
+  const protocolOut = keepStdoutForProtocol()
+  const runtime = new CursorHostRuntime((reply) => { protocolOut(`${JSON.stringify(reply)}\n`) })
   const lines = createInterface({ input: process.stdin, crlfDelay: Infinity })
   lines.on("line", (line) => {
     if (!line.trim()) return

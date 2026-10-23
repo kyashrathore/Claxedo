@@ -5,6 +5,7 @@ import * as path from "node:path"
 import { resolveServerMigrationJournals } from "./local-server"
 import { OPENCODE_SDK_EXTERNALS, stageOpenCodeSdk } from "../../workspace-runtime/scripts/stage-opencode-sdk"
 import { bundleCursorWorker } from "../../harness/scripts/cursor-worker"
+import { bundlePiRunner } from "../../harness/scripts/pi-runner"
 import { PLUGIN_TOOLCHAIN_EXTERNALS, stagePluginToolchain } from "./stage-plugin-toolchain"
 import { resolveTargetOsArch } from "./target-platform"
 import { runBunBuild } from "../../../script/bun-build"
@@ -26,6 +27,7 @@ export async function bundleClaxedoServer(source: string, destination: string) {
   // it beside its own chunk, and the SDK the worker loads is staged with
   // OpenCode's, where Node resolves it from `chunks/`.
   const cursorWorker = await bundleCursorWorker(path.join(pending, "chunks"))
+  await bundlePiRunner(path.join(pending, "chunks"))
   stageOpenCodeSdk(path.join(pending, "node_modules"), { platform: platform, arch: arch }, undefined, cursorWorker.packages)
   await stagePluginToolchain(path.join(pending, "node_modules"), { platform: platform, arch: arch })
 

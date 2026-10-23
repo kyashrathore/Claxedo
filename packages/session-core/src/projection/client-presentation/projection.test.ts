@@ -573,6 +573,23 @@ describe("createClientPresentationProjection", () => {
     })
   })
 
+  test("a command that printed nothing shows an empty output, not the result envelope", () => {
+    const projection = makeProjection()
+
+    projection.ingest({ type: "tool-start", toolCallId: "tool-1", toolName: "bash" })
+    const completed = projection.ingest({
+      type: "tool-output",
+      toolCallId: "tool-1",
+      output: { content: [], details: { diagnostics: [] } },
+    })
+
+    expect(completed.map((event) => event.payload.type)).toEqual(["message.part.updated"])
+    expect(completed[0]?.payload).toMatchObject({
+      type: "message.part.updated",
+      properties: { part: { state: { status: "completed", output: "" } } },
+    })
+  })
+
   test("sanitizes unserializable tool output and emits a projection diagnostic", () => {
     const projection = makeProjection()
     const circular: Record<string, unknown> = { ok: true, count: 1n }

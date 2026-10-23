@@ -108,7 +108,13 @@ nothing. Without a template, or when the organization's key cannot read it, or
 for any other image, the first start seeds them. The seed runs once per image, at the start that first names it: it pulls the
 image, streams the trees out of a created container of it with `docker cp` and
 unpacks them as root, leaving out `~/.cache` (which Boat's own snapshots leave
-out too) and npm's cache. The persistent root is created as root too: Docker
+out too) and npm's cache. Boat's link to ghcr resets mid-pull (2 of 8 staging
+updates on 2026-10-22, `failed to copy: … connection reset by peer`), and
+Docker ends a pull at the first reset, keeping the layers it finished and none
+of the ones in flight. So the pull runs again after a transport failure
+(connection reset, unexpected EOF, a timeout) for as long as each run finishes
+a layer no run before it did; any other failure, and a run that finished
+nothing new, fails the boot with the pull's own output. The persistent root is created as root too: Docker
 made it as root on every sandbox that booted before the trees existed, and the
 VM user cannot create inside it. The seed then saves beside the trees what the
 container needs besides them: the image's env (`image.env`, given to the

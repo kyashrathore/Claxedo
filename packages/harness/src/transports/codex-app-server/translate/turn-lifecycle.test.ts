@@ -72,6 +72,18 @@ for (const [info, errorClass] of classes) {
   })
 }
 
+test("a vendor 401 on a machine without a Codex login is one line saying what to do, never the vendor's text", () => {
+  const events = runtime().ingest({
+    source: "codex.app-server",
+    method: "error",
+    payload: { threadId: "thread-1", turnId: "turn-1", willRetry: false, error: {
+      message: "unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses, cf-ray: a4ea7a621d2c8609-BOM, request id: req_339ab4609cce4e20876c11707fb67b06",
+      codexErrorInfo: { responseStreamConnectionFailed: { httpStatusCode: 401 } }, additionalDetails: null } },
+  }).events
+  expect(events).toMatchObject([{ type: "session-status", status: "error" }, { type: "error", errorClass: "credential",
+    error: "Codex isn't signed in here; run `codex login` on this machine or choose a Codex account in Settings → Models." }])
+})
+
 test("a generic session error from a new Codex error kind explains itself", () => {
   expect(runtime().ingest({
     source: "codex.app-server",

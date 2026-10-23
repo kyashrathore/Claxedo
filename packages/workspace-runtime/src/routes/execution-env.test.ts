@@ -124,6 +124,13 @@ describe("execution-env exec", () => {
     expect(events.at(-1)).toEqual({ event: "result", data: { ok: false, error: { code: "timeout", message: "Command timed out after 0.2 seconds" } } })
   })
 
+  test("a runtime whose Pi shell host cannot be found still serves every other request, and a command fails with the line naming the path", async () => {
+    const { post, fsOp } = await served({ PATH: process.env.PATH, CLAXEDO_PI_RUNNER: "/nonexistent/pi-runner.mjs" })
+    expect(await fsOp("exists", ".")).toEqual({ ok: true, value: true })
+    const events = parseSse(await (await post("exec", { command: "echo never" })).text())
+    expect(events.at(-1)).toEqual({ event: "result", data: { ok: false, error: { code: "spawn_error", message: "Pi shell host not found at /nonexistent/pi-runner.mjs. Set CLAXEDO_PI_RUNNER to its path." } } })
+  })
+
   test("runtime secrets in the host env never reach the command", async () => {
     const { post } = await served({
       PATH: process.env.PATH, VISIBLE_MARKER: "visible", CLAXEDO_RELAY_PRIVATE_KEY: "relay-secret",

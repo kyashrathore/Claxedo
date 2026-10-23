@@ -2,7 +2,7 @@ import { existsSync } from "node:fs"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { piBashPath } from "@claxedo/harness/pi-durable/shell"
+import { isWslBashLauncher, piShell, windowsPathDirs } from "@claxedo/harness/pi-durable/shell"
 import { withDeadlineSignal } from "@claxedo/helpers/deadline"
 import { isMissingFile } from "@claxedo/helpers/fs"
 import { asRecordOrEmpty } from "@claxedo/helpers/guards"
@@ -188,18 +188,13 @@ function agentsCheck(deps: DoctorDeps): Check {
     : { level: "info", line: "No Claude Code, Codex or Cursor CLI found; sessions here run on Pi" }
 }
 
-function isWslLauncher(file: string) {
-  return /^[a-z]:\\windows\\(?:system32|sysnative)\\bash\.exe$/i.test(path.win32.normalize(file))
-}
-
 async function windowsBashCheck(deps: DoctorDeps): Promise<Check | undefined> {
   if (deps.platform !== "win32") return undefined
-  const bash = piBashPath(deps.platform, deps.env, deps.exists)
-  if (bash !== "bash") return { level: "ok", line: `Git Bash ${bash}` }
-  const found = (await deps.service.run("where.exe", ["bash.exe"])).stdout.split(/\r?\n/)[0]?.trim()
-  if (!found) return { level: "fail", line: "Git Bash is not installed, so Pi cannot run commands; install Git for Windows" }
-  if (isWslLauncher(found)) return { level: "warn", line: "Only WSL's bash is on PATH, so Pi would run its commands inside WSL; install Git for Windows" }
-  return { level: "ok", line: `bash ${found}` }
+  const bash = piShell({ platform: deps.platform, env: deps.env, exists: deps.exists })
+  if (bash !== undefined) return { level: "ok", line: `${/\\Git\\bin\\bash\.exe$/i.test(bash) ? "Git Bash" : "bash"} ${bash}` }
+  const wslOnly = windowsPathDirs(deps.env).map((dir) => path.win32.join(dir, "bash.exe")).some((file) => isWslBashLauncher(file) && deps.exists(file))
+  if (wslOnly) return { level: "warn", line: "Only WSL's bash is on PATH, so Pi would run its commands inside WSL; install Git for Windows" }
+  return { level: "fail", line: "Git Bash is not installed, so Pi cannot run commands; install Git for Windows" }
 }
 
 export async function doctorChecks(deps: DoctorDeps): Promise<Check[]> {

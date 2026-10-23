@@ -3,7 +3,8 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { describe, expect, test } from "vitest"
-import { ownedExecutionEnv } from "../../../../harness/src/transports/pi-durable/shell"
+import { ownedExecutionEnv, resolvedPiShell, sessionCommands } from "../../../../harness/src/transports/pi-durable/shell"
+import { bundlePiRunner } from "../../../../harness/scripts/pi-runner"
 import { createSpawnService } from "../../../../workspace-runtime/src/spawn-service"
 import { clearOpaqueTimer, stringRecord } from "@claxedo/helpers"
 import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
@@ -42,9 +43,12 @@ describe("real workspace-runtime document round-trip", () => {
         })
         const spawn = createSpawnService(volatileLaunchOwnership())
         const services = { spawn, clock, log, recordHomeUse: async () => {}, firstPartyMcp: () => undefined, healthChanged: () => {}, patternEvaluator: async () => {} }
-        const env = ownedExecutionEnv({ sessionId, services, env: stringRecord(process.env), live: new Set() }, root)
+        const runner = await bundlePiRunner(root)
+        const commands = sessionCommands(services, () => ({ file: process.execPath, args: [runner.file] }), stringRecord(process.env))
+        const env = ownedExecutionEnv({ sessionId, services, env: stringRecord(process.env), runner: commands.of(sessionId, root), shell: resolvedPiShell(process.env) }, root)
         const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'"
         const result = await env.exec(`printf %s ${quote(after)} > ${quote(hydratedPath)}`, undefined, context)
+        await commands.retireAll()
         await syncHydratedSessionDocuments(sessionId)
 
         expect(result).toEqual({ ok: true, value: { exitCode: 0 } })

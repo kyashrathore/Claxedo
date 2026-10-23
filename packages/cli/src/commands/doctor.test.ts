@@ -240,21 +240,21 @@ describe("claxedo doctor", () => {
   })
 
   describe("on Windows", () => {
-    const programFiles = { PATH: "C:\\Windows\\System32", ProgramFiles: "C:\\Program Files" }
+    const programFiles = { PATH: "C:\\Windows\\System32;D:\\msys64\\usr\\bin", ProgramFiles: "C:\\Program Files" }
     const bashLine = async (box: Box) =>
       (await doctorChecks(deps({ platform: "win32", env: programFiles, state: undefined, ...box }).deps)).find((check) => /bash/i.test(check.line))
 
     test("Pi's bash is Git Bash where Git for Windows installs it, or a bash on PATH that is not WSL's launcher", async () => {
-      expect(await bashLine({ installed: ["C:\\Program Files\\Git\\bin\\bash.exe"] })).toEqual({ level: "ok", line: "Git Bash C:\\Program Files\\Git\\bin\\bash.exe" })
-      expect(await bashLine({ commands: { "where.exe bash.exe": { code: 0, stdout: "D:\\msys64\\usr\\bin\\bash.exe\r\n" } } })).toEqual({ level: "ok", line: "bash D:\\msys64\\usr\\bin\\bash.exe" })
+      expect(await bashLine({ installed: ["C:\\Program Files\\Git\\bin\\bash.exe", "D:\\msys64\\usr\\bin\\bash.exe"] })).toEqual({ level: "ok", line: "Git Bash C:\\Program Files\\Git\\bin\\bash.exe" })
+      expect(await bashLine({ installed: ["D:\\msys64\\usr\\bin\\bash.exe", "C:\\Windows\\System32\\bash.exe"] })).toEqual({ level: "ok", line: "bash D:\\msys64\\usr\\bin\\bash.exe" })
     })
 
     test("only WSL's launcher on PATH warns, and no bash at all fails", async () => {
-      expect(await bashLine({ commands: { "where.exe bash.exe": { code: 0, stdout: "C:\\Windows\\System32\\bash.exe\r\n" } } })).toEqual({
+      expect(await bashLine({ installed: ["C:\\Windows\\System32\\bash.exe"] })).toEqual({
         level: "warn",
         line: "Only WSL's bash is on PATH, so Pi would run its commands inside WSL; install Git for Windows",
       })
-      expect(await bashLine({ commands: {} })).toEqual({ level: "fail", line: "Git Bash is not installed, so Pi cannot run commands; install Git for Windows" })
+      expect(await bashLine({ installed: [] })).toEqual({ level: "fail", line: "Git Bash is not installed, so Pi cannot run commands; install Git for Windows" })
     })
   })
 })

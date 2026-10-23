@@ -7,6 +7,7 @@ import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
 import type { PluginProjection } from "@claxedo/harness/contract"
 import { createRelayHostAuthMiddleware } from "@claxedo/session-core/relay-host"
 import { mintRelayHostToken } from "@claxedo/workspace-relay"
+import { requirePiRunner } from "../host/executables/pi-runner"
 import { ExecutionEnvRoutes } from "../routes/execution-env"
 import { WorkspaceRuntimeRoutes } from "../routes/manifest"
 import { waitForWorkspaceRuntimeServerPort } from "../serve"
@@ -31,6 +32,7 @@ export async function executionEnvApp(input: { directory: string; env?: NodeJS.P
   const executionEnv = ExecutionEnvRoutes({
     directory: input.directory,
     env: input.env ?? process.env,
+    runner: () => requirePiRunner(input.env ?? process.env),
     services: { spawn: createSpawnService(volatileLaunchOwnership()), clock: { now: Date.now, setTimeout, clearTimeout }, log: console },
     piProjection: () => input.projection ?? EMPTY_PROJECTION,
     upgradeWebSocket: sockets.upgradeWebSocket,

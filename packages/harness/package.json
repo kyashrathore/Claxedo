@@ -124,6 +124,12 @@
       "bun": "./src/transports/cursor-sdk/host.ts",
       "types": "./dist/transports/cursor-sdk/host.d.ts",
       "import": "./dist/transports/cursor-sdk/host.js"
+    },
+    "./pi-runner": {
+      "development": "./src/transports/pi-durable/runner-child.ts",
+      "bun": "./src/transports/pi-durable/runner-child.ts",
+      "types": "./dist/transports/pi-durable/runner-child.d.ts",
+      "import": "./dist/transports/pi-durable/runner-child.js"
     }
   },
   "files": [
