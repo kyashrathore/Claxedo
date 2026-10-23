@@ -11,7 +11,13 @@ export type D1HostAccessErrorCode =
   | "host_enrollment_not_found"
   | Extract<
     MachineAuthRefusal["code"],
-    "enrollment_revoked" | "enrollment_paused" | "enrollment_owner_ineligible" | "enrollment_key_version_mismatch"
+    | "enrollment_revoked"
+    | "enrollment_denied"
+    | "enrollment_approval_expired"
+    | "enrollment_paused"
+    | "enrollment_awaiting_approval"
+    | "enrollment_owner_ineligible"
+    | "enrollment_key_version_mismatch"
   >
   | HostConnectErrorCode
 

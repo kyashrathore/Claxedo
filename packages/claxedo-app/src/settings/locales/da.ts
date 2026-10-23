@@ -75,8 +75,4 @@ export default {
   "settings.connections.replaceConfirm": "Erstat",
   "settings.connections.secretRequired": "Indtast den krævede hemmelighed, før du forbinder.",
   "settings.machines.yours": "Dine maskiner",
-  "settings.machines.step.here": "Computeren, du sidder ved",
-  "settings.machines.step.another": "En anden maskine, du ejer",
-  "settings.machines.copyInvite": "Kopiér invitationskommando",
-  "settings.machines.copyConnect": "Kopiér forbindelseskommando",
 }

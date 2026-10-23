@@ -1,5 +1,6 @@
 import { Hono } from "hono"
 import { z } from "zod"
+import type { MachineBlockedReason } from "@claxedo/account-contract/machine"
 import type { HostDeviceState } from "@claxedo/server-core/platform/auth/host-devices"
 import {
   ControlPlaneAuthError,
@@ -9,19 +10,31 @@ import {
 
 const renameBody = z.object({ display_name: z.string().trim().min(1).max(120) }).strict()
 
+export type RemoteAccessAssignment = { workspaceId: string; displayName: string; directory: string }
+
+export type RemoteAccessDevice = {
+  hostId: string
+  enrollmentId: string
+  displayName: string
+  lastSeenAt: number
+  state: HostDeviceState
+  workspaceIds: string[]
+  /** The assigned workspaces the machine acknowledged on its latest beat: the ones it serves. */
+  servingWorkspaceIds: string[]
+  cliVersion?: string
+  os?: string
+  arch?: string
+  /** The owner's roots for the machine, each with the assignments removing it alone retires. */
+  roots?: Array<{ path: string; retires: RemoteAccessAssignment[] }>
+  blocked?: { reason: MachineBlockedReason; fix: string; reportedAt: number }
+  /** Present while the machine's CLI is below the version this plane accepts: that version and the command that updates it. */
+  update?: { version: string; command: string }
+}
+
 /** The owner's view of their machines: what every signed control plane serves. */
 export type RemoteAccessOwnerService = {
   status(auth?: SignedControlPlaneAuth): Promise<{ enrolled: boolean; enabled: boolean }>
-  devices(auth: SignedControlPlaneAuth): Promise<Array<{
-    hostId: string
-    enrollmentId: string
-    displayName: string
-    lastSeenAt: number
-    state: HostDeviceState
-    workspaceIds: string[]
-    /** The assigned workspaces the machine acknowledged on its latest beat: the ones it serves. */
-    servingWorkspaceIds: string[]
-  }>>
+  devices(auth: SignedControlPlaneAuth): Promise<RemoteAccessDevice[]>
   revoke(auth: SignedControlPlaneAuth, hostId: string): Promise<{ revoked: boolean }>
   /**
    * Rename one machine: the owner's override of the name the machine derived
@@ -39,6 +52,31 @@ export type RemoteAccessRouteOptions = {
   /** The signed caller, or the response that refuses the request. */
   authenticate(request: Request): Promise<SignedControlPlaneAuth | Response>
   service: RemoteAccessOwnerService
+}
+
+function deviceWire(device: RemoteAccessDevice) {
+  return {
+    host_id: device.hostId,
+    enrollment_id: device.enrollmentId,
+    display_name: device.displayName,
+    last_seen_at: device.lastSeenAt,
+    state: device.state,
+    workspace_ids: device.workspaceIds,
+    serving_workspace_ids: device.servingWorkspaceIds,
+    ...(device.cliVersion ? { cli_version: device.cliVersion } : {}),
+    ...(device.os ? { os: device.os } : {}),
+    ...(device.arch ? { arch: device.arch } : {}),
+    ...(device.roots
+      ? {
+          roots: device.roots.map((root) => ({
+            path: root.path,
+            retires: root.retires.map((assignment) => ({ workspace_id: assignment.workspaceId, display_name: assignment.displayName, directory: assignment.directory })),
+          })),
+        }
+      : {}),
+    ...(device.blocked ? { blocked: { reason: device.blocked.reason, fix: device.blocked.fix, reported_at: device.blocked.reportedAt } } : {}),
+    ...(device.update ? { update: device.update } : {}),
+  }
 }
 
 async function authenticateRemoteAccess(options: RemoteAccessRouteOptions, request: Request) {
@@ -84,17 +122,7 @@ export function RemoteAccessOwnerRoutes(options: RemoteAccessRouteOptions) {
   app.get("/devices", async (c) => {
     const auth = await authenticateRemoteAccess(options, c.req.raw)
     if (!("user" in auth)) return auth
-    return c.json({
-      devices: (await options.service.devices(auth)).map((device) => ({
-        host_id: device.hostId,
-        enrollment_id: device.enrollmentId,
-        display_name: device.displayName,
-        last_seen_at: device.lastSeenAt,
-        state: device.state,
-        workspace_ids: device.workspaceIds,
-        serving_workspace_ids: device.servingWorkspaceIds,
-      })),
-    })
+    return c.json({ devices: (await options.service.devices(auth)).map(deviceWire) })
   })
 
   app.patch("/devices/:hostId", async (c) => {

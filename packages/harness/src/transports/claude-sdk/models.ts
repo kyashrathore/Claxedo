@@ -8,13 +8,11 @@ import { claudeLaunchContext, type ClaudeSdkOptions } from "./launch-context"
 import { ClaudeProcess } from "./process"
 
 export class ClaudeModelCatalog {
-  private readonly cache: DraftProbeCache<readonly ModelInfo[]>
+  private readonly cache = new DraftProbeCache<readonly ModelInfo[]>()
   private readonly disposal = new AbortController()
   private readonly probing = new Set<Promise<unknown>>()
 
-  constructor(private readonly services: HarnessServices, private readonly options: ClaudeSdkOptions) {
-    this.cache = new DraftProbeCache()
-  }
+  constructor(private readonly services: HarnessServices, private readonly options: ClaudeSdkOptions) {}
 
   peek(input: StartInput | DraftLaunch): Promise<readonly ModelInfo[] | undefined> {
     return this.cache.peek(draftProbeKey(input), this.probeInputs(input))
@@ -60,38 +58,34 @@ export class ClaudeModelCatalog {
   private async probe<T>(input: StartInput | DraftLaunch, sessionId: string | undefined,
     read: (stream: Query) => Promise<T>): Promise<T> {
     const abort = new AbortController()
-    const stop = () => abort.abort()
-    this.disposal.signal.addEventListener("abort", stop, { once: true })
-    const context = await claudeLaunchContext(input, this.options, sessionId ?? "probe").catch((error: unknown) => {
-      this.disposal.signal.removeEventListener("abort", stop)
-      throw error
-    })
-    if (abort.signal.aborted) throw new TransportError("claude", "session", "Claude transport disposed")
     const spawned: ClaudeProcess[] = []
-    const probe = query({ prompt: { async *[Symbol.asyncIterator]() {
-      await new Promise<void>((resolve) => abort.signal.addEventListener("abort", () => resolve(), { once: true }))
-    } }, options: {
-      ...context, ...claudeProbeModel(input), abortController: abort,
-      spawnClaudeCodeProcess: (options) => {
-        const child = new ClaudeProcess(this.services, options, sessionId ?? "probe", "probe")
-        spawned.push(child)
-        return child
-      },
-    } })
+    const stop = () => {
+      for (const child of spawned) child.kill()
+      abort.abort()
+    }
+    this.disposal.signal.addEventListener("abort", stop, { once: true })
+    let probe: Query | undefined
     try {
-      return await Promise.race([read(probe), rejectWhenDisposed(abort.signal)])
+      const context = await claudeLaunchContext(input, this.options, sessionId ?? "probe")
+      if (abort.signal.aborted) throw new TransportError("claude", "session", "Claude transport disposed")
+      probe = query({ prompt: { async *[Symbol.asyncIterator]() {
+        await new Promise<void>((resolve) => abort.signal.addEventListener("abort", () => resolve(), { once: true }))
+      } }, options: {
+        ...context, ...claudeProbeModel(input), abortController: abort,
+        spawnClaudeCodeProcess: (options) => {
+          const child = new ClaudeProcess(this.services, options, sessionId ?? "probe", "probe")
+          spawned.push(child)
+          return child
+        },
+      } })
+      return await read(probe)
     } finally {
       this.disposal.signal.removeEventListener("abort", stop)
-      abort.abort()
-      probe.close()
+      stop()
+      probe?.close()
       await Promise.all(spawned.map((child) => child.retire({ at: Date.now() + 5_000, signal: new AbortController().signal })))
     }
   }
-}
-
-function rejectWhenDisposed(signal: AbortSignal): Promise<never> {
-  return new Promise((_, reject) => signal.addEventListener("abort",
-    () => reject(new TransportError("claude", "session", "Claude transport disposed")), { once: true }))
 }
 
 export function claudeProbeModel(input: StartInput | DraftLaunch): { model?: string } {

@@ -13,21 +13,25 @@ export type CacheName = Exclude<keyof typeof queryKeys, CachePrefix>
 const catalogEvents = ["projectChanged", "placementsChanged", "cloudWorkspaceChanged", "streamGap"] as const
 const placementEvents = ["placementsChanged", "cloudWorkspaceChanged", "streamGap"] as const
 const placementFileEvents = ["filesChanged", "statusChanged", "streamGap"] as const
+const machineEvents = ["placementsChanged", "cloudWorkspaceChanged", "streamGap", "machinesChanged"] as const
 
 const catalog: Freshness = { kind: "event-owned", events: catalogEvents }
 const placementOwned: Freshness = { kind: "event-owned", events: placementEvents }
 const fileOwned: Freshness = { kind: "event-owned", events: placementFileEvents }
+const machineOwned: Freshness = { kind: "event-owned", events: machineEvents }
 
 export const freshness = {
   bootstrap: catalog,
-  accountCatalog: placementOwned,
+  accountCatalog: machineOwned,
   sharedSessions: { kind: "event-owned", events: ["sessionsChanged", "streamGap"] },
   projects: catalog,
   project: catalog,
   projectEnvironment: catalog,
   placements: catalog,
   placementsOf: catalog,
-  machines: placementOwned,
+  machines: machineOwned,
+  pairing: machineOwned,
+  pairingRequests: machineOwned,
   organizations: { kind: "once", reason: "membership changes only through an invitation or an admin, neither of which this app does; the next sign-in reads it again" },
   organizationMembers: { kind: "once", reason: "read when the Organization section opens; membership changes happen elsewhere" },
   cloud: placementOwned,
@@ -58,6 +62,7 @@ export const freshness = {
   marketplaceSkill: { kind: "once", reason: "a skill document changes only with its plugin; nothing in this app refreshes it after the first read" },
   folderPaths: { kind: "once", reason: "the folder picker's starting paths are read once; nothing in this app refreshes them" },
   folderChildren: { kind: "once", reason: "the folder picker lists a directory once; a folder created outside the app is missed until restart" },
+  folderPresence: { kind: "ttl", ms: 30_000, reason: "a connected machine sends no event when a checkout's folder goes, so Where it runs asks again once the answer is 30 s old; cloning it back there sets it" },
   harnessOptions: { kind: "once", reason: "a harness's agent and model options for a placement are read once; nothing in this app refreshes them" },
   harnessCommands: { kind: "once", reason: "a harness's saved and declared commands for a placement are read once; nothing in this app refreshes them" },
   stopsBackgroundTasks: { kind: "once", reason: "whether a session's harness stops one background task is fixed by its harness; the read waits for a running background task" },

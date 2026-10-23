@@ -1,5 +1,5 @@
 import { getFilename } from "@/ui/utils"
-import type { Server } from "@/server"
+import type { MachineId, Server } from "@/server"
 import { cleanInput, joinPath, normalizeDriveRoot, parentOf, rootOf, trimTrailing } from "./folder-paths"
 
 type Scoped = { readonly directory: string; readonly path: string }
@@ -8,6 +8,7 @@ type Entry = { readonly name: string; readonly absolute: string }
 
 type SearchInput = {
   readonly server: Server
+  readonly machine: MachineId | undefined
   readonly start: () => string | undefined
   readonly home: () => string
 }
@@ -38,7 +39,7 @@ async function folderChildren(search: Search, dir: string): Promise<Entry[]> {
   const key = trimTrailing(dir)
   const { queryClient, queries } = search.server
   return queryClient
-    .fetchQuery({ ...queries.folders.children(key), staleTime: Number.POSITIVE_INFINITY })
+    .fetchQuery({ ...queries.folders.children(key, search.machine), staleTime: Number.POSITIVE_INFINITY })
     .then((entries) => entries.map((entry) => ({ name: entry.name, absolute: trimTrailing(normalizeDriveRoot(entry.absolute)) })))
     .catch(logged<Entry[]>("listing", { directory: key }, []))
 }
@@ -55,7 +56,7 @@ async function matchingFolders(search: Search, dir: string, query: string, limit
 
 async function find(search: Search, scoped: Scoped, query: string, active: () => boolean) {
   const results = await search.server.folders
-    .search(scoped.directory, query, 50)
+    .search(scoped.directory, query, 50, search.machine)
     .catch(logged<readonly string[]>("search", { directory: scoped.directory, query }, []))
   if (!active()) return []
   return results.map((rel) => joinPath(scoped.directory, rel)).slice(0, 50)

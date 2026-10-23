@@ -1,5 +1,6 @@
 import { isPluginId } from "@claxedo/plugin-api/id"
 import { CREDENTIAL_OPERATIONS } from "./credential-operations"
+import { MACHINE_OPERATIONS } from "./machine-operations"
 import { sharedSessions } from "./shared-sessions"
 import { USAGE_OPERATIONS } from "./usage-operations"
 import {
@@ -13,6 +14,7 @@ import { object, withStrings, array, withArrays, sessionPeople, withRecord, null
 
 export const CORE_HOSTED_OPERATIONS = {
   ...CREDENTIAL_OPERATIONS,
+  ...MACHINE_OPERATIONS,
   ...USAGE_OPERATIONS,
   "session.shared.list": defineOperation({
     method: "GET", path: operationPath("/api/workspace/shared-sessions"),
@@ -142,34 +144,6 @@ export const CORE_HOSTED_OPERATIONS = {
     output: statusResult, retry: "safe",
     exposure: { renderer: false, app: false },
     response: "http",
-  }),
-  "machines.list": defineOperation({
-    method: "GET", path: operationPath("/api/claxedo/remote-access/devices"),
-    input: operationInput({}),
-    output: withArrays("devices"), retry: "safe",
-    exposure: { renderer: true, app: false },
-  }),
-  // The route pauses every machine of the owner's when it is handed no
-  // `hostId`, so these two require one and fix `paused` in the body.
-  "machines.pause": defineOperation({
-    method: "POST", path: operationPath("/api/claxedo/host/enrollments/pause"),
-    input: operationInput({ hostId: requiredParameter }),
-    output: object, retry: "safe",
-    exposure: { renderer: true, app: false },
-    body: (input) => ({ hostId: input.hostId, paused: true }),
-  }),
-  "machines.resume": defineOperation({
-    method: "POST", path: operationPath("/api/claxedo/host/enrollments/pause"),
-    input: operationInput({ hostId: requiredParameter }),
-    output: object, retry: "safe",
-    exposure: { renderer: true, app: false },
-    body: (input) => ({ hostId: input.hostId, paused: false }),
-  }),
-  "machines.remove": defineOperation({
-    method: "DELETE", path: operationPath("/api/claxedo/remote-access/devices/:hostId"),
-    input: operationInput({ hostId: requiredParameter }),
-    output: object, retry: "never",
-    exposure: { renderer: true, app: false },
   }),
   "workspace.list.provisioner": defineOperation({
     method: "GET", path: operationPath("/api/workspace?host=provisioner"),

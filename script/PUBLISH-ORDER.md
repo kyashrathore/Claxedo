@@ -33,7 +33,16 @@ mistake that has actually bitten this repo.
 the rest of the runtime track rides along. `workspace-runtime` now carries the
 Claude Agent SDK in its `dist` instead of declaring it, so installing the CLI
 no longer installs the SDK's 230 MB per-platform Claude Code binary, which the
-runtime never runs. `cli` pins `workspace-runtime` 0.10.2.
+runtime never runs. Two exports change: `workspace-runtime` adds
+`installedTerminalAgents`, and `sandbox-contract`'s
+`sandboxCheckpointUnusableCauses` no longer lists `runtime_outdated`, since a
+workspace saved below the floor now wakes on the current runtime instead of
+refusing. `cli` pins `workspace-runtime` 0.10.2 and carries `claxedo connect
+--pair`; the control plane's connect script reuses an installed CLI only at
+0.2.2 or later (`MINIMUM_CONNECT_CLI_VERSION` in
+`@claxedo/account-contract/machine`), so pairing a machine needs 0.2.2 on npm.
+`helpers` 0.2.2 adds `powershellQuote`, `isPrivateNetworkAddress` and
+`reconnectDelayMs`.
 
 `helpers` rides its own track because both the runtime and apps tracks depend
 on it — `agent-runtime-contract`, `sandbox-manager` and `workspace-runtime` on

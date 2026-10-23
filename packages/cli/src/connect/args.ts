@@ -2,6 +2,8 @@ import path from "node:path"
 
 export type ConnectArgs = {
   tokenFile?: string
+  /** A pairing code from Claxedo's "Connect a machine…"; the folder the command runs in is the one it asks to share. */
+  pair?: string
   roots: string[]
   name?: string
   installService: boolean
@@ -13,7 +15,7 @@ export type ConnectArgs = {
   direct?: boolean
 }
 
-export const connectUsage = `claxedo connect [--token-file F] [--root DIR]... [--name N] [--direct on|off] [--install-service] [--uninstall-service] [--foreground] [--alongside-desktop] [--reset] [--reset-roots]`
+export const connectUsage = `claxedo connect [--pair CODE | --token-file F] [--root DIR]... [--name N] [--direct on|off] [--install-service] [--uninstall-service] [--foreground] [--alongside-desktop] [--reset] [--reset-roots]`
 
 /** `--flag value` and `--flag=value` both read; a flag with no value is an error, not an empty string. */
 export function takeValue(args: string[], index: number, flag: string): { value: string; next: number } {
@@ -39,6 +41,12 @@ export function parseConnectArgs(args: string[]): ConnectArgs {
     if (arg === "--token-file" || arg.startsWith("--token-file=")) {
       const taken = takeValue(args, i, "--token-file")
       parsed.tokenFile = path.resolve(taken.value)
+      i = taken.next
+      continue
+    }
+    if (arg === "--pair" || arg.startsWith("--pair=")) {
+      const taken = takeValue(args, i, "--pair")
+      parsed.pair = taken.value
       i = taken.next
       continue
     }
@@ -91,7 +99,10 @@ export function parseConnectArgs(args: string[]): ConnectArgs {
   if (parsed.installService && parsed.uninstallService) {
     throw new Error("--install-service and --uninstall-service cannot be combined")
   }
-  const others = parsed.tokenFile || parsed.roots.length > 0 || parsed.installService || parsed.uninstallService || parsed.foreground || parsed.alongsideDesktop || parsed.direct !== undefined
+  if (parsed.pair !== undefined && (parsed.tokenFile || parsed.roots.length > 0)) {
+    throw new Error("--pair shares the folder it runs in; it takes no --token-file or --root")
+  }
+  const others = parsed.pair !== undefined || parsed.tokenFile || parsed.roots.length > 0 || parsed.installService || parsed.uninstallService || parsed.foreground || parsed.alongsideDesktop || parsed.direct !== undefined
   if (parsed.reset && (others || parsed.resetRoots)) throw new Error("--reset takes no other options")
   if (parsed.resetRoots && others) throw new Error("--reset-roots takes no other options")
   return parsed

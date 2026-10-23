@@ -85,6 +85,13 @@
         "isMissingFile",
         "readJsonFile"
       ]
+    },
+    {
+      "module": "@claxedo/helpers/shell",
+      "owner": "packages/claxedo-helpers/src/shell.ts",
+      "names": [
+        "powershellQuote"
+      ]
     }
   ],
   "twins": []

@@ -207,4 +207,27 @@ describe("default git exec", () => {
     await expect(match("https://example.test.evil.test/acme.git")).rejects.toThrow()
     await expect(match("http://example.test/acme.git")).rejects.toThrow()
   })
+
+  test("git fetches a brokered repository from the broker, presenting the header there and nowhere else", async () => {
+    const git = createBoundedGit()
+    const credential = { broker: "https://plane.example.test/bindings/b1", repoUrl: "https://github.com/acme/private.git", authorization: "Bearer stand-in" }
+    const brokered = "https://plane.example.test/bindings/b1/acme/private.git"
+
+    expect((await git(["ls-remote", "--get-url", credential.repoUrl], os.tmpdir(), { credential })).trim()).toBe(brokered)
+    expect((await git(["config", "--get-urlmatch", "http.extraheader", `${brokered}/info/refs`], os.tmpdir(), { credential })).trim())
+      .toBe("Authorization: Bearer stand-in")
+    await expect(git(["config", "--get-urlmatch", "http.extraheader", "https://github.com/acme/private.git/info/refs"], os.tmpdir(), { credential })).rejects.toThrow()
+    await expect(git(["config", "--get-urlmatch", "http.extraheader", "https://plane.example.test/bindings/b1/acme/other.git"], os.tmpdir(), { credential })).rejects.toThrow()
+  })
+
+  test("refuses a broker off loopback without TLS, and a broker or repository URL carrying a credential", async () => {
+    const git = createBoundedGit({ exec: async () => ({ stdout: "" }) })
+    const repoUrl = "https://github.com/acme/private.git"
+    const clone = (broker: string, repository = repoUrl) => git(["clone"], "/tmp", { credential: { broker, repoUrl: repository, authorization: "Bearer a" } })
+
+    await expect(clone("http://plane.example.test/bindings/b1")).rejects.toBeInstanceOf(GitCredentialError)
+    await expect(clone("https://user:pass@plane.example.test/bindings/b1")).rejects.toBeInstanceOf(GitCredentialError)
+    await expect(clone("https://plane.example.test/bindings/b1", "https://token@github.com/acme/private.git")).rejects.toBeInstanceOf(GitCredentialError)
+    await expect(clone("http://127.0.0.1:4100/bindings/b1")).resolves.toBe("")
+  })
 })

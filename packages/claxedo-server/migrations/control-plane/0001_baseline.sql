@@ -222,7 +222,7 @@ CREATE TABLE host_enrollments (
   check (scope_json is null or json_valid(scope_json)), scope_revision integer not null default 0, sealing_public_key_json text
   check (sealing_public_key_json is null or json_valid(sealing_public_key_json)), provider_config_sealed text, provider_config_revision integer not null default 0, provider_config_acked_revision integer not null default 0, provider_config_updated_at integer, provider_config_sealed_key_json text
   check (provider_config_sealed_key_json is null or json_valid(provider_config_sealed_key_json)), provider_config_provider_ids text
-  check (provider_config_provider_ids is null or json_valid(provider_config_provider_ids)), provider_config_built_at integer, provider_config_renew_at integer, provider_config_accounts text, provider_config_built_generation integer,
+  check (provider_config_provider_ids is null or json_valid(provider_config_provider_ids)), provider_config_built_at integer, provider_config_renew_at integer, provider_config_accounts text, provider_config_built_generation integer, approval_requested_at integer, revoked_reason text check (revoked_reason is null or revoked_reason in ('denied', 'approval_expired')), machine_json text check (machine_json is null or json_valid(machine_json)), blocked_json text check (blocked_json is null or json_valid(blocked_json)),
   unique (owner_actor_id, host_id)
 );
 
@@ -242,7 +242,7 @@ CREATE TABLE host_invitations (
   created_by_actor_id text not null references actors (actor_id) deferrable initially deferred,
   created_at integer not null,
   revoked_at integer
-);
+, kind text not null default 'preapproved' check (kind in ('preapproved', 'pairing')), pairing_progress_json text check (pairing_progress_json is null or json_valid(pairing_progress_json)), pairing_request_json text check (pairing_request_json is null or json_valid(pairing_request_json)), pairing_decision text check (pairing_decision is null or pairing_decision in ('approved', 'denied')), pairing_decided_at integer, pairing_workspace_id text, first_workspace_id text);
 
 CREATE TABLE host_request_nonces (
   enrollment_id text not null,
@@ -822,6 +822,8 @@ CREATE INDEX host_invitations_by_org on host_invitations (org_id, redeemed_enrol
 
 CREATE INDEX host_invitations_by_owner
   on host_invitations (owner_actor_id, created_at desc, invitation_id);
+
+CREATE INDEX host_invitations_by_pairing_code on host_invitations (secret_hash) where kind = 'pairing';
 
 CREATE INDEX host_invitations_by_redeemed_enrollment
   on host_invitations (redeemed_enrollment_id);

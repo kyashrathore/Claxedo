@@ -2,9 +2,9 @@
 import { expect, test } from "bun:test"
 import { createRoot } from "solid-js"
 import { ServerError, machineId, type Machine, type MachineProbe } from "@/server"
-import { adviceKey, checkTransition, connectWaitTransition, createMachineCheck, headlineKey, hopsOf, knownHostIds, newMachine, type MachineCheck } from "./machines"
+import { adviceKey, checkTransition, createMachineCheck, headlineKey, hopsOf, type MachineCheck } from "./machines"
 
-const box: Machine = { id: machineId("enr_box"), name: "build-box", online: true, isThisMachine: false, enrolled: true, enrollment: { hostId: "host_box", lastSeenAt: 10, servingWorkspaceIds: ["ws_box"] } }
+const box: Machine = { id: machineId("enr_box"), name: "build-box", online: true, isThisMachine: false, enrolled: true, enrollment: { hostId: "host_box", enrollmentId: "enr_box", lastSeenAt: 10, servingWorkspaceIds: ["ws_box"] } }
 const offline = new ServerError({ class: "network", message: "offline" })
 
 function settle(machine: Machine | undefined, probe?: MachineProbe): MachineCheck {
@@ -69,19 +69,4 @@ test("the running check reads the list, then probes the machine it found, and pr
     expect(probed).toEqual(["host_box"])
     dispose()
   })
-})
-
-test("a new machine is one the list did not hold when the drawer opened, or the named one when the list was not loaded yet", () => {
-  const studio: Machine = { ...box, id: machineId("enr_studio"), name: "studio", enrollment: { hostId: "host_studio", lastSeenAt: 10, servingWorkspaceIds: [] } }
-  const known = knownHostIds([box])
-  expect(newMachine([box], known, "studio")).toBeUndefined()
-  expect(newMachine([box, studio], known, "anything")).toBe(studio)
-  expect(newMachine([box, studio], knownHostIds(undefined), "studio")).toBe(studio)
-  expect(newMachine([box, studio], knownHostIds(undefined), "missing")).toBeUndefined()
-
-  const checking = connectWaitTransition({ kind: "instructions" }, { type: "ranIt", name: "studio" })
-  expect(connectWaitTransition(checking, { type: "absent" })).toEqual({ kind: "waiting", name: "studio" })
-  expect(connectWaitTransition(checking, { type: "appeared", machine: studio })).toEqual({ kind: "connected", machine: studio })
-  expect(connectWaitTransition(checking, { type: "failed", error: offline })).toEqual({ kind: "failed", name: "studio", error: offline })
-  expect(connectWaitTransition({ kind: "waiting", name: "studio" }, { type: "appeared", machine: studio })).toEqual({ kind: "waiting", name: "studio" })
 })

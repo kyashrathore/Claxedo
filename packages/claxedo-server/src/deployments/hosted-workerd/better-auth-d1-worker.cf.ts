@@ -156,7 +156,8 @@ function consumesVerification(pathname: string) {
  * - the relay's resolver checks revocation and serving generations the
  *   moment after they are written;
  * - a machine's doorbell stream is admitted by its signature, which consumes
- *   the request's nonce, a write, before the writer holds the stream open.
+ *   the request's nonce, a write, before the writer holds the stream open;
+ * - a pairing is followed while another client, the machine, writes it.
  * `d1-session-classifier.test.ts` holds every GET route either here or in
  * its reviewed list of replica reads, so a new one is classified on purpose.
  */
@@ -172,6 +173,7 @@ export const PRIMARY_READS = [
   "/api/claxedo/integrations/attempts/",
   "/api/claxedo/integrations/connections/",
   "/api/claxedo/host/enrollments/events",
+  "/api/claxedo/host/pairings",
   "/api/claxedo/plugins/mcp/",
   "/bindings/",
   "/internal/",

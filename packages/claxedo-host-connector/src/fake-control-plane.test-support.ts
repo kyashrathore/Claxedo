@@ -26,22 +26,24 @@ import {
   createHostKeyPair,
   hostKeyPairFromJwk,
   hostMachineRequestPayload,
-  hostSha256Hex,
   newHostId,
 } from "./host-identity"
 import {
-  invitationRedeemPayload,
-  invitationToken,
+  PAIRING_TTL_MS,
+  isMachineBlockedReason,
   publicKeyFingerprint,
   MACHINE_REQUEST_HEADERS,
   publicKeyJwk,
   machineSealAad,
+  type MachineBlockedReason,
 } from "@claxedo/account-contract/machine"
 import { hostPathWithinRoots, normalizeHostPath } from "@claxedo/account-contract/host-path"
 import { createHostStateStore, isPlainRecord, newHostState, type HostStateFs } from "./host-state"
 
 import { sealForMachine } from "@claxedo/account-contract/machine-seal"
 import { createFakeMachineEventStreams } from "./fake-machine-events.test-support"
+import { createFakeInvitations } from "./fake-invitations.test-support"
+import { createFakePairings } from "./fake-pairings.test-support"
 import type { FetchLike } from "./machine-transport"
 
 const SKEW_MS = 60_000
@@ -74,22 +76,17 @@ export type FakeEnrollment = {
   expires_at: number
   last_seen_at: number
   revoked_at?: number
+  /** Why a pairing's enrollment was revoked, which the machine is told instead of a bare revocation. */
+  revoked_reason?: "denied"
   paused_at?: number
+  /** Set while a paired machine waits for its owner's approval. */
+  approval_requested_at?: number
   created_at: number
-}
-
-type Invitation = {
-  invitation_id: string
-  secret_hash: string
-  owner: string
-  display_name: string
-  scope: FakeScope
-  expires_at: number
-  revoked_at?: number
-  redeemed_at?: number
-  redeemed_host_id?: string
-  redeemed_public_key_fingerprint?: string
-  redeemed_enrollment_id?: string
+  generation_acquired_at?: number
+  /** What the machine last reported about itself (`/report`). */
+  reported?: { cli_version: string; os?: string; arch?: string }
+  /** What it last reported stopping it, cleared by its next acquire. */
+  blocked?: { reason: MachineBlockedReason; fix: string; reported_at: number }
 }
 
 export type FakeAssignment = {
@@ -168,7 +165,6 @@ export function createFakeControlPlane(
   const url = options.url ?? "https://control-plane.test"
   const relayUrl = options.relayUrl ?? "https://relay.test"
   const enrollments = new Map<string, FakeEnrollment>()
-  const invitations = new Map<string, Invitation>()
   const assignments = new Map<string, FakeAssignment>()
   const readiness = new Map<string, FakeReadiness>()
   const nonces = new Map<string, number>()
@@ -240,7 +236,7 @@ export function createFakeControlPlane(
     headers: Headers
     bodyText: string
     body: Record<string, unknown>
-  }, admission: { admitPaused?: boolean } = {}) => {
+  }, admission: { admitHeld?: boolean } = {}) => {
     const enrollmentId = request.headers.get(MACHINE_REQUEST_HEADERS.enrollmentId)
     const tsHeader = request.headers.get(MACHINE_REQUEST_HEADERS.ts)
     const nonce = request.headers.get(MACHINE_REQUEST_HEADERS.nonce)
@@ -274,8 +270,13 @@ export function createFakeControlPlane(
     const nonceKey = `${enrollmentId}:${nonce}`
     if (nonces.has(nonceKey)) throw new FakeRefusal(401, "machine_nonce_replayed")
     nonces.set(nonceKey, ts + NONCE_TTL_MS)
-    if (enrollment.revoked_at !== undefined) throw new FakeRefusal(403, "enrollment_revoked")
-    if (enrollment.paused_at !== undefined && !admission.admitPaused) throw new FakeRefusal(403, "enrollment_paused")
+    if (enrollment.revoked_at !== undefined) {
+      throw new FakeRefusal(403, enrollment.revoked_reason === "denied" ? "enrollment_denied" : "enrollment_revoked")
+    }
+    const awaiting = enrollment.approval_requested_at
+    if (awaiting !== undefined && now() - awaiting > PAIRING_TTL_MS) throw new FakeRefusal(403, "enrollment_approval_expired")
+    if (awaiting !== undefined && !admission.admitHeld) throw new FakeRefusal(403, "enrollment_awaiting_approval")
+    if (enrollment.paused_at !== undefined && !admission.admitHeld) throw new FakeRefusal(403, "enrollment_paused")
     if (request.body.keyVersion !== undefined && request.body.keyVersion !== enrollment.key_version) {
       throw new FakeRefusal(403, "enrollment_key_version_mismatch")
     }
@@ -284,12 +285,41 @@ export function createFakeControlPlane(
 
   const acquire = (enrollment: FakeEnrollment) => {
     enrollment.serving_generation += 1
+    enrollment.generation_acquired_at = now()
+    delete enrollment.blocked
     for (const [workspaceId, ready] of readiness) {
       if (ready.enrollment_id === enrollment.enrollment_id && ready.generation < enrollment.serving_generation) {
         readiness.delete(workspaceId)
       }
     }
     return { generation: enrollment.serving_generation, generation_acquired_at: now() }
+  }
+
+  /**
+   * The control plane's rule: an instance that holds a generation is heard
+   * under it alone, one that holds none only while no lease is live; a
+   * reported block ends the lease.
+   */
+  const report = (enrollment: FakeEnrollment, body: Record<string, unknown>) => {
+    const blocked = isPlainRecord(body.blocked) ? body.blocked : undefined
+    if (typeof body.cliVersion !== "string" || !body.cliVersion) throw new FakeRefusal(400, "invalid_request_body")
+    if (blocked && (!isMachineBlockedReason(blocked.reason) || typeof blocked.fix !== "string" || !blocked.fix)) {
+      throw new FakeRefusal(400, "invalid_request_body")
+    }
+    const heard = typeof body.generation === "number"
+      ? body.generation === enrollment.serving_generation
+      : enrollment.generation_acquired_at === undefined || enrollment.expires_at <= now()
+    if (!heard) return { recorded: false }
+    enrollment.reported = {
+      cli_version: body.cliVersion,
+      ...(typeof body.os === "string" ? { os: body.os } : {}),
+      ...(typeof body.arch === "string" ? { arch: body.arch } : {}),
+    }
+    if (blocked && isMachineBlockedReason(blocked.reason) && typeof blocked.fix === "string") {
+      enrollment.blocked = { reason: blocked.reason, fix: blocked.fix, reported_at: now() }
+      enrollment.expires_at = Math.min(enrollment.expires_at, now())
+    }
+    return { recorded: true }
   }
 
   const heartbeat = async (enrollment: FakeEnrollment, body: Record<string, unknown>) => {
@@ -356,92 +386,35 @@ export function createFakeControlPlane(
     }
   }
 
-  const redeemResponse = (enrollment: FakeEnrollment, resumed: boolean) => {
-    // An invitation carries the scope it was created with onto the enrollment
-    // it mints, so a redeemed row without one is this fake losing state.
-    if (!enrollment.scope) throw new Error(`enrollment ${enrollment.enrollment_id} was redeemed without a scope`)
-    return {
-      resumed,
-      enrollment: {
-        enrollment_id: enrollment.enrollment_id,
-        host_id: enrollment.host_id,
-        expires_at: enrollment.expires_at,
-        last_seen_at: enrollment.last_seen_at,
-        created_at: enrollment.created_at,
-      },
-      owner_user_id: enrollment.owner,
-      owner_actor_id: `actor_${enrollment.owner}`,
-      org_id: "org_1",
-      owner_display_name: "Alice",
-      key_version: enrollment.key_version,
-      serving_generation: enrollment.serving_generation,
-      scope: enrollment.scope,
-      ...endpoints(),
-    }
-  }
-
-  const redeem = async (body: Record<string, unknown>) => {
-    const invitationId = typeof body.invitationId === "string" ? body.invitationId : ""
-    const secret = typeof body.secret === "string" ? body.secret : ""
-    const hostId = typeof body.hostId === "string" ? body.hostId : ""
-    const invitation = invitations.get(invitationId)
-    if (!invitation || invitation.secret_hash !== (await hostSha256Hex(secret))) {
-      throw new FakeRefusal(400, "invitation_invalid")
-    }
-    if (invitation.revoked_at !== undefined) throw new FakeRefusal(410, "invitation_revoked")
-    if (invitation.expires_at <= now()) throw new FakeRefusal(410, "invitation_expired")
-    if (typeof body.publicKey !== "string" || typeof body.signature !== "string") {
-      throw new FakeRefusal(400, "invitation_invalid")
-    }
-    const publicKey = publicKeyJwk(body.publicKey)
-    const fingerprint = await publicKeyFingerprint(publicKey)
-    const payload = invitationRedeemPayload({ invitationId, hostId, publicKeySha256: fingerprint })
-    if (!(await verify(publicKey, payload, body.signature))) throw new FakeRefusal(401, "invitation_signature_invalid")
-    if (invitation.redeemed_at !== undefined) {
-      const same = invitation.redeemed_public_key_fingerprint === fingerprint && invitation.redeemed_host_id === hostId
-      const existing = invitation.redeemed_enrollment_id
-        ? enrollments.get(invitation.redeemed_enrollment_id)
-        : undefined
-      if (same && existing) return redeemResponse(existing, true)
-      throw new FakeRefusal(409, "invitation_redeemed")
-    }
-    for (const enrollment of enrollments.values()) {
-      if (enrollment.owner === invitation.owner && enrollment.host_id === hostId) {
-        throw new FakeRefusal(409, "invitation_host_conflict")
-      }
-    }
-    const enrollment: FakeEnrollment = {
-      enrollment_id: nextId("enr"),
-      host_id: hostId,
-      display_name:
-        typeof body.displayName === "string" && body.displayName ? body.displayName : invitation.display_name,
-      owner: invitation.owner,
-      public_key: publicKey,
-      fingerprint,
-      key_version: 1,
-      serving_generation: 0,
-      scope: invitation.scope,
-      expires_at: now() + LEASE_MS,
-      last_seen_at: now(),
-      created_at: now(),
-    }
-    enrollments.set(enrollment.enrollment_id, enrollment)
-    invitation.redeemed_at = now()
-    invitation.redeemed_host_id = hostId
-    invitation.redeemed_public_key_fingerprint = fingerprint
-    invitation.redeemed_enrollment_id = enrollment.enrollment_id
-    if (faults.dropRedeemResponse) {
-      faults.dropRedeemResponse = false
-      throw new TypeError("fetch failed")
-    }
-    return redeemResponse(enrollment, false)
-  }
-
   const json = (status: number, body: unknown) =>
     new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
 
   const doorbell = createFakeMachineEventStreams(now)
   const ring = (enrollment: FakeEnrollment) => doorbell.ring(enrollment)
+  const invitations = createFakeInvitations({
+    now,
+    url,
+    enrollments,
+    nextId,
+    leaseMs: LEASE_MS,
+    refuse: (status, code) => new FakeRefusal(status, code),
+    verify,
+    endpoints,
+    faults,
+  })
+  const pairings = createFakePairings({
+    now,
+    url,
+    enrollments,
+    nextId,
+    leaseMs: LEASE_MS,
+    refuse: (status, code) => new FakeRefusal(status, code),
+    verify,
+    ring,
+    routable,
+    assign: (input) => assign(input),
+    endpoints,
+  })
 
   const fetchImpl: FetchLike = async (input, init) => {
     const target = new URL(input.href)
@@ -452,20 +425,31 @@ export function createFakeControlPlane(
     const body = isPlainRecord(parsed) ? parsed : {}
     log.push({ method, path: target.pathname, body, headers: Object.fromEntries(headers.entries()) })
     try {
-      if (target.pathname === "/api/claxedo/host/enrollments/redeem") return json(200, await redeem(body))
+      if (target.pathname === "/api/claxedo/host/enrollments/redeem") return json(200, await invitations.redeem(body))
+      if (target.pathname === "/api/claxedo/host/pairings/redeem") return json(200, await pairings.redeem(body))
+      if (target.pathname === "/api/claxedo/host/pairings/progress") return json(200, pairings.progress(body))
       if (faults.unavailable !== undefined) {
         return json(faults.unavailable, { error: { code: "deployment_candidate_unavailable", message: "deploying" } })
       }
       const request = { method, pathname: target.pathname, headers, bodyText, body }
       if (target.pathname === "/api/claxedo/host/enrollments/events") {
         if (faults.refuseEvents !== undefined) throw new FakeRefusal(faults.refuseEvents, "not_found")
-        return doorbell.open(await verifyMachine(request, { admitPaused: true }), init?.signal ?? undefined)
+        return doorbell.open(await verifyMachine(request, { admitHeld: true }), init?.signal ?? undefined)
       }
       if (target.pathname === "/api/claxedo/host/enrollments/acquire") {
         return json(200, acquire(await verifyMachine(request)))
       }
+      if (target.pathname === "/api/claxedo/host/enrollments/report") {
+        return json(200, report(await verifyMachine(request, { admitHeld: true }), body))
+      }
       if (target.pathname === "/api/claxedo/host/enrollments/heartbeat") {
         return json(200, await heartbeat(await verifyMachine(request), body))
+      }
+      if (target.pathname === "/api/claxedo/host/pairings/self") {
+        return json(200, pairings.self(await verifyMachine(request, { admitHeld: true })))
+      }
+      if (target.pathname === "/api/claxedo/host/pairings/folder") {
+        return json(200, pairings.requestFolder(await verifyMachine(request), body))
       }
       if (!options.owner) throw new FakeRefusal(404, "not_found")
       return json(200, await options.owner({ method, url: target, headers, body }))
@@ -477,6 +461,43 @@ export function createFakeControlPlane(
 
   const enrollmentByHostId = (hostId: string) =>
     [...enrollments.values()].find((entry) => entry.host_id === hostId && entry.revoked_at === undefined)
+
+  /**
+   * The owner's assignment, by enrollment or host id. The lexical scope
+   * check is the control plane's; a test that wants the host's resolved
+   * check to be the one refusing widens `enrollment.scope` directly. The
+   * directory is recorded normalized (`normalizeStoredDirectory` at the
+   * control plane), so `/srv/app/` and `/srv/app` are one row.
+   */
+  const assign = (
+    input: ({ enrollmentId: string } | { hostId: string }) & {
+      workspaceId: string
+      remoteDirectory?: string
+      displayName?: string
+    },
+  ) => {
+    const enrollment = "hostId" in input ? enrollmentByHostId(input.hostId) : enrollments.get(input.enrollmentId)
+    if (!enrollment || enrollment.revoked_at !== undefined) throw new FakeRefusal(404, "host_enrollment_not_found")
+    const remoteDirectory =
+      input.remoteDirectory === undefined ? undefined : normalizeHostPath(input.remoteDirectory)
+    if (input.remoteDirectory !== undefined && remoteDirectory === undefined)
+      throw new FakeRefusal(400, "invalid_input")
+    if (enrollment.scope && !hostPathWithinRoots(remoteDirectory ?? "", enrollment.scope.allowed_roots)) {
+      throw new FakeRefusal(400, "host_assignment_outside_scope")
+    }
+    const existing = assignments.get(input.workspaceId)
+    const assignment: FakeAssignment = {
+      workspace_id: input.workspaceId,
+      enrollment_id: enrollment.enrollment_id,
+      host_id: enrollment.host_id,
+      ...(remoteDirectory === undefined ? {} : { remote_directory: remoteDirectory }),
+      ...(input.displayName ? { display_name: input.displayName } : {}),
+      revision: (existing?.revision ?? 0) + 1,
+    }
+    assignments.set(input.workspaceId, assignment)
+    ring(enrollment)
+    return assignment.revision
+  }
 
   const unassign = (workspaceId: string) => {
     const assignment = assignments.get(workspaceId)
@@ -496,6 +517,7 @@ export function createFakeControlPlane(
     assignments,
     readiness,
     beats: () => log.filter((entry) => entry.path === "/api/claxedo/host/enrollments/heartbeat"),
+    reports: () => log.filter((entry) => entry.path === "/api/claxedo/host/enrollments/report").map((entry) => entry.body),
     /** How many doorbell streams this enrollment holds open right now. */
     eventStreams: (enrollmentId: string) => doorbell.held(enrollmentId),
     /** End every stream the enrollment holds, as a deploy or an idle proxy would, without deciding anything. */
@@ -567,68 +589,17 @@ export function createFakeControlPlane(
       enrollments.set(enrollment.enrollment_id, enrollment)
       return enrollment
     },
-    createInvitation: async (input: {
-      owner?: string
-      displayName?: string
-      scope: Omit<FakeScope, "revision"> & { revision?: number }
-      expiresInMs?: number
-    }) => {
-      const invitationId = base64url(crypto.getRandomValues(new Uint8Array(new ArrayBuffer(12))))
-      const secret = base64url(crypto.getRandomValues(new Uint8Array(new ArrayBuffer(32))))
-      const invitation: Invitation = {
-        invitation_id: invitationId,
-        secret_hash: await hostSha256Hex(secret),
-        owner: input.owner ?? "alice",
-        display_name: input.displayName ?? "machine",
-        scope: { ...input.scope, revision: input.scope.revision ?? 1 },
-        expires_at: now() + Math.min(Math.max(input.expiresInMs ?? 3_600_000, 5 * 60_000), 24 * 60 * 60_000),
-      }
-      invitations.set(invitationId, invitation)
-      return {
-        invitationId,
-        secret,
-        token: invitationToken({ controlPlaneUrl: url, invitationId, secret }),
-        expiresAt: invitation.expires_at,
-        invitation,
-      }
-    },
-    /**
-     * The owner's assignment, by enrollment or host id. The lexical scope
-     * check is the control plane's; a test that wants the host's resolved
-     * check to be the one refusing widens `enrollment.scope` directly. The
-     * directory is recorded normalized (`normalizeStoredDirectory` at the
-     * control plane), so `/srv/app/` and `/srv/app` are one row.
-     */
-    assign: (
-      input: ({ enrollmentId: string } | { hostId: string }) & {
-        workspaceId: string
-        remoteDirectory?: string
-        displayName?: string
-      },
-    ) => {
-      const enrollment = "hostId" in input ? enrollmentByHostId(input.hostId) : enrollments.get(input.enrollmentId)
-      if (!enrollment || enrollment.revoked_at !== undefined) throw new FakeRefusal(404, "host_enrollment_not_found")
-      const remoteDirectory =
-        input.remoteDirectory === undefined ? undefined : normalizeHostPath(input.remoteDirectory)
-      if (input.remoteDirectory !== undefined && remoteDirectory === undefined)
-        throw new FakeRefusal(400, "invalid_input")
-      if (enrollment.scope && !hostPathWithinRoots(remoteDirectory ?? "", enrollment.scope.allowed_roots)) {
-        throw new FakeRefusal(400, "host_assignment_outside_scope")
-      }
-      const existing = assignments.get(input.workspaceId)
-      const assignment: FakeAssignment = {
-        workspace_id: input.workspaceId,
-        enrollment_id: enrollment.enrollment_id,
-        host_id: enrollment.host_id,
-        ...(remoteDirectory === undefined ? {} : { remote_directory: remoteDirectory }),
-        ...(input.displayName ? { display_name: input.displayName } : {}),
-        revision: (existing?.revision ?? 0) + 1,
-      }
-      assignments.set(input.workspaceId, assignment)
-      ring(enrollment)
-      return assignment.revision
-    },
+    createInvitation: invitations.create,
+    assign,
     unassign,
+    /** Mint, answer and expire pairings as their owner, and read what machines asked. */
+    pairings: {
+      all: pairings.pairings,
+      create: pairings.create,
+      approve: pairings.approve,
+      deny: pairings.deny,
+      signOut: pairings.signOut,
+    },
     /**
      * The owner's push, sealing exactly as the route does: read the key the
      * machine declared, seal for it at the NEW revision, store the ciphertext.

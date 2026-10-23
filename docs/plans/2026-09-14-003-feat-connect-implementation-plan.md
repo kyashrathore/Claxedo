@@ -661,27 +661,13 @@ promoted into an independently assigned checkout, and its path lies outside
 an invitation's roots. An independent "new checkout on <machine>" is P5b's
 operation with its own destination policy and grant. Cloud footer unchanged.
 
-### P5.3 Create-project form
+### P5.3 and P5b — moved
 
-Location step with Local / Cloud only in this slice; machines appear once P5b
-exists.
-
-### P5b Host folder operations (clone into root) — deferred, with the boundary it needs
-
-A workspace token authorizes one workspace, not the machine
-(`user-hosted-surface.ts` header). Cloning under a host root therefore needs a
-**host-management grant**: a short-lived token minted by the control plane for
-(actor, enrollment, operation, destination root, expiry), verified by the host
-against the control plane's key, distinct from the relay proof. Clone
-credentials are brokered (a single-use, repo-scoped credential from the
-connections capability), not the account's GitHub token forwarded in a
-header. Execution reuses the self-hosted node's clone path
-(`projects-route.ts`) moved behind that policy. The zero-workspace case is
-solved by the grant, not by borrowing another workspace's tunnel.
+Machines in the create-project form (P5.3) and host folder operations with the host-management grant (P5b) are
+C5 of [Connecting a machine](./2026-10-23-002-feat-connect-a-machine-ux-plan.md).
 
 Definition of done (P5):
 - [ ] Chips render machines from the catalog; selecting one drives the worktree chip; local/cloud behaviour unchanged. Progress:
-- [ ] Machine rows list assigned folders only; no machine footer until P5b. Progress:
 
 ---
 

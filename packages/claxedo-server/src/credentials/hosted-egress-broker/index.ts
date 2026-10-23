@@ -6,17 +6,27 @@ import type { WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/
 import { destinationAuthMode } from "@claxedo/server-core/credentials/built-in-destinations"
 import { mintOwnerBrokerPass } from "@claxedo/server-core/credentials/owner-broker-pass"
 import type { HarnessCredentialBroker } from "@claxedo/server-core/credentials/native-delivery-plan"
+import type { SandboxPassRegister } from "@claxedo/server-core/platform/auth/sandbox-pass-register"
 import type { ControlPlaneCredentials } from "../../authority/services"
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { requestClientKeyFromHeaders, type RouteGuardExemption } from "../../platform/auth/request-guard"
 import type { CredentialRefusals } from "../credential-refusals"
 import { hostedBindingAuthority, machineLeaseId, type HostedBrokerCredentialRead, type MachineBrokerSubject } from "./authority"
-import { mintBrokerPlaceholder, repositoryBindingId, servingBindingId, verifyBrokerPlaceholder, type BrokerServing, type HostedBrokerClaims } from "./placeholder"
+import {
+  EGRESS_BROKER_PASS_AUDIENCE,
+  machineRepositoryBindingId,
+  mintBrokerPlaceholder,
+  repositoryBindingId,
+  servingBindingId,
+  verifyBrokerPlaceholder,
+  type BrokerServing,
+  type HostedBrokerClaims,
+} from "./placeholder"
 import type { HostedRepositoryBindings } from "./repository-binding"
 
 export { EGRESS_BROKER_PASS_AUDIENCE, PLACEHOLDER_TTL_SECONDS, brokerBindingId, machineBindingId, mintBrokerPlaceholder, verifyBrokerPlaceholder, type HostedBrokerClaims } from "./placeholder"
 export type { MachineBrokerSubject } from "./authority"
-export type { HostedRepositoryBindings } from "./repository-binding"
+export type { HostedConnectionToken, HostedRepositoryBindings } from "./repository-binding"
 
 /**
  * A projection that says the account is deliverable without minting anything:
@@ -77,6 +87,17 @@ export type BrokerLease = { epoch: number; hostId: string }
 /** A connected machine a placeholder is minted for: its enrollment, at the serving generation it holds, on its host. */
 export type MachineBrokerLease = { enrollmentId: string; servingGeneration: number; hostId: string }
 
+/**
+ * One clone of a GitHub repository onto a connected machine through the
+ * broker: the URL the checkout records, the binding URL its git fetches that
+ * repository from instead, and the header it presents there. It is spent by
+ * `spent`, and refused from then on.
+ */
+export type MachineRepositoryClone = { repoUrl: string; brokerUrl: string; authorization: string; spent: () => Promise<void> }
+
+/** A clone's git runs at most `GIT_CLONE_TIMEOUT_MS` (30 min), so its stand-in lives no longer. */
+const MACHINE_CLONE_TTL_SECONDS = 30 * 60
+
 export type HostedEgressBroker = {
   /** Mounted at `/bindings/*` on the control plane's public origin. */
   handler: (request: Request) => Promise<Response>
@@ -88,8 +109,16 @@ export type HostedEgressBroker = {
   ownerBrokerPass(input: { enrollmentId: string; spkiSha256: string }): Promise<{ token: string; expiresAt: number } | undefined>
   /** The workspace's repository binding for `lease`, through which its sandbox's git reaches the repository while that lease serves or boots. */
   repositoryBinding(input: { orgId: string; ownerUserId: string; workspaceId: string; connectionId: string; lease: BrokerLease }): Promise<{ baseUrl: string; placeholder: string; expiresAt: number }>
-  /** Installs how every repository binding resolves; until it is installed, none does. */
-  serveRepositoryClones(resolve: HostedRepositoryBindings): void
+  /**
+   * A clone of `fullName` onto the owner's connected machine through the
+   * connection `connectionId`. Its stand-in is recorded in the register under
+   * a key of its own, so `spent` takes back this clone's and nothing else.
+   * Nothing for a machine this broker would refuse, or before a register is
+   * installed.
+   */
+  machineRepositoryClone(input: { enrollmentId: string; connectionId: string; fullName: string }): Promise<MachineRepositoryClone | undefined>
+  /** Installs how every repository binding resolves, and the register a machine's clones are spent in; until then none resolves. */
+  serveRepositoryClones(resolve: HostedRepositoryBindings, clonePasses?: SandboxPassRegister): void
 }
 
 /**
@@ -170,11 +199,13 @@ export function createHostedEgressBroker(input: {
     return reader
   }
   let repositories: HostedRepositoryBindings | undefined
+  let clonePasses: SandboxPassRegister | undefined
   const authority = hostedBindingAuthority({
     credentials: input.credentials, read, workspaceOwner: input.workspaceOwner, sandboxManager: input.sandboxManager,
     ...(input.machine ? { machine: input.machine } : {}), ...(input.fetch ? { fetch: input.fetch } : {}), now,
     ...(input.credentialRefusals ? { credentialRefusals: input.credentialRefusals } : {}),
     repositories: () => repositories,
+    clonePasses: () => clonePasses,
   })
   const verified = recent<string, HostedBrokerClaims>(HELD_PLACEHOLDERS)
   const verify = async (token: string): Promise<HostedBrokerClaims | undefined> => {
@@ -241,8 +272,35 @@ export function createHostedEgressBroker(input: {
   })
   return {
     handler,
-    serveRepositoryClones: (resolve) => {
+    serveRepositoryClones: (resolve, passes) => {
       repositories = resolve
+      clonePasses = passes
+    },
+    machineRepositoryClone: async ({ enrollmentId, connectionId, fullName }) => {
+      const subject = await input.machine?.(enrollmentId)
+      const passes = clonePasses
+      if (!subject || !passes) return undefined
+      const repoUrl = `https://github.com/${fullName}.git`
+      const owner = { userId: subject.ownerUserId, orgId: subject.orgId }
+      const id = machineRepositoryBindingId({ ...owner, enrollmentId, fullName })
+      const lease = { leaseId: machineLeaseId(enrollmentId), leaseGeneration: subject.servingGeneration, runtimeId: subject.hostId }
+      const minted = await mintBrokerPlaceholder({
+        identity: { ...owner, enrollmentId, ...lease },
+        bindingId: id,
+        credentialId: connectionId,
+        repository: fullName,
+        ttlSeconds: MACHINE_CLONE_TTL_SECONDS,
+      }, input.env, { now })
+      const cloneKey = `machine-clone:${minted.jti}`
+      await passes.record({ jti: minted.jti, audience: EGRESS_BROKER_PASS_AUDIENCE, scope: { ...owner, workspaceId: cloneKey }, issuedAt: now(), expiresAt: minted.expiresAt })
+      return {
+        repoUrl,
+        brokerUrl: bindingBaseUrl(input.origin, id),
+        authorization: `Bearer ${minted.placeholder}`,
+        spent: async () => {
+          await passes.revoke({ workspaceId: cloneKey, principal: owner, audience: EGRESS_BROKER_PASS_AUDIENCE, reason: "machine_clone_finished" })
+        },
+      }
     },
     repositoryBinding: async ({ orgId, ownerUserId, workspaceId, connectionId, lease }) => {
       const identity = { userId: ownerUserId, orgId, workspaceId }

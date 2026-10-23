@@ -246,4 +246,13 @@ export type ElectronAPI = {
     onStreamEnd: (listener: (payload: { streamId: string }) => void) => () => void
     onStreamError: (listener: (payload: { streamId: string; message: string }) => void) => () => void
   }
+  sshConnect: {
+    check: (target: SshTargetInput) => Promise<unknown>
+    trust: (input: { scanId: string }) => Promise<unknown>
+    install: (input: { runId: string; target: SshTargetInput; code: string }) => Promise<unknown>
+    cancel: (input: { runId: string }) => Promise<unknown>
+    onStep: (listener: (step: unknown) => void) => () => void
+  }
 }
+
+export type SshTargetInput = { destination: string; port?: number; identityFile?: string; folder?: string }

@@ -55,8 +55,50 @@ package is published.
 
 ## Connect a machine
 
-On a signed-in laptop (`claxedo login`), mint a single-use invitation scoped to
-the folders the machine may serve:
+In Claxedo, **Connect a machine…** shows one command with a pairing code in it.
+Run it on the machine, in the folder you want to share:
+
+```sh
+curl -fsSL https://app.claxedo.com/api/claxedo/connect | sh -s -- K7QM4PXD9R2TWB6HJ3NF
+```
+
+On Windows the drawer's Windows tab shows the PowerShell twin, which fetches
+`connect.ps1` instead. The script is `install.sh` (or `install.ps1`) served by
+the control plane with its own URL set inside, so a code is redeemed where it
+was minted. It reuses an installed `claxedo` the control plane accepts, else
+installs one as below, then runs `claxedo connect --pair <code>
+--install-service`. The machine waits for you to approve it in the app; the
+approval names it, makes the folder the command ran in its one root and shares
+that folder. A denial, or 15 minutes with no answer, ends the command with exit
+78 and one line saying why. The code is single use and lasts 15 minutes; signing
+out of the app cancels the codes no machine has used yet.
+
+Run the command again in another folder on a machine that is already connected
+and it asks you, in the app, to share that folder too; it never enrolls the
+machine twice. On a machine whose owner removed it, or that is connected to
+another control plane, it asks once before connecting again.
+
+For a server no one approves from a browser, such as a cloud VM on its first
+boot, the drawer's **For a server without a browser** takes a name and the
+folder to share, typed as the server writes it, and mints a pre-approved
+invitation. It shows a cloud-init snippet and the same as one command:
+
+```sh
+curl -fsSL https://app.claxedo.com/api/claxedo/connect | sh -s -- --invitation chx_inv_2.… --root '/srv/app'
+```
+
+`connect.ps1` takes `-Invitation` and `-Root`. The script writes the invitation
+to a file only this user can read and runs `claxedo connect --token-file <file>
+--root <folder> --install-service`: the machine connects with no approval, the
+control plane makes the folder its one root and assigns it as its first
+workspace, and the invitation's name is the machine's. On Linux the script turns
+lingering on where it may (root, which is what cloud-init runs as, always may)
+and otherwise prints the one command that does, so the service runs with no one
+logged in. The invitation works once, within the hour.
+
+A signed-in CLI mints the same kind of invitation, scoped to any folders. On a
+signed-in laptop (`claxedo login`), mint a single-use invitation scoped to the
+folders the machine may serve:
 
 ```sh
 claxedo host invite --name build-box --root /srv/projects
@@ -72,10 +114,19 @@ That redeems the invitation, removes the token file, and installs a user
 service (`systemd --user` on Linux, a LaunchAgent on macOS) that keeps
 `claxedo connect --foreground` running. The unit carries the PATH of the shell
 that installed it, so the service finds the same `codex`, `node` and other
-tools the shell does; run `--install-service` again after changing it. `claxedo connect --help` documents every
+tools the shell does; run `--install-service` again after changing it or after
+updating the CLI, since it restarts a service that already runs. `claxedo connect --help` documents every
 flag, the exit codes (78 = the control plane decided against this machine, so a
 service manager must not restart into it), and what a user service does and
 does not isolate.
+
+A connected machine reports its CLI version and system to the control plane
+each time it starts serving. When it cannot serve, it reports why with the
+command that fixes it: its service could not start (lingering off, no user
+manager, or a Windows task waiting for its user's logon), the desktop app's
+daemon already runs beside it, or it was stopped. Settings → Machines shows that
+line until the machine next starts serving, and a CLI below the version the
+control plane accepts shows the command that updates it.
 
 `claxedo doctor` checks, one line each, what a connected machine needs: Node
 24, the control plane and the relay it uses answering, the enrollment, the

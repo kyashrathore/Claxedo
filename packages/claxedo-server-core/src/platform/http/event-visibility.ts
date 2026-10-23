@@ -71,6 +71,9 @@ export function eventVisibleTo(principal: EventScopePrincipal, event: ControlPla
     case "provision":
       // A workspace is one person's: only its owner hears its machine start.
       return event.ownerUserId === principal.subject
+    case "machine.changed":
+      // A machine and the pairings that enroll it are one person's.
+      return event.ownerUserId === principal.subject
     case "usage.quota.changed":
       // Carries no figures and names no account: the quota read it provokes
       // is what applies `operator_required`.

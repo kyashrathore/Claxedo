@@ -1,4 +1,4 @@
-import type { Placement, PlacementId, ProjectId } from "@/server"
+import type { MachineId, Placement, PlacementId, ProjectId } from "@/server"
 
 export type WherePlace = "machine" | "cloud"
 
@@ -38,8 +38,18 @@ export function groupedPlaces(entries: readonly WhereEntry[]): ReadonlySet<Where
   return places.size > 1 ? places : new Set()
 }
 
+function connectedMachineOf(placement: Placement): MachineId | undefined {
+  return placement.kind === "cloud" || placement.onThisMachine ? undefined : placement.machineId
+}
+
 export function worktreeRoots(entries: readonly WhereEntry[]): readonly Placement[] {
-  return entries.flatMap((entry) => (entry.placement.kind === "folder" && entry.placement.onThisMachine ? [entry.placement] : []))
+  const here = entries.flatMap((entry) => (entry.placement.kind === "folder" && entry.placement.onThisMachine ? [entry.placement] : []))
+  const machines = new Map<MachineId, Placement>()
+  for (const { placement } of entries) {
+    const machine = connectedMachineOf(placement)
+    if (machine !== undefined && !machines.has(machine)) machines.set(machine, placement)
+  }
+  return [...here, ...machines.values()]
 }
 
 export function currentPlacement(entries: readonly WhereEntry[], choice: WhereChoice): Placement | undefined {

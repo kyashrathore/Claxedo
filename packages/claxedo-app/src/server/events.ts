@@ -56,6 +56,7 @@ export type ServerEvent =
   | { readonly type: "sessionsChanged"; readonly placementId?: PlacementId }
   | { readonly type: "placementsChanged" }
   | { readonly type: "usageChanged" }
+  | { readonly type: "machinesChanged" }
   | { readonly type: "cloudWorkspaceChanged"; readonly workspaceId: PlacementId; readonly status: CloudWorkspaceStatus }
   | { readonly type: "terminalCreated"; readonly terminal: Terminal }
   | { readonly type: "terminalUpdated"; readonly terminal: Terminal }

@@ -160,4 +160,11 @@ export default {
   "projects.environment.duplicate": "\"{{name}}\" is listed twice",
   "projects.environment.valueless": "\"{{name}}\" needs a value",
   "projects.edit.action": "Edit",
+  "projects.create.machine": "Machine",
+  "projects.create.cloneOnto": "Clone onto",
+  "projects.create.cloneInto": "Clone into a folder on {{machine}}",
+  "projects.where.removeMachine": "Remove",
+  "projects.where.removeMachine.title": "Remove {{name}} from {{machine}}?",
+  "projects.where.removeMachine.body": "Claxedo stops using this folder on {{machine}}. The folder and its files stay there.",
+  "projects.where.removeMachine.confirm": "Remove from machine",
 }

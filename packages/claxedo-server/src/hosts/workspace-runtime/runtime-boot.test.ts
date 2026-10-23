@@ -166,7 +166,7 @@ describe.skipIf(process.platform === "win32")("claxedo workspace-runtime boot po
       await claxedoWorkspaceRuntimeBootFromEnv({ ...env, CLAXEDO_GITHUB_CLONE_AUTH: "Bearer renewed-pass" })
       expect(git(["config", "--get-all", `http.${brokered}.extraheader`])).toBe("Authorization: Bearer renewed-pass")
       await expect(claxedoWorkspaceRuntimeBootFromEnv({ ...env, CLAXEDO_GITHUB_CLONE_BROKER_URL: "http://api.claxedo.test/bindings/b1" }))
-        .rejects.toThrow("Invalid GitHub clone broker URL")
+        .rejects.toThrow("git credential broker is not an HTTPS URL")
       const { CLAXEDO_GITHUB_CLONE_AUTH: _pass, ...brokerWithoutPass } = env
       await expect(claxedoWorkspaceRuntimeBootFromEnv(brokerWithoutPass)).rejects.toThrow("names no authorization")
 

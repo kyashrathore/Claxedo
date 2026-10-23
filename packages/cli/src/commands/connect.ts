@@ -14,6 +14,8 @@ import { defaultHostDeps, runHost, withBootstrapRetry, type HostDeps } from "../
 import { desktopDaemonDiscoveryFiles, desktopDaemonState, type DesktopDaemonState } from "../connect/desktop-daemon"
 import { connectPaths, connectStateStore } from "../connect/paths"
 import { defaultServiceDeps, serviceKind, startService, uninstallService, writeServiceUnit, type ServiceDeps } from "../connect/service"
+import { defaultPairingDeps, pair, reportPairing, type PairingDeps } from "../connect/pair"
+import { reportMachine } from "../connect/report"
 
 export type ConnectDeps = {
   host: HostDeps
@@ -25,6 +27,7 @@ export type ConnectDeps = {
   removeDir: (dir: string) => Promise<void>
   /** What the desktop app's local daemon on this machine turned out to be. */
   desktopDaemon: () => Promise<DesktopDaemonState>
+  pairing: PairingDeps
 }
 
 export function defaultConnectDeps(): ConnectDeps {
@@ -38,16 +41,18 @@ export function defaultConnectDeps(): ConnectDeps {
     displayName: machineDisplayName(process.platform),
     removeDir: (dir) => fs.rm(dir, { recursive: true, force: true }),
     desktopDaemon: () => desktopDaemonState({ files: desktopDaemonDiscoveryFiles(process.env, os.homedir()) }),
+    pairing: defaultPairingDeps(),
   }
 }
 
 export const connectHelp = `${connectUsage}
 
+  --pair CODE           connect through the pairing code Claxedo's "Connect a machine…" shows; this machine waits for its owner to approve it and then shares the folder this command runs in (on a machine already connected, it asks to share that folder instead)
   --token-file F        redeem an invitation from F (minted by \`claxedo host invite\`); the file is removed once the enrollment is on disk
   --root DIR            serve only under DIR (repeatable, absolute as this machine writes it); the effective roots are the owner's scope ∩ these
-  --name N              this machine's display name at first enrollment (default: the name this computer answers to)
+  --name N              this machine's display name at first enrollment (default: the name this computer answers to); a name the invitation carries wins
   --direct on|off       whether this machine also listens, TLS only, on its private-network addresses (LAN, tailnet) so the owner's desktop app on the same network reaches it without the relay; on by default, remembered until changed, and off means nothing listens and no route is reported
-  --install-service     enroll if --token-file is given, then install and start a user service that runs \`claxedo connect --foreground\`
+  --install-service     enroll if --token-file is given, then install and start a user service that runs \`claxedo connect --foreground\`, restarting it when it already runs
   --uninstall-service   stop and remove that service
   --foreground          serve in this process (the default when no service flag is given)
   --alongside-desktop   serve even while the Claxedo desktop app's daemon is running on this machine; without it, connect refuses to start beside a live daemon (exit 78), since the desktop serves this machine under its own enrollment when its remote access is on
@@ -200,6 +205,30 @@ async function enroll(deps: ConnectDeps, args: ConnectArgs, existing: HostState 
   return outcome.state
 }
 
+async function installAndStartService(deps: ConnectDeps, state: HostState, args: ConnectArgs, log: (line: string) => void) {
+  const service = deps.service()
+  const installed = await writeServiceUnit(service, { alongsideDesktop: args.alongsideDesktop })
+  await deps.store.save({ ...state, service: installed })
+  const start = await startService(service, installed)
+  for (const line of start.lines) log(line)
+  if (start.started) return 0
+  await reportMachine(state, { fetch: deps.host.fetch, log, blocked: start.blocked })
+  return DECISION_EXIT_CODE
+}
+
+/** A live desktop daemon owns this machine; one already enrolled tells its owner why it is not serving too. */
+async function refuseBesideDesktop(deps: ConnectDeps, daemon: Extract<DesktopDaemonState, { state: "live" }>): Promise<never> {
+  const enrolled = await deps.store.load().catch(() => undefined)
+  if (enrolled?.enrollment) {
+    const fix = enrolled.service ? "claxedo connect --install-service --alongside-desktop" : "claxedo connect --alongside-desktop"
+    await reportMachine(enrolled, { fetch: deps.host.fetch, log: deps.host.log, blocked: { reason: "desktop_daemon", fix } })
+  }
+  throw new HostConnectDecisionError(
+    `the Claxedo desktop app's daemon is running on this machine (pid ${daemon.pid}, port ${daemon.port}, ${daemon.file}); the desktop serves this machine under its own enrollment when its remote access is on, so pass --alongside-desktop to run \`claxedo connect\` as a second machine beside it`,
+    {},
+  )
+}
+
 /**
  * The command, returning the process exit code rather than exiting: the
  * integration tests run it in-process, and `index.ts` maps the number.
@@ -236,12 +265,7 @@ export async function connect(argv: string[], deps: ConnectDeps = defaultConnect
       // Only `absent` means nothing owns this machine. The other three each
       // name an owner, and starting a competing one over the same data
       // directory would make the damage worse than whatever is wrong with it.
-      if (daemon.state === "live") {
-        throw new HostConnectDecisionError(
-          `the Claxedo desktop app's daemon is running on this machine (pid ${daemon.pid}, port ${daemon.port}, ${daemon.file}); the desktop serves this machine under its own enrollment when its remote access is on, so pass --alongside-desktop to run \`claxedo connect\` as a second machine beside it`,
-          {},
-        )
-      }
+      if (daemon.state === "live") await refuseBesideDesktop(deps, daemon)
       if (daemon.state === "unresponsive") {
         throw new HostConnectDecisionError(
           `the Claxedo desktop app's daemon is published on this machine (pid ${daemon.pid}, port ${daemon.port}, ${daemon.file}) but is not answering; it still owns that data directory, so recover it from the desktop app or stop that process yourself before running \`claxedo connect\``,
@@ -257,6 +281,14 @@ export async function connect(argv: string[], deps: ConnectDeps = defaultConnect
     }
 
     let state = await loadHostState(deps)
+    if (args.pair !== undefined) {
+      const pairing = { host: deps.host, store: deps.store, paths: deps.paths, controlPlaneUrl: deps.controlPlaneUrl, removeDir: deps.removeDir, pairing: deps.pairing, log }
+      const paired = await pair(args, state, pairing)
+      if (typeof paired === "number") return paired
+      if (!args.installService) return await runHost({ store: deps.store, state: paired.state, deps: deps.host })
+      const installed = await installAndStartService(deps, paired.state, args, log)
+      return installed === 0 ? await reportPairing(paired.state, paired.folder, pairing) : installed
+    }
     if (state?.enrollment && args.tokenFile) {
       throw new HostConnectDecisionError(
         `this machine is already enrolled as ${state.enrollment.enrollment_id}; run \`claxedo connect --reset\` before redeeming another invitation`,
@@ -276,14 +308,7 @@ export async function connect(argv: string[], deps: ConnectDeps = defaultConnect
       await deps.store.save(state)
     }
 
-    if (args.installService) {
-      const service = deps.service()
-      const installed = await writeServiceUnit(service, { alongsideDesktop: args.alongsideDesktop })
-      await deps.store.save({ ...state, service: installed })
-      const start = await startService(service, installed)
-      for (const line of start.lines) log(line)
-      return start.started ? 0 : DECISION_EXIT_CODE
-    }
+    if (args.installService) return await installAndStartService(deps, state, args, log)
     return await runHost({ store: deps.store, state, deps: deps.host })
   } catch (error) {
     log(errorMessage(error))

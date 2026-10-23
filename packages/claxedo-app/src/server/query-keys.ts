@@ -1,4 +1,4 @@
-import type { OrgId, PlacementId, ProjectId } from "./ids"
+import type { MachineId, OrgId, PlacementId, ProjectId } from "./ids"
 import type { DiffScope, FileSearchEntries } from "./git-types"
 import type { AccountSpendRequest } from "./usage-types"
 
@@ -12,6 +12,8 @@ export const queryKeys = {
   placements: (server: string) => ["server", server, "placements"] as const,
   placementsOf: (server: string, projectId: ProjectId) => ["server", server, "placements", projectId] as const,
   machines: (server: string) => ["server", server, "machines"] as const,
+  pairing: (server: string, pairingId: string) => ["server", server, "machines", "pairings", pairingId] as const,
+  pairingRequests: (server: string) => ["server", server, "machines", "pairings"] as const,
   organizations: (server: string) => ["server", server, "organizations"] as const,
   organizationMembers: (server: string, orgId: OrgId) => ["server", server, "organizations", orgId, "members"] as const,
   accounts: (server: string) => ["server", server, "accounts"] as const,
@@ -32,8 +34,9 @@ export const queryKeys = {
     ["server", server, "plugin-skill", request.pluginInstanceId, request.skill, request.projectId ?? ""] as const,
   livePlugins: (server: string) => ["server", server, "live-plugins"] as const,
   cloud: (server: string) => ["server", server, "cloud"] as const,
-  folderPaths: (server: string) => ["server", server, "folders", "paths"] as const,
-  folderChildren: (server: string, directory: string) => ["server", server, "folders", "children", directory] as const,
+  folderPaths: (server: string, machine: MachineId | undefined) => ["server", server, "folders", machine ?? "", "paths"] as const,
+  folderChildren: (server: string, machine: MachineId | undefined, directory: string) => ["server", server, "folders", machine ?? "", "children", directory] as const,
+  folderPresence: (server: string, machine: MachineId, directory: string) => ["server", server, "folders", machine, "presence", directory] as const,
   harnessOptions: (server: string, placementId: PlacementId, harness: string) => ["server", server, "harness", placementId, harness] as const,
   harnessCommands: (server: string, placementId: PlacementId, harness: string) => ["server", server, "harness-commands", placementId, harness] as const,
   stopsBackgroundTasks: (server: string, placementId: PlacementId, sessionId: string) => ["server", server, "stops-background-tasks", placementId, sessionId] as const,

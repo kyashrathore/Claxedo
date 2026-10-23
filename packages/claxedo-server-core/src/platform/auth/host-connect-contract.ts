@@ -115,7 +115,11 @@ export type MachinePrincipal = {
   scope: HostEnrollmentScope | undefined
   keyVersion: number
   generation: number
+  /** What the machine's last beat left: what a beat compares against to tell its owner's app that the machine came online or changed what it serves. */
+  served?: MachineServed
 }
+
+export type MachineServed = { ackedWorkspaceIds: readonly string[]; leaseExpiresAt: number }
 
 /** The enrollment as the verifier needs it, read once by `enrollment_id`. */
 export type MachineEnrollmentRow = {
@@ -128,8 +132,13 @@ export type MachineEnrollmentRow = {
   key_version: number
   serving_generation: number
   revoked_at: number | null
+  /** Why the owner revoked it, when it was the answer to a pairing; a plain removal names none. */
+  revoked_reason: "denied" | "approval_expired" | null
   paused_at: number | null
+  /** Set from a pairing's redeem until the owner approves it; the machine serves nothing meanwhile. */
+  approval_requested_at: number | null
   scope: HostEnrollmentScope | undefined
+  served?: MachineServed
   /** Owner eligibility is adapter-specific (D1: user and actor `active`; SQLite: the users row exists), so the adapter answers it. */
   ownerEligible: boolean
 }
@@ -331,6 +340,8 @@ export type HostInvitationCreateInput = {
   displayName?: string
   /** Clamped to [5 min, 24 h]; 1 h when absent. */
   expiresInMs?: number
+  /** The scope's one root is also the machine's first workspace, assigned as the inviter when the machine redeems. */
+  sharesRoot?: boolean
 }
 
 export type HostInvitationCreateResult = {
@@ -375,7 +386,69 @@ export type HostInvitationRedeemResult = {
   key_version: number
   serving_generation: number
   scope: HostEnrollmentScope
+  /** The workspace an invitation that shares its root assigned to this machine. */
+  workspace_id?: string
 }
+
+/** What a machine says about itself when it redeems a pairing code. */
+export type HostPairingMachine = {
+  hostname: string
+  os: string
+  arch: string
+  cli_version: string
+  /** The canonical path the connect command ran in: what the owner approves sharing. */
+  folder: string
+  /** `home` and `root` are said on the approval card before the owner shares that much. */
+  folder_kind: "home" | "root" | "folder"
+  /** The request's country as the edge saw it; absent where nothing reports one. */
+  country?: string
+}
+
+/** Install progress a machine reports against its code before it can sign anything. */
+export type HostPairingProgress = { stage: "installing"; hostname: string; os: string; at: number }
+
+/**
+ * Where a pairing is, from the owner's side. `machine` asks to enroll a new
+ * machine; `folder` asks to share another folder on a machine already
+ * connected. `connected` is the approved machine holding a serving
+ * generation; `ready` is its first folder served.
+ */
+export type HostPairingView = {
+  pairing_id: string
+  expires_at: number
+  /** When a machine redeemed the code: when it asked. */
+  asked_at?: number
+  request: "machine" | "folder" | undefined
+  stage: "waiting" | "installing" | "awaiting_approval" | "approved" | "connected" | "ready" | "denied" | "expired"
+  progress?: HostPairingProgress
+  machine?: HostPairingMachine
+  enrollment_id?: string
+  host_id?: string
+  display_name?: string
+  /** The workspace the approval assigned, once approved. */
+  workspace_id?: string
+}
+
+export type HostPairingCreateResult = { pairingId: string; code: string; expiresAt: number }
+
+export type HostPairingRedeemInput = {
+  code: string
+  hostId: string
+  publicKey: string
+  /** Over `pairingRedeemPayload` from account-contract/machine. */
+  signature: string
+  machine: Omit<HostPairingMachine, "folder_kind" | "country"> & { home?: string }
+  country?: string
+}
+
+export type HostPairingRedeemResult = HostInvitationRedeemResult & { pairing_id: string }
+
+export type HostPairingFolderInput = { code: string; folder: string; home?: string; country?: string }
+
+/** The machine's own view of its pairing, read on each ring while it waits. */
+export type HostPairingSelf = Pick<HostPairingView, "pairing_id" | "stage" | "display_name" | "workspace_id"> & { folder: string }
+
+export type HostPairingDecision = { pairingId: string; displayName?: string }
 
 export type HostScopeUpdateResult = {
   host_id: string
@@ -422,6 +495,11 @@ export type HostInvitationErrorCode =
   | "invitation_revoked"
   | "invitation_redeemed"
   | "invitation_host_conflict"
+  | "pairing_invalid"
+  | "pairing_expired"
+  | "pairing_used"
+  | "pairing_owner_signed_out"
+  | "pairing_decided"
 
 export type HostMachineErrorCode =
   | "enrollment_generation_superseded"

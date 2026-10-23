@@ -19,7 +19,9 @@ test("a catalog probe for a draft that names its model asks Claude Code with tha
   expect(claudeProbeModel(draft())).toEqual({})
 })
 
-test("disposing the transport retires a model probe still waiting on Claude Code, so no probe outlives its owner", async () => {
+const CLAUDE_SDK_CLOSE_GRACE_MS = 2_000
+
+test("disposing the transport retires a model probe still waiting on Claude Code at once, so no probe outlives its owner", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "claude-probe-"))
   const probes: ScriptedProcess<unknown>[] = []
   let spawned = () => {}
@@ -41,8 +43,10 @@ test("disposing the transport retires a model probe still waiting on Claude Code
     const first = await Promise.race([firstSpawn, listing])
     expect(first, `the listing settled before Claude Code was spawned: ${String(first)}`).toBe("spawned")
 
+    const disposing = Date.now()
     await transport.dispose()
 
+    expect(Date.now() - disposing).toBeLessThan(CLAUDE_SDK_CLOSE_GRACE_MS / 2)
     expect(probes).toHaveLength(1)
     expect(probes[0]!.retirements).toBeGreaterThan(0)
     expect(await probes[0]!.exited).toEqual({ code: 0, signal: null })

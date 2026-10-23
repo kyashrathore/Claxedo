@@ -2,7 +2,49 @@ import { base64UrlDecode, base64UrlEncode } from "@claxedo/helpers/crypto"
 
 export const MACHINE_REQUEST_DOMAIN = "claxedo.machine-request.v1"
 export const INVITATION_REDEEM_DOMAIN = "claxedo.host-enrollment.redeem.v1"
+export const PAIRING_REDEEM_DOMAIN = "claxedo.host-pairing.redeem.v1"
 export const INVITATION_TOKEN_PREFIX = "chx_inv_2"
+
+/** How long a pairing code can be redeemed, and how long its machine then waits for the owner's answer. */
+export const PAIRING_TTL_MS = 15 * 60_000
+export const PAIRING_CODE_LENGTH = 20
+/** Crockford's base32: no I, L, O or U, so a code read aloud or retyped survives. */
+export const PAIRING_CODE_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+const PAIRING_CODE_PATTERN = new RegExp(`^[${PAIRING_CODE_ALPHABET}]{${PAIRING_CODE_LENGTH}}$`)
+/** The oldest `claxedo` that understands `connect --pair`; a connect script reuses an installed CLI only at or above it. */
+export const MINIMUM_CONNECT_CLI_VERSION = "0.2.2"
+export const CONNECT_SCRIPT_PATH = "/api/claxedo/connect"
+/** The hex sha256 of the connect script's decoded text, stated beside it; an edge's compression does not change it. */
+export const CONNECT_SCRIPT_SHA256_HEADER = "x-claxedo-script-sha256"
+
+/** Read as the connect script reads it: the first three numeric parts, so `0.2.2-beta.1` is `0.2.2`. */
+function cliVersionParts(version: string): [number, number, number] | undefined {
+  const match = /^v?(\d+)\.(\d+)\.(\d+)/.exec(version.trim())
+  return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : undefined
+}
+
+/** Whether a machine's reported `claxedo` is older than the one this control plane accepts; a version it cannot read is not. */
+export function cliVersionBelowAccepted(version: string, accepted = MINIMUM_CONNECT_CLI_VERSION) {
+  const reported = cliVersionParts(version)
+  const minimum = cliVersionParts(accepted)
+  if (!reported || !minimum) return false
+  const difference = reported[0] - minimum[0] || reported[1] - minimum[1] || reported[2] - minimum[2]
+  return difference < 0
+}
+
+/**
+ * Why a machine that should serve cannot, as the machine itself saw it: its
+ * Linux user manager is out of reach (lingering off, or no runtime dir or
+ * manager answering), its Windows task waits for its user's next logon, the
+ * desktop app's daemon already runs beside it, or it was told to stop.
+ */
+export const MACHINE_BLOCKED_REASONS = ["linger_off", "user_manager_unreachable", "waiting_for_logon", "desktop_daemon", "stopped"] as const
+
+export type MachineBlockedReason = (typeof MACHINE_BLOCKED_REASONS)[number]
+
+export function isMachineBlockedReason(value: unknown): value is MachineBlockedReason {
+  return typeof value === "string" && (MACHINE_BLOCKED_REASONS as readonly string[]).includes(value)
+}
 
 export const MACHINE_REQUEST_HEADERS = {
   enrollmentId: "x-claxedo-enrollment-id",
@@ -36,6 +78,25 @@ export function invitationRedeemPayload(input: { invitationId: string; hostId: s
   return [
     INVITATION_REDEEM_DOMAIN,
     `invitation_id=${input.invitationId}`,
+    `host_id=${input.hostId}`,
+    `public_key_sha256=${input.publicKeySha256}`,
+  ].join("\n")
+}
+
+/**
+ * The code as the alphabet spells it, or undefined. Case, spaces and dashes
+ * are what a person adds when retyping; `O`, `I` and `L` are what they mistake
+ * for the digits Crockford maps them to.
+ */
+export function pairingCode(input: string): string | undefined {
+  const code = input.toUpperCase().replace(/[\s-]/g, "").replace(/O/g, "0").replace(/[IL]/g, "1")
+  return PAIRING_CODE_PATTERN.test(code) ? code : undefined
+}
+
+export function pairingRedeemPayload(input: { codeSha256: string; hostId: string; publicKeySha256: string }) {
+  return [
+    PAIRING_REDEEM_DOMAIN,
+    `code_sha256=${input.codeSha256}`,
     `host_id=${input.hostId}`,
     `public_key_sha256=${input.publicKeySha256}`,
   ].join("\n")

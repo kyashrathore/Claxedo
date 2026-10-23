@@ -1,6 +1,6 @@
 /**
- * First boot of a `claxedo connect` host: turn an invitation file into an
- * enrollment, durably.
+ * First boot of a `claxedo connect` host: turn an invitation file, or a
+ * pairing code, into an enrollment, durably.
  *
  * The order of writes is the recovery story. The key, the control-plane URL
  * and the `bootstrap` marker reach disk BEFORE the redeem request leaves, so a
@@ -11,10 +11,11 @@
  * file removed and the marker cleared.
  */
 
-import { type HostKeyPair } from "./host-identity"
-import { invitationRedeemPayload, decodeInvitationToken, publicKeyFingerprint } from "@claxedo/account-contract/machine"
+import { hostSha256Hex, type HostKeyPair } from "./host-identity"
+import { invitationRedeemPayload, decodeInvitationToken, pairingCode, pairingRedeemPayload, publicKeyFingerprint } from "@claxedo/account-contract/machine"
 import {
   canonicalControlPlaneUrl,
+  canonicalFetchEndpointUrl,
   ControlPlaneUrlError,
   isPlainRecord,
   type HostState,
@@ -22,6 +23,7 @@ import {
 } from "./host-state"
 import {
   HOST_ENROLLMENT_REDEEM_PATH,
+  HOST_PAIRING_REDEEM_PATH,
   HostedHttpError,
   HostedRedirectError,
   controlPlaneRequestUrl,
@@ -204,4 +206,75 @@ export async function redeemInvitation(input: {
   await input.store.save(enrolled)
   const state = await input.store.finishPendingCleanup(enrolled)
   return { state, resumed: value.resumed === true }
+}
+
+/** What a person sees when the control plane refuses a pairing code, one line each. */
+export const PAIRING_REFUSALS: Readonly<Record<string, string>> = {
+  pairing_invalid: "This code is not valid; copy the command from Connect a machine… again.",
+  pairing_expired: "This code expired; open Connect a machine… in Claxedo for a new one.",
+  pairing_used: "This code was already used; open Connect a machine… in Claxedo for a new one.",
+  pairing_owner_signed_out: "The person who made this code signed out; make a new one in Claxedo.",
+}
+
+export function pairingRefusal(error: unknown, controlPlaneUrl: string) {
+  const decision = asDecision(error, controlPlaneUrl)
+  const line = decision?.code ? PAIRING_REFUSALS[decision.code] : undefined
+  return decision && line ? new HostConnectDecisionError(line, { ...(decision.code ? { code: decision.code } : {}), cause: error }) : decision
+}
+
+export type PairingMachine = { hostname: string; os: string; arch: string; cli_version: string; folder: string; home?: string }
+
+/**
+ * Redeem a pairing code. The key and host id are on disk before the request
+ * leaves, so a redeem whose answer never arrived is resumed by running the
+ * same command again: the control plane answers `resumed: true` for the same
+ * key and host id. The enrollment that comes back waits for its owner's
+ * approval and has no roots.
+ */
+export async function redeemPairing(input: {
+  code: string
+  store: HostStateStore
+  state: HostState
+  keys: HostKeyPair
+  machine: PairingMachine
+  fetch: FetchLike
+  requestTimeoutMs?: number
+}): Promise<RedeemOutcome & { approvalUrl: string }> {
+  const code = pairingCode(input.code)
+  if (!code) throw new HostConnectDecisionError(PAIRING_REFUSALS.pairing_invalid ?? "", { code: "pairing_invalid" })
+  const controlPlaneUrl = canonicalControlPlaneUrl(input.state.control_plane_url)
+  const pending: HostState = { ...input.state, control_plane_url: controlPlaneUrl }
+  await input.store.save(pending)
+  const publicKeySha256 = await publicKeyFingerprint(input.keys.publicKey)
+  const signature = await input.keys.sign(pairingRedeemPayload({ codeSha256: await hostSha256Hex(code), hostId: pending.host_id, publicKeySha256 }))
+  const bodyText = JSON.stringify({ code, hostId: pending.host_id, publicKey: input.keys.publicKey, signature, machine: input.machine })
+  let value: unknown
+  try {
+    value = await postJson(input.fetch, controlPlaneRequestUrl(controlPlaneUrl, HOST_PAIRING_REDEEM_PATH), bodyText, {}, input.requestTimeoutMs ?? REDEEM_REQUEST_TIMEOUT_MS)
+  } catch (error) {
+    throw pairingRefusal(error, controlPlaneUrl) ?? error
+  }
+  if (!isPlainRecord(value) || !isPlainRecord(value.enrollment)) throw new Error("redeem returned no enrollment")
+  const hostId = requireString(value.enrollment.host_id, "enrollment.host_id")
+  if (hostId !== pending.host_id) throw new Error(`redeem enrolled host ${hostId}, but this host is ${pending.host_id}`)
+  const scope = decodeScope(value.scope)
+  const enrolled: HostState = {
+    ...pending,
+    enrollment: {
+      enrollment_id: requireString(value.enrollment.enrollment_id, "enrollment.enrollment_id"),
+      owner_display: typeof value.owner_display_name === "string" ? value.owner_display_name : "",
+      org_id: typeof value.org_id === "string" ? value.org_id : "",
+      enrolled_via: "invitation",
+      enrolled_at: typeof value.enrollment.created_at === "number" ? value.enrollment.created_at : Date.now(),
+      key_version: requireNumber(value.key_version, "key_version"),
+    },
+    pairing: {
+      pairing_id: requireString(value.pairing_id, "pairing_id"),
+      approval_url: canonicalFetchEndpointUrl(requireString(value.approval_url, "approval_url"), "approval_url"),
+    },
+    ...decodeEndpoints(value),
+    ...(scope ? { scope } : {}),
+  }
+  await input.store.save(enrolled)
+  return { state: enrolled, resumed: value.resumed === true, approvalUrl: enrolled.pairing?.approval_url ?? "" }
 }

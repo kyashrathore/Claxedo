@@ -74,14 +74,15 @@ describe("service units", () => {
       "loginctl show-user svc --property=Linger --value",
       "systemctl --user is-system-running",
       "systemctl --user daemon-reload",
-      "systemctl --user enable --now claxedo-connect.service",
+      "systemctl --user enable claxedo-connect.service",
+      "systemctl --user restart claxedo-connect.service",
     ])
     expect(lines[0]).toBe(`Installed and started claxedo-connect.service (${unit}).`)
     expect(lines.some((line) => line.includes("exit 78) is not retried"))).toBe(true)
 
     expect(await uninstallService(deps, service)).toEqual([`Stopped and removed claxedo-connect.service (${unit}).`])
     expect(files.has(unit)).toBe(false)
-    expect(calls.slice(4)).toEqual(["systemctl --user disable --now claxedo-connect.service", "systemctl --user daemon-reload"])
+    expect(calls.slice(5)).toEqual(["systemctl --user disable --now claxedo-connect.service", "systemctl --user daemon-reload"])
   })
 
   test("systemd quoting escapes its own % specifier and $ expansion inside quotes", () => {
@@ -121,7 +122,7 @@ describe("service units", () => {
     const { deps, calls } = fakeDeps("linux", undefined, { manager: { code: 1, stdout: "degraded\n" } })
     const service = await writeServiceUnit(deps, { alongsideDesktop: false })
     expect((await startService(deps, service)).started).toBe(true)
-    expect(calls).toContain("systemctl --user enable --now claxedo-connect.service")
+    expect(calls).toContain("systemctl --user restart claxedo-connect.service")
 
     const failing = fakeDeps("linux")
     failing.deps.run = async (file, args) => {
@@ -129,7 +130,7 @@ describe("service units", () => {
       return deps.run(file, args)
     }
     await expect(startService(failing.deps, service)).rejects.toThrow(
-      "systemctl --user enable --now claxedo-connect.service exited with 1",
+      "systemctl --user enable claxedo-connect.service exited with 1",
     )
   })
 
@@ -139,8 +140,13 @@ describe("service units", () => {
     test("lingering off (cloud-init, no login session): unit written, nothing started, the linger command printed", async () => {
       const { deps, calls, files } = fakeDeps("linux", "/var/lib/claxedo", { linger: { code: 1, stdout: "" } })
       const service = await writeServiceUnit(deps, { alongsideDesktop: false })
-      const { started, lines } = await startService(deps, service)
+      const start = await startService(deps, service)
+      const { started, lines } = start
       expect(started).toBe(false)
+      expect(start.started ? undefined : start.blocked, "what the owner's app is told").toEqual({
+        reason: "linger_off",
+        fix: "sudo loginctl enable-linger svc && claxedo connect --install-service",
+      })
       expect(files.get(unit)).toContain("RestartPreventExitStatus=78")
       expect(calls, "systemctl is never asked to start what it cannot reach").toEqual([
         "loginctl show-user svc --property=Linger --value",
@@ -163,6 +169,7 @@ describe("service units", () => {
       const check = await linuxUserManager(deps)
       expect(check).toEqual({
         reachable: false,
+        cause: "user_manager_unreachable",
         reason: "XDG_RUNTIME_DIR is unset, so systemctl --user cannot find the user manager's bus",
         remedy: ["export XDG_RUNTIME_DIR=/run/user/$(id -u svc)", "claxedo connect --install-service"],
       })
@@ -288,6 +295,7 @@ describe("service units", () => {
     expect(calls).toEqual([
       "whoami.exe",
       `schtasks.exe /Create /TN ClaxedoConnect /XML ${taskXml} /F`,
+      "schtasks.exe /End /TN ClaxedoConnect",
       "schtasks.exe /Run /TN ClaxedoConnect",
       "schtasks.exe /Query /TN ClaxedoConnect /FO CSV /NH",
     ])
@@ -306,7 +314,7 @@ describe("service units", () => {
     expect(lines[1]).toContain("exit 78), which disables the task until `schtasks /Change /TN ClaxedoConnect /Enable`")
 
     expect(await uninstallService(deps, service)).toEqual([`Stopped and removed the scheduled task ClaxedoConnect (${script}).`])
-    expect(calls.slice(4)).toEqual(["schtasks.exe /End /TN ClaxedoConnect", "schtasks.exe /Delete /TN ClaxedoConnect /F"])
+    expect(calls.slice(5)).toEqual(["schtasks.exe /End /TN ClaxedoConnect", "schtasks.exe /Delete /TN ClaxedoConnect /F"])
     expect(files.size).toBe(0)
   })
 
@@ -319,9 +327,10 @@ describe("service units", () => {
       return { code: 0, stdout: "" }
     }
     const service = await writeServiceUnit(deps, { alongsideDesktop: false })
-    const { started, lines } = await startService(deps, service)
-    expect(started).toBe(false)
-    expect(lines[0]).toBe(`Installed the scheduled task ClaxedoConnect (${service.unit}) but it is Ready: it runs in svc's desktop session, so it starts at that user's next logon.`)
+    const start = await startService(deps, service)
+    expect(start.started).toBe(false)
+    expect(start.lines[0]).toBe(`Installed the scheduled task ClaxedoConnect (${service.unit}) but it is Ready: it runs in svc's desktop session, so it starts at that user's next logon.`)
+    expect(start.started ? undefined : start.blocked).toEqual({ reason: "waiting_for_logon", fix: "schtasks /Run /TN ClaxedoConnect" })
     expect(windowsTaskStatus("")).toBe("unknown")
   })
 

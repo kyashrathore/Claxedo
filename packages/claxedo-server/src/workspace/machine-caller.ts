@@ -38,7 +38,7 @@ export async function admitMachineCaller(
   services: ControlPlaneServices,
   budgets: MachineCallerBudgets,
   key: string,
-  options: { admitPaused?: boolean } = {},
+  options: { admitHeld?: boolean } = {},
 ): Promise<{ machine: MachinePrincipal; bodyText: string } | Response> {
   const limited = clientBudget(c, budgets.clientRateLimiter, `client:${key}`)
   if (limited) return limited

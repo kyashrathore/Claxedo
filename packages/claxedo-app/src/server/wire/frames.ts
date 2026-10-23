@@ -196,7 +196,14 @@ function readerEvent(frame: Frame, address: Address): ServerEvent | undefined {
   return ref ? { type: "readerChanged", ref, reader: readerFromWire(frame.raw) } : undefined
 }
 
+const DOORBELLS: Readonly<Record<string, Extract<ServerEvent, { type: "usageChanged" | "pluginsChanged" | "machinesChanged" }>>> = {
+  "usage.quota.changed": { type: "usageChanged" },
+  "plugins.changed": { type: "pluginsChanged" },
+  "machine.changed": { type: "machinesChanged" },
+}
+
 function controlEvent(frame: Frame, address: Address): ServerEvent | undefined {
+  if (Object.hasOwn(DOORBELLS, frame.type)) return DOORBELLS[frame.type]
   const placementId = framePlacementId(frame, address)
   const scoped = placementId ? { placementId } : {}
   switch (frame.type) {
@@ -214,10 +221,6 @@ function controlEvent(frame: Frame, address: Address): ServerEvent | undefined {
     case "session.inventory.changed":
     case "session.share.changed":
       return { type: "sessionsChanged", ...scoped }
-    case "usage.quota.changed":
-      return { type: "usageChanged" }
-    case "plugins.changed":
-      return { type: "pluginsChanged" }
     case "provision": {
       const workspaceId = nonEmptyString(frame.raw.workspaceId)
       return workspaceId ? { type: "cloudWorkspaceChanged", workspaceId: placementId ?? asPlacementId(workspaceId), status: provisionStatus(frame.raw) } : undefined

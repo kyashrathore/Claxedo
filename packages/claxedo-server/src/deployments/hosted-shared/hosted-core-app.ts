@@ -36,7 +36,7 @@ import type { SessionRowsPasses } from "../../session/session-rows-pass"
 import type { CredentialRefusals } from "../../credentials/credential-refusals"
 import { hostedWorkspaceIdleStop, WorkspaceCheckpointRoutes } from "../../workspace/routes/checkpoints"
 import { hostConnectEndpointOptions, missingBearerBody, routeAuth, signedOrError } from "../../workspace/route-support"
-import { liveSyncHostChanged } from "../../workspace/host-changed-notice"
+import { hostedMachineNotices } from "../../workspace/host-changed-notice"
 import { HostedControlRoutes } from "../../routes/hosted/control"
 import { InternalRelayResolverRoutes, type RelayTargetLookup } from "../shared-routes/internal-relay"
 import { HostedSandboxAdminRoutes } from "../../routes/hosted/sandbox-admin"
@@ -112,6 +112,7 @@ export type HostedCoreProductWorkspaceOptions = Pick<
   | "releaseRuntime"
   | "createWorkspaceRateLimiter"
   | "sandboxLeaseCap"
+  | "machineRepositoryClones"
 >
 
 export type HostedCoreAppOptions = {
@@ -294,14 +295,15 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
   )
 
   const approvedPrivateRepoHosts = privateRepoHosts(plane.env)
-  const hostChanged = liveSyncHostChanged(options.liveSyncRoom)
+  const { ringMachine, machineChanged, hostChanged } = hostedMachineNotices(options.liveSyncRoom, () => requireAuthority(services))
   const credentialChange = options.accountSetup && options.machineProviderConfig
-    ? options.machineProviderConfig.credentialChange(options.accountSetup.change, hostChanged)
+    ? options.machineProviderConfig.credentialChange(options.accountSetup.change, ringMachine)
     : options.accountSetup?.change
   const workspaceOptions: HostedWorkspaceRouteOptions = {
     privateRepoHosts: approvedPrivateRepoHosts,
     authentication: options.authentication,
     hostChanged,
+    machineChanged,
     requireCloudWorkspaceEntitlement: options.cloudWorkspaceAdmission,
     ...options.productWorkspace,
     authConfig,

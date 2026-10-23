@@ -574,6 +574,27 @@ describe("LiveSyncRoom — a machine's doorbell", () => {
 
 })
 
+describe("LiveSyncRoom — a machine's owner's notice", () => {
+  test("the owner's connection in their org room hears exactly the fields admitted, another member hears nothing, and a later one supersedes it on replay", async () => {
+    const namespace = createFakeNamespace()
+    const owner = (await connectLiveSyncRoom(namespace, subscriber("alice", "org_a"), 60_000)).body!.getReader()
+    const member = (await connectLiveSyncRoom(namespace, subscriber("bob", "org_a"), 60_000)).body!.getReader()
+    const bootstrap = await readSseFrame(owner)
+    expect(await readFrame(member)).toEqual({ type: "heartbeat" })
+    const room = liveSyncRoomNameForPrincipal({ orgId: "org_a" })
+    const notice = { type: "machine.changed", ownerUserId: "alice", hostId: "host_a", pairingId: "pair_1", ts: 12, extra: "dropped" }
+    expect(await nudgeLiveSyncRoom(namespace, room, notice as unknown as ControlPlaneEvent)).toEqual({ delivered: 1, held: 2 })
+    expect(await readFrame(owner)).toEqual({ type: "machine.changed", ownerUserId: "alice", hostId: "host_a", pairingId: "pair_1", ts: 12 })
+
+    await owner.cancel()
+    await nudgeLiveSyncRoom(namespace, room, { type: "machine.changed", ownerUserId: "alice", hostId: "host_b", ts: 13 })
+    await nudgeLiveSyncRoom(namespace, room, { type: "machine.changed", ownerUserId: "alice", pairingId: "pair_2", ts: 14 })
+    const again = (await connectLiveSyncRoom(namespace, subscriber("alice", "org_a"), 60_000, undefined, bootstrap.id)).body!.getReader()
+    expect(await readFrame(again)).toEqual({ type: "heartbeat" })
+    expect(await readFrame(again)).toMatchObject({ type: "machine.changed", pairingId: "pair_2", ts: 14 })
+  })
+})
+
 describe("live-sync room-name derivation — publisher/subscriber agreement", () => {
   test("publisher helper agrees with the subscriber for a signed caller WITHOUT a resolved org", () => {
     // The regression this pins: a publisher hand-composing `org:${orgId}` for a

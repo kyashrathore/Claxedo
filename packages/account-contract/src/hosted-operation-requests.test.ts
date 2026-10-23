@@ -13,15 +13,19 @@ const CORE = hostedOperationTable()
  */
 
 describe("CORE_HOSTED_OPERATIONS", () => {
-  test("reaches no machine-signed, invitation or relay-fence route", () => {
+  test("reaches no machine-signed or relay-fence route, and of the invitation routes only the owner's mint", () => {
     // Those routes authenticate a machine or an invitation secret, never an
     // account. An entry here would spend the account credential on them.
-    const forbidden = ["/enrollments/redeem", "/enrollments/acquire", "/enrollments/heartbeat", "/host/invitations", "/internal/relay/"]
+    const forbidden = ["/enrollments/redeem", "/enrollments/acquire", "/enrollments/heartbeat", "/internal/relay/"]
     const reached = Object.entries(CORE_HOSTED_OPERATIONS)
       .filter(([, operation]) => forbidden.some((fragment) => operation.path.pattern!.includes(fragment)))
       .map(([name]) => name)
 
     expect(reached).toEqual([])
+    const invitations = Object.entries(CORE_HOSTED_OPERATIONS)
+      .filter(([, operation]) => operation.path.pattern!.includes("/host/invitations"))
+      .map(([name, operation]) => [name, operation.method, operation.path.pattern])
+    expect(invitations).toEqual([["machines.invite", "POST", "/api/claxedo/host/invitations"]])
   })
 
   test("declares no generic proxy", () => {
@@ -603,6 +607,44 @@ describe("resolve", () => {
       expect(() => CORE.resolve(name, {}), name).toThrow(MissingOperationParameter)
       expect(() => CORE.resolve(name, { hostId: "" }), name).toThrow(MissingOperationParameter)
     }
+  })
+
+  test("renames a machine by its host id and replaces its roots by its enrollment id", () => {
+    expect(CORE.resolve("machines.rename", { hostId: "host/1", displayName: "studio" })).toEqual({
+      method: "PATCH", path: "/api/claxedo/remote-access/devices/host%2F1", body: { display_name: "studio" },
+    })
+    expect(CORE.resolve("machines.setRoots", { enrollmentId: "enr_1", roots: ["/srv/app"] })).toEqual({
+      method: "PATCH", path: "/api/claxedo/host/enrollments/enr_1/scope", body: { allowed_roots: ["/srv/app"] },
+    })
+    expect(CORE.resolve("machines.setRoots", { enrollmentId: "enr_1", roots: [] })).toMatchObject({ body: { allowed_roots: [] } })
+    expect(() => CORE.resolve("machines.rename", { hostId: "host_1" })).toThrow(MissingOperationParameter)
+    expect(() => CORE.resolve("machines.setRoots", { enrollmentId: "enr_1", roots: "/srv/app" })).toThrow(MissingOperationParameter)
+    expect(() => CORE.resolve("machines.setRoots", { enrollmentId: "enr_1", roots: ["/srv", 1] })).toThrow(MissingOperationParameter)
+  })
+
+  test("mints, follows and answers a pairing by its id, and cancels every unredeemed code at sign-out", () => {
+    expect(CORE.resolve("machines.pair")).toEqual({ method: "POST", path: "/api/claxedo/host/pairings", body: {} })
+    expect(CORE.resolve("machines.pairing", { pairingId: "invitation_1" })).toEqual({ method: "GET", path: "/api/claxedo/host/pairings/invitation_1" })
+    expect(CORE.resolve("machines.requests")).toEqual({ method: "GET", path: "/api/claxedo/host/pairings" })
+    expect(CORE.resolve("machines.approve", { pairingId: "invitation_1", displayName: "Build box" })).toEqual({
+      method: "POST", path: "/api/claxedo/host/pairings/invitation_1/approve", body: { displayName: "Build box" },
+    })
+    expect(CORE.resolve("machines.approve", { pairingId: "invitation_1" })).toEqual({ method: "POST", path: "/api/claxedo/host/pairings/invitation_1/approve", body: {} })
+    expect(CORE.resolve("machines.deny", { pairingId: "invitation_1" })).toEqual({ method: "POST", path: "/api/claxedo/host/pairings/invitation_1/deny", body: {} })
+    expect(CORE.resolve("machines.cancelPairings")).toEqual({ method: "DELETE", path: "/api/claxedo/host/pairings" })
+    for (const name of ["machines.pairing", "machines.approve", "machines.deny"] as const) {
+      expect(() => CORE.resolve(name, {}), name).toThrow(MissingOperationParameter)
+    }
+  })
+
+  test("mints a pre-approved invitation that shares the one folder it names", () => {
+    expect(CORE.resolve("machines.invite", { folder: "/srv/app", displayName: "build-box" })).toEqual({
+      method: "POST", path: "/api/claxedo/host/invitations", body: { scope: { allowed_roots: ["/srv/app"] }, sharesRoot: true, displayName: "build-box" },
+    })
+    expect(CORE.resolve("machines.invite", { folder: "/srv/app" })).toEqual({
+      method: "POST", path: "/api/claxedo/host/invitations", body: { scope: { allowed_roots: ["/srv/app"] }, sharesRoot: true },
+    })
+    expect(() => CORE.resolve("machines.invite", {})).toThrow(MissingOperationParameter)
   })
 
   test("omits a body entirely for operations that take none", () => {

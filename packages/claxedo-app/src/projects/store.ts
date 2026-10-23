@@ -1,6 +1,7 @@
 import { createMemo, type Accessor } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { useServer, type AppError, type Placement, type Project, type ProjectEnvironment, type ProjectId } from "@/server"
+import { useServer, type AppError, type Placement, type PlacementId, type Project, type ProjectEnvironment, type ProjectId } from "@/server"
+import { folderPlacesOf, type FolderPlace } from "./folder-places"
 
 export type Loaded<T> =
   | { readonly kind: "loading" }
@@ -50,10 +51,19 @@ export function useProjectPlacements(projectId: Accessor<ProjectId>): { readonly
   return { state: createMemo(() => loaded(query)), retry: () => void query.refetch() }
 }
 
+export function useFolderPlaces(): Accessor<readonly FolderPlace[]> {
+  const server = useServer()
+  const machines = useQuery(() => server.queries.machines.list())
+  const placements = useQuery(() => server.queries.placements.list())
+  return createMemo(() => folderPlacesOf(server.capabilities()?.servingMachine, machines.data ?? [], placements.data ?? []))
+}
+
 export function useProjectCommands() {
   const server = useServer()
   return {
     remove: (id: ProjectId) => server.projects.remove(id),
     reclone: (id: ProjectId) => server.projects.reclone(id),
+    recloneOnMachine: (id: PlacementId) => server.placements.recloneOnMachine(id),
+    removeFromMachine: (id: PlacementId) => server.placements.removeFromMachine(id),
   }
 }

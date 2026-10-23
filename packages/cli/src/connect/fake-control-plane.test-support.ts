@@ -22,7 +22,7 @@ export function createFakeConnectControlPlane(options: { now?: () => number; url
   /** The list route's row (`HostEnrollmentListRow`): the owner's declarations for the machine, and what it acks at its CURRENT generation. */
   const machines = () =>
     [...cp.enrollments.values()]
-      .filter((enrollment) => enrollment.revoked_at === undefined)
+      .filter((enrollment) => enrollment.revoked_at === undefined && enrollment.approval_requested_at === undefined)
       .map((enrollment) => ({
         enrollment_id: enrollment.enrollment_id,
         display_name: enrollment.display_name,

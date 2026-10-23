@@ -13,6 +13,10 @@ machine that does not need them, and traffic we cannot read.
 
 Decided by the owner on 2026-10-23:
 
+- **W7 is parked.** Per-machine certificates, a domain of our own and DNS infrastructure cost more than a direct
+  LAN route for the web returns now; the web keeps the relay. Connecting a machine is the focus instead
+  ([Connecting a machine](./2026-10-23-002-feat-connect-a-machine-ux-plan.md)).
+
 - **Model credentials by machine kind.** A cloud machine (AWS and the like) spends the owner's accounts through
   the hosted egress broker on the control plane, so the real key never reaches it. A machine on the owner's LAN
   spends them through the egress broker on the owner's main machine (the desktop app), so the key never leaves
@@ -367,22 +371,9 @@ renewal on the beat, and Pi spending a binding. The LAN path is built as above. 
   `~/.local/bin`, Homebrew or nvm were missing. `systemd-analyze verify` accepts a unit written with `%` and `$` in
   its PATH. Pi's bash on Windows is Git Bash under `%ProgramFiles%` or `%ProgramFiles(x86)%` before a bare `bash`,
   as Pi's own lookup does, since Git for Windows puts only `Git\cmd` on PATH. Not proven on macOS or Windows.
-- [ ] `install.ps1` for Windows: installs prerequisites it needs, the CLI with install scripts off, and the
-  runtime's setup, proven on a fresh Windows Server from npm. Progress:
-- [ ] Add a machine over SSH from the desktop app: install, start and enroll, with a checksum-verified release.
-  Progress:
-- [ ] The 29-minute Windows install is explained and fixed or documented with evidence. Progress: an install writes
-  568 packages, 56,007 files and 824 MB, 52,419 of the files from OpenCode's dependency tree; the runtime no longer
-  installs the Claude Agent SDK's 230 MB binary (850a3a1d; 574 MB packed). On Linux an install takes 70 s cold, 41 s
-  of it npm resolving the tree, and an update rewrites the whole tree (`npm install -g`, 79 s for an unchanged
-  version). `packages/cli/scripts/measure-install.mjs` times each phase; the CI job that runs it on Windows waits on
-  the owner, since GitHub refuses workflow changes from the agent. On Windows Server 2025 (t3.large, 2 vCPU, Node 24,
-  npm 11.19, Defender real-time on), 2026-10-23: 0.2.1 installs in 896 s cold and 680 s from a warm cache, 671 s of
-  it `reify:unpack` and 192 s `idealTree`; the packed 0.2.2 in 850 s and 664 s. Defender's `MsMpEng` spent about
-  2,300 CPU seconds per install against node's few hundred, and npm logged each tarball's fetch at about 500 s
-  because the fetch streams into extraction. 250 MB fewer bytes but 800 fewer files saved 5%, so the cost is per
-  file written. Not yet run: the same install with a Defender exclusion on the install folder (adding one was
-  refused to the agent as a security-setting change), which would confirm the cause by A/B.
+
+The Windows installer, the 29-minute Windows install and adding a machine over SSH are in
+[Connecting a machine](./2026-10-23-002-feat-connect-a-machine-ux-plan.md) (C0, C2, C9).
 
 ### W6 — Relay placement
 
@@ -451,7 +442,7 @@ runtime-version floor and skew test (`MINIMUM_SERVED_WORKSPACE_RUNTIME_VERSION`)
 
 1. **Now:** W3 then W1 (W1 needs W3), W2, W4, W5.
 2. **Next:** W8, W9 (after decision 2), W6.
-3. **Later:** W7, W10 (after decision 3), W11, W12.
+3. **Later:** W10 (after decision 3), W11, W12. W7 is parked (owner, 2026-10-23).
 
 Proposed after the 2026-10-22 assessment: W4 first once decision 4 is answered, because it takes raw keys off
 machines and needs no other workstream; W5's installers on a Windows box; W3 once decision 1 is answered, then W1;

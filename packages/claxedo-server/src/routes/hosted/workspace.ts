@@ -38,6 +38,7 @@ import type { ActiveSandboxLeaseCounter } from "../../workspace/runtime-token-gu
 import { createCloudCreateAdmission, type CloudCreateUsage } from "../../workspace/cloud-create-admission"
 import { isGitBranchName } from "../../workspace/git-branch-name"
 import { anonymousGitHubVisibility, type GitHubRepositoryVisibility } from "../../workspace/repository-connection"
+import type { HostedEgressBroker } from "../../credentials/hosted-egress-broker"
 import { cloudCreateSource } from "../../workspace/cloud-create-source"
 import { normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 
@@ -96,6 +97,12 @@ export type HostedWorkspaceRouteOptions = WorkspaceRouteOptions & {
    * one anyone may clone; absent, GitHub is asked anonymously.
    */
   repositoryVisibility?: GitHubRepositoryVisibility
+  /**
+   * The broker a private GitHub repository is cloned onto the caller's
+   * connected machine through. Absent on a plane with no broker or no
+   * code-host connections, where a machine clones only what anyone may.
+   */
+  machineRepositoryClones?: Pick<HostedEgressBroker, "machineRepositoryClone">
 }
 
 const refreshConnectionBody = z

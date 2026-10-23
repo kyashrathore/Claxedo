@@ -3,6 +3,7 @@ import { useAgeClock } from "@/lib/clock"
 import { formatRelativeTime } from "@/lib/relative-time"
 import type { Machine } from "@/server"
 import { settingsDictionary, type SettingsKey } from "../i18n"
+import { blockedKey, offlineCause } from "../machines"
 
 function machineStateKey(machine: Machine): SettingsKey {
   if (machine.paused) return "settings.machines.paused"
@@ -30,7 +31,8 @@ function useMachineFacts(machine: () => Machine): () => readonly string[] {
   const lastSeen = useRelativeAge(() => machine().enrollment?.lastSeenAt)
   return () => {
     const seen = lastSeen()
-    return [t(machineStateKey(machine())), ...(seen ? [t("settings.machines.lastSeen", { time: seen })] : [])]
+    const cause = offlineCause(machine())
+    return [t(machineStateKey(machine())), ...(seen ? [t("settings.machines.lastSeen", { time: seen })] : []), ...(cause ? [t(blockedKey(cause))] : [])]
   }
 }
 

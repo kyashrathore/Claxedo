@@ -565,7 +565,40 @@ export const desktopRenderer: Policy = {
   // `machine-actions.tsx`, `machine-status.tsx`; and its server adapter,
   // `server/wire/machines.ts`). They add no package edge.
   // 1563/37, no headroom.
-  ceilings: { modules: 1563, packages: 37 },
+  // The connect drawer's pairing: the code's lifecycle, its countdown and the
+  // stage it shows (owner: the app's settings domain, `settings/pairing.ts`),
+  // the approval card the drawer and the Machines section share
+  // (`settings/view/pairing-request.tsx`), and the decoder of the pairing
+  // answers (owner: the app's server adapter, `server/wire/pairings.ts`). They
+  // add no package edge.
+  // The drawer's section for a server without a browser, which mints a
+  // pre-approved invitation, with the copyable command the drawer and Details
+  // share and the decoder of the invitation answer (owner: the settings
+  // domain, `settings/server-invitation.ts`, `settings/view/server-connect.tsx`,
+  // `settings/view/command-line.tsx`; its server adapter,
+  // `server/wire/invitations.ts`). They add no package edge.
+  // Managing a machine from its Details: what the machine reported and the
+  // command that fixes or updates it (`settings/view/machine-report.tsx`),
+  // Rename (`settings/view/machine-rename.tsx`) and its shared folders with
+  // Stop sharing (`settings/view/machine-roots.tsx`) (owner: the app's settings
+  // domain). They add no package edge.
+  // Connecting a machine over SSH from the drawer, shown only where the
+  // desktop's bridge offers it: the flow's machine, the reader of the
+  // bridge's answers and its view (owner: the app's settings domain,
+  // `settings/ssh-connect.ts`, `settings/ssh-bridge.ts` and
+  // `settings/view/machine-ssh.tsx`). They add no package edge.
+  // The create-project form's folder places, this computer and each connected
+  // machine the person owns that serves a folder (owner: the app's projects
+  // domain, `projects/folder-places.ts`), and the creation of a project from a
+  // folder on another machine through the route `claxedo host assign` uses
+  // (owner: the app's server adapter, `server/machine-projects.ts`). They add
+  // no package edge.
+  // The adapter's freshness table, which the first read with a lifetime of its
+  // own cites at the read: whether a connected machine still holds a checkout
+  // (owner: the app's server adapter, `server/freshness.ts`, read by
+  // `server/folders.ts`). It adds no package edge.
+  // 1579/37, no headroom.
+  ceilings: { modules: 1579, packages: 37 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

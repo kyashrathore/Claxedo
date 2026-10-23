@@ -3,11 +3,14 @@ import { expect, test } from "bun:test"
 import { QueryClient } from "@tanstack/solid-query"
 import type { CloudSourceCreateInput, CloudWorkspace } from "./cloud-types"
 import { ServerError } from "./errors"
-import { placementId, projectId } from "./ids"
+import type { HostedAccount } from "./account"
+import { machineId, placementId, projectId } from "./ids"
+import { machineProjectCreator, machineRecloner, machineUnassigner } from "./machine-projects"
+import type { Machine } from "./machine-types"
 import { createProjectsApi } from "./projects"
 import { queryKeys } from "./query-keys"
 import type { Transport } from "./transport"
-import type { Project, ProjectSource } from "./types"
+import type { Placement, Project, ProjectSource } from "./types"
 import type { Workspaces } from "./workspaces"
 
 const serverUrl = "http://127.0.0.1:4096"
@@ -15,9 +18,20 @@ const repository: ProjectSource = { kind: "repository", url: "https://github.com
 const accountProject = { id: projectId("prj_account"), name: "octocat/Spoon-Knife", available: true, createdAt: 1, updatedAt: 1 } as Project
 const wireProject = { id: "prj_local", name: "Spoon-Knife", available: true, created_at: 1, updated_at: 1 }
 
+const buildBox = {
+  id: machineId("enr_box"),
+  name: "build-box",
+  online: true,
+  isThisMachine: false,
+  enrolled: true,
+  enrollment: { hostId: "host_box", enrollmentId: "enr_box", lastSeenAt: 1, servingWorkspaceIds: ["ws_first"] },
+} satisfies Machine
+
 function world(serverKind: "daemon" | "hosted") {
   const requests: string[] = []
   const created: CloudSourceCreateInput[] = []
+  const assigned: Array<Readonly<Record<string, unknown>>> = []
+  const cloned: Array<Readonly<Record<string, unknown>>> = []
   const transport = {
     serverUrl,
     json: async (path: string) => {
@@ -29,15 +43,28 @@ function world(serverKind: "daemon" | "hosted") {
     load: async () => ({ declaration: { serverKind } }),
     catalog: () => ({ declaration: { serverKind } }),
     refresh: async () => {},
-    accountProjects: async () => (created.length > 0 ? [accountProject] : []),
+    byId: (id: string) => (assigned.some((input) => input.workspaceId === id) ? { id, projectId: accountProject.id } : undefined),
+    accountProjects: async () => (created.length > 0 || assigned.length > 0 ? [accountProject] : []),
   } as unknown as Workspaces
+  const account = {
+    run: async (operation: string, input: Readonly<Record<string, unknown>>) => {
+      if (operation === "machines.clone") {
+        cloned.push(input)
+        return { repoUrl: input.repoUrl ?? `https://github.com/${String(input.repoFullName)}.git`, directory: input.directory }
+      }
+      if (operation !== "machines.assign") throw new Error(`unexpected ${operation}`)
+      assigned.push(input)
+      return { assignment: { assigned: true, workspace_id: input.workspaceId, host_id: input.hostId } }
+    },
+  } as unknown as HostedAccount
   const createCloudWorkspace = async (input: CloudSourceCreateInput): Promise<CloudWorkspace> => {
     created.push(input)
     await input.onCreated?.(placementId("ws_new"))
     return { id: placementId("ws_new"), projectId: accountProject.id } as CloudWorkspace
   }
   const queryClient = new QueryClient()
-  return { api: createProjectsApi(transport, queryClient, workspaces, createCloudWorkspace), requests, created, queryClient }
+  const createOnMachine = machineProjectCreator(account, workspaces, async () => [buildBox])
+  return { api: createProjectsApi(transport, queryClient, workspaces, createCloudWorkspace, createOnMachine), requests, created, assigned, cloned, queryClient }
 }
 
 test("a hosted plane creates a project from a repository URL as that repository's first cloud workspace, named after the repository, and answers the catalog's project", async () => {
@@ -72,4 +99,82 @@ test("a hosted create reports the workspace it just made, so a repository that a
   const reported: string[] = []
   await api.create({ source: repository, onPlacement: (id) => reported.push(id) })
   expect(reported).toEqual(["ws_new"])
+})
+
+test("a folder on a connected machine becomes a new workspace assigned to that machine, on a hosted plane and a daemon alike", async () => {
+  for (const serverKind of ["hosted", "daemon"] as const) {
+    const { api, requests, created, assigned } = world(serverKind)
+    const reported: string[] = []
+    const project = await api.create({ source: { kind: "folder", path: "/home/ada/code/alpha/", machine: buildBox.id }, onPlacement: (id) => reported.push(id) })
+    expect(project).toBe(accountProject)
+    expect(requests).toEqual([])
+    expect(created).toEqual([])
+    expect(assigned).toEqual([{ workspaceId: expect.stringMatching(/^ws_[0-9a-f]{32}$/), hostId: "host_box", displayName: "alpha", repoName: "alpha", remoteDirectory: "/home/ada/code/alpha/" }])
+    expect(reported).toEqual([String(assigned[0]?.workspaceId)])
+  }
+})
+
+test("a folder on a machine that is not the account's is refused before anything is assigned", async () => {
+  const { api, assigned, cloned } = world("hosted")
+  await expect(api.create({ source: { kind: "folder", path: "/srv/app", machine: machineId("enr_other") } })).rejects.toMatchObject({ class: "not_found" })
+  await expect(api.create({ source: { ...repository, onMachine: { machine: machineId("enr_other"), parent: "/srv" } } })).rejects.toMatchObject({ class: "not_found" })
+  expect(assigned).toEqual([])
+  expect(cloned).toEqual([])
+})
+
+test("a repository cloned onto a connected machine lands in a folder named for it under the chosen one, and that folder is assigned with its remote", async () => {
+  const { api, created, cloned, assigned } = world("hosted")
+  const onMachine = { machine: buildBox.id, parent: "/home/ada/code" }
+  await api.create({ source: { ...repository, onMachine } })
+  await api.create({ source: { kind: "connectedRepository", connectionId: "conn_gh", fullName: "acme/private", onMachine }, name: "Private" })
+  expect(created).toEqual([])
+  expect(cloned).toEqual([
+    { enrollmentId: "enr_box", directory: "/home/ada/code/Spoon-Knife", repoUrl: repository.url },
+    { enrollmentId: "enr_box", directory: "/home/ada/code/private", connectionId: "conn_gh", repoFullName: "acme/private" },
+  ])
+  expect(assigned.map(({ workspaceId: _id, ...rest }) => rest)).toEqual([
+    { hostId: "host_box", displayName: "Spoon-Knife", repoName: "Spoon-Knife", remoteDirectory: "/home/ada/code/Spoon-Knife", repoUrl: repository.url },
+    { hostId: "host_box", displayName: "Private", repoName: "Private", remoteDirectory: "/home/ada/code/private", repoUrl: "https://github.com/acme/private.git" },
+  ])
+})
+
+test("a connected machine's gone checkout is cloned back at its folder from the remote it records, and nothing else is", async () => {
+  const runs: Array<[string, Readonly<Record<string, unknown>>]> = []
+  const account = {
+    run: async (operation: string, input: Readonly<Record<string, unknown>>) => {
+      runs.push([operation, input])
+      return { repoUrl: input.repoUrl, directory: input.directory }
+    },
+  } as unknown as HostedAccount
+  const gone: Placement = { id: placementId("ws_gamma"), projectId: accountProject.id, kind: "worktree", label: "gamma", path: "/home/ada/gamma", machineId: buildBox.id, onThisMachine: false, reachable: true, gitRemote: "https://example.test/gamma.git" }
+  const here: Placement = { ...gone, id: placementId("ws_here"), onThisMachine: true }
+  const bare: Placement = { ...gone, id: placementId("ws_bare"), gitRemote: undefined }
+  const listed = new Map([gone, here, bare].map((placement) => [placement.id, placement]))
+  const cloned: string[] = []
+  const reclone = machineRecloner(account, { byId: (id) => listed.get(id) }, (machine, directory) => cloned.push(`${machine}:${directory}`))
+  await reclone(gone.id)
+  expect(runs).toEqual([["machines.clone", { enrollmentId: "enr_box", directory: "/home/ada/gamma", repoUrl: "https://example.test/gamma.git" }]])
+  expect(cloned).toEqual(["enr_box:/home/ada/gamma"])
+  for (const placement of [here, bare]) await expect(reclone(placement.id)).rejects.toMatchObject({ class: "invalid" })
+  expect(runs).toHaveLength(1)
+})
+
+test("a connected machine's folder is removed from that machine through the route `claxedo host unassign` uses, and this computer's is not", async () => {
+  const runs: Array<[string, Readonly<Record<string, unknown>>]> = []
+  let refreshed = 0
+  const account = {
+    run: async (operation: string, input: Readonly<Record<string, unknown>>) => {
+      runs.push([operation, input])
+      return { unassigned: true }
+    },
+  } as unknown as HostedAccount
+  const remote: Placement = { id: placementId("ws_alpha"), projectId: accountProject.id, kind: "worktree", label: "alpha", path: "/home/ada/alpha", machineId: buildBox.id, onThisMachine: false, reachable: true }
+  const here: Placement = { ...remote, id: placementId("ws_here"), onThisMachine: true }
+  const listed = new Map([remote, here].map((placement) => [placement.id, placement]))
+  const remove = machineUnassigner(account, { byId: (id) => listed.get(id), refresh: async () => void (refreshed += 1) })
+  await remove(remote.id)
+  expect(runs).toEqual([["machines.unassign", { workspaceId: "ws_alpha" }]])
+  expect(refreshed).toBe(1)
+  await expect(remove(here.id)).rejects.toMatchObject({ class: "invalid" })
+  expect(runs).toHaveLength(1)
 })

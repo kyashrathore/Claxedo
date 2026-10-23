@@ -9,6 +9,7 @@ import {
   type ConnectorErrorStage,
   type HeartbeatResponse,
   type MachineTransport,
+  type OwnerHold,
   type ProviderConfigRevision,
 } from "./connector"
 import { createFakeControlPlane, enrollFakeHost, type FakeControlPlane } from "./fake-control-plane.test-support"
@@ -68,7 +69,7 @@ async function machineHost(
   const ackFailures: unknown[] = []
   const providerConfigs: ProviderConfigRevision[] = []
   const rings: number[] = []
-  const pauses: boolean[] = []
+  const holds: Array<OwnerHold | undefined> = []
   let tick: (() => void) | undefined
   const connector = createHostConnector({
     mode: "machine",
@@ -100,7 +101,7 @@ async function machineHost(
     },
     onServing: (tunnel) => tunnels.push(tunnel),
     onHostChanged: () => rings.push(beats().length),
-    onPaused: (paused) => pauses.push(paused),
+    onHeld: (hold) => holds.push(hold),
     onError: (stage, error) => errors.push({ stage, error }),
     ...(input.sealingPublicKey ? { sealingPublicKey: input.sealingPublicKey } : {}),
     onProviderConfig: async (config) => {
@@ -115,7 +116,7 @@ async function machineHost(
     cp,
     enrolled,
     rings,
-    pauses,
+    holds,
     connector,
     seen,
     scopes,
@@ -277,12 +278,12 @@ describe("assignment discovery", () => {
     await vi.waitFor(() => expect(h.beats().length).toBeGreaterThan(beatsWhilePaused))
     expect(h.connector.state().status, "a pause is not a revocation: the loop stays").toBe("enrolled")
     expect(h.tunnels.slice(servedBeforePause), "serving is withdrawn once, not on every refused beat").toEqual([undefined])
-    expect(h.pauses, "the pause is reported once").toEqual([true])
+    expect(h.holds, "the pause is reported once").toEqual(["paused"])
     expect(h.errors, "the owner's pause is not a failed heartbeat").toEqual([])
 
     cp.pause(id, false)
     await vi.waitFor(() => expect(h.tunnels.at(-1), "the resume ring is heard on the doorbell still open").toMatchObject({ workspaceIds: ["ws_1"] }))
-    expect(h.pauses).toEqual([true, false])
+    expect(h.holds).toEqual(["paused", undefined])
   })
 
   test("a machine that starts while paused waits for its owner's resume instead of exiting, holding its doorbell, and serves the moment the resume rings", async () => {
@@ -297,7 +298,7 @@ describe("assignment discovery", () => {
       settled = state.status
       return state
     })
-    await vi.waitFor(() => expect(h.pauses).toEqual([true]))
+    await vi.waitFor(() => expect(h.holds).toEqual(["paused"]))
     await vi.waitFor(() => expect(cp.eventStreams(id), "a paused start holds its doorbell").toBe(1))
     h.tick()
     await vi.waitFor(() => expect(acquires(), "and still asks each interval").toBe(2))
@@ -307,7 +308,7 @@ describe("assignment discovery", () => {
     cp.pause(id, false)
     expect((await starting).status, "the resume's ring, not a timer, starts it").toBe("enrolled")
     await vi.waitFor(() => expect(h.tunnels.at(-1)).toMatchObject({ workspaceIds: ["ws_1"] }))
-    expect(h.pauses).toEqual([true, false])
+    expect(h.holds).toEqual(["paused", undefined])
   })
 
   test("closing a machine that is waiting out a pause ends its start", async () => {
@@ -315,7 +316,7 @@ describe("assignment discovery", () => {
     const h = await machineHost(cp)
     cp.pause(h.enrolled.enrollmentId, true)
     const starting = h.connector.start()
-    await vi.waitFor(() => expect(h.pauses).toEqual([true]))
+    await vi.waitFor(() => expect(h.holds).toEqual(["paused"]))
     h.connector.close()
     expect(await starting).toMatchObject({ status: "stopped", reason: "closed" })
   })

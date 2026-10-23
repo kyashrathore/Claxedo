@@ -39,6 +39,14 @@ describe("control-plane event visibility", () => {
     expect(eventVisibleTo({ mode: "unsigned-local" }, event)).toBe(true)
   })
 
+  test("a machine notice reaches its owner alone, in any org; never another member, nor any machine", () => {
+    const event = { type: "machine.changed", ownerUserId: "user_owner", hostId: "host_a", pairingId: "pair_1", ts: 1 } as const
+    expect(eventVisibleTo({ mode: "signed", subject: "user_owner", orgId: "org_a" }, event)).toBe(true)
+    expect(eventVisibleTo({ mode: "signed", subject: "user_owner", orgId: "org_b" }, event)).toBe(true)
+    expect(eventVisibleTo({ mode: "signed", subject: "user_member", orgId: "org_a" }, event)).toBe(false)
+    expect(eventVisibleTo({ mode: "machine", hostId: "host_a" }, event)).toBe(false)
+  })
+
   test("a session status notice reaches only the reader it names, in any org; never another member", () => {
     const event = {
       type: "session.status.changed",

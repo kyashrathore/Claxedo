@@ -157,7 +157,7 @@ export function InternalRelayResolverRoutes(options: InternalRelayResolverOption
     return c.json({
       enrollmentId: row.enrollment_id,
       generation: row.serving_generation,
-      revoked: row.revoked_at !== null || row.paused_at !== null,
+      revoked: row.revoked_at !== null || row.paused_at !== null || row.approval_requested_at !== null,
     })
   })
 

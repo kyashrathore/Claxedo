@@ -187,3 +187,10 @@ test("frames: session.config preserves the session address and authoritative mod
     source: "harness", stale: false, models: { current: "openai/gpt-4.1", choices: [{ id: "openai/gpt-4.1", name: "GPT-4.1", connected: true }] },
   } })
 })
+
+test("frames: a machine notice becomes machinesChanged, whichever machine or pairing it names", () => {
+  for (const raw of [{ hostId: "host_1" }, { pairingId: "pair_1" }, {}]) {
+    const frame = frameFromWire({ type: "machine.changed", ownerUserId: "user_owner", ts: 9, ...raw })
+    expect(frame && serverEventFromFrame(frame, address)).toEqual({ type: "machinesChanged" })
+  }
+})

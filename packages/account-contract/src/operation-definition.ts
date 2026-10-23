@@ -70,6 +70,11 @@ export const optionalParameter: Decoder<Scalar | undefined> = (raw) =>
 
 export const bodyField: Decoder<unknown> = (raw) => ({ ok: true, value: raw })
 
+export const stringListParameter: Decoder<readonly string[]> = (raw) =>
+  Array.isArray(raw) && raw.every((item) => typeof item === "string")
+    ? { ok: true, value: raw }
+    : { ok: false, reason: "requires a list of strings" }
+
 type PathOptions = {
   query?: readonly string[]
   optionalQuery?: readonly string[]

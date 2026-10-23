@@ -50,6 +50,8 @@ const REPLICA_READS: Readonly<Record<string, string>> = {
   "/api/workspace/:id/checkpoints": "relay read; token record as above",
   "/api/claxedo/host/enrollments": "read",
   "/api/claxedo/host/invitations": "read",
+  "/api/claxedo/connect": "no database: the installer with this plane's URL",
+  "/api/claxedo/connect.ps1": "no database: the installer with this plane's URL",
   "/api/claxedo/remote-access": "read",
   "/api/claxedo/remote-access/devices": "read; a machine's last-seen time is an observation",
   "/documents": "read",

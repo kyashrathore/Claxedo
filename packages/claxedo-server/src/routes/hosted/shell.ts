@@ -36,7 +36,8 @@ import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform
 import { connectLiveSyncRoom } from "../../deployments/hosted-workerd/live-sync-room.cf"
 import type { LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
 import type { ControlPlaneServices } from "../../authority/services"
-import { openHarnessTarget, type HostedHarnessProbe } from "../../workspace/harness-runtime"
+import type { HostedHarnessProbe } from "../../workspace/harness-runtime"
+import { openCallerRuntimeTarget } from "../../workspace/relay-runtime-client"
 import { workspaceIdFromWorkspaceRef } from "@claxedo/server-core/workspace/refs"
 import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-runtime-contract"
 import { providerAuthMethodsForHarness } from "@claxedo/server-core/credentials/provider-auth/methods"
@@ -242,7 +243,7 @@ export function hostedDraftCredentials(
   services: ControlPlaneServices,
   snapshot: (workspaceId: string) => Promise<CredentialSnapshot | undefined>,
 ): NonNullable<HostedShellRouteOptions["draftCredentials"]> {
-  return async (auth, workspaceId) => (await openHarnessTarget(services, auth, workspaceId)) ? snapshot(workspaceId) : undefined
+  return async (auth, workspaceId) => (await openCallerRuntimeTarget(services, auth, workspaceId)) ? snapshot(workspaceId) : undefined
 }
 
 function authErrorResponse(c: Context, err: unknown) {

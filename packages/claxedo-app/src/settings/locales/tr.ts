@@ -76,8 +76,4 @@ export default {
   "settings.connections.replaceConfirm": "Değiştir",
   "settings.connections.secretRequired": "Bağlanmadan önce gerekli gizli bilgiyi girin.",
   "settings.machines.yours": "Makineleriniz",
-  "settings.machines.step.here": "Başında oturduğunuz bilgisayar",
-  "settings.machines.step.another": "Sahip olduğunuz başka bir makine",
-  "settings.machines.copyInvite": "Davet komutunu kopyala",
-  "settings.machines.copyConnect": "Bağlantı komutunu kopyala",
 }

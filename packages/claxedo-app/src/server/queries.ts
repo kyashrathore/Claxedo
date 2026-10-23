@@ -57,7 +57,7 @@ export function createQueries(transport: Transport, workspaces: Workspaces, acco
     files: fileQueries(transport, workspaces),
     git: gitQueries(transport, workspaces),
     harnesses: harnessQueries(transport, workspaces, account),
-    folders: folderQueries(transport),
+    folders: folderQueries(transport, account),
     integrations: integrationQueries(transport),
     agentConnections: agentConnectionQueries(transport),
     providerConnect: providerConnectQueries(transport),
@@ -82,6 +82,8 @@ function invalidationKeys(server: string, event: ServerEvent, endsWritingTurn: b
       return [queryKeys.livePlugins(server)]
     case "usageChanged":
       return [queryKeys.usageAll(server)]
+    case "machinesChanged":
+      return [queryKeys.machines(server), queryKeys.accountCatalog(server)]
     case "streamGap":
       if (event.ref) return []
       return [

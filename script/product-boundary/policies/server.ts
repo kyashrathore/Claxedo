@@ -316,7 +316,31 @@ export const serverWorkerd: Policy = {
   // own and read only for the workspace owner's connection
   // (`authority/adapters/d1/host-direct-routes.ts`). It adds no package edge.
   // 192/23, no headroom.
-  ceilings: { modules: 192, packages: 23 },
+  // +7 modules (owner: machine pairing): a machine connects through a short
+  // code its owner mints in the app and then approves. The code's
+  // redemption, the waiting enrollment and the owner's answer
+  // (`authority/adapters/d1/host-pairing-authority.ts`) over the pairing
+  // rows and the stage they show (`authority/adapters/d1/host-pairing-records.ts`);
+  // the machine-request verifier's D1 reads, split out of the host access
+  // authority so a waiting machine's own pairing read can admit it
+  // (`authority/adapters/d1/host-machine-auth.ts`); the pairing routes
+  // (`routes/hosted/host-pairing.ts`) and the request handling they share with
+  // the enrollment routes (`workspace/host-route-support.ts`); and the
+  // connect scripts the app's command fetches (`routes/hosted/connect-scripts.ts`
+  // over the generated `workspace/connect-installers.generated.ts`). It
+  // adds no package edge.
+  // 199/23, no headroom.
+  // +3 modules (owner: host management on a connected machine): the owner's
+  // requests to their machine itself, each carried to it under a grant this
+  // plane mints for that request alone (`routes/hosted/host-machines.ts`), the
+  // owned-and-serving check and the call through the relay
+  // (`workspace/machine-management.ts`), and a folder the owner picks joining
+  // that machine's roots (`authority/adapters/d1/host-enrollment-roots.ts`).
+  // Reaching a runtime as the caller moved from the harness probe into
+  // `workspace/relay-runtime-client.ts`, which both now share. The grant is
+  // server-core's pass family. It adds no package edge.
+  // 202/23, no headroom.
+  ceilings: { modules: 202, packages: 23 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

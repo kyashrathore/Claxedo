@@ -77,8 +77,4 @@ export default {
   "settings.connections.replaceConfirm": "استبدال",
   "settings.connections.secretRequired": "أدخل السر المطلوب قبل الاتصال.",
   "settings.machines.yours": "أجهزتك",
-  "settings.machines.step.here": "الكمبيوتر الذي تجلس أمامه",
-  "settings.machines.step.another": "جهاز آخر تملكه",
-  "settings.machines.copyInvite": "نسخ أمر الدعوة",
-  "settings.machines.copyConnect": "نسخ أمر الاتصال",
 }

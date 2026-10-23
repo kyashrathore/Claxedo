@@ -1,6 +1,8 @@
 import { createRequireText } from "@claxedo/helpers"
 import type { D1Database } from "@cloudflare/workers-types"
-import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
+import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
+import type { HumanPrincipal } from "./access-context"
 import type { HostEnrollment } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { D1HostAccessAuthorityError } from "./host-access-errors"
 
@@ -36,6 +38,10 @@ export type EnrollmentRow = {
   provider_config_renew_at: number | null
   provider_config_accounts: string | null
   provider_config_built_generation: number | null
+  approval_requested_at: number | null
+  revoked_reason: "denied" | "approval_expired" | null
+  machine_json: string | null
+  blocked_json: string | null
 }
 
 export type InvitationRow = {
@@ -54,6 +60,13 @@ export type InvitationRow = {
   created_by_actor_id: string
   created_at: number
   revoked_at: number | null
+  kind: "preapproved" | "pairing"
+  pairing_progress_json: string | null
+  pairing_request_json: string | null
+  pairing_decision: "approved" | "denied" | null
+  pairing_decided_at: number | null
+  pairing_workspace_id: string | null
+  first_workspace_id: string | null
 }
 
 /** The enrollment lease a new enrollment starts with and a beat renews when it names none. */
@@ -61,12 +74,13 @@ export const DEFAULT_TTL_MS = 60_000
 
 /**
  * The machine caller's eligibility, evaluated inside every batch that mutates
- * on its behalf: the enrollment is live, the key the verifier read is still
+ * on its behalf: the enrollment is live and approved, the key the verifier read is still
  * the key on the row, and the owner is an active user with an active actor.
  * Written against `host_enrollments` unaliased, binding `enrollment_id` and
  * `key_version` in that order.
  */
 export const MACHINE_ELIGIBLE_SQL = `enrollment_id = ? and key_version = ? and revoked_at is null and paused_at is null
+        and approval_requested_at is null
         and exists (
           select 1 from users owner
           join actors owner_actor on owner_actor.actor_id = host_enrollments.owner_actor_id
@@ -115,4 +129,34 @@ export async function invitationOrgOf(database: D1Database, enrollmentId: string
     select org_id from host_invitations where redeemed_enrollment_id = ? limit 1
   `).bind(enrollmentId).first<{ org_id: string }>()
   return row?.org_id
+}
+
+/**
+ * The organization an invitation is recorded under: the token's org claim
+ * when it names one the caller is a live member or owner of, else the single
+ * organization the caller belongs to. Recorded at creation and never
+ * inferred later.
+ */
+export async function invitationOrgIdFor(
+  database: D1Database,
+  who: HumanPrincipal,
+  auth: SignedControlPlaneAuth,
+  resolveOrgId: WorkspaceAuthority["resolveOrgId"] | undefined,
+) {
+  const claimed = auth.user.orgId?.trim()
+  if (claimed) {
+    const member = await database.prepare(`
+      select 1 from orgs organization
+      left join org_memberships membership
+        on membership.org_id = organization.org_id and membership.user_id = ? and membership.revoked_at is null
+      where organization.org_id = ? and organization.deleted_at is null
+        and (organization.owner_user_id = ? or membership.user_id is not null)
+    `).bind(who.userId, claimed, who.userId).first()
+    if (!member) throw denied("Invitation organization is not one the caller belongs to")
+    return claimed
+  }
+  if (!resolveOrgId) {
+    throw new D1HostAccessAuthorityError("invalid_input", "Invitation organization resolution is unavailable")
+  }
+  return requireText(await resolveOrgId(auth), "orgId")
 }

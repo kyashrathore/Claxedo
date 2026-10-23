@@ -15,7 +15,7 @@ import { canonicalRepositoryKey } from "@claxedo/server-core/authority/repositor
 import { normalizeStoredDirectory } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { HOST_SERVING_WORKSPACE_SQL } from "./host-access-authority"
 import { activeGuard, batchUnder, may, mayGuard, maySql, orgMemberSql, readProjectRole, type AuthorizationPrincipal } from "./authorization"
-import { namedPrincipal, ownerMembershipStatements, requireHuman, requireText, type D1AccessContext } from "./access-context"
+import { namedPrincipal, ownerMembershipStatements, requireHuman, requireText, requireWriter, type D1AccessContext, type InvitationOwner } from "./access-context"
 import { asOrgId, type OrgId } from "@claxedo/server-core/platform/auth/branded-id"
 import { D1WorkspaceAuthorityError, guardedBatch } from "./workspace-authority-error"
 import { workspaceCreationStatements } from "./workspace-creation"
@@ -40,6 +40,7 @@ export const D1_WORKSPACE_AUTHORITY_METHODS = [
   "deleteWorkspace",
   "setWorkspaceMachineClass",
   "machinesServingWorkspaces",
+  "machineOwnerOrgIds",
 ] as const satisfies readonly (keyof WorkspaceAuthority)[]
 
 export type D1WorkspaceAuthorityCore = Pick<WorkspaceAuthority, (typeof D1_WORKSPACE_AUTHORITY_METHODS)[number]>
@@ -290,9 +291,9 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
    * organization the caller may administer is admitted here rather than
    * refused for disagreeing with their default.
    */
-  async authorizeLocalWorkspaceRegistration(auth: SignedControlPlaneAuth, args: { orgId?: string; projectId?: string }) {
-    const who = await this.requirePrincipal(auth)
-    await this.admitCreationOrganization(who, await this.localRegistrationOrgId(auth, args))
+  async authorizeLocalWorkspaceRegistration(writer: SignedControlPlaneAuth | InvitationOwner, args: { orgId?: string; projectId?: string }) {
+    const who = await requireWriter(this.database, this.options.deploymentId, writer)
+    await this.admitCreationOrganization(who, await this.localRegistrationOrgId(writer, args))
   }
 
   /** Who may create in an organization: one rule, whatever resolved the organization. */
@@ -303,12 +304,13 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     }
   }
 
-  /** The organization a machine-placed registration files into. */
-  private async localRegistrationOrgId(auth: SignedControlPlaneAuth, args: { orgId?: string; projectId?: string }) {
+  /** The organization a machine-placed registration files into; an invitation's owner files only into one the assignment names. */
+  private async localRegistrationOrgId(writer: SignedControlPlaneAuth | InvitationOwner, args: { orgId?: string; projectId?: string }) {
     const named = args.orgId?.trim()
     if (named) return named
+    if ("invitationOwner" in writer) throw denied("Workspace creation authority was denied")
     const projectId = args.projectId?.trim()
-    return await this.creationOrgId(auth, projectId ? projectId : undefined)
+    return await this.creationOrgId(writer, projectId ? projectId : undefined)
   }
 
   async openWorkspace(auth: SignedControlPlaneAuth, args: { workspaceId: string }) {
@@ -362,6 +364,24 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
   }
 
   /**
+   * The repository a new workspace is filed under. A machine's folder the
+   * owner files into one of their projects is that project's repository,
+   * whatever its own directory: a worktree's folder names no repository of
+   * its own, and a key derived from it would match no project. Every other
+   * workspace is keyed by its repository URL, else its directory.
+   */
+  private async creationRepositoryKey(orgId: string, workspaceId: string, input: D1WorkspaceCreateArgs, remoteDirectory: string | null) {
+    if (input.backing === "local-worktree" && input.projectId) {
+      const named = await this.database
+        .prepare("select repo_key from projects where project_id = ? and org_id = ? and deleted_at is null")
+        .bind(input.projectId, orgId)
+        .first<{ repo_key: string }>()
+      if (named) return named.repo_key
+    }
+    return canonicalRepositoryKey({ repoUrl: input.repoUrl, remoteDirectory, workspaceId })
+  }
+
+  /**
    * A creation's admission and project, and its statements for a caller that
    * composes them into its own batch: the host assignment lands a cold
    * workspace and the assignment together, so a batch its guard refuses leaves
@@ -380,11 +400,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     }
     const homeRegion = validateHomeRegion(input.homeRegion)
     const remoteDirectory = input.remoteDirectory === undefined ? null : normalizeStoredDirectory(input.remoteDirectory)
-    const repoKey = canonicalRepositoryKey({
-      repoUrl: input.repoUrl,
-      remoteDirectory,
-      workspaceId,
-    })
+    const repoKey = await this.creationRepositoryKey(orgId, workspaceId, input, remoteDirectory)
     const existingProject = await this.database
       .prepare(
         `
@@ -432,9 +448,9 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
   }
 
   /** A machine-placed workspace's creation, as statements for the host assignment's batch. */
-  async localWorkspaceRegistration(auth: SignedControlPlaneAuth, args: D1LocalWorkspaceRegistrationArgs) {
-    const who = await this.requirePrincipal(auth)
-    return await this.workspaceCreation(who, await this.localWorkspaceArgs(auth, args))
+  async localWorkspaceRegistration(writer: SignedControlPlaneAuth | InvitationOwner, args: D1LocalWorkspaceRegistrationArgs) {
+    const who = await requireWriter(this.database, this.options.deploymentId, writer)
+    return await this.workspaceCreation(who, await this.localWorkspaceArgs(writer, args))
   }
 
   /**
@@ -454,12 +470,12 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
   }
 
   private async localWorkspaceArgs(
-    auth: SignedControlPlaneAuth,
+    writer: SignedControlPlaneAuth | InvitationOwner,
     args: D1LocalWorkspaceRegistrationArgs,
   ): Promise<D1WorkspaceCreateArgs> {
     return {
       ...args,
-      orgId: await this.localRegistrationOrgId(auth, args),
+      orgId: await this.localRegistrationOrgId(writer, args),
       backing: "local-worktree",
     }
   }
@@ -487,6 +503,14 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       .bind(JSON.stringify([...new Set(workspaceIds)]))
       .all<{ host_id: string; owner_user_id: string }>()
     return rows.results.map((row) => ({ hostId: row.host_id, ownerUserId: row.owner_user_id }))
+  }
+
+  async machineOwnerOrgIds(ownerUserId: string) {
+    const rows = await this.database
+      .prepare("select org_id from org_memberships where user_id = ? and revoked_at is null order by org_id")
+      .bind(requireText(ownerUserId, "ownerUserId"))
+      .all<{ org_id: string }>()
+    return rows.results.map((row) => row.org_id)
   }
 
   private async deleteWorkspaceAs(who: Principal, args: { workspaceId: string }) {

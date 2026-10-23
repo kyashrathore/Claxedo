@@ -32,6 +32,13 @@
       "import": "./src/runtime.ts",
       "default": "./src/runtime.ts"
     },
+    "./host-management": {
+      "types": "./src/host-management.ts",
+      "bun": "./src/host-management.ts",
+      "development": "./src/host-management.ts",
+      "import": "./src/host-management.ts",
+      "default": "./src/host-management.ts"
+    },
     "./direct-listener": {
       "types": "./src/direct-listener.ts",
       "bun": "./src/direct-listener.ts",

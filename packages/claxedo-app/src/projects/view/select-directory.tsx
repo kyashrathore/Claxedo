@@ -1,6 +1,6 @@
 import { createMemo, createSignal } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { useServer } from "@/server"
+import { useServer, type MachineId } from "@/server"
 import { useDialog, Dialog, FileIcon, List, type ListRef, DialogBody, DialogHeader, DialogTitle } from "@/ui"
 import { getDirectory, getFilename } from "@/ui/utils"
 import { cleanInput, displayPath, toRow, uniqueRows } from "../folder-paths"
@@ -9,6 +9,7 @@ import { useProjectsText } from "../i18n"
 import { useProjects } from "../store"
 
 export interface DialogSelectDirectoryProps {
+  machine?: MachineId
   onSelect: (result: string) => void
 }
 
@@ -20,13 +21,13 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
   const [filter, setFilter] = createSignal("")
   let list: ListRef | undefined
 
-  const pathQuery = useQuery(() => server.queries.folders.paths())
+  const pathQuery = useQuery(() => server.queries.folders.paths(props.machine))
   const home = createMemo(() => pathQuery.data?.home || "")
   const start = createMemo(() => pathQuery.data?.home || pathQuery.data?.directory)
-  const directories = createFolderSearch({ server, home, start })
+  const directories = createFolderSearch({ server, machine: props.machine, home, start })
   const recentProjects = createMemo(() => {
     const state = projects()
-    const listed = state.kind === "ready" ? state.data : []
+    const listed = state.kind === "ready" && props.machine === undefined ? state.data : []
     return listed.flatMap((project) => (project.source?.kind === "folder" ? [{ name: project.name, worktree: project.source.path }] : [])).slice(0, 5).map((project) => {
       const row = toRow(project.worktree, home(), "recent")
       return { ...row, search: `${row.search}\n${project.name || getFilename(project.worktree)}` }

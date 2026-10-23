@@ -8,7 +8,8 @@ import type { WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/
 import type { ControlPlaneCredentials } from "../../authority/services"
 import { createCredentialRefusals, type CredentialRefusals } from "../credential-refusals"
 import { storeRenewal } from "../store-renewal"
-import { repositoryBindingId, servingBindingId, type HostedBrokerClaims } from "./placeholder"
+import type { SandboxPassRegister } from "@claxedo/server-core/platform/auth/sandbox-pass-register"
+import { machineRepositoryBindingId, repositoryBindingId, servingBindingId, type HostedBrokerClaims } from "./placeholder"
 import type { HostedRepositoryBindings } from "./repository-binding"
 
 export type HostedBrokerCredentialRead = (credentialId: string) => Promise<{ credential: CredentialMetadata; secret: string } | undefined>
@@ -53,7 +54,9 @@ export function bindingDestination(destination: ProviderDestination): Binding["d
  * A connected machine's stand-in reads its enrollment in place of the lease
  * row: the enrollment must still be live, at the serving generation and on
  * the host the stand-in was minted for, so a revoked or paused machine, or a
- * superseded instance of it, is refused at its next request.
+ * superseded instance of it, is refused at its next request. Its clone
+ * stand-in reads the connection's token as a repository binding does, until
+ * the register spent it.
  */
 export function hostedBindingAuthority(input: {
   credentials: (orgId: string) => ControlPlaneCredentials
@@ -69,6 +72,8 @@ export function hostedBindingAuthority(input: {
   credentialRefusals?: CredentialRefusals
   /** How a repository binding resolves, once the composition owning code-host connections installed it. */
   repositories?: () => HostedRepositoryBindings | undefined
+  /** Where a machine's clone stand-in is spent; until one is installed, every such stand-in is refused. */
+  clonePasses?: () => Pick<SandboxPassRegister, "revoked"> | undefined
 }): BindingAuthority<HostedBrokerClaims> {
   const now = input.now ?? Date.now
   const refusals = input.credentialRefusals ?? createCredentialRefusals({ credentials: input.credentials, now, ...(input.fetch ? { fetch: input.fetch } : {}) })
@@ -89,8 +94,17 @@ export function hostedBindingAuthority(input: {
     const sources = holderAccountSources(await credentials.accountSelections(), owner.userId, owner.userId)
     return spendsAccount(credential, owner.userId, sources, owner.userId)
   }
+  /** A machine's clone stand-in resolves at its own repository's binding, and only until the register spent it. */
+  const machineClone = async (bindingId: string, claims: HostedBrokerClaims, repository: NonNullable<HostedBrokerClaims["repository"]>) => {
+    const { enrollmentId } = claims
+    if (enrollmentId === undefined || bindingId !== machineRepositoryBindingId({ userId: claims.userId, orgId: claims.orgId, enrollmentId, fullName: repository.fullName })) return undefined
+    const passes = input.clonePasses?.()
+    if (!passes || await passes.revoked(repository.jti)) return undefined
+    return input.repositories?.()?.(bindingId, claims)
+  }
   return {
     async resolve(bindingId, claims) {
+      if (claims.repository !== undefined) return machineClone(bindingId, claims, claims.repository)
       if (claims.workspaceId !== undefined && bindingId === repositoryBindingId({ ...claims, workspaceId: claims.workspaceId })) {
         return input.repositories?.()?.(bindingId, claims)
       }

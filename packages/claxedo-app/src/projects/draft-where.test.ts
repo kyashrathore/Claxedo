@@ -33,9 +33,12 @@ test("one place means no group headers, and the web lists no pseudo-row when not
   expect(shape(whereEntries({ placements: [], projectId: project }))).toEqual([])
 })
 
-test("a new worktree branches only from a folder the serving machine holds", () => {
-  const entries = whereEntries({ placements: [folder, worktree, remote, cloud], projectId: project })
-  expect(worktreeRoots(entries).map((root) => root.id)).toEqual([folder.id])
+test("a new worktree branches from each folder this machine holds and once from each connected machine's checkout, never from a cloud workspace or a checkout of no machine", () => {
+  const unplaced = placement("pl_unplaced", "folder")
+  const remoteTree = placement("pl_box_tree", "worktree", { machineId: box })
+  const otherBox = placement("pl_other_box", "worktree", { machineId: machineId("enr_other") })
+  const entries = whereEntries({ placements: [remoteTree, folder, worktree, remote, cloud, unplaced, otherBox], projectId: project })
+  expect(worktreeRoots(entries).map((root) => root.id)).toEqual([folder.id, remote.id, otherBox.id])
 })
 
 test("the chosen placement stays chosen while the catalog has not listed it yet; nothing else stands in for it", () => {

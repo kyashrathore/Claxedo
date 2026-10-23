@@ -1,29 +1,10 @@
 import type { Locator, Page } from "@playwright/test"
-import { enrollOwnerMachine, expect, ownerDevices, test, type SignedStack } from "../harness"
+import { cliVersionBelowAccepted } from "@claxedo/account-contract/machine"
+import { CONNECT_CLI_VERSION, expect, ownerDevices, test, type SignedStack } from "../harness"
 import { hostedFetch } from "../../../harness/e2e/harness/hosted-auth"
+import { approvalCard, MACHINE, machines, openPairing, PAIRING_COMMAND, pairedMachine } from "./15-settings-machines.pairing"
 
 const HOPS = ["This device to Claxedo", "Claxedo to Signed fixture machine", "Signed fixture machine answering through the relay"] as const
-const MACHINE = "Signed fixture machine"
-
-async function machines(app: Page, url: string) {
-  await app.goto(`${url}/settings/machines`)
-  await expect(app.getByRole("heading", { level: 1, name: "Machines" })).toBeVisible()
-  await expect(app.getByRole("group", { name: "Remote access" })).toHaveCount(0)
-  return app.getByRole("group", { name: "Your machines" })
-}
-
-async function openConnect(app: Page, name: string) {
-  await app.getByRole("button", { name: "Connect a machine…" }).click()
-  const drawer = app.getByRole("dialog", { name: "Connect a machine" })
-  await expect(drawer.getByText("Another machine you own", { exact: true })).toBeVisible()
-  await drawer.getByRole("textbox", { name: "Machine name" }).fill(name)
-  await expect(drawer.getByText(`claxedo host invite --name ${name} --root ~/code`, { exact: true })).toBeVisible()
-  await expect(drawer.getByRole("button", { name: "Copy invite command" })).toBeVisible()
-  await drawer.getByRole("button", { name: "I've run it" }).click()
-  await expect(drawer.getByText(`Waiting for ${name}…`, { exact: true })).toBeVisible()
-  await expect(drawer.getByRole("button", { name: "Check again" })).toBeVisible()
-  return drawer
-}
 
 async function openDetails(app: Page, url: string): Promise<Locator> {
   const yours = await machines(app, url)
@@ -44,13 +25,16 @@ async function runtimeAnswers(signed: SignedStack, workspaceId: string) {
   return answered.status
 }
 
-test("15 Machines lists the machine the app runs on with its state, and Connect a machine opens the instructions and waits for the new machine", async ({ stack, app }) => {
+test("15 Machines lists the machine the app runs on with its state, and Connect a machine asks to sign in before it makes a code", async ({ stack, app }) => {
   const yours = await machines(app, stack.url)
   await expect(yours.getByText(/^You're on this machine/)).toHaveCount(1)
   await expect(yours.getByText("This computer", { exact: true })).toHaveCount(0)
   await expect(yours.getByRole("button", { name: /details$/ })).toHaveCount(0)
   await expect(app.getByText("No machine is connected yet.", { exact: true })).toHaveCount(0)
-  const drawer = await openConnect(app, "build-box")
+  await app.getByRole("button", { name: "Connect a machine…" }).click()
+  const drawer = app.getByRole("dialog", { name: "Connect a machine" })
+  await expect(drawer.getByText("Sign in to Claxedo here to connect another machine.", { exact: true })).toBeVisible()
+  await expect(drawer.getByText(PAIRING_COMMAND)).toHaveCount(0)
   await drawer.getByRole("button", { name: "Done" }).click()
   await expect(drawer).toHaveCount(0)
 })
@@ -131,18 +115,74 @@ test("15 Pause stops a machine until Resume, and Remove asks first and says its 
   expect(await ownerDevices(signed)).toEqual([])
 })
 
-test("15 Connect a machine waits for the new machine and says when it is connected", async ({ signed, page }, testInfo) => {
+async function approvedFromDrawer(page: Page, drawer: Locator, name: string) {
+  const card = approvalCard(drawer)
+  await expect(card).toBeVisible({ timeout: 30_000 })
+  await card.getByRole("textbox", { name: "Name" }).fill(name)
+  await card.getByRole("button", { name: "Approve" }).click()
+  await expect(drawer.getByText(`app on ${name} is ready`, { exact: true })).toBeVisible({ timeout: 30_000 })
+  await drawer.getByRole("button", { name: "Done" }).click()
+  await page.getByRole("group", { name: "Your machines" }).getByRole("button", { name: `${name} details` }).click()
+  return page.getByRole("dialog", { name })
+}
+
+async function pairedDevice(signed: SignedStack, name: string) {
+  return (await ownerDevices(signed)).find((device) => device.display_name === name)
+}
+
+async function expectCliVersion(details: Locator, signed: SignedStack) {
+  await expect(details.getByText(`Claxedo CLI ${CONNECT_CLI_VERSION}`, { exact: true })).toBeVisible()
+  const update = `curl -fsSL ${signed.url}/api/claxedo/connect | sh && claxedo connect --install-service`
+  const below = cliVersionBelowAccepted(CONNECT_CLI_VERSION)
+  await expect(details.getByText("Update available", { exact: true })).toHaveCount(below ? 1 : 0)
+  await expect(details.getByText(update, { exact: true })).toHaveCount(below ? 1 : 0)
+}
+
+async function renamed(page: Page, details: Locator, name: string) {
+  await details.getByRole("textbox", { name: "Name" }).fill(name)
+  await details.getByRole("button", { name: "Rename", exact: true }).click()
+  const after = page.getByRole("dialog", { name })
+  await expect(after.getByText(`Renamed to ${name}`, { exact: true })).toBeVisible()
+  return after
+}
+
+async function stopSharing(page: Page, details: Locator, folder: string, name: string) {
+  const folders = details.getByRole("region", { name: "Shared folders" })
+  const remove = folders.getByRole("button", { name: `Stop sharing ${folder}` })
+  const confirm = page.getByRole("dialog", { name: `Stop sharing ${folder}?` })
+  await remove.click()
+  await expect(confirm.getByText(`app will stop running on ${name}.`, { exact: true })).toBeVisible()
+  await confirm.getByRole("button", { name: "Cancel" }).click()
+  await expect(confirm).toHaveCount(0)
+  await expect(folders.getByText(folder, { exact: true })).toBeVisible()
+  await remove.click()
+  await confirm.getByRole("button", { name: "Stop sharing" }).click()
+  await expect(details.getByText(`${folder} is no longer shared`, { exact: true })).toBeVisible()
+  await expect(folders.getByText("No folder is shared yet.", { exact: true })).toBeVisible()
+}
+
+test("15 Machine details rename a paired machine, stop sharing its folder after naming what stops, and say why it went offline", async ({ signed, page }, testInfo) => {
   await page.goto(`${signed.url}/`)
   await signed.signIn(page, signed.owner)
   await machines(page, signed.url)
-  const drawer = await openConnect(page, "studio-box")
-  await page.screenshot({ path: testInfo.outputPath("connect-waiting.png") })
-  await enrollOwnerMachine(signed, "studio-box")
-  await drawer.getByRole("button", { name: "Check again" }).click()
-  await expect(drawer.getByText("studio-box is connected", { exact: true })).toBeVisible()
-  await expect(drawer.getByRole("button", { name: "Check again" })).toHaveCount(0)
-  await page.screenshot({ path: testInfo.outputPath("connect-connected.png") })
-  expect((await ownerDevices(signed)).map((device) => device.display_name).toSorted()).toEqual([MACHINE, "studio-box"])
-  await drawer.getByRole("button", { name: "Done" }).click()
-  await expect(page.getByRole("group", { name: "Your machines" }).getByText("studio-box", { exact: true })).toBeVisible()
+  const { drawer, code } = await openPairing(page)
+  await pairedMachine(signed, code, testInfo, async (cli) => {
+    const paired = await approvedFromDrawer(page, drawer, "detail-box")
+    await expectCliVersion(paired, signed)
+    const details = await renamed(page, paired, "studio")
+    expect((await pairedDevice(signed, "studio"))?.roots).toEqual([{ path: cli.folder, retires: [expect.objectContaining({ display_name: "app", directory: cli.folder })] }])
+    await stopSharing(page, details, cli.folder, "studio")
+    expect(await pairedDevice(signed, "studio")).toMatchObject({ roots: [], workspace_ids: [] })
+    await page.screenshot({ path: testInfo.outputPath("machine-details-managed.png") })
+
+    expect(await cli.stop()).toBe(0)
+    const stopped = details.getByRole("region", { name: "Claxedo was stopped there" })
+    await expect(stopped.getByText("Run on studio:", { exact: true })).toBeVisible()
+    await expect(stopped.getByText("claxedo connect", { exact: true })).toBeVisible()
+    await expect(details.getByText(/^Offline · last seen .+ · Claxedo was stopped there$/)).toBeVisible()
+    await page.screenshot({ path: testInfo.outputPath("machine-details-stopped.png") })
+    expect(await pairedDevice(signed, "studio")).toMatchObject({ state: "offline", blocked: { reason: "stopped", fix: "claxedo connect" } })
+    await details.getByRole("button", { name: "Done" }).click()
+    await expect(page.getByRole("group", { name: "Your machines" }).getByText(/^Offline · last seen .+ · Claxedo was stopped there$/)).toBeVisible()
+  })
 })

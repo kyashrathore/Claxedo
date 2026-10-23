@@ -33,6 +33,11 @@ import {
   type D1HostInvitationAuthorityPort,
 } from "./host-invitation-authority"
 import {
+  D1HostPairingAuthority,
+  D1_HOST_PAIRING_AUTHORITY_METHODS,
+  type D1HostPairingAuthorityPort,
+} from "./host-pairing-authority"
+import {
   D1HostProviderConfigAuthority,
   D1_HOST_PROVIDER_CONFIG_AUTHORITY_METHODS,
   D1_MACHINE_PROVIDER_CONFIG_METHODS,
@@ -48,6 +53,8 @@ import { D1ApplicationIdentityAuthority, D1_APPLICATION_IDENTITY_METHODS } from 
 import { D1OrgInvitationAuthority, D1_ORG_INVITATION_AUTHORITY_METHODS, type D1OrgInvitationAuthorityPort } from "./org-invitation-authority"
 import { publishD1HostSessionRows } from "./host-session-rows"
 import { readD1HostDirectRoutes, recordD1HostDirectRoutes } from "./host-direct-routes"
+import { addD1HostEnrollmentRoot } from "./host-enrollment-roots"
+import { recordD1HostMachineReport } from "./host-devices"
 import { deleteD1HostedSession, listD1HostedSessions } from "./hosted-session-delete"
 import { recordD1SessionReader } from "./session-reader-store"
 import { D1TeamAuthority, D1_TEAM_AUTHORITY_METHODS, type D1TeamAuthorityPort } from "./team-authority"
@@ -74,6 +81,7 @@ export type D1CoreAuthorityPort = D1WorkspaceAuthorityCore &
   SessionTurnAuthority &
   D1HostAccessAuthorityPort &
   D1HostInvitationAuthorityPort &
+  D1HostPairingAuthorityPort &
   D1HostProviderConfigAuthorityPort &
   D1AuditAuthorityPort &
   D1ChannelRuntimeAuthorityPort
@@ -148,7 +156,12 @@ export function createD1CoreAuthority(database: D1Database, options: D1CoreAutho
     localWorkspaceRegistration: (auth, input) => workspace.localWorkspaceRegistration(auth, input),
     authorizeLocalWorkspaceRegistration: (auth, args) => workspace.authorizeLocalWorkspaceRegistration(auth, args),
   })
-  const hostInvitations = new D1HostInvitationAuthority(database, { ...shared, resolveOrgId: (auth) => workspace.resolveOrgId(auth) })
+  const hostInvitations = new D1HostInvitationAuthority(database, {
+    ...shared,
+    resolveOrgId: (auth) => workspace.resolveOrgId(auth),
+    assignWorkspaceHost: (writer, args) => hosts.assignWorkspaceHost(writer, args),
+  })
+  const hostPairings = new D1HostPairingAuthority(database, { ...shared, resolveOrgId: (auth) => workspace.resolveOrgId(auth) })
   const hostProviderConfig = new D1HostProviderConfigAuthority(database, shared)
   const audit = new D1AuditAuthority(database, shared)
   const channelsAndRuntime = new D1ChannelRuntimeAuthority(database, shared)
@@ -163,6 +176,7 @@ export function createD1CoreAuthority(database: D1Database, options: D1CoreAutho
     ...bindMethods(sessions, D1_SESSION_AUTHORITY_METHODS),
     ...bindMethods(hosts, D1_HOST_ACCESS_AUTHORITY_METHODS),
     ...bindMethods(hostInvitations, D1_HOST_INVITATION_AUTHORITY_METHODS),
+    ...bindMethods(hostPairings, D1_HOST_PAIRING_AUTHORITY_METHODS),
     ...bindMethods(hostProviderConfig, D1_HOST_PROVIDER_CONFIG_AUTHORITY_METHODS),
     ...bindMethods(audit, D1_AUDIT_AUTHORITY_METHODS),
     ...bindMethods(channelsAndRuntime, D1_CHANNEL_RUNTIME_AUTHORITY_METHODS),
@@ -185,6 +199,8 @@ export function createD1CoreAuthority(database: D1Database, options: D1CoreAutho
       publishD1HostSessionRows(database, (options.now ?? Date.now)(), publisher, publication),
     recordHostDirectRoutes: (machine, routes) => recordD1HostDirectRoutes(database, machine, routes, (options.now ?? Date.now)()),
     hostDirectRoutes: ({ workspaceId }) => readD1HostDirectRoutes(database, workspaceId, (options.now ?? Date.now)()),
+    recordHostMachineReport: (machine, report) => recordD1HostMachineReport(database, machine, report, (options.now ?? Date.now)()),
+    addHostEnrollmentRoot: (auth, args) => addD1HostEnrollmentRoot(database, options.deploymentId, auth, args, (options.now ?? Date.now)()),
   }
 }
 

@@ -26,6 +26,7 @@ import { createFakeSystemdUserManager, provision, type FakeServiceManager } from
 import { connectPaths, connectStateStore } from "./paths"
 import { relayStub, until, type RelayStub } from "./relay-stub.test-support"
 import { SYSTEMD_UNIT } from "./service"
+import { defaultPairingDeps } from "./pair"
 
 /**
  * The EC2 proof, on a machine this process owns: cloud-init writes the
@@ -140,6 +141,7 @@ async function machine(input: { linger: boolean }): Promise<Machine> {
     displayName: "ip-10-0-0-12",
     removeDir: (dir) => fs.rm(dir, { recursive: true, force: true }),
     desktopDaemon: () => desktopDaemonState({ files: desktopDaemonDiscoveryFiles({}, home) }),
+    pairing: defaultPairingDeps(),
   }
   return {
     home,
@@ -237,7 +239,8 @@ linuxMachine("claxedo connect on a simulated machine", () => {
       "loginctl show-user ec2-user --property=Linger --value",
       "systemctl --user is-system-running",
       "systemctl --user daemon-reload",
-      `systemctl --user enable --now ${SYSTEMD_UNIT}`,
+      `systemctl --user enable ${SYSTEMD_UNIT}`,
+      `systemctl --user restart ${SYSTEMD_UNIT}`,
     ])
     expect(m.lines.some((line) => line.startsWith("Enrolled as "))).toBe(true)
     expect(m.lines.some((line) => line.startsWith(`Installed and started ${SYSTEMD_UNIT}`))).toBe(true)
@@ -295,9 +298,10 @@ linuxMachine("claxedo connect on a simulated machine", () => {
     timing("boot → readiness + tunnel, unattended", { elapsedMs: resumedAt - bootedAt, beatMs: BEAT_MS })
     const afterReboot = m.cp.log.slice(requestsBeforeReboot).map((entry) => entry.path)
     expect(afterReboot[0]).toBe("/api/claxedo/host/enrollments/acquire")
-    expect(afterReboot.filter((entry) => !entry.endsWith("/heartbeat") && entry !== EVENTS_PATH)).toEqual([
+    expect(afterReboot.filter((entry) => !entry.endsWith("/heartbeat") && !entry.endsWith("/report") && entry !== EVENTS_PATH)).toEqual([
       "/api/claxedo/host/enrollments/acquire",
     ])
+    await until(() => m.cp.reports().some((report) => report.generation === 2), "the resumed instance to report its version")
     const resumedState = await m.state()
     expect(resumedState?.enrollment?.enrollment_id).toBe(enrollmentIdOf(m))
     expect(resumedState?.run).toMatchObject({ pid: rebooted.pid, generation: 2 })
@@ -425,6 +429,10 @@ async function inProcessHost() {
   // Strictly increasing, so the run record each beat writes afterwards is
   // distinguishable from the previous beat's even inside one millisecond.
   let clock = 0
+  // A serving beat reads the machine's addresses before it signs its request,
+  // and beats run one at a time, so at each read every earlier beat has been
+  // answered and has computed its run record.
+  const beatStarts: Array<{ clockAt: number; beatsSent: number }> = []
   const deps: ConnectDeps = {
     host: {
       ...defaultHostDeps(),
@@ -437,7 +445,10 @@ async function inProcessHost() {
         listener = await createHostRuntimeListener({ hostname: "127.0.0.1", port: 0, drainTimeoutMs: 500 })
         return listener
       },
-      directAddresses: () => [],
+      directAddresses: () => {
+        beatStarts.push({ clockAt: clock, beatsSent: cp.beats().length })
+        return []
+      },
       setServing: setHostServing,
       servingState: hostServingState,
       stopServing: stopHostServing,
@@ -461,6 +472,7 @@ async function inProcessHost() {
     displayName: "build-box",
     removeDir: (dir) => fs.rm(dir, { recursive: true, force: true }),
     desktopDaemon: async () => ({ state: "absent" }) as const,
+    pairing: defaultPairingDeps(),
   }
   let running: Promise<number> | undefined
   const stateText = () => fs.readFile(connectPaths(home).stateFile, "utf8")
@@ -495,12 +507,18 @@ async function inProcessHost() {
       running = connect(argv, deps)
       await beatReconciled(since, "the first beat")
     },
-    /** One beat, reconciled; returns what the request declared. */
+    /**
+     * The first beat to start after this call, reconciled; returns what its
+     * request declared. A beat a ring started earlier may still be in flight,
+     * and its run record is not this beat's.
+     */
     beat: async () => {
-      const since = await lastBeatAt()
+      const started = beatStarts.length
       tick?.()
-      await beatReconciled(since, "a beat")
-      return cp.beats().at(-1)!.body
+      await until(() => beatStarts.length > started, "a beat to start")
+      const { clockAt, beatsSent } = beatStarts[started]
+      await beatReconciled(clockAt, "a beat")
+      return cp.beats()[beatsSent].body
     },
     stop: async () => {
       stop?.("SIGTERM")

@@ -411,6 +411,12 @@ export function createFakeSystemdUserManager(options: FakeSystemdOptions): FakeS
         if (unit) await stop(unit)
         return { code: 0, stdout: "" }
       }
+      if (verb === "restart") {
+        const unit = await load(name)
+        await stop(unit)
+        start(unit)
+        return { code: 0, stdout: "" }
+      }
       if (verb === "show") {
         const unit = units.get(name) ?? (await load(name))
         return { code: 0, stdout: show(unit, isEnabled(name)) }
