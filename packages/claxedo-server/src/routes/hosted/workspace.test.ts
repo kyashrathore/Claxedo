@@ -307,6 +307,30 @@ describe("host assignment (POST /:id/host-assignment)", () => {
     }
   })
 
+  test("with addRoot the folder joins the machine's roots before it is assigned, and names the folder it adds", async () => {
+    const order: string[] = []
+    const addHostEnrollmentRoot = vi.fn(async () => {
+      order.push("root")
+      return { changed: true, scope_revision: 3 }
+    })
+    const authority = fakeAuthority({
+      addHostEnrollmentRoot,
+      assignWorkspaceHost: vi.fn(async () => {
+        order.push("assign")
+        return { assigned: true }
+      }),
+    })
+    const { app } = buildApp({ authority })
+    const res = await app.fetch(post("/ws_1/host-assignment", { hostId: "host_1", remoteDirectory: "/home/ada/notes", addRoot: true }))
+    expect(res.status).toBe(200)
+    expect(addHostEnrollmentRoot).toHaveBeenCalledWith(expect.anything(), { hostId: "host_1", folder: "/home/ada/notes" })
+    expect(order).toEqual(["root", "assign"])
+
+    const nowhere = await app.fetch(post("/ws_2/host-assignment", { hostId: "host_1", addRoot: true }))
+    expect(nowhere.status).toBe(400)
+    expect(addHostEnrollmentRoot).toHaveBeenCalledTimes(1)
+  })
+
   test("rejects a body with no host id (schema fail-closed, stable 400)", async () => {
     const { app, authority } = buildApp({})
     const res = await app.fetch(post("/ws_1/host-assignment", { displayName: "demo" }))

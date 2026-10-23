@@ -57,7 +57,7 @@ export function createQueries(transport: Transport, workspaces: Workspaces, acco
     files: fileQueries(transport, workspaces),
     git: gitQueries(transport, workspaces),
     harnesses: harnessQueries(transport, workspaces, account),
-    folders: folderQueries(transport),
+    folders: folderQueries(transport, account),
     integrations: integrationQueries(transport),
     agentConnections: agentConnectionQueries(transport),
     providerConnect: providerConnectQueries(transport),

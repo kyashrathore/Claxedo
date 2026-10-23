@@ -67,7 +67,7 @@ export type Placement = PlacementName & {
 export type ProjectSource =
   | { readonly kind: "repository"; readonly url: string }
   | { readonly kind: "connectedRepository"; readonly connectionId: string; readonly fullName: string }
-  | { readonly kind: "folder"; readonly path: string }
+  | { readonly kind: "folder"; readonly path: string; readonly machine?: MachineId }
 
 export type ProjectIcon = { readonly override?: string; readonly color?: string }
 

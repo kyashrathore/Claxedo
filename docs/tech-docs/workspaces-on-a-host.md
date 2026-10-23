@@ -141,11 +141,14 @@ the tunnel's own workspace; everything else reaches the embedded runtime at
 the live serving arrangement and is what the daemon declares to its own
 clients (B.1); it goes away with every way serving ends.
 
-**A.4 Publishing one workspace** — the app has no caller that publishes a
-workspace. The owner's declaration is `POST /api/workspace/:id/host-assignment`
+**A.4 Publishing one workspace** — the owner's declaration is
+`POST /api/workspace/:id/host-assignment`
 (`packages/claxedo-server/src/routes/hosted/workspace.ts`), which Electron
 main sends as the account operation `workspace.assignHost`
-(`packages/account-contract/src/hosted-operations.ts`).
+(`packages/account-contract/src/hosted-operations.ts`) and the app sends as
+`machines.assign` for a folder the person picked on another machine
+(`packages/claxedo-app/src/server/machine-projects.ts`, with `addRoot` so the
+folder joins that machine's roots first).
 On the desktop the port is `claxedo.hostConnector.share`, which carries a
 workspace id and a label and nothing that names a machine; the supervisor's
 `shareWorkspace` describes the workspace (`describeWorkspace`: directory,
@@ -192,6 +195,29 @@ machine's own listener with
 browser's `Origin` and `Host` never reach the daemon's loopback gate. What
 separates the replayed request from the machine's own user is decided at
 ingress (F.2), never by its address.
+
+**A.8 Operations on the machine itself** — reading a `claxedo connect`
+machine's folders (and, with the same grant, writing a new checkout there) is
+the owner's request to the machine, not to a workspace. The app sends it to the
+control plane as a hosted operation (`machines.folders`,
+`packages/account-contract/src/hosted-operations.ts`); `HostMachineRoutes`
+(`packages/claxedo-server/src/routes/hosted/host-machines.ts`) asks
+`ownedMachine` (`workspace/machine-management.ts`) whether the enrollment is
+the caller's, unpaused, live and serving a folder, then `callMachine` mints a
+host-management grant (`mintHostManagementGrant`,
+`packages/claxedo-server-core/src/platform/auth/host-management-grant.ts`: the
+person, the enrollment, the host, one operation, its destination, one minute)
+and posts it as `x-claxedo-host-grant` to `/host-management/<operation>`
+through the relay as the caller, under the first folder the machine serves.
+On the machine that path is a route contribution of every runtime it serves
+(`createHostManagement`, `packages/claxedo-host-serving/src/host-management.ts`,
+composed by `runHost` in `packages/cli/src/connect/host.ts`): it requires the
+relay's proof to name the owner of the whole workspace, verifies the grant
+against the control plane's published key set, refuses another enrollment,
+host, person, operation or destination, and spends each grant once. The
+folders it lists come from `directoryEntries` and `searchFolders`
+(`packages/claxedo-server-core/src/hosts/machine/folders.ts`), the same code the
+desktop's own folder routes run.
 
 ## B. The client sees the machine and its workspace
 

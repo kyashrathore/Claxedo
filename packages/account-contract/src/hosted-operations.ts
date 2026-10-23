@@ -212,6 +212,24 @@ export const CORE_HOSTED_OPERATIONS = {
     output: object, retry: "safe",
     exposure: { renderer: true, app: false },
   }),
+  "machines.folders": defineOperation({
+    method: "POST", path: operationPath("/api/claxedo/host/machines/:enrollmentId/folders"),
+    input: operationInput({ enrollmentId: requiredParameter, read: bodyField, directory: bodyField, query: bodyField, limit: bodyField }),
+    output: object, retry: "safe",
+    exposure: { renderer: true, app: false },
+    body: selectBody("read", "directory", "query", "limit"),
+  }),
+  // The route `claxedo host assign` uses, for a folder the person picked in
+  // the app on one of their own machines: the plane refuses any other host,
+  // and the folder joins that machine's roots. The app names a new workspace
+  // id for each pick, so no existing workspace is re-pointed.
+  "machines.assign": defineOperation({
+    method: "POST", path: operationPath("/api/workspace/:workspaceId/host-assignment"),
+    input: operationInput({ workspaceId: requiredParameter, hostId: bodyField, displayName: bodyField, repoName: bodyField, remoteDirectory: bodyField }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: false },
+    body: (input) => ({ ...selectBody("hostId", "displayName", "repoName", "remoteDirectory")(input), addRoot: true }),
+  }),
   "workspace.list.provisioner": defineOperation({
     method: "GET", path: operationPath("/api/workspace?host=provisioner"),
     input: operationInput({}),

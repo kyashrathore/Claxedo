@@ -2,14 +2,15 @@ import { createMemo, createSignal, type Accessor } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { createFlow, runFlow } from "@/lib/flow"
 import { codeHostConnections, codeHostIntegrations, toAppError, useServer, type ProjectSource } from "@/server"
+import { sameFolderPlace, type FolderPlace } from "../folder-places"
 
 export type SourceMode = "folder" | "repository"
 type RepositoryEntry = "list" | "url"
 export type RepositoryView = "checking" | "url" | "connect" | "list" | "failed"
 
 export type ProjectCreateDraftOptions = {
-  readonly folderMachine: Accessor<string | undefined>
-  readonly pickFolder?: () => Promise<string | undefined>
+  readonly folderPlaces: Accessor<readonly FolderPlace[]>
+  readonly pickFolder?: (place: FolderPlace) => Promise<string | undefined>
   readonly send: (source: ProjectSource, name: string | undefined) => Promise<void>
 }
 
@@ -40,27 +41,49 @@ function createRepositoryChoice(active: Accessor<boolean>) {
 
 export type RepositoryChoice = ReturnType<typeof createRepositoryChoice>
 
-function createSourcePick(options: ProjectCreateDraftOptions) {
+function createFolderPick(options: ProjectCreateDraftOptions) {
   const [folder, setFolder] = createSignal("")
+  const [picked, setPicked] = createSignal<FolderPlace>()
+  const place = createMemo(() => {
+    const places = options.folderPlaces()
+    const held = picked()
+    return (held && places.find((candidate) => sameFolderPlace(candidate, held))) ?? places[0]
+  })
+  const choosePlace = (next: FolderPlace) => {
+    if (!sameFolderPlace(next, place() ?? next)) setFolder("")
+    setPicked(next)
+  }
+  const chooseFolder = async () => {
+    const at = place()
+    const chosen = at && (await options.pickFolder?.(at))
+    const now = place()
+    if (chosen && now && sameFolderPlace(at, now)) setFolder(chosen)
+  }
+  const folderSource = (): ProjectSource | undefined => {
+    const at = place()
+    if (!at || !folder()) return undefined
+    return { kind: "folder", path: folder(), ...(at.machine ? { machine: at.machine } : {}) }
+  }
+  return { folder, place, choosePlace, chooseFolder, folderSource }
+}
+
+function createSourcePick(options: ProjectCreateDraftOptions) {
+  const folders = createFolderPick(options)
   const [repoUrl, setRepoUrl] = createSignal("")
   const [source, setSource] = createSignal<SourceMode>("folder")
   const [query, setQuery] = createSignal("")
   const [selected, setSelected] = createSignal<string>()
-  const offersFolder = () => options.folderMachine() !== undefined && Boolean(options.pickFolder)
+  const offersFolder = () => options.folderPlaces().length > 0 && Boolean(options.pickFolder)
   const mode = (): SourceMode => (offersFolder() ? source() : "repository")
   const choice = createRepositoryChoice(() => mode() === "repository")
   const chosen = (): ProjectSource | undefined => {
-    if (mode() === "folder") return folder() ? { kind: "folder", path: folder() } : undefined
+    if (mode() === "folder") return folders.folderSource()
     const connection = choice.connection()
     if (choice.view() === "list") return connection && selected() ? { kind: "connectedRepository", connectionId: connection.id, fullName: selected() ?? "" } : undefined
     if (choice.view() !== "url") return undefined
     return repoUrl().trim() ? { kind: "repository", url: repoUrl().trim() } : undefined
   }
-  const chooseFolder = async () => {
-    const picked = await options.pickFolder?.()
-    if (picked) setFolder(picked)
-  }
-  return { folder, repoUrl, setRepoUrl, setSource, query, setQuery, selected, setSelected, offersFolder, mode, choice, chosen, chooseFolder }
+  return { ...folders, repoUrl, setRepoUrl, setSource, query, setQuery, selected, setSelected, offersFolder, mode, choice, chosen }
 }
 
 export function createProjectCreateDraft(options: ProjectCreateDraftOptions) {
@@ -88,7 +111,7 @@ export function createProjectCreateDraft(options: ProjectCreateDraftOptions) {
     clearError()
     pick.setSource(next)
   }
-  return { ...pick, folderMachine: options.folderMachine, name, setName, editUrl, chooseSource, busy, error, submit }
+  return { ...pick, folderPlaces: options.folderPlaces, name, setName, editUrl, chooseSource, busy, error, submit }
 }
 
 export type ProjectCreateDraft = ReturnType<typeof createProjectCreateDraft>

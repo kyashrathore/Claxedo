@@ -1,7 +1,9 @@
 import { asArray, isString } from "@claxedo/helpers/guards"
-import { readString } from "@claxedo/helpers/readers"
+import { readArray, readString } from "@claxedo/helpers/readers"
+import type { HostedAccount } from "./account"
 import { ServerError } from "./errors"
 import { fetchQuery } from "./fetch-query"
+import type { MachineId } from "./ids"
 import { queryKeys } from "./query-keys"
 import { withQuery, type Transport } from "./transport"
 import type { FetchQuery } from "./types"
@@ -11,41 +13,76 @@ export type FolderEntry = { readonly name: string; readonly absolute: string }
 export type ServerPaths = { readonly home: string; readonly directory: string }
 
 export type FolderQueries = {
-  readonly paths: () => FetchQuery<ServerPaths>
-  readonly children: (directory: string) => FetchQuery<readonly FolderEntry[]>
+  readonly paths: (machine?: MachineId) => FetchQuery<ServerPaths>
+  readonly children: (directory: string, machine?: MachineId) => FetchQuery<readonly FolderEntry[]>
 }
 
 export type FoldersApi = {
+  readonly search: (scope: string, query: string, limit: number, machine?: MachineId) => Promise<readonly string[]>
+}
+
+type FolderReads = {
+  readonly paths: () => Promise<ServerPaths>
+  readonly children: (directory: string) => Promise<readonly FolderEntry[]>
   readonly search: (scope: string, query: string, limit: number) => Promise<readonly string[]>
 }
 
-async function readPaths(transport: Transport): Promise<ServerPaths> {
-  const body = await transport.json("/path")
+function homeOf(body: unknown, where: string): string {
   const home = readString(body, "home")
-  if (home === undefined) throw new ServerError({ class: "internal", message: "The server answered /path without a home folder" })
-  return { home, directory: readString(body, "directory") ?? home }
+  if (home === undefined) throw new ServerError({ class: "internal", message: `${where} answered without a home folder` })
+  return home
 }
 
-async function readChildren(transport: Transport, directory: string): Promise<readonly FolderEntry[]> {
-  const body = await transport.json(withQuery("/file", { directory, path: "" }))
-  return (Array.isArray(body) ? body : []).flatMap((item) => {
+function folderEntries(items: readonly unknown[], directoriesOnly: boolean): readonly FolderEntry[] {
+  return items.flatMap((item) => {
     const name = readString(item, "name")
     const absolute = readString(item, "absolute")
-    if (name === undefined || absolute === undefined || readString(item, "type") !== "directory") return []
+    if (name === undefined || absolute === undefined || (directoriesOnly && readString(item, "type") !== "directory")) return []
     return [{ name, absolute }]
   })
 }
 
-export function folderQueries(transport: Transport): FolderQueries {
+function attachedReads(transport: Transport): FolderReads {
   return {
-    paths: () => fetchQuery(queryKeys.folderPaths(transport.serverUrl), () => readPaths(transport)),
-    children: (directory) => fetchQuery(queryKeys.folderChildren(transport.serverUrl, directory), () => readChildren(transport, directory)),
-  }
-}
-
-export function createFoldersApi(transport: Transport): FoldersApi {
-  return {
+    paths: async () => {
+      const body = await transport.json("/path")
+      const home = homeOf(body, "The server")
+      return { home, directory: readString(body, "directory") ?? home }
+    },
+    children: async (directory) => folderEntries(asArray(await transport.json(withQuery("/file", { directory, path: "" }))), true),
     search: async (scope, query, limit) =>
       asArray(await transport.json(withQuery("/find/file", { directory: scope, query, type: "directory", limit: String(limit) }))).filter(isString),
   }
+}
+
+function machineReads(account: HostedAccount | undefined, machine: MachineId): FolderReads {
+  const read = async (body: Readonly<Record<string, unknown>>) => {
+    if (!account) throw new ServerError({ class: "invalid", message: "Reading another machine's folders needs a signed-in account" })
+    return await account.run("machines.folders", { enrollmentId: machine, ...body })
+  }
+  return {
+    paths: async () => {
+      const home = homeOf(await read({ read: "home" }), "The machine")
+      return { home, directory: home }
+    },
+    children: async (directory) => folderEntries(readArray(await read({ read: "children", directory }), "folders") ?? [], false),
+    search: async (scope, query, limit) => (readArray(await read({ read: "search", directory: scope, query, limit }), "folders") ?? []).filter(isString),
+  }
+}
+
+export function createFolderReads(transport: Transport, account: HostedAccount | undefined) {
+  return (machine: MachineId | undefined): FolderReads => (machine === undefined ? attachedReads(transport) : machineReads(account, machine))
+}
+
+export function folderQueries(transport: Transport, account: HostedAccount | undefined): FolderQueries {
+  const reads = createFolderReads(transport, account)
+  return {
+    paths: (machine) => fetchQuery(queryKeys.folderPaths(transport.serverUrl, machine), () => reads(machine).paths()),
+    children: (directory, machine) => fetchQuery(queryKeys.folderChildren(transport.serverUrl, machine, directory), () => reads(machine).children(directory)),
+  }
+}
+
+export function createFoldersApi(transport: Transport, account: HostedAccount | undefined): FoldersApi {
+  const reads = createFolderReads(transport, account)
+  return { search: (scope, query, limit, machine) => reads(machine).search(scope, query, limit) }
 }

@@ -565,7 +565,13 @@ export const desktopRenderer: Policy = {
   // `machine-actions.tsx`, `machine-status.tsx`; and its server adapter,
   // `server/wire/machines.ts`). They add no package edge.
   // 1563/37, no headroom.
-  ceilings: { modules: 1563, packages: 37 },
+  // The create-project form's folder places, this computer and each connected
+  // machine the person owns that serves a folder (owner: the app's projects
+  // domain, `projects/folder-places.ts`), and the creation of a project from a
+  // folder on another machine through the route `claxedo host assign` uses
+  // (owner: the app's server adapter, `server/machine-projects.ts`). They add
+  // no package edge.
+  ceilings: { modules: 1565, packages: 37 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

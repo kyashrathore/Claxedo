@@ -241,16 +241,34 @@ since worktrees are the local server's own route. This workstream gives a connec
 takes over [Remote machine connection](./2026-09-14-003-feat-connect-implementation-plan.md)'s deferred P5.3
 (machines in the create-project form) and P5b (host folder operations).
 
-- [ ] **The boundary.** A workspace token authorizes one workspace, not the machine, so an operation on the
+- [x] **The boundary.** A workspace token authorizes one workspace, not the machine, so an operation on the
   machine as a whole (listing folders, adding a folder, cloning, a new worktree as its own checkout) runs on a
   host-management grant. The control plane mints it for (person, enrollment, operation, destination, expiry), only
   to the machine's owner; the machine verifies it against the control plane's key, and it is distinct from the
   relay's proof. Such an operation creates new workspace rows scoped to that enrollment and never rewrites an
-  existing one (the rule P3.3 set). Progress:
-- [ ] **Folder on <machine>.** The create-project form offers "Folder on <name>" for each online connected machine
+  existing one (the rule P3.3 set). Progress: done 2026-10-23 (lane C5). The grant is a member of the pass family
+  (`claxedo-server-core/src/platform/auth/host-management-grant.ts`, audience `claxedo-host-management`, one
+  operation of `folders.read`, `clone`, `worktree`, a destination, the host, one minute). The plane mints one per
+  request, only after `ownedMachine` finds the caller's own unpaused, live enrollment serving a folder, and carries
+  it as `x-claxedo-host-grant` through the relay as the caller under that folder (`workspace/machine-management.ts`).
+  The machine (`claxedo-host-serving/src/host-management.ts`, a route contribution of every runtime `claxedo connect`
+  serves) needs the relay's proof naming the workspace owner and the grant verified against the plane's JWKS for
+  its own enrollment and host, that person, operation and destination, and spends each grant once. A folder the
+  owner picks becomes a new workspace on that enrollment's organization through `assignWorkspaceHost` with an id
+  the app mints, so none is re-pointed. The desktop daemon does not mount it yet (no app surface enables its remote
+  access).
+- [x] **Folder on <machine>.** The create-project form offers "Folder on <name>" for each online connected machine
   the person owns. The same folder dialog opens with that machine's folders (its paths, children and search,
   answered by the machine under the grant; `~` is the machine's home). Picking a folder adds it to the machine's
-  roots and assigns it, and it becomes a project the way `claxedo host assign` makes one today. Progress:
+  roots and assigns it, and it becomes a project the way `claxedo host assign` makes one today. Progress: done
+  2026-10-23 (lane C5). Folder places are this computer and each of the person's online, unpaused machines that
+  serve a folder (`projects/folder-places.ts`); with more than one a Machine select picks it. The dialog reads
+  through `machines.folders` (`POST /api/claxedo/host/machines/:enrollmentId/folders`: home, one folder's
+  subfolders, or a search under one), and the pick is `machines.assign`, the route `claxedo host assign` uses
+  (`/api/workspace/:id/host-assignment`) with `addRoot`. Live: `02-projects-machine` pairs a real `claxedo connect
+  --pair` machine on the signed stack, picks `~/folders/al…` in the machine's dialog, and reads the new workspace back
+  from the catalog and the machine's served set, on web and phone; red with the machine's host management unmounted
+  (no folders listed).
 - [ ] **Clone onto <machine>.** A repository URL or a code-host repository is cloned onto the chosen connected
   machine, into a folder the person can change (by default beside the machine's first shared folder). The clone's
   credential is brokered (single use, scoped to that repository, from the connections capability), never the

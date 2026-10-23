@@ -3,7 +3,10 @@ import { expect, test } from "bun:test"
 import { QueryClient } from "@tanstack/solid-query"
 import type { CloudSourceCreateInput, CloudWorkspace } from "./cloud-types"
 import { ServerError } from "./errors"
-import { placementId, projectId } from "./ids"
+import type { HostedAccount } from "./account"
+import { machineId, placementId, projectId } from "./ids"
+import { machineFolderProjectCreator } from "./machine-projects"
+import type { Machine } from "./machine-types"
 import { createProjectsApi } from "./projects"
 import { queryKeys } from "./query-keys"
 import type { Transport } from "./transport"
@@ -15,9 +18,19 @@ const repository: ProjectSource = { kind: "repository", url: "https://github.com
 const accountProject = { id: projectId("prj_account"), name: "octocat/Spoon-Knife", available: true, createdAt: 1, updatedAt: 1 } as Project
 const wireProject = { id: "prj_local", name: "Spoon-Knife", available: true, created_at: 1, updated_at: 1 }
 
+const buildBox = {
+  id: machineId("enr_box"),
+  name: "build-box",
+  online: true,
+  isThisMachine: false,
+  enrolled: true,
+  enrollment: { hostId: "host_box", lastSeenAt: 1, servingWorkspaceIds: ["ws_first"] },
+} satisfies Machine
+
 function world(serverKind: "daemon" | "hosted") {
   const requests: string[] = []
   const created: CloudSourceCreateInput[] = []
+  const assigned: Array<Readonly<Record<string, unknown>>> = []
   const transport = {
     serverUrl,
     json: async (path: string) => {
@@ -29,15 +42,24 @@ function world(serverKind: "daemon" | "hosted") {
     load: async () => ({ declaration: { serverKind } }),
     catalog: () => ({ declaration: { serverKind } }),
     refresh: async () => {},
-    accountProjects: async () => (created.length > 0 ? [accountProject] : []),
+    byId: (id: string) => (assigned.some((input) => input.workspaceId === id) ? { id, projectId: accountProject.id } : undefined),
+    accountProjects: async () => (created.length > 0 || assigned.length > 0 ? [accountProject] : []),
   } as unknown as Workspaces
+  const account = {
+    run: async (operation: string, input: Readonly<Record<string, unknown>>) => {
+      if (operation !== "machines.assign") throw new Error(`unexpected ${operation}`)
+      assigned.push(input)
+      return { assignment: { assigned: true, workspace_id: input.workspaceId, host_id: input.hostId } }
+    },
+  } as unknown as HostedAccount
   const createCloudWorkspace = async (input: CloudSourceCreateInput): Promise<CloudWorkspace> => {
     created.push(input)
     await input.onCreated?.(placementId("ws_new"))
     return { id: placementId("ws_new"), projectId: accountProject.id } as CloudWorkspace
   }
   const queryClient = new QueryClient()
-  return { api: createProjectsApi(transport, queryClient, workspaces, createCloudWorkspace), requests, created, queryClient }
+  const createMachineFolder = machineFolderProjectCreator(account, workspaces, async () => [buildBox])
+  return { api: createProjectsApi(transport, queryClient, workspaces, createCloudWorkspace, createMachineFolder), requests, created, assigned, queryClient }
 }
 
 test("a hosted plane creates a project from a repository URL as that repository's first cloud workspace, named after the repository, and answers the catalog's project", async () => {
@@ -72,4 +94,23 @@ test("a hosted create reports the workspace it just made, so a repository that a
   const reported: string[] = []
   await api.create({ source: repository, onPlacement: (id) => reported.push(id) })
   expect(reported).toEqual(["ws_new"])
+})
+
+test("a folder on a connected machine becomes a new workspace assigned to that machine, on a hosted plane and a daemon alike", async () => {
+  for (const serverKind of ["hosted", "daemon"] as const) {
+    const { api, requests, created, assigned } = world(serverKind)
+    const reported: string[] = []
+    const project = await api.create({ source: { kind: "folder", path: "/home/ada/code/alpha/", machine: buildBox.id }, onPlacement: (id) => reported.push(id) })
+    expect(project).toBe(accountProject)
+    expect(requests).toEqual([])
+    expect(created).toEqual([])
+    expect(assigned).toEqual([{ workspaceId: expect.stringMatching(/^ws_[0-9a-f]{32}$/), hostId: "host_box", displayName: "alpha", repoName: "alpha", remoteDirectory: "/home/ada/code/alpha/" }])
+    expect(reported).toEqual([String(assigned[0]?.workspaceId)])
+  }
+})
+
+test("a folder on a machine that is not the account's is refused before anything is assigned", async () => {
+  const { api, assigned } = world("hosted")
+  await expect(api.create({ source: { kind: "folder", path: "/srv/app", machine: machineId("enr_other") } })).rejects.toMatchObject({ class: "not_found" })
+  expect(assigned).toEqual([])
 })

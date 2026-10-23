@@ -9,6 +9,7 @@ import { createIntegrationsApi } from "./integrations"
 import { createProviderConnectApi } from "./provider-connect"
 import { createProviderCatalogsApi } from "./provider-catalogs"
 import { createFoldersApi } from "./folders"
+import { machineFolderProjectCreator } from "./machine-projects"
 import type { ServerConfig } from "./config"
 import { isRetryableServerError } from "./errors"
 import { createEventIntake, type EventIntake } from "./event-intake"
@@ -93,14 +94,17 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     telemetry,
     sessions: createSessionsApi(transport, workspaces, status, coverage, wakes, projection, telemetry, account),
     sharedSessions: workspaces.shared,
-    projects: { ...createProjectsApi(transport, queryClient, workspaces, cloud.create), ...createProjectEnvironmentApi(transport, queryClient, workspaces, account) },
+    projects: {
+      ...createProjectsApi(transport, queryClient, workspaces, cloud.create, machineFolderProjectCreator(account, workspaces, () => queryClient.fetchQuery(queries.machines.list()))),
+      ...createProjectEnvironmentApi(transport, queryClient, workspaces, account),
+    },
     placements: placementsApi(transport, workspaces),
     terminals: createTerminalsApi(transport, workspaces, telemetry, wakes),
     git: createGitApi(transport, workspaces, queryClient),
     cloud,
     accounts: createAccountsApi(transport, queryClient, account),
     marketplace: createMarketplaceApi(transport, queryClient, telemetry),
-    folders: createFoldersApi(transport),
+    folders: createFoldersApi(transport, account),
     integrations: createIntegrationsApi(transport, queryClient),
     machines: createMachinesApi(transport, queryClient, workspaces, account),
     agentConnections: createAgentConnectionsApi(transport, queryClient),

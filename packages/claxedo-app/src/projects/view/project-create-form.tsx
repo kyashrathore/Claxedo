@@ -1,6 +1,7 @@
 import { Show, type JSX } from "solid-js"
 import { toAppError, type ProjectSource } from "@/server"
-import { Button, ClaxedoIcon as Icon, Field, SegmentedControl, SegmentedControlItem, TextField } from "@/ui"
+import { Button, ClaxedoIcon as Icon, Field, SegmentedControl, SegmentedControlItem, Select, TextField } from "@/ui"
+import type { FolderPlace } from "../folder-places"
 import { useProjectsText } from "../i18n"
 import { draftProjectName, pastedRepositoryHint } from "../project-source"
 import { ConnectCodeHost } from "./project-create-connect"
@@ -9,9 +10,9 @@ import { AccountSelect, RepositoryList } from "./project-create-repository"
 import "./projects.css"
 
 export type ProjectCreateFormProps = {
-  readonly folderMachine?: string
+  readonly folderPlaces?: readonly FolderPlace[]
   readonly namedByRepository?: boolean
-  readonly pickFolder?: () => Promise<string | undefined>
+  readonly pickFolder?: (place: FolderPlace) => Promise<string | undefined>
   readonly submitLabel?: string
   readonly onSubmit: (source: ProjectSource, name: string | undefined) => void | Promise<void>
 }
@@ -29,6 +30,34 @@ function FolderField(props: { machine: string; folder: string; onChoose: () => v
         <span class="project-create-folder-action">{props.folder ? t("projects.create.folder.change") : t("projects.add.folder.browse")}</span>
       </button>
     </Field>
+  )
+}
+
+function PlaceSelect(props: { places: readonly FolderPlace[]; current: FolderPlace; onSelect: (place: FolderPlace) => void }) {
+  const t = useProjectsText()
+  return (
+    <Field>
+      <Field.Label>{t("projects.create.machine")}</Field.Label>
+      <Select
+        options={[...props.places]}
+        current={props.current}
+        value={(place) => place.machine ?? ""}
+        label={(place) => place.name}
+        onSelect={(next) => next && props.onSelect(next)}
+        triggerProps={{ "aria-label": t("projects.create.machine") }}
+      />
+    </Field>
+  )
+}
+
+function FolderSection(props: { draft: ProjectCreateDraft; place: FolderPlace }) {
+  return (
+    <>
+      <Show when={props.draft.folderPlaces().length > 1}>
+        <PlaceSelect places={props.draft.folderPlaces()} current={props.place} onSelect={props.draft.choosePlace} />
+      </Show>
+      <FolderField machine={props.place.name} folder={props.draft.folder()} onChoose={() => void props.draft.chooseFolder()} />
+    </>
   )
 }
 
@@ -117,12 +146,12 @@ export function ProjectCreateFields(props: { readonly draft: ProjectCreateDraft;
         <SourceSwitch draft={props.draft} />
       </Show>
       <Show
-        when={props.draft.mode() === "folder" ? props.draft.folderMachine() : undefined}
+        when={props.draft.mode() === "folder" ? props.draft.place() : undefined}
         fallback={
           <RepositorySection choice={props.draft.choice} url={props.draft.repoUrl()} onUrl={props.draft.editUrl} query={props.draft.query()} onQuery={props.draft.setQuery} selected={props.draft.selected()} onSelect={props.draft.setSelected} />
         }
       >
-        {(machine) => <FolderField machine={machine()} folder={props.draft.folder()} onChoose={() => void props.draft.chooseFolder()} />}
+        {(place) => <FolderSection draft={props.draft} place={place()} />}
       </Show>
       <Show when={!props.namedByRepository}>
         <TextField label={t("projects.add.name")} placeholder={namePlaceholder()} value={props.draft.name()} onChange={props.draft.setName} spellcheck={false} />
@@ -134,7 +163,7 @@ export function ProjectCreateFields(props: { readonly draft: ProjectCreateDraft;
 export function ProjectCreateForm(props: ProjectCreateFormProps): JSX.Element {
   const t = useProjectsText()
   const draft = createProjectCreateDraft({
-    folderMachine: () => props.folderMachine,
+    folderPlaces: () => props.folderPlaces ?? [],
     ...(props.pickFolder ? { pickFolder: props.pickFolder } : {}),
     send: async (source, name) => props.onSubmit(source, name),
   })

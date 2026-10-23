@@ -1,0 +1,144 @@
+import fs from "node:fs/promises"
+import os from "node:os"
+import { Hono, type Context } from "hono"
+import { createRemoteJWKSet, type JWTVerifyGetKey } from "jose"
+import type { RelayHostAuthContext } from "@claxedo/session-core/relay-host"
+import type { WorkspaceRuntimeServerOptions } from "@claxedo/workspace-runtime"
+import {
+  HOST_MANAGEMENT_GRANT_HEADER,
+  HOST_MANAGEMENT_ROUTES,
+  verifyHostManagementGrant,
+  type HostManagementOperation,
+} from "@claxedo/server-core/platform/auth/host-management-grant"
+import { directoryEntries, searchFolders } from "@claxedo/server-core/hosts/machine/folders"
+import { readFiniteNumber, readString } from "@claxedo/helpers/readers"
+
+export type HostManagementOptions = {
+  enrollmentId: string
+  hostId: string
+  /** The control plane's published key set, which signs every grant. */
+  controlPlaneKeys: JWTVerifyGetKey
+  now?: () => number
+}
+
+export type HostManagement = {
+  readonly contribution: NonNullable<WorkspaceRuntimeServerOptions["routeContributions"]>[number]
+}
+
+type Refusal = { status: 400 | 401 | 403 | 404 | 409; code: string; message: string }
+
+const MAX_SEARCH_RESULTS = 200
+
+function answerRefusal(c: Context, refusal: Refusal) {
+  return c.json({ error: { code: refusal.code, message: refusal.message } }, refusal.status)
+}
+
+function createSpentGrants(now: () => number) {
+  const spent = new Map<string, number>()
+  return (jti: string, expiresAt: number) => {
+    const at = now()
+    for (const [id, until] of spent) if (until <= at) spent.delete(id)
+    if (spent.has(jti)) return false
+    spent.set(jti, expiresAt)
+    return true
+  }
+}
+
+type Env = { Variables: RelayHostAuthContext }
+
+function relayedOwner(c: Context<Env>) {
+  const claims = c.get("relayHostAuth")
+  if (!claims || claims.principal_kind !== "user" || claims.role !== "owner" || claims.session_id !== undefined) return undefined
+  return claims.user_id
+}
+
+function createAdmission(options: HostManagementOptions, key: JWTVerifyGetKey) {
+  const now = options.now ?? Date.now
+  const spend = createSpentGrants(now)
+  return async (c: Context<Env>, operation: HostManagementOperation, destination: string): Promise<Refusal | undefined> => {
+    const person = relayedOwner(c)
+    if (!person) return { status: 403, code: "host_management_owner_required", message: "Only the machine's owner manages it" }
+    const token = c.req.header(HOST_MANAGEMENT_GRANT_HEADER)?.trim()
+    if (!token) return { status: 401, code: "host_management_grant_required", message: "This operation needs a grant from the control plane" }
+    const grant = await verifyHostManagementGrant(token, key, { now })
+    if (!grant || grant.enrollmentId !== options.enrollmentId || grant.hostId !== options.hostId) {
+      return { status: 403, code: "host_management_grant_invalid", message: "The grant is not this machine's, or it expired" }
+    }
+    if (grant.ownerUserId !== person || grant.operation !== operation || grant.destination !== destination) {
+      return { status: 403, code: "host_management_grant_mismatch", message: "The grant names another person, operation or destination" }
+    }
+    if (!spend(grant.jti, grant.expiresAt)) return { status: 409, code: "host_management_grant_spent", message: "The grant was already used" }
+    return undefined
+  }
+}
+
+function nonBlankField(body: unknown, name: string): string | undefined {
+  const value = readString(body, name)
+  return value?.trim() ? value : undefined
+}
+
+function folderFailure(error: unknown, directory: string): Refusal {
+  const code = readString(error, "code")
+  if (code === "ENOENT" || code === "ENOTDIR") return { status: 404, code: "folder_not_found", message: `${directory} is not a folder on this machine` }
+  if (code === "EACCES" || code === "EPERM") return { status: 403, code: "folder_unreadable", message: `This machine cannot read ${directory}` }
+  throw error
+}
+
+type FolderRead =
+  | { read: "home" }
+  | { read: "children"; directory: string }
+  | { read: "search"; directory: string; query: string; limit: number }
+
+function folderRead(body: unknown): FolderRead | undefined {
+  const read = nonBlankField(body, "read")
+  if (read === "home") return { read }
+  const directory = nonBlankField(body, "directory")
+  if (!directory) return undefined
+  if (read === "children") return { read, directory }
+  if (read !== "search") return undefined
+  const limit = readFiniteNumber(body, "limit")
+  const query = readString(body, "query") ?? ""
+  return { read, directory, query, limit: limit !== undefined && Number.isInteger(limit) ? Math.min(Math.max(limit, 1), MAX_SEARCH_RESULTS) : 50 }
+}
+
+async function answerFolderRead(c: Context, request: FolderRead) {
+  if (request.read === "home") return c.json({ home: os.homedir() })
+  try {
+    if (request.read === "children") {
+      const entries = await directoryEntries(request.directory, request.directory)
+      return c.json({ folders: entries.filter((entry) => entry.type === "directory").map(({ name, absolute }) => ({ name, absolute })) })
+    }
+    if (!(await fs.stat(request.directory)).isDirectory()) return answerRefusal(c, folderFailure({ code: "ENOTDIR" }, request.directory))
+    return c.json({ folders: await searchFolders(request.directory, request.query, request.limit) })
+  } catch (error) {
+    return answerRefusal(c, folderFailure(error, request.directory))
+  }
+}
+
+/**
+ * The machine-wide operations a connected machine answers for its owner,
+ * reached through any workspace it serves: the relay's proof says who asks,
+ * and the control plane's grant says this person owns this machine and asked
+ * for this operation at this destination. Each grant is spent once.
+ */
+export function createHostManagement(options: HostManagementOptions): HostManagement {
+  const admit = createAdmission(options, options.controlPlaneKeys)
+  const routes = new Hono<Env>().post(HOST_MANAGEMENT_ROUTES["folders.read"], async (c) => {
+    const request = folderRead(await c.req.json().catch(() => undefined))
+    if (!request) return answerRefusal(c, { status: 400, code: "host_management_request_invalid", message: "Name what to read: home, children or search, and the folder" })
+    const refusal = await admit(c, "folders.read", request.read === "home" ? "~" : request.directory)
+    if (refusal) return answerRefusal(c, refusal)
+    return await answerFolderRead(c, request)
+  })
+  return {
+    contribution: {
+      id: "host-management",
+      mount: () => ({ path: "/", routes: new Hono().route("/", routes), dispose: () => {} }),
+    },
+  }
+}
+
+/** The key set a control plane at `controlPlaneUrl` signs its grants under. */
+export function controlPlaneKeySet(controlPlaneUrl: string): JWTVerifyGetKey {
+  return createRemoteJWKSet(new URL(`${controlPlaneUrl.replace(/\/+$/, "")}/.well-known/jwks.json`))
+}

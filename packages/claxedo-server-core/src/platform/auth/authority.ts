@@ -402,6 +402,11 @@ export type WorkspaceAuthority = OrgAccessAuthority & SessionShareAuthority & Pa
     auth: SignedControlPlaneAuth,
     args: { enrollmentId: string; scope: HostScopeDefinition },
   ) => Promise<HostScopeUpdateResult>
+  /** Owner only. A folder the owner picked on their machine joins its roots; nothing is retired. */
+  addHostEnrollmentRoot?: (
+    auth: SignedControlPlaneAuth,
+    args: { hostId: string; folder: string },
+  ) => Promise<{ changed: boolean; scope_revision: number }>
   /**
    * Owner only. The name the account sees for this machine on every device.
    *

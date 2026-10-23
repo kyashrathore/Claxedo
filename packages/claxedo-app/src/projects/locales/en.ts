@@ -160,4 +160,5 @@ export default {
   "projects.environment.duplicate": "\"{{name}}\" is listed twice",
   "projects.environment.valueless": "\"{{name}}\" needs a value",
   "projects.edit.action": "Edit",
+  "projects.create.machine": "Machine",
 }

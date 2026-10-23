@@ -1,7 +1,8 @@
 import fs from "fs"
 import path from "path"
 import { Worker } from "node:worker_threads"
-import { machineFileIndex, isFileIndexIgnoredName } from "@claxedo/workspace-runtime/file-index"
+import { machineFileIndex } from "@claxedo/workspace-runtime/file-index"
+import { searchFolders } from "@claxedo/server-core/hosts/machine/folders"
 
 export async function globSearch(
   searchDir: string,
@@ -13,41 +14,10 @@ export async function globSearch(
   if (limit < 1) return []
 
   const root = path.resolve(searchDir)
-  if (type === "directory") return directorySearch(root, q, limit)
+  if (type === "directory") return searchFolders(root, q, limit)
   const found = await machineFileIndex.get(root, { gitTimeoutMs: 1_500 })
   const paths = type === "file" ? found.files : found.all
   return paths.filter((item) => !q || item.toLowerCase().includes(q)).slice(0, limit)
-}
-
-const DIRECTORY_SEARCH_DEPTH = 3
-const DIRECTORY_SEARCH_BUDGET = 400
-
-// Folder pickers include empty directories. A file index cannot supply those,
-// and indexing every file under a home directory exceeds the picker's budget.
-async function directorySearch(root: string, q: string, limit: number) {
-  const out: string[] = []
-  const queue: Array<{ rel: string; depth: number }> = [{ rel: "", depth: 0 }]
-  const depthLimit = q ? DIRECTORY_SEARCH_DEPTH : 1
-  for (let head = 0; head < queue.length && head < DIRECTORY_SEARCH_BUDGET && out.length < limit; head += 1) {
-    const { rel, depth } = queue[head]
-    let rows: fs.Dirent[]
-    try {
-      rows = await fs.promises.readdir(rel ? path.join(root, rel) : root, { withFileTypes: true })
-    } catch {
-      continue
-    }
-    rows.sort((a, b) => a.name.localeCompare(b.name))
-    for (const row of rows) {
-      if (!row.isDirectory() || row.name.startsWith(".") || isFileIndexIgnoredName(row.name)) continue
-      const next = rel ? `${rel}/${row.name}` : row.name
-      if (!q || row.name.toLowerCase().includes(q)) {
-        out.push(next)
-        if (out.length >= limit) break
-      }
-      if (depth + 1 < depthLimit) queue.push({ rel: next, depth: depth + 1 })
-    }
-  }
-  return out
 }
 
 // Text search budget. The engine backs `/find` with ripgrep; the compat layer
