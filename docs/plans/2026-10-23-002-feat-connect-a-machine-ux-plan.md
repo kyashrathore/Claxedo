@@ -329,7 +329,9 @@ takes over [Remote machine connection](./2026-09-14-003-feat-connect-implementat
 - [x] Details shows the CLI version and, below the version the control plane accepts, "Update available" with the
   command; W11 owns automatic updates. Progress: the devices list carries `update` (the connect script with no code,
   then `claxedo connect --install-service`, which now restarts a running service) while `cli_version` is below
-  `MINIMUM_CONNECT_CLI_VERSION`; e2e flow 15 sees it for the repository's 0.2.1.
+  `MINIMUM_CONNECT_CLI_VERSION`. The D1 test "the plane offers the update command … while its CLI is below the
+  accepted version, and nothing once it is not" proves both sides; e2e flow 15 asserts the hint follows
+  `cliVersionBelowAccepted` for the repository's CLI, which at 0.2.2 is the accepted version, so it shows none.
 
 ### C8 — Servers without a browser
 

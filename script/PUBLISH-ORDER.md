@@ -4,8 +4,8 @@ Dependency-ordered publish sequence for the 10 public `@claxedo/*` packages,
 derived from the actual `dependencies` in each `packages/*/package.json`.
 
 - **Re-derived:** 2026-10-22
-- **Previous release:** 2026-10-22 (`helpers` 0.2.0, runtime 0.10.0, `cli`
-  0.2.0); `channels` and `connections` last published 0.4.0 on 2026-07-30
+- **Previous release:** 2026-10-22 (`helpers` 0.2.1, runtime 0.10.1, `cli`
+  0.2.1); `channels` and `connections` last published 0.4.0 on 2026-07-30
 
 `packages/claxedo-server` is `"private": true` and is **not** published; it is
 the workspace that hosts the release tooling, nothing more.
@@ -21,21 +21,30 @@ mistake that has actually bitten this repo.
 
 | Track | Packages | On npm | In the repo |
 |---|---|---|---|
-| helpers | `helpers` | 0.2.0 | **0.2.1** |
-| runtime | `agent-runtime-contract`, `sandbox-contract`, `sandbox-manager`, `workspace-relay`, `workspace-relay-protocol`, `workspace-runtime` | 0.10.0 | **0.10.1** |
+| helpers | `helpers` | 0.2.1 | **0.2.2** |
+| runtime | `agent-runtime-contract`, `sandbox-contract`, `sandbox-manager`, `workspace-relay`, `workspace-relay-protocol`, `workspace-runtime` | 0.10.1 | **0.10.2** |
 | apps | `channels`, `connections` | 0.4.0 | **0.5.0** |
-| cli | `cli` | 0.2.0 | **0.2.1** |
+| cli | `cli` | 0.2.1 | **0.2.2** |
 
-0.10.1 and 0.2.1 are patch releases of fixes made since 0.10.0: the relay
-closes back a WebSocket its peer closed, with a sendable close code and reason
-(`workspace-relay-protocol` adds the `closeCode` and `closeReason` helpers it
-uses, an addition that breaks no caller), and closing a terminal ends its
-shell at the hangup in `workspace-runtime`. `agent-runtime-contract`,
-`sandbox-contract` and `sandbox-manager` ride the track. `cli` moves because
-the code it bundles changed and so that it pins `workspace-runtime` 0.10.1.
-`helpers` 0.2.1 changes only its manifest's `test` script, which is in the
-packed `package.json`, so the published bytes for 0.2.0 no longer match the
-tree; the packages that depend on it pin 0.2.1.
+0.10.2 and 0.2.2 are patch releases of what changed since 0.10.1. Two exports
+change: `workspace-runtime` adds `installedTerminalAgents`, and
+`sandbox-contract`'s `sandboxCheckpointUnusableCauses` no longer lists
+`runtime_outdated`, since a workspace saved below the floor now wakes on the
+current runtime instead of refusing. `workspace-runtime` and the packages it
+bundles carry a connected machine's direct route on its private network, its
+owner's accounts spent through the egress broker, the control plane's allowed
+answers reused for up to a minute, Pi's shell in Git Bash on Windows, and a
+Claude model probe retired when its transport is disposed. `sandbox-manager`
+resumes a Boat image pull the registry link breaks and serves one runtime
+floor, and `workspace-relay` changed with its workerd test fixture.
+`agent-runtime-contract` and `workspace-relay-protocol` ride the track. `cli`
+moves because the code it bundles changed (`claxedo connect --pair`, a
+machine's reports and the pairing transport in `host-connector`) and so that it
+pins `workspace-runtime` 0.10.2; the control plane's connect script reuses an
+installed CLI only at 0.2.2 or later (`MINIMUM_CONNECT_CLI_VERSION` in
+`@claxedo/account-contract/machine`), so pairing a machine needs 0.2.2 on npm.
+`helpers` 0.2.2 adds `powershellQuote`, `isPrivateNetworkAddress` and
+`reconnectDelayMs`; the packages that depend on it pin 0.2.2.
 
 `helpers` rides its own track because both the runtime and apps tracks depend
 on it — `agent-runtime-contract`, `sandbox-manager` and `workspace-runtime` on
@@ -210,7 +219,7 @@ for name in \
 done
 ```
 
-Expect `0.2.1` for `@claxedo/helpers` and `@claxedo/cli`, `0.10.1`
+Expect `0.2.2` for `@claxedo/helpers` and `@claxedo/cli`, `0.10.2`
 for the runtime track, and `0.5.0` for the apps track. A line still showing the old
 version means either the registry has not finished indexing (retry) or that
 package's publish failed and must be re-run before anything downstream of it in
