@@ -87,7 +87,7 @@ export async function startHostedAppFront(input: { port: number; distDir: string
   }
   await listenOnLoopback(servers[0], input.port)
   await new Promise<void>((resolve, reject) => {
-    servers[1].once("error", reject)
+    servers[1].once("error", (error: NodeJS.ErrnoException) => (error.code === "EAFNOSUPPORT" ? resolve() : reject(error)))
     servers[1].listen(input.port, "::1", resolve)
   })
   deployment = await readPublishedDeployment(input.hosted.workerUrl, (url) => hostedFetch(input.hosted, new URL(url).pathname))
