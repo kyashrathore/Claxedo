@@ -41,7 +41,7 @@ export {
 export { MCP_APP_FIXTURE_FORECAST, mcpAppFrameTitle, startMcpAppFixture } from "./mcp-app-fixture"
 export { sessionCookie, type Account, type SignedStack } from "./signed-stack"
 export { enrollOwnerMachine, ownerDevices, revokeOwnerMachines, servingMachineName } from "./machine-devices"
-export { connectFolder, startConnectCli, type ConnectCli } from "./connect-cli"
+export { CONNECT_CLI_VERSION, connectFolder, startConnectCli, type ConnectCli } from "./connect-cli"
 export {
   chooseOrgSandboxProvider, cloudMessages, draftModelChoices, cloudPrompt, cloudTurn, cloudWorkspaceNames, cloudWorkspaces, createCloudSession, deleteCloudWorkspace, listedSessions, makeCloudWorkspace, orgSandboxListing, relayedTerminalOutput, removeOrgSandboxKeys,
   sessionConnection, sessionHostTables, startCloudWorkspace, stopCloudWorkspace, storedMessages, storeOwnerKey, type CloudWorkspace,

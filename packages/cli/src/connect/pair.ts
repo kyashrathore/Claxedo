@@ -1,4 +1,4 @@
-import { createReadStream, createWriteStream, readFileSync, watch as watchDirectory } from "node:fs"
+import { createReadStream, createWriteStream, watch as watchDirectory } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { createInterface } from "node:readline/promises"
@@ -14,6 +14,7 @@ import {
   type MachinePairingStage,
 } from "@claxedo/host-connector/machine-transport"
 import { cliVersion } from "../version"
+import { operatingSystem } from "./report"
 import type { ConnectArgs } from "./args"
 import { withBootstrapRetry, type HostDeps } from "./host"
 import type { connectPaths } from "./paths"
@@ -41,17 +42,6 @@ const READY_WAIT_MS = 60_000
 /** A directory watch can miss the rename that lands the service's write; Bun's drops it after the temporary file's event. */
 const READY_RECHECK_MS = 2_000
 const ANSWER_RECHECK_MS = 20_000
-
-function operatingSystem() {
-  if (process.platform === "darwin") return "macOS"
-  if (process.platform === "win32") return os.version() || "Windows"
-  try {
-    const release = readFileSync("/etc/os-release", "utf8")
-    return /^PRETTY_NAME="?([^"\n]+)"?/m.exec(release)?.[1] ?? `Linux ${os.release()}`
-  } catch {
-    return `Linux ${os.release()}`
-  }
-}
 
 /** The controlling terminal, which a script piped into `sh` still has even though its stdin is the script. */
 async function openTerminal() {

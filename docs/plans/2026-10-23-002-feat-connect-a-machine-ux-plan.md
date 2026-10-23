@@ -273,9 +273,20 @@ takes over [Remote machine connection](./2026-09-14-003-feat-connect-implementat
 
 - [ ] The machine reports its blocking reason to the control plane when it can reach it: no linger on Linux, a live
   desktop daemon beside it, a CLI below the accepted version, a service the OS stopped. The machine's Details shows
-  the one line and the command that fixes it. Progress:
-- [ ] Offline reads "Offline · last seen <time>", with the most likely cause when the machine reported one before
-  going away. Progress:
+  the one line and the command that fixes it. Progress: `POST /api/claxedo/host/enrollments/report` (machine-signed,
+  admitted while held) records the CLI version and system in `machine_json` and one reason in `blocked_json`
+  (`MACHINE_BLOCKED_REASONS`: `linger_off`, `user_manager_unreachable`, `waiting_for_logon`, `desktop_daemon`,
+  `stopped`) with the fix command the machine names; acquiring a serving generation clears it, an instance a newer
+  one superseded is not heard, and a heard block ends the lease. `claxedo connect` reports after it acquires, when
+  its service did not start, beside a live desktop daemon once enrolled, and on SIGTERM/SIGINT after the drain. A
+  service killed without a signal (SIGKILL, power loss) cannot report; it reads Offline with no cause. A CLI below
+  the accepted version is the control plane's update hint (C7), not a machine report. Proven by D1, route, CLI and
+  e2e flow 15 (the stop); no linger also live on Linux through the real `connect --pair --install-service` (not a
+  committed flow: it would install a real service on macOS or Windows); the user manager, logon and desktop-daemon
+  refusals by CLI tests only (Windows and macOS not run).
+- [x] Offline reads "Offline · last seen <time>", with the most likely cause when the machine reported one before
+  going away. Progress: the list row and Details read "Offline · last seen … · Claxedo was stopped there" (e2e flow
+  15, web and phone).
 - [ ] Pasting the command on a machine that is enrolled, removed or reset offers to connect it again (it asks once
   when it can ask, and says what it replaces), so nobody needs `--reset`. Progress:
 - [ ] Every line the connect flow prints, in the app and on the machine, is one short line (root AGENTS.md).
@@ -283,10 +294,14 @@ takes over [Remote machine connection](./2026-09-14-003-feat-connect-implementat
 
 ### C7 — Managing a machine from the app
 
-- [ ] Details renames the machine, changes its roots (assignments outside them are retired, after a confirmation
-  naming them) and removes it, with each delete confirming in a dialog. Progress:
-- [ ] Details shows the CLI version and, below the version the control plane accepts, "Update available" with the
-  command; W11 owns automatic updates. Progress:
+- [x] Details renames the machine, changes its roots (assignments outside them are retired, after a confirmation
+  naming them) and removes it, with each delete confirming in a dialog. Progress: `machines.rename` and
+  `machines.setRoots`; the devices list names, per root, the assignments removing it alone retires, and Stop sharing
+  confirms naming them (e2e flow 15, web and phone).
+- [x] Details shows the CLI version and, below the version the control plane accepts, "Update available" with the
+  command; W11 owns automatic updates. Progress: the devices list carries `update` (the connect script with no code,
+  then `claxedo connect --install-service`, which now restarts a running service) while `cli_version` is below
+  `MINIMUM_CONNECT_CLI_VERSION`; e2e flow 15 sees it for the repository's 0.2.1.
 
 ### C8 — Servers without a browser
 

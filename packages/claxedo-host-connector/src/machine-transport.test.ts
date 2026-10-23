@@ -6,6 +6,7 @@ import { createHostKeyPair } from "./host-identity"
 import { createMachineSealingKeyPair } from "./machine-seal"
 import { ControlPlaneUrlError, HostEndpointUrlError } from "./host-state"
 import {
+  createMachineReportClient,
   createMachineSignedTransport,
   decisionCode,
   decodeEndpoints,
@@ -564,5 +565,25 @@ describe("the provider-config revision on the wire", () => {
 
   test("an ack carrying no provider configuration decodes to none", () => {
     expect(decodeProviderConfig(undefined)).toBeUndefined()
+  })
+})
+
+describe("the machine's report", () => {
+  test("is signed like any machine request, is heard while paused, and only under the generation the reporting instance holds", async () => {
+    const { cp, enrolled, transport } = await host()
+    const client = createMachineReportClient({ controlPlaneUrl: cp.url, keys: enrolled.keys, enrollmentId: enrolled.enrollmentId, hostId: enrolled.state.host_id, keyVersion: 1, fetch: cp.fetch })
+    const enrollment = cp.enrollments.get(enrolled.enrollmentId)
+    cp.pause(enrolled.enrollmentId, true)
+    const blocked = { reason: "linger_off" as const, fix: "sudo loginctl enable-linger u && claxedo connect --install-service" }
+    expect(await client.report({ cliVersion: "0.2.1", os: "Ubuntu 24.04", arch: "x64", blocked })).toEqual({ recorded: true })
+    expect(cp.reports()).toEqual([{ enrollmentId: enrolled.enrollmentId, hostId: enrolled.state.host_id, keyVersion: 1, cliVersion: "0.2.1", os: "Ubuntu 24.04", arch: "x64", blocked }])
+    expect(enrollment?.blocked).toMatchObject(blocked)
+    cp.pause(enrolled.enrollmentId, false)
+
+    const { generation } = await transport.acquire()
+    expect(enrollment?.blocked, "acquiring clears it").toBeUndefined()
+    expect(await client.report({ cliVersion: "0.2.2", generation })).toEqual({ recorded: true })
+    expect(await client.report({ cliVersion: "0.2.0", generation: generation - 1 })).toEqual({ recorded: false })
+    expect(enrollment?.reported).toEqual({ cli_version: "0.2.2" })
   })
 })

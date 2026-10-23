@@ -6,7 +6,7 @@
  */
 
 import { machineRequestSignature, randomNonce, type HostKeyPair } from "./host-identity"
-import { MACHINE_REQUEST_HEADERS } from "@claxedo/account-contract/machine"
+import { MACHINE_REQUEST_HEADERS, type MachineBlockedReason } from "@claxedo/account-contract/machine"
 import { withDeadlineSignal } from "@claxedo/helpers/deadline"
 import { watchMachineEvents } from "./machine-events"
 import { transientHeartbeatFailure } from "./connector"
@@ -32,6 +32,7 @@ export type FetchLike = (input: URL, init: RequestInit) => Promise<Response>
 export const HOST_ENROLLMENT_ACQUIRE_PATH = "/api/claxedo/host/enrollments/acquire"
 export const HOST_ENROLLMENT_HEARTBEAT_PATH = "/api/claxedo/host/enrollments/heartbeat"
 export const HOST_ENROLLMENT_REDEEM_PATH = "/api/claxedo/host/enrollments/redeem"
+export const HOST_ENROLLMENT_REPORT_PATH = "/api/claxedo/host/enrollments/report"
 /** The machine's doorbell stream (`./machine-events`); a signed GET, held open. */
 export const HOST_ENROLLMENT_EVENTS_PATH = "/api/claxedo/host/enrollments/events"
 export const HOST_PAIRING_REDEEM_PATH = "/api/claxedo/host/pairings/redeem"
@@ -409,6 +410,31 @@ export function createMachineSignedTransport(options: MachineSignedTransportOpti
           : {}),
       })
       return decodeHeartbeatResponse(value)
+    },
+  }
+}
+
+/**
+ * What `claxedo connect` tells the control plane about itself. `generation`
+ * is the serving generation this process holds, so a report from an
+ * instance a newer one replaced is not recorded; a process that never
+ * acquired one omits it.
+ */
+export type MachineReport = {
+  cliVersion: string
+  os?: string
+  arch?: string
+  generation?: number
+  blocked?: { reason: MachineBlockedReason; fix: string }
+}
+
+export function createMachineReportClient(options: MachineSignedTransportOptions) {
+  const signer = machineRequestSigner(options)
+  const keyVersion = options.keyVersion === undefined ? {} : { keyVersion: options.keyVersion }
+  return {
+    report: async (report: MachineReport): Promise<{ recorded: boolean }> => {
+      const value = await signer.signedPost(HOST_ENROLLMENT_REPORT_PATH, { ...keyVersion, ...report })
+      return { recorded: isPlainRecord(value) && value.recorded === true }
     },
   }
 }

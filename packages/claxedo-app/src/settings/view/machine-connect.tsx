@@ -1,26 +1,13 @@
 import { createEffect, createSignal, Match, Show, Switch } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useErrorCopy, useTranslator } from "@/i18n"
-import { copyText } from "@/lib/clipboard"
 import { useSecondClock } from "@/lib/clock"
 import { useServer, type MintedPairing, type Pairing } from "@/server"
-import { Button, ClaxedoIconButton, Drawer, Tabs, useDialog } from "@/ui"
+import { Button, Drawer, Tabs, useDialog } from "@/ui"
 import { settingsDictionary } from "../i18n"
 import { codeExpired, codeTimeLeft, createConnectCode, guessedPlatform, stageLineKey, stageLineValues, type CommandPlatform } from "../pairing"
+import { CommandLine } from "./command-line"
 import { PairingRequestCard } from "./pairing-request"
-
-function CommandLine(props: { readonly command: string; readonly label: string }) {
-  const [copied, setCopied] = createSignal(false)
-  const copy = () => {
-    void copyText(props.command).then((result) => setCopied(result.copied))
-  }
-  return (
-    <div class="settings-command">
-      <code>{props.command}</code>
-      <ClaxedoIconButton icon={copied() ? "check" : "copy"} size="small" variant="ghost" aria-label={props.label} onClick={copy} />
-    </div>
-  )
-}
 
 function CommandTabs(props: { readonly minted: MintedPairing }) {
   const t = useTranslator(settingsDictionary)

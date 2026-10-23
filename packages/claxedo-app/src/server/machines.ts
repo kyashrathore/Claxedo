@@ -18,6 +18,8 @@ export type MachinesApi = {
   readonly pause: (enrollment: MachineEnrollment) => Promise<void>
   readonly resume: (enrollment: MachineEnrollment) => Promise<void>
   readonly remove: (enrollment: MachineEnrollment) => Promise<void>
+  readonly rename: (enrollment: MachineEnrollment, name: string) => Promise<void>
+  readonly setRoots: (enrollment: MachineEnrollment, roots: readonly string[]) => Promise<void>
   readonly probe: (enrollment: MachineEnrollment) => Promise<MachineProbe>
   readonly pair: () => Promise<MintedPairing>
   readonly approve: (pairingId: string, name: string | undefined) => Promise<void>
@@ -74,6 +76,29 @@ async function probeRuntime(transport: Transport, enrollment: MachineEnrollment)
   }
 }
 
+async function invalidateMachinePlacements(queryClient: QueryClient, server: string) {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: queryKeys.machines(server) }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.bootstrap(server) }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.accountCatalog(server) }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.placements(server) }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.projects(server) }),
+  ])
+}
+
+function enrollmentChanges(queryClient: QueryClient, server: string, account: HostedAccount | undefined): Pick<MachinesApi, "rename" | "setRoots"> {
+  return {
+    rename: async (enrollment, name) => {
+      await signedIn(account, "machines.rename").run("machines.rename", { hostId: enrollment.hostId, displayName: name })
+      await invalidateMachinePlacements(queryClient, server)
+    },
+    setRoots: async (enrollment, roots) => {
+      await signedIn(account, "machines.setRoots").run("machines.setRoots", { enrollmentId: enrollment.enrollmentId, roots: [...roots] })
+      await invalidateMachinePlacements(queryClient, server)
+    },
+  }
+}
+
 function pairingAnswers(queryClient: QueryClient, server: string, account: HostedAccount | undefined): Pick<MachinesApi, "pair" | "approve" | "deny" | "cancelPairings"> {
   return {
     pair: async () => {
@@ -83,13 +108,7 @@ function pairingAnswers(queryClient: QueryClient, server: string, account: Hoste
     },
     approve: async (pairingId, name) => {
       await signedIn(account, "machines.approve").run("machines.approve", { pairingId, ...(name ? { displayName: name } : {}) })
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.machines(server) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.bootstrap(server) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.accountCatalog(server) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.placements(server) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.projects(server) }),
-      ])
+      await invalidateMachinePlacements(queryClient, server)
     },
     deny: async (pairingId) => {
       await signedIn(account, "machines.deny").run("machines.deny", { pairingId })
@@ -120,6 +139,7 @@ export function createMachinesApi(transport: Transport, queryClient: QueryClient
       await queryClient.invalidateQueries({ queryKey: queryKeys.accountCatalog(server) })
     },
     probe: (enrollment) => probeRuntime(transport, enrollment),
+    ...enrollmentChanges(queryClient, server, account),
     ...pairingAnswers(queryClient, server, account),
   }
 }

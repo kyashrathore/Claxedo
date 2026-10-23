@@ -3,7 +3,7 @@ import { CREDENTIAL_OPERATIONS } from "./credential-operations"
 import { sharedSessions } from "./shared-sessions"
 import { USAGE_OPERATIONS } from "./usage-operations"
 import {
-  defineOperation, operationPath, requiredParameter, optionalParameter, bodyField,
+  defineOperation, operationPath, requiredParameter, optionalParameter, bodyField, stringListParameter,
   selectBody, operationHeaders, pluginMethod, pluginBody, connectedRepositoryBody,
   type Decoder, type ResolvedRequest,
   MissingOperationParameter, UnknownHostedOperation,
@@ -170,6 +170,22 @@ export const CORE_HOSTED_OPERATIONS = {
     input: operationInput({ hostId: requiredParameter }),
     output: object, retry: "never",
     exposure: { renderer: true, app: false },
+  }),
+  "machines.rename": defineOperation({
+    method: "PATCH", path: operationPath("/api/claxedo/remote-access/devices/:hostId"),
+    input: operationInput({ hostId: requiredParameter, displayName: requiredParameter }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: false },
+    body: (input) => ({ display_name: input.displayName }),
+  }),
+  // The route replaces the whole list, and an assignment outside the roots
+  // it is handed is retired in the same write.
+  "machines.setRoots": defineOperation({
+    method: "PATCH", path: operationPath("/api/claxedo/host/enrollments/:enrollmentId/scope"),
+    input: operationInput({ enrollmentId: requiredParameter, roots: stringListParameter }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: false },
+    body: (input) => ({ allowed_roots: input.roots }),
   }),
   "machines.pair": defineOperation({
     method: "POST", path: operationPath("/api/claxedo/host/pairings"),

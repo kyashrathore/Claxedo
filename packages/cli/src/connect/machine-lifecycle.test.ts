@@ -239,7 +239,8 @@ linuxMachine("claxedo connect on a simulated machine", () => {
       "loginctl show-user ec2-user --property=Linger --value",
       "systemctl --user is-system-running",
       "systemctl --user daemon-reload",
-      `systemctl --user enable --now ${SYSTEMD_UNIT}`,
+      `systemctl --user enable ${SYSTEMD_UNIT}`,
+      `systemctl --user restart ${SYSTEMD_UNIT}`,
     ])
     expect(m.lines.some((line) => line.startsWith("Enrolled as "))).toBe(true)
     expect(m.lines.some((line) => line.startsWith(`Installed and started ${SYSTEMD_UNIT}`))).toBe(true)
@@ -297,9 +298,10 @@ linuxMachine("claxedo connect on a simulated machine", () => {
     timing("boot → readiness + tunnel, unattended", { elapsedMs: resumedAt - bootedAt, beatMs: BEAT_MS })
     const afterReboot = m.cp.log.slice(requestsBeforeReboot).map((entry) => entry.path)
     expect(afterReboot[0]).toBe("/api/claxedo/host/enrollments/acquire")
-    expect(afterReboot.filter((entry) => !entry.endsWith("/heartbeat") && entry !== EVENTS_PATH)).toEqual([
+    expect(afterReboot.filter((entry) => !entry.endsWith("/heartbeat") && !entry.endsWith("/report") && entry !== EVENTS_PATH)).toEqual([
       "/api/claxedo/host/enrollments/acquire",
     ])
+    await until(() => m.cp.reports().some((report) => report.generation === 2), "the resumed instance to report its version")
     const resumedState = await m.state()
     expect(resumedState?.enrollment?.enrollment_id).toBe(enrollmentIdOf(m))
     expect(resumedState?.run).toMatchObject({ pid: rebooted.pid, generation: 2 })

@@ -544,7 +544,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       await this.database.batch([
         this.database.prepare(`
           update host_enrollments set
-            serving_generation = serving_generation + 1, generation_acquired_at = ?, updated_at = ?
+            serving_generation = serving_generation + 1, generation_acquired_at = ?, updated_at = ?, blocked_json = null
           where ${MACHINE_ELIGIBLE_SQL} and serving_generation = ?
         `).bind(now, now, machine.enrollmentId, machine.keyVersion, machine.generation),
         wonAssertion(this.database, assertionId),

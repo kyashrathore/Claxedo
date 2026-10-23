@@ -30,10 +30,12 @@ import {
 } from "./host-identity"
 import {
   PAIRING_TTL_MS,
+  isMachineBlockedReason,
   publicKeyFingerprint,
   MACHINE_REQUEST_HEADERS,
   publicKeyJwk,
   machineSealAad,
+  type MachineBlockedReason,
 } from "@claxedo/account-contract/machine"
 import { hostPathWithinRoots, normalizeHostPath } from "@claxedo/account-contract/host-path"
 import { createHostStateStore, isPlainRecord, newHostState, type HostStateFs } from "./host-state"
@@ -80,6 +82,11 @@ export type FakeEnrollment = {
   /** Set while a paired machine waits for its owner's approval. */
   approval_requested_at?: number
   created_at: number
+  generation_acquired_at?: number
+  /** What the machine last reported about itself (`/report`). */
+  reported?: { cli_version: string; os?: string; arch?: string }
+  /** What it last reported stopping it, cleared by its next acquire. */
+  blocked?: { reason: MachineBlockedReason; fix: string; reported_at: number }
 }
 
 export type FakeAssignment = {
@@ -278,12 +285,41 @@ export function createFakeControlPlane(
 
   const acquire = (enrollment: FakeEnrollment) => {
     enrollment.serving_generation += 1
+    enrollment.generation_acquired_at = now()
+    delete enrollment.blocked
     for (const [workspaceId, ready] of readiness) {
       if (ready.enrollment_id === enrollment.enrollment_id && ready.generation < enrollment.serving_generation) {
         readiness.delete(workspaceId)
       }
     }
     return { generation: enrollment.serving_generation, generation_acquired_at: now() }
+  }
+
+  /**
+   * The control plane's rule: an instance that holds a generation is heard
+   * under it alone, one that holds none only while no lease is live; a
+   * reported block ends the lease.
+   */
+  const report = (enrollment: FakeEnrollment, body: Record<string, unknown>) => {
+    const blocked = isPlainRecord(body.blocked) ? body.blocked : undefined
+    if (typeof body.cliVersion !== "string" || !body.cliVersion) throw new FakeRefusal(400, "invalid_request_body")
+    if (blocked && (!isMachineBlockedReason(blocked.reason) || typeof blocked.fix !== "string" || !blocked.fix)) {
+      throw new FakeRefusal(400, "invalid_request_body")
+    }
+    const heard = typeof body.generation === "number"
+      ? body.generation === enrollment.serving_generation
+      : enrollment.generation_acquired_at === undefined || enrollment.expires_at <= now()
+    if (!heard) return { recorded: false }
+    enrollment.reported = {
+      cli_version: body.cliVersion,
+      ...(typeof body.os === "string" ? { os: body.os } : {}),
+      ...(typeof body.arch === "string" ? { arch: body.arch } : {}),
+    }
+    if (blocked && isMachineBlockedReason(blocked.reason) && typeof blocked.fix === "string") {
+      enrollment.blocked = { reason: blocked.reason, fix: blocked.fix, reported_at: now() }
+      enrollment.expires_at = Math.min(enrollment.expires_at, now())
+    }
+    return { recorded: true }
   }
 
   const heartbeat = async (enrollment: FakeEnrollment, body: Record<string, unknown>) => {
@@ -403,6 +439,9 @@ export function createFakeControlPlane(
       if (target.pathname === "/api/claxedo/host/enrollments/acquire") {
         return json(200, acquire(await verifyMachine(request)))
       }
+      if (target.pathname === "/api/claxedo/host/enrollments/report") {
+        return json(200, report(await verifyMachine(request, { admitHeld: true }), body))
+      }
       if (target.pathname === "/api/claxedo/host/enrollments/heartbeat") {
         return json(200, await heartbeat(await verifyMachine(request), body))
       }
@@ -478,6 +517,7 @@ export function createFakeControlPlane(
     assignments,
     readiness,
     beats: () => log.filter((entry) => entry.path === "/api/claxedo/host/enrollments/heartbeat"),
+    reports: () => log.filter((entry) => entry.path === "/api/claxedo/host/enrollments/report").map((entry) => entry.body),
     /** How many doorbell streams this enrollment holds open right now. */
     eventStreams: (enrollmentId: string) => doorbell.held(enrollmentId),
     /** End every stream the enrollment holds, as a deploy or an idle proxy would, without deciding anything. */

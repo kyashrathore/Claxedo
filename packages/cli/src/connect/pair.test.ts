@@ -5,6 +5,7 @@ import { stopHostServing } from "@claxedo/host-serving/serving"
 import { connect } from "../commands/connect"
 import { harness, type Harness } from "./connect-harness.test-support"
 import { until as waitUntil } from "./relay-stub.test-support"
+import { cliVersion } from "../version"
 
 const until = (predicate: () => boolean | Promise<boolean>, what: string) => waitUntil(predicate, what, process.platform === "win32" ? 15_000 : 4_000)
 const posixHost = test.skipIf(process.platform === "win32")
@@ -94,7 +95,7 @@ describe("claxedo connect --pair", () => {
     answering(h, h.root)
     const pairing = h.cp.pairings.create()
     const running = connect(["--pair", pairing.code, "--install-service"], h.deps)
-    await until(() => h.serviceCalls.some((call) => call.includes("enable --now")), "the service to be started")
+    await until(() => h.serviceCalls.some((call) => call.includes("restart claxedo-connect.service")), "the service to be started")
     await until(() => doorbellHeld(h), "the command to listen for the answer")
 
     const workspaceId = h.cp.pairings.approve(pairing.pairing_id)
@@ -106,6 +107,19 @@ describe("claxedo connect --pair", () => {
     expect(await running).toBe(0)
     expect(h.lines.at(-1)).toBe(`${path.basename(h.root)} is ready in Claxedo.`)
     expect(state.service, "the unit is recorded with the paired state").toBeDefined()
+  })
+
+  posixHost("with --install-service where lingering is off, the machine waiting for approval tells its owner why its service did not start", async () => {
+    answering(h, h.root)
+    const service = h.deps.service()
+    h.deps.service = () => ({ ...service, run: async (bin, args) => (bin === "loginctl" ? { code: 0, stdout: "no\n" } : service.run(bin, args)) })
+    const pairing = h.cp.pairings.create()
+    expect(await connect(["--pair", pairing.code, "--install-service"], h.deps)).toBe(78)
+    expect(h.lines).toContain("  sudo loginctl enable-linger svc")
+    const enrollment = [...h.cp.enrollments.values()][0]
+    expect(enrollment?.approval_requested_at, "still waiting for its owner").toBeDefined()
+    expect(enrollment?.blocked).toMatchObject({ reason: "linger_off", fix: "sudo loginctl enable-linger svc && claxedo connect --install-service" })
+    expect(enrollment?.reported).toMatchObject({ cli_version: cliVersion() })
   })
 
   test("a code that is not one is refused before any request", async () => {

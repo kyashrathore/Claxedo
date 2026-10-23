@@ -605,6 +605,19 @@ describe("resolve", () => {
     }
   })
 
+  test("renames a machine by its host id and replaces its roots by its enrollment id", () => {
+    expect(CORE.resolve("machines.rename", { hostId: "host/1", displayName: "studio" })).toEqual({
+      method: "PATCH", path: "/api/claxedo/remote-access/devices/host%2F1", body: { display_name: "studio" },
+    })
+    expect(CORE.resolve("machines.setRoots", { enrollmentId: "enr_1", roots: ["/srv/app"] })).toEqual({
+      method: "PATCH", path: "/api/claxedo/host/enrollments/enr_1/scope", body: { allowed_roots: ["/srv/app"] },
+    })
+    expect(CORE.resolve("machines.setRoots", { enrollmentId: "enr_1", roots: [] })).toMatchObject({ body: { allowed_roots: [] } })
+    expect(() => CORE.resolve("machines.rename", { hostId: "host_1" })).toThrow(MissingOperationParameter)
+    expect(() => CORE.resolve("machines.setRoots", { enrollmentId: "enr_1", roots: "/srv/app" })).toThrow(MissingOperationParameter)
+    expect(() => CORE.resolve("machines.setRoots", { enrollmentId: "enr_1", roots: ["/srv", 1] })).toThrow(MissingOperationParameter)
+  })
+
   test("mints, follows and answers a pairing by its id, and cancels every unredeemed code at sign-out", () => {
     expect(CORE.resolve("machines.pair")).toEqual({ method: "POST", path: "/api/claxedo/host/pairings", body: {} })
     expect(CORE.resolve("machines.pairing", { pairingId: "invitation_1" })).toEqual({ method: "GET", path: "/api/claxedo/host/pairings/invitation_1" })

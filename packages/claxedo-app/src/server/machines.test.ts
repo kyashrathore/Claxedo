@@ -37,6 +37,16 @@ function worker(world: World) {
       world.devices = []
       return Response.json({ revoked: true })
     }
+    if (url.pathname === "/api/claxedo/remote-access/devices/host_box" && method === "PATCH") {
+      const name = (JSON.parse(typeof init?.body === "string" ? init.body : "{}") as { display_name: string }).display_name
+      world.devices = world.devices.map((device) => ({ ...device, display_name: name }))
+      return Response.json({ display_name: name })
+    }
+    if (url.pathname === "/api/claxedo/host/enrollments/enr_box/scope" && method === "PATCH") {
+      const roots = (JSON.parse(typeof init?.body === "string" ? init.body : "{}") as { allowed_roots: string[] }).allowed_roots
+      world.devices = world.devices.map((device) => ({ ...device, roots: roots.map((path) => ({ path, retires: [] })) }))
+      return Response.json({ host_id: "host_box", scope: { allowed_roots: roots, revision: 3 }, retired_workspace_ids: [] })
+    }
     if (url.pathname === "/api/workspace/ws_box/connection") return Response.json(world.connection.body, { status: world.connection.status })
     if (url.href === "https://relay.test/workspaces/ws_box/global/health") return Response.json(world.health)
     throw new Error(`Unexpected request: ${method} ${url.href}`)
@@ -73,10 +83,49 @@ test("a machine on the devices list carries its host id, last check-in and the f
   try {
     await signedBrowser(async (server) => {
       const machines = await server.queryClient.fetchQuery(server.queries.machines.list())
-      expect(machines.map((machine) => [machine.name, machine.online, machine.enrollment])).toEqual([["build-box", true, { hostId: "host_box", lastSeenAt: 1_000, servingWorkspaceIds: ["ws_box"] }]])
+      expect(machines.map((machine) => [machine.name, machine.online, machine.enrollment])).toEqual([["build-box", true, { hostId: "host_box", enrollmentId: "enr_box", lastSeenAt: 1_000, servingWorkspaceIds: ["ws_box"] }]])
       expect(JSON.stringify(logged)).toContain("enr_old")
     })
   } finally { console.error = originalError }
+})
+
+test("what a machine reported reaches the app in its own names, and a part it cannot read is left out", async () => {
+  const reported = {
+    ...box,
+    cli_version: "0.2.1", os: "Ubuntu 24.04", arch: "x64",
+    roots: [{ path: "/srv", retires: [{ workspace_id: "ws_box", display_name: "app", directory: "/srv/app" }, { display_name: "no id" }] }, { retires: [] }],
+    blocked: { reason: "linger_off", fix: "sudo loginctl enable-linger u && claxedo connect --install-service", reported_at: 900 },
+    update: { version: "0.2.2", command: "curl -fsSL https://cp.test/api/claxedo/connect | sh && claxedo connect --install-service" },
+  }
+  scenario({ devices: [reported, { ...box, host_id: "host_odd", enrollment_id: "enr_odd", blocked: { reason: "disk_full", fix: "x", reported_at: 1 }, update: { version: "" } }] })
+  await signedBrowser(async (server) => {
+    const [machine, odd] = await server.queryClient.fetchQuery(server.queries.machines.list())
+    expect(machine?.enrollment).toEqual({
+      hostId: "host_box", enrollmentId: "enr_box", lastSeenAt: 1_000, servingWorkspaceIds: ["ws_box"],
+      cliVersion: "0.2.1", os: "Ubuntu 24.04", arch: "x64",
+      roots: [{ path: "/srv", retires: [{ workspaceId: "ws_box", name: "app", directory: "/srv/app" }] }],
+      blocked: { reason: "lingerOff", fix: "sudo loginctl enable-linger u && claxedo connect --install-service", reportedAt: 900 },
+      update: { version: "0.2.2", command: "curl -fsSL https://cp.test/api/claxedo/connect | sh && claxedo connect --install-service" },
+    })
+    expect(odd?.enrollment, "an unknown reason and an empty update are not shown").toEqual({ hostId: "host_odd", enrollmentId: "enr_odd", lastSeenAt: 1_000, servingWorkspaceIds: ["ws_box"] })
+  })
+})
+
+test("renaming names the machine by its host id and changing its roots names its enrollment, and the list is read again after each", async () => {
+  const world = scenario()
+  await signedBrowser(async (server) => {
+    const listed = () => server.queryClient.fetchQuery(server.queries.machines.list())
+    const enrollment = (await listed())[0]?.enrollment
+    if (!enrollment) throw new Error("the listed machine has no enrollment")
+    await server.machines.rename(enrollment, "studio")
+    expect((await listed()).map((machine) => machine.name)).toEqual(["studio"])
+    await server.machines.setRoots(enrollment, ["/srv/app"])
+    expect((await listed()).map((machine) => machine.enrollment?.roots)).toEqual([[{ path: "/srv/app", retires: [] }]])
+    expect(world.calls.filter((call) => call.method === "PATCH")).toEqual([
+      { method: "PATCH", path: "/api/claxedo/remote-access/devices/host_box", body: { display_name: "studio" } },
+      { method: "PATCH", path: "/api/claxedo/host/enrollments/enr_box/scope", body: { allowed_roots: ["/srv/app"] } },
+    ])
+  })
 })
 
 test("pause, resume and remove each name one machine by its host id, and the list is read again after each", async () => {
@@ -130,7 +179,7 @@ test("recheck on a device that is offline fails at once rather than waiting to c
 test("the runtime probe reads one served folder's health through the relay, says when nothing is served, and returns a refusal as a typed failure", async () => {
   const world = scenario()
   await signedBrowser(async (server) => {
-    const served = { hostId: "host_box", lastSeenAt: 1_000, servingWorkspaceIds: ["ws_box"] }
+    const served = { hostId: "host_box", enrollmentId: "enr_box", lastSeenAt: 1_000, servingWorkspaceIds: ["ws_box"] }
     expect(await server.machines.probe(served)).toEqual({ kind: "answered" })
     expect(world.calls.filter((call) => call.path.startsWith("relay:")).map((call) => call.path)).toEqual(["relay:/workspaces/ws_box/global/health"])
     expect(await server.machines.probe({ ...served, servingWorkspaceIds: [] })).toEqual({ kind: "servesNothing" })
@@ -141,7 +190,7 @@ test("the runtime probe reads one served folder's health through the relay, says
 
   const offline = scenario({ connection: { status: 409, body: { error: { code: "workspace_host_offline", message: "The machine is offline" } } } })
   await signedBrowser(async (server) => {
-    const probe = await server.machines.probe({ hostId: "host_box", lastSeenAt: 1_000, servingWorkspaceIds: ["ws_box"] })
+    const probe = await server.machines.probe({ hostId: "host_box", enrollmentId: "enr_box", lastSeenAt: 1_000, servingWorkspaceIds: ["ws_box"] })
     expect(probe).toMatchObject({ kind: "unreachable", error: { class: "conflict", code: "workspace_host_offline" } })
     expect(offline.calls.some((call) => call.path.startsWith("relay:"))).toBe(false)
   })

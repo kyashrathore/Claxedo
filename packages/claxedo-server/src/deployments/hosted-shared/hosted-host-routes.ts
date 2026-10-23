@@ -68,6 +68,10 @@ export function mountHostedHostRoutes(app: Hono, input: {
       if (!result.auth) return Response.json({ error: { code: "UNAUTHORIZED", message: "Signed auth is required" } }, { status: 401 })
       return result.auth
     },
-    service: hostedRemoteAccessService(requireAuthority(services), { hostChanged: input.hostChanged }),
+    service: hostedRemoteAccessService(requireAuthority(services), {
+      hostChanged: input.hostChanged,
+      ...(workspaceOptions.machineChanged ? { machineChanged: workspaceOptions.machineChanged } : {}),
+      controlPlaneOrigin,
+    }),
   }))
 }

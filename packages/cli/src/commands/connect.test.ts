@@ -16,7 +16,13 @@ import {
   type DesktopDaemonDiscovery,
 } from "../connect/desktop-daemon"
 import { until as waitUntil } from "../connect/relay-stub.test-support"
-import { HOST_ENROLLMENT_EVENTS_PATH as EVENTS_PATH, HostedHttpError, HostedRequestTimeoutError } from "@claxedo/host-connector/machine-transport"
+import {
+  HOST_ENROLLMENT_EVENTS_PATH as EVENTS_PATH,
+  HOST_ENROLLMENT_HEARTBEAT_PATH as HEARTBEAT_PATH,
+  HOST_ENROLLMENT_REPORT_PATH as REPORT_PATH,
+  HostedHttpError,
+  HostedRequestTimeoutError,
+} from "@claxedo/host-connector/machine-transport"
 import { HostEndpointUrlError, newHostState } from "@claxedo/host-connector/host-state"
 import { HostConnectDecisionError } from "@claxedo/host-connector/bootstrap"
 import { createHostKeyPair } from "@claxedo/host-connector/host-identity"
@@ -24,6 +30,7 @@ import { invitationToken } from "@claxedo/account-contract/machine"
 import { freePort } from "@claxedo/helpers/net"
 import { connect } from "./connect"
 import { hostOnline, statusLines } from "./status"
+import { cliVersion } from "../version"
 import { harness, serviceDeps, type Harness } from "../connect/connect-harness.test-support"
 
 /**
@@ -121,12 +128,13 @@ describe("claxedo connect", () => {
   posixHost("token-file boot enrolls, acquires, beats, then serves an assignment and the credential covers it", async () => {
     const { file } = await invitationFile(h, [h.root])
     const running = connect(["--token-file", file, "--root", h.root], h.deps)
-    await until(() => h.cp.beats().length >= 1, "first beat")
+    await until(() => h.cp.reports().length >= 1, "the serving instance's report")
 
     expect(h.cp.log.map((entry) => entry.path).filter((path) => path !== EVENTS_PATH)).toEqual([
       "/api/claxedo/host/enrollments/redeem",
       "/api/claxedo/host/enrollments/acquire",
-      "/api/claxedo/host/enrollments/heartbeat",
+      HEARTBEAT_PATH,
+      REPORT_PATH,
     ])
     await until(() => h.cp.eventStreams(enrollmentIdOf(h)) === 1, "the doorbell to be held open")
     expect(await fs.readFile(file, "utf8").catch(() => "gone")).toBe("gone")
@@ -172,10 +180,17 @@ describe("claxedo connect", () => {
     expect((await h.deps.store.load())?.run).toBeUndefined()
     await until(() => socket.closed, "the tunnel to close on drain")
     expect(hostServingState({ sessionAuthority: () => "managed-private" }).serving).toBe(false)
-    // The drain's last request withdrew readiness, so the control plane
-    // stopped routing this machine before the process was gone.
-    expect(h.cp.log.at(-1)).toMatchObject({ path: "/api/claxedo/host/enrollments/heartbeat", body: { acks: [] } })
+    // The drain's last beat withdrew readiness, so the control plane
+    // stopped routing this machine before the process was gone, and the stop
+    // that followed it ended the lease and told the owner why.
+    expect(h.cp.log.slice(-2).map((entry) => entry.path)).toEqual([HEARTBEAT_PATH, REPORT_PATH])
+    expect(h.cp.beats().at(-1)?.body).toMatchObject({ acks: [] })
+    expect(h.cp.reports()).toEqual([
+      expect.objectContaining({ cliVersion: cliVersion(), generation: 1 }),
+      expect.objectContaining({ cliVersion: cliVersion(), generation: 1, blocked: { reason: "stopped", fix: "claxedo connect" } }),
+    ])
     expect(h.cp.routable(enrollmentIdOf(h))).toEqual([])
+    expect(h.cp.enrollments.get(enrollmentIdOf(h))?.expires_at).toBeLessThanOrEqual(Date.now())
   })
 
   test("a restart resumes with acquire, never redeeming again", async () => {
@@ -187,11 +202,13 @@ describe("claxedo connect", () => {
     h.cp.log.length = 0
 
     const second = connect([], h.deps)
-    await until(() => h.cp.beats().length >= 1, "resumed beat")
+    await until(() => h.cp.reports().length >= 1, "resumed instance's report")
     expect(h.cp.log.map((entry) => entry.path).filter((path) => path !== EVENTS_PATH)).toEqual([
       "/api/claxedo/host/enrollments/acquire",
-      "/api/claxedo/host/enrollments/heartbeat",
+      HEARTBEAT_PATH,
+      REPORT_PATH,
     ])
+    expect(h.cp.enrollments.get(enrollmentIdOf(h))?.blocked, "the stop the first instance reported is cleared by the next acquire").toBeUndefined()
     expect(h.cp.beats()[0]?.body).toMatchObject({ generation: 2, acks: [], sessionAuthority: "managed-private" })
     h.stop()
     expect(await second).toBe(0)
@@ -465,7 +482,7 @@ describe("claxedo connect", () => {
     expect(h.lines.some((line) => line.startsWith("workspace ws_slow: refused: ") && line.includes("draining"))).toBe(true)
     expect(h.lines).not.toContain(`workspace ws_slow: serving ${slow} (revision 1)`)
     expect(h.cp.beats().every((beat) => !JSON.stringify(beat.body.acks).includes("ws_slow"))).toBe(true)
-    expect(h.cp.log.at(-1)).toMatchObject({ path: "/api/claxedo/host/enrollments/heartbeat", body: { acks: [] } })
+    expect(h.cp.beats().at(-1)?.body).toMatchObject({ acks: [] })
     expect(h.cp.routable(enrollmentIdOf(h))).toEqual([])
     expect(h.listener()?.owners()).toEqual([])
     expect((await h.deps.store.load())?.run).toBeUndefined()
@@ -574,7 +591,8 @@ describe("claxedo connect", () => {
       "loginctl show-user svc --property=Linger --value",
       "systemctl --user is-system-running",
       "systemctl --user daemon-reload",
-      "systemctl --user enable --now claxedo-connect.service",
+      "systemctl --user enable claxedo-connect.service",
+      "systemctl --user restart claxedo-connect.service",
     ])
     expect((await h.deps.store.load())?.service).toEqual({ kind: "systemd-user", unit, installed_at: 1_700_000_000_000 })
     expect(h.lines.some((line) => line.startsWith("Installed and started claxedo-connect.service"))).toBe(true)
@@ -608,6 +626,10 @@ describe("claxedo connect", () => {
     expect(h.lines).toContain("  sudo loginctl enable-linger svc")
     expect(h.lines.some((line) => line.includes("Installed and started"))).toBe(false)
     expect(h.cp.beats()).toHaveLength(0)
+    expect(h.cp.reports(), "the owner's app is told why it is not serving").toEqual([
+      expect.objectContaining({ cliVersion: cliVersion(), blocked: { reason: "linger_off", fix: "sudo loginctl enable-linger svc && claxedo connect --install-service" } }),
+    ])
+    expect(h.cp.enrollments.get(enrollmentIdOf(h))?.blocked?.reason).toBe("linger_off")
   })
 
   test("--install-service records the service before the unit starts, so the child's own saves keep it", async () => {
@@ -618,7 +640,7 @@ describe("claxedo connect", () => {
       ...service,
       run: async (bin, args) => {
         const result = await service.run(bin, args)
-        if (!args.includes("--now")) return result
+        if (!args.includes("restart")) return result
         // The unit's process: it loads the state file on its own and rewrites it on every beat.
         child = connect([], h.deps)
         await until(() => h.cp.beats().length >= 1, "the service's first beat")
@@ -697,6 +719,9 @@ describe("claxedo connect", () => {
       expect(await gone).toBe(0)
 
       await fs.writeFile(discovery, daemon.record())
+      expect(await connect([], h.deps), "an enrolled machine refuses too").toBe(78)
+      expect(h.cp.reports().at(-1), "and tells its owner why it is not serving").toMatchObject({ blocked: { reason: "desktop_daemon", fix: "claxedo connect --alongside-desktop" } })
+      expect(h.cp.enrollments.get(enrollmentIdOf(h))?.blocked?.reason).toBe("desktop_daemon")
       expect(await connect(["--install-service", "--alongside-desktop"], h.deps)).toBe(0)
       const unit = path.join(h.home, ".config", "systemd", "user", "claxedo-connect.service")
       expect(await fs.readFile(unit, "utf8")).toContain(`"connect" "--foreground" "--alongside-desktop"`)
@@ -929,6 +954,7 @@ describe("claxedo connect", () => {
       `write ${taskXml}`,
       `schtasks.exe /Create /TN ClaxedoConnect /XML ${taskXml} /F`,
       `unlink ${taskXml}`,
+      "schtasks.exe /End /TN ClaxedoConnect",
       "schtasks.exe /Run /TN ClaxedoConnect",
       "schtasks.exe /Query /TN ClaxedoConnect /FO CSV /NH",
     ])
@@ -943,7 +969,7 @@ describe("claxedo connect", () => {
     expect(h.cp.beats(), "the task's process beats, not this one").toHaveLength(0)
 
     expect(await connect(["--uninstall-service"], h.deps)).toBe(0)
-    expect(h.serviceCalls.slice(7)).toEqual([
+    expect(h.serviceCalls.slice(8)).toEqual([
       "schtasks.exe /End /TN ClaxedoConnect",
       "schtasks.exe /Delete /TN ClaxedoConnect /F",
       `unlink ${script}`,

@@ -45,6 +45,7 @@ import { asFiniteNumber, asRecordOrEmpty } from "@claxedo/helpers/guards"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { errorMessage } from "../json"
 import { DRAIN_TIMEOUT_MS, LEASE_TTL_MS, RUNTIME_CLOSE_TIMEOUT_MS } from "./paths"
+import { reportMachine, restartCommand, type MachineBlock } from "./report"
 
 export type HostDeps = {
   fetch: FetchLike
@@ -595,12 +596,18 @@ export async function runHost(input: HostRunInput): Promise<number> {
   })
 
   let unsubscribe = () => undefined as void
+  let stopped = false
   const stopSignal = new Promise<number>((resolve) => {
     unsubscribe = deps.onStopSignal((signal) => {
       deps.log(`${signal}: draining`)
+      stopped = true
       resolve(0)
     })
   })
+  const report = (blocked?: MachineBlock) => {
+    const generation = connector.generation()
+    return reportMachine(state, { fetch: deps.fetch, log: deps.log, ...(generation === undefined ? {} : { generation }), ...(blocked ? { blocked } : {}) })
+  }
 
   let code: number
   try {
@@ -625,6 +632,7 @@ export async function runHost(input: HostRunInput): Promise<number> {
       code = DECISION_EXIT_CODE
     } else {
       deps.log(`serving as ${enrollment.enrollment_id} (generation ${connector.generation()})`)
+      await report()
       code = await Promise.race([stopSignal, decision])
     }
   } catch (error) {
@@ -634,6 +642,9 @@ export async function runHost(input: HostRunInput): Promise<number> {
 
   unsubscribe()
   await drainWithin(connector.drain(), deps)
+  // Sent after the drain's beat, whose renewal it ends, and alongside the
+  // runtimes' close, so it adds nothing to the stop's bound.
+  const stopReport = stopped ? report({ reason: "stopped", fix: restartCommand(state) }) : undefined
   connector.close()
   deps.stopServing()
   ownerBroker?.close()
@@ -644,6 +655,7 @@ export async function runHost(input: HostRunInput): Promise<number> {
   await Pty.dispose()
   await listener.close()
   owned.clear()
+  await stopReport
   const { run: _run, ...rest } = state
   await persist(rest)
   return code
