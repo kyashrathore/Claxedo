@@ -9,6 +9,7 @@ import { codeExpired, codeTimeLeft, createConnectCode, guessedPlatform, stageLin
 import { CommandLine } from "./command-line"
 import { PairingRequestCard } from "./pairing-request"
 import { ServerConnect } from "./server-connect"
+import { SshMachineConnect } from "./machine-ssh"
 
 function CommandTabs(props: { readonly minted: MintedPairing }) {
   const t = useTranslator(settingsDictionary)
@@ -106,6 +107,7 @@ export function ConnectMachineDrawer() {
       <div class="settings-fields">
         <Show when={server.queries.organizations.signedIn} fallback={<p class="settings-row-description">{t("settings.machines.connect.signIn")}</p>}>
           <PairingCode />
+          <SshMachineConnect />
           <ServerConnect />
         </Show>
         <p class="settings-row-description">{t("settings.machines.connect.thisComputer")}</p>

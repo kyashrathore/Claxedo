@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { loadServerEnvForDevelopment, parseEnvFile, resolveDesktopServerDataDir } from "./server-env"
+import { ensureLoopbackNoProxy, loadServerEnvForDevelopment, parseEnvFile, resolveDesktopServerDataDir } from "./server-env"
 
 const roots: string[] = []
 
@@ -145,5 +145,16 @@ describe("parsing", () => {
 
   test("an empty value is a value, not an omission", () => {
     expect(parseEnvFile("EMPTY=\n")).toEqual([["EMPTY", ""]])
+  })
+})
+
+describe("loopback bypasses the proxy", () => {
+  test("adds each loopback host once to both spellings and keeps what was there", () => {
+    const env: NodeJS.ProcessEnv = { NO_PROXY: "internal.example, LOCALHOST" }
+    ensureLoopbackNoProxy(env)
+    expect(env.NO_PROXY).toBe("internal.example,LOCALHOST,127.0.0.1,::1")
+    expect(env.no_proxy).toBe("127.0.0.1,localhost,::1")
+    ensureLoopbackNoProxy(env)
+    expect(env.no_proxy).toBe("127.0.0.1,localhost,::1")
   })
 })

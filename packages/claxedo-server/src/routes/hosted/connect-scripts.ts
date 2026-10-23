@@ -1,11 +1,15 @@
 import { Hono } from "hono"
-import { MINIMUM_CONNECT_CLI_VERSION } from "@claxedo/account-contract/machine"
+import { CONNECT_SCRIPT_PATH, CONNECT_SCRIPT_SHA256_HEADER, MINIMUM_CONNECT_CLI_VERSION } from "@claxedo/account-contract/machine"
+import { sha256Hex } from "@claxedo/helpers/crypto"
 import { powershellQuote, shellQuote } from "@claxedo/helpers/shell"
 import { POSIX_INSTALLER, POWERSHELL_INSTALLER } from "./connect-installers.generated"
 
-export const CONNECT_SCRIPT_PATH = "/api/claxedo/connect"
-
 const SCRIPT_HEADERS = { "cache-control": "no-store", "x-content-type-options": "nosniff" }
+
+/** The desktop's SSH install runs the script only when its bytes hash to the stated sha256. */
+async function scriptHeaders(script: string, contentType: string) {
+  return { ...SCRIPT_HEADERS, "content-type": contentType, [CONNECT_SCRIPT_SHA256_HEADER]: await sha256Hex(script) }
+}
 
 /** `install.sh` with this plane and its accepted CLI version set below the shebang, so a code is redeemed where it was minted. */
 export function posixConnectScript(origin: string) {
@@ -47,6 +51,12 @@ export function invitationCommands(origin: string, token: string, folder: string
 /** Mounted at `/api/claxedo`; the scripts carry no secret, so they are served to anyone. */
 export function ConnectScriptRoutes(origin: string) {
   return new Hono()
-    .get("/connect", (c) => c.text(posixConnectScript(origin), 200, { ...SCRIPT_HEADERS, "content-type": "text/x-shellscript; charset=utf-8" }))
-    .get("/connect.ps1", (c) => c.text(powershellConnectScript(origin), 200, { ...SCRIPT_HEADERS, "content-type": "text/plain; charset=utf-8" }))
+    .get("/connect", async (c) => {
+      const script = posixConnectScript(origin)
+      return c.text(script, 200, await scriptHeaders(script, "text/x-shellscript; charset=utf-8"))
+    })
+    .get("/connect.ps1", async (c) => {
+      const script = powershellConnectScript(origin)
+      return c.text(script, 200, await scriptHeaders(script, "text/plain; charset=utf-8"))
+    })
 }

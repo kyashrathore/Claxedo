@@ -348,7 +348,15 @@ takes over [Remote machine connection](./2026-09-14-003-feat-connect-implementat
 ### C9 — Add a machine over SSH from the desktop app
 
 - [ ] The desktop app connects a machine it can reach over SSH: install, pair and approve in one flow, with a
-  checksum-verified release. Moved from W5. Progress:
+  checksum-verified release. Moved from W5. Progress: built. The drawer's Connect over SSH… (desktop only) takes
+  `[user@]host`, an optional port, key file and folder; Electron main (`claxedo-desktop/src/main/ssh-connect/`) runs
+  the system `ssh` in BatchMode, shows an unknown host's fingerprints until the person trusts them into their own
+  known_hosts, fetches `/api/claxedo/connect` from the account's plane and runs it only when it matches the
+  `x-claxedo-script-sha256` the plane states, then streams those bytes to `sh -s -- <code>`; the numbered steps and
+  the same approval card follow. Proven live on Linux through the real desktop UI against the signed stack and a
+  local sshd (trust a fingerprint, refused sign-in, missing folder, install, approve, ready); macOS and Windows
+  clients are unverified. No committed e2e flow covers it yet: the harness has no sshd of its own, and its
+  Electron launch forces the basic password store, which a signed desktop on Linux refuses.
 
 ## 4. Order
 

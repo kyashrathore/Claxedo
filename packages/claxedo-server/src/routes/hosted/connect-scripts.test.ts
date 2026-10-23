@@ -1,8 +1,9 @@
 import { spawnSync } from "node:child_process"
+import { createHash } from "node:crypto"
 import { readFileSync } from "node:fs"
 import path from "node:path"
 import { describe, expect, test } from "vitest"
-import { MINIMUM_CONNECT_CLI_VERSION } from "@claxedo/account-contract/machine"
+import { CONNECT_SCRIPT_SHA256_HEADER, MINIMUM_CONNECT_CLI_VERSION } from "@claxedo/account-contract/machine"
 import { connectInstallersModule } from "../../../scripts/connect-installers"
 import { ConnectScriptRoutes, connectCommands, invitationCommands, posixConnectScript, powershellConnectScript } from "./connect-scripts"
 
@@ -63,5 +64,17 @@ describe("connect scripts", () => {
     const [header, key, item] = commands.cloudInit.split("\n")
     expect([header, key]).toEqual(["#cloud-config", "runcmd:"])
     expect(JSON.parse(item!.replace(/^ {2}- /, ""))).toBe(commands.posix)
+  })
+
+  test("each script states the sha256 of exactly the text it serves", async () => {
+    const routes = ConnectScriptRoutes(ORIGIN)
+    for (const [route, script] of [["/connect", posixConnectScript(ORIGIN)], ["/connect.ps1", powershellConnectScript(ORIGIN)]] as const) {
+      const response = await routes.request(route)
+      const body = Buffer.from(await response.arrayBuffer())
+      expect(response.headers.get(CONNECT_SCRIPT_SHA256_HEADER)).toBe(createHash("sha256").update(body).digest("hex"))
+      expect(body.toString("utf8")).toBe(script)
+    }
+    const other = await ConnectScriptRoutes("https://staging.claxedo.test").request("/connect")
+    expect(other.headers.get(CONNECT_SCRIPT_SHA256_HEADER)).not.toBe((await routes.request("/connect")).headers.get(CONNECT_SCRIPT_SHA256_HEADER))
   })
 })

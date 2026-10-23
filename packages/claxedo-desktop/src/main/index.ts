@@ -42,7 +42,7 @@ void reportInstall(telemetryClient, {
 import type { InitStep, ServerReadyData, WslConfig } from "../preload/types"
 import { ensureAgentPath } from "./agent-path"
 import { checkAppExists, resolveAppPath, wslPath } from "./apps"
-import { loadServerEnvForDevelopment, resolveDesktopServerDataDir } from "./server-env"
+import { ensureLoopbackNoProxy, loadServerEnvForDevelopment, resolveDesktopServerDataDir } from "./server-env"
 import type { BrowserRegistry } from "./browser/registry"
 import { setupBrowserTab } from "./browser/setup"
 import { CHANNEL, IS_PACKAGED, UPDATER_ENABLED } from "./constants"
@@ -93,6 +93,8 @@ import { registerHostConnectorIpc } from "./host-connector/ipc"
 import { setupHostServingDelivery } from "./host-connector/serving-push"
 import { setupHostProviderConfigPush } from "./host-connector/provider-config-push"
 import { publishHostConnectorStatus } from "./host-connector/status-channel"
+import { registerSshConnectIpc } from "./ssh-connect/ipc"
+import { SYSTEM_SSH_TOOLS } from "./ssh-connect/ssh"
 import { initLogging, openServerLogFile } from "./logging"
 import { createMenu } from "./menu"
 import {
@@ -803,6 +805,12 @@ registerHostConnectorIpc({
 })
 logger.log("host connector", { available: true, state: hostConnector.status().status })
 
+registerSshConnectIpc({
+  ipcMain,
+  controlPlaneUrl: accountConfig.configured ? accountConfig.coreOrigin : undefined,
+  tools: { ...SYSTEM_SSH_TOOLS, log: (message) => logger.warn(`[ssh-connect] ${message}`) },
+})
+
 registerIpcHandlers({
   awaitInitialization: async (sendStep) => {
     sendStep(initStep)
@@ -847,26 +855,6 @@ async function exitApp(intent: ExitIntent) {
   const discovery = intent === "handoff" || !daemonConnected ? undefined : leasedDaemon
   const log = (message: string, fields: Record<string, unknown>) => logger.warn(message, fields)
   await releaseOrStopDaemon({ lease, stop: discovery && { daemon, run: () => stopPublishedDaemon(discovery, recovery, log) }, log })
-}
-
-function ensureLoopbackNoProxy() {
-  const loopback = ["127.0.0.1", "localhost", "::1"]
-  const upsert = (key: string) => {
-    const items = (process.env[key] ?? "")
-      .split(",")
-      .map((value: string) => value.trim())
-      .filter((value: string) => Boolean(value))
-
-    for (const host of loopback) {
-      if (items.some((value: string) => value.toLowerCase() === host)) continue
-      items.push(host)
-    }
-
-    process.env[key] = items.join(",")
-  }
-
-  upsert("NO_PROXY")
-  upsert("no_proxy")
 }
 
 function cleanupLegacyDevCaches() {

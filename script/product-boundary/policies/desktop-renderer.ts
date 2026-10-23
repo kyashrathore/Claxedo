@@ -582,8 +582,13 @@ export const desktopRenderer: Policy = {
   // Rename (`settings/view/machine-rename.tsx`) and its shared folders with
   // Stop sharing (`settings/view/machine-roots.tsx`) (owner: the app's settings
   // domain). They add no package edge.
-  // 1573/37, no headroom.
-  ceilings: { modules: 1573, packages: 37 },
+  // Connecting a machine over SSH from the drawer, shown only where the
+  // desktop's bridge offers it: the flow's machine, the reader of the
+  // bridge's answers and its view (owner: the app's settings domain,
+  // `settings/ssh-connect.ts`, `settings/ssh-bridge.ts` and
+  // `settings/view/machine-ssh.tsx`). They add no package edge.
+  // 1576/37, no headroom.
+  ceilings: { modules: 1576, packages: 37 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
