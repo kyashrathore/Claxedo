@@ -1,7 +1,7 @@
 import { createMemo, createSignal, type Accessor } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { createFlow, runFlow } from "@/lib/flow"
-import { codeHostConnections, codeHostIntegrations, toAppError, useServer, type ProjectSource } from "@/server"
+import { codeHostConnections, codeHostIntegrations, toAppError, useServer, type MachineClone, type ProjectSource } from "@/server"
 import { sameFolderPlace, type FolderPlace } from "../folder-places"
 
 export type SourceMode = "folder" | "repository"
@@ -47,7 +47,7 @@ function createFolderPick(options: ProjectCreateDraftOptions) {
   const place = createMemo(() => {
     const places = options.folderPlaces()
     const held = picked()
-    return (held && places.find((candidate) => sameFolderPlace(candidate, held))) ?? places[0]
+    return held ? (places.find((candidate) => sameFolderPlace(candidate, held)) ?? held) : places[0]
   })
   const choosePlace = (next: FolderPlace) => {
     if (!sameFolderPlace(next, place() ?? next)) setFolder("")
@@ -67,23 +67,59 @@ function createFolderPick(options: ProjectCreateDraftOptions) {
   return { folder, place, choosePlace, chooseFolder, folderSource }
 }
 
+type RepositoryPick = Exclude<ProjectSource, { readonly kind: "folder" }>
+
+function createClonePick(options: ProjectCreateDraftOptions) {
+  const [onto, setOnto] = createSignal<FolderPlace>()
+  const [parent, setParent] = createSignal<string>()
+  const machinePlaces = createMemo(() => options.folderPlaces().filter((place) => place.machine !== undefined))
+  const cloneMachine = createMemo(() => {
+    const held = onto()
+    return held && (machinePlaces().find((candidate) => sameFolderPlace(candidate, held)) ?? held)
+  })
+  const cloneParent = () => parent() ?? cloneMachine()?.cloneParent
+  const chooseOnto = (next: FolderPlace | undefined) => {
+    setParent(undefined)
+    setOnto(next?.machine ? next : undefined)
+  }
+  const chooseCloneParent = async () => {
+    const at = cloneMachine()
+    const chosen = at && (await options.pickFolder?.(at))
+    const now = cloneMachine()
+    if (chosen && now && sameFolderPlace(at, now)) setParent(chosen)
+  }
+  const cloneTarget = (): { readonly onMachine?: MachineClone } | undefined => {
+    const machine = cloneMachine()?.machine
+    if (!machine) return {}
+    const folder = cloneParent()
+    return folder ? { onMachine: { machine, parent: folder } } : undefined
+  }
+  return { machinePlaces, cloneMachine, cloneParent, chooseOnto, chooseCloneParent, cloneTarget }
+}
+
 function createSourcePick(options: ProjectCreateDraftOptions) {
   const folders = createFolderPick(options)
+  const clones = createClonePick(options)
   const [repoUrl, setRepoUrl] = createSignal("")
   const [source, setSource] = createSignal<SourceMode>("folder")
   const [query, setQuery] = createSignal("")
   const [selected, setSelected] = createSignal<string>()
-  const offersFolder = () => options.folderPlaces().length > 0 && Boolean(options.pickFolder)
+  const offersFolder = () => folders.place() !== undefined && Boolean(options.pickFolder)
   const mode = (): SourceMode => (offersFolder() ? source() : "repository")
   const choice = createRepositoryChoice(() => mode() === "repository")
-  const chosen = (): ProjectSource | undefined => {
-    if (mode() === "folder") return folders.folderSource()
+  const repositorySource = (): RepositoryPick | undefined => {
     const connection = choice.connection()
     if (choice.view() === "list") return connection && selected() ? { kind: "connectedRepository", connectionId: connection.id, fullName: selected() ?? "" } : undefined
     if (choice.view() !== "url") return undefined
     return repoUrl().trim() ? { kind: "repository", url: repoUrl().trim() } : undefined
   }
-  return { ...folders, repoUrl, setRepoUrl, setSource, query, setQuery, selected, setSelected, offersFolder, mode, choice, chosen }
+  const chosen = (): ProjectSource | undefined => {
+    if (mode() === "folder") return folders.folderSource()
+    const repository = repositorySource()
+    const target = clones.cloneTarget()
+    return repository && target ? { ...repository, ...target } : undefined
+  }
+  return { ...folders, ...clones, repoUrl, setRepoUrl, setSource, query, setQuery, selected, setSelected, offersFolder, mode, choice, chosen }
 }
 
 export function createProjectCreateDraft(options: ProjectCreateDraftOptions) {

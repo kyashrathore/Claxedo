@@ -591,6 +591,7 @@ test("the renderer-visible operation set stays pinned", async () => {
     "machines.approve",
     "machines.assign",
     "machines.cancelPairings",
+    "machines.clone",
     "machines.deny",
     "machines.folders",
     "machines.list",

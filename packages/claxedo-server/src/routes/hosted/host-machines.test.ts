@@ -34,15 +34,15 @@ function enrollment(overrides: Partial<HostEnrollmentListRow> = {}): HostEnrollm
   }
 }
 
-function routes(machines: HostEnrollmentListRow[]) {
+function routes(machines: HostEnrollmentListRow[], options: Record<string, unknown> = {}) {
   const authority = {
     listHostEnrollments: vi.fn(async () => machines),
     openWorkspace: vi.fn(async () => { throw new Error("no machine should be reached") }),
   }
-  const app = HostMachineRoutes({ authority, relay: {} } as unknown as ControlPlaneServices, { authConfig, verifier, env: {}, now: () => NOW } as never)
-  const read = (enrollmentId: string, body: unknown, headers: Record<string, string> = { authorization: "Bearer user_ada" }) =>
-    app.request(`http://control.test/${enrollmentId}/folders`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) })
-  return { authority, read }
+  const app = HostMachineRoutes({ authority, relay: {} } as unknown as ControlPlaneServices, { authConfig, verifier, env: {}, now: () => NOW, ...options } as never)
+  const post = (operation: string) => (enrollmentId: string, body: unknown, headers: Record<string, string> = { authorization: "Bearer user_ada" }) =>
+    app.request(`http://control.test/${enrollmentId}/${operation}`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) })
+  return { authority, read: post("folders"), clone: post("clone") }
 }
 
 describe("host machine routes", () => {
@@ -70,5 +70,38 @@ describe("host machine routes", () => {
       expect((await read("enr_box", body)).status, JSON.stringify(body)).toBe(400)
     }
     expect(authority.listHostEnrollments).not.toHaveBeenCalled()
+  })
+
+  test("a clone names one repository and its folder, a URL git may clone, and a private one only through a connection that reads it", async () => {
+    const unread = { ok: false, status: 404, code: "connection_not_found" }
+    const repositoryForAuth = vi.fn(async () => unread)
+    const machineRepositoryClone = vi.fn()
+    const { clone, authority } = routes([enrollment()], {
+      connections: { repositoryForAuth },
+      repositoryVisibility: async () => "unreadable",
+      machineRepositoryClones: { machineRepositoryClone },
+    })
+    const directory = "/home/ada/beta"
+    for (const body of [{ directory }, { directory, repoUrl: "https://example.test/beta.git", connectionId: "conn", repo: { fullName: "acme/beta" } }, { directory, connectionId: "conn" }]) {
+      expect((await clone("enr_box", body)).status, JSON.stringify(body)).toBe(400)
+    }
+    const refused = async (body: unknown) => {
+      const response = await clone("enr_box", body)
+      return [response.status, ((await response.json()) as { error: { code: string } }).error.code]
+    }
+    expect(await refused({ directory, repoUrl: "file:///etc" })).toEqual([400, "repository_url_invalid"])
+    expect(await refused({ directory, repoUrl: "https://github.com/acme/private" })).toEqual([403, "repository_connection_required"])
+    expect(await refused({ directory, connectionId: "conn", repo: { fullName: "acme/private" } })).toEqual([404, "connection_not_found"])
+    expect(machineRepositoryClone).not.toHaveBeenCalled()
+    expect(authority.openWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("a private repository a connection reads is not cloned onto a machine by a plane that cannot broker it", async () => {
+    const repositoryForAuth = vi.fn(async () => ({ ok: true, connectionId: "conn", repository: { id: "1", name: "private", fullName: "acme/private", cloneUrl: "https://github.com/acme/private.git", private: true, permissions: { read: true, write: false } } }))
+    const { clone, authority } = routes([enrollment()], { connections: { repositoryForAuth }, repositoryVisibility: async () => "unreadable" })
+    const response = await clone("enr_box", { directory: "/home/ada/private", connectionId: "conn", repo: { fullName: "acme/private" } })
+    expect(response.status).toBe(503)
+    expect(await response.json()).toMatchObject({ error: { code: "repository_broker_unavailable" } })
+    expect(authority.openWorkspace).not.toHaveBeenCalled()
   })
 })

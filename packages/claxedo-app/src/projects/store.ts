@@ -54,7 +54,8 @@ export function useProjectPlacements(projectId: Accessor<ProjectId>): { readonly
 export function useFolderPlaces(): Accessor<readonly FolderPlace[]> {
   const server = useServer()
   const machines = useQuery(() => server.queries.machines.list())
-  return createMemo(() => folderPlacesOf(server.capabilities()?.servingMachine, machines.data ?? []))
+  const placements = useQuery(() => server.queries.placements.list())
+  return createMemo(() => folderPlacesOf(server.capabilities()?.servingMachine, machines.data ?? [], placements.data ?? []))
 }
 
 export function useProjectCommands() {

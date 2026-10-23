@@ -1,7 +1,7 @@
-import { Show, type JSX } from "solid-js"
+import { createMemo, Show, type JSX } from "solid-js"
 import { toAppError, type ProjectSource } from "@/server"
 import { Button, ClaxedoIcon as Icon, Field, SegmentedControl, SegmentedControlItem, Select, TextField } from "@/ui"
-import type { FolderPlace } from "../folder-places"
+import { sameFolderPlace, type FolderPlace } from "../folder-places"
 import { useProjectsText } from "../i18n"
 import { draftProjectName, pastedRepositoryHint } from "../project-source"
 import { ConnectCodeHost } from "./project-create-connect"
@@ -17,11 +17,11 @@ export type ProjectCreateFormProps = {
   readonly onSubmit: (source: ProjectSource, name: string | undefined) => void | Promise<void>
 }
 
-function FolderField(props: { machine: string; folder: string; onChoose: () => void }) {
+function FolderField(props: { label: string; folder: string; onChoose: () => void }) {
   const t = useProjectsText()
   return (
     <Field>
-      <Field.Label>{t("projects.create.folder.label", { machine: props.machine })}</Field.Label>
+      <Field.Label>{props.label}</Field.Label>
       <button type="button" aria-label={t("projects.create.folder.choose")} title={props.folder || undefined} class="project-create-folder" onClick={() => props.onChoose()}>
         <Icon name="folder" size="small" class="project-create-folder-icon" />
         <span class="project-create-folder-path" classList={{ "project-create-folder-path--empty": !props.folder }}>
@@ -33,6 +33,10 @@ function FolderField(props: { machine: string; folder: string; onChoose: () => v
   )
 }
 
+function placeKey(place: FolderPlace): string {
+  return place.machine ?? "here"
+}
+
 function PlaceSelect(props: { places: readonly FolderPlace[]; current: FolderPlace; onSelect: (place: FolderPlace) => void }) {
   const t = useProjectsText()
   return (
@@ -41,7 +45,7 @@ function PlaceSelect(props: { places: readonly FolderPlace[]; current: FolderPla
       <Select
         options={[...props.places]}
         current={props.current}
-        value={(place) => place.machine ?? ""}
+        value={placeKey}
         label={(place) => place.name}
         onSelect={(next) => next && props.onSelect(next)}
         triggerProps={{ "aria-label": t("projects.create.machine") }}
@@ -51,12 +55,47 @@ function PlaceSelect(props: { places: readonly FolderPlace[]; current: FolderPla
 }
 
 function FolderSection(props: { draft: ProjectCreateDraft; place: FolderPlace }) {
+  const t = useProjectsText()
   return (
     <>
       <Show when={props.draft.folderPlaces().length > 1}>
         <PlaceSelect places={props.draft.folderPlaces()} current={props.place} onSelect={props.draft.choosePlace} />
       </Show>
-      <FolderField machine={props.place.name} folder={props.draft.folder()} onChoose={() => void props.draft.chooseFolder()} />
+      <FolderField label={t("projects.create.folder.label", { machine: props.place.name })} folder={props.draft.folder()} onChoose={() => void props.draft.chooseFolder()} />
+    </>
+  )
+}
+
+function CloneOntoSection(props: { draft: ProjectCreateDraft }) {
+  const t = useProjectsText()
+  const places = createMemo((): FolderPlace[] => {
+    const held = props.draft.cloneMachine()
+    const offered = props.draft.machinePlaces()
+    return [
+      { name: props.draft.folderPlaces().find((place) => place.machine === undefined)?.name ?? t("projects.chip.cloud") },
+      ...offered,
+      ...(held && !offered.some((place) => sameFolderPlace(place, held)) ? [held] : []),
+    ]
+  })
+  const current = () => places().find((place) => place.machine === props.draft.cloneMachine()?.machine) ?? places()[0]
+  return (
+    <>
+      <Field>
+        <Field.Label>{t("projects.create.cloneOnto")}</Field.Label>
+        <Select
+          options={places()}
+          current={current()}
+          value={placeKey}
+          label={(place) => place.name}
+          onSelect={(next) => props.draft.chooseOnto(next ?? undefined)}
+          triggerProps={{ "aria-label": t("projects.create.cloneOnto") }}
+        />
+      </Field>
+      <Show when={props.draft.cloneMachine()}>
+        {(place) => (
+          <FolderField label={t("projects.create.cloneInto", { machine: place().name })} folder={props.draft.cloneParent() ?? ""} onChoose={() => void props.draft.chooseCloneParent()} />
+        )}
+      </Show>
     </>
   )
 }
@@ -148,7 +187,12 @@ export function ProjectCreateFields(props: { readonly draft: ProjectCreateDraft;
       <Show
         when={props.draft.mode() === "folder" ? props.draft.place() : undefined}
         fallback={
-          <RepositorySection choice={props.draft.choice} url={props.draft.repoUrl()} onUrl={props.draft.editUrl} query={props.draft.query()} onQuery={props.draft.setQuery} selected={props.draft.selected()} onSelect={props.draft.setSelected} />
+          <>
+            <RepositorySection choice={props.draft.choice} url={props.draft.repoUrl()} onUrl={props.draft.editUrl} query={props.draft.query()} onQuery={props.draft.setQuery} selected={props.draft.selected()} onSelect={props.draft.setSelected} />
+            <Show when={props.draft.machinePlaces().length > 0 || props.draft.cloneMachine()}>
+              <CloneOntoSection draft={props.draft} />
+            </Show>
+          </>
         }
       >
         {(place) => <FolderSection draft={props.draft} place={place()} />}

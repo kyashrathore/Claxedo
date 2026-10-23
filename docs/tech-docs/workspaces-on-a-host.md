@@ -219,6 +219,29 @@ folders it lists come from `directoryEntries` and `searchFolders`
 (`packages/claxedo-server-core/src/hosts/machine/folders.ts`), the same code the
 desktop's own folder routes run.
 
+A clone onto the machine (`machines.clone`) takes the same route with the
+`clone` operation and the new folder as its destination. `cloneOntoMachine`
+first asks `repositoryConnection` whether one of the caller's code-host
+connections reads the repository. If one does, the egress broker mints a stand-in
+for that clone alone (`machineRepositoryClone`,
+`packages/claxedo-server/src/credentials/hosted-egress-broker/index.ts`): a
+machine repository binding whose destination is that repository's
+`info/refs` and `git-upload-pack`, admitted only while the enrollment is live at
+the serving generation it was minted for, resolved to the connection's current
+token per request, and recorded in the pass register so the plane spends it when
+the machine answers. The machine's git fetches the repository from the binding
+URL (a `GIT_CONFIG_*` rewrite and header for that one process,
+`GitHttpCredential`'s brokered form in
+`packages/workspace-runtime/src/git.ts`), and the checkout's `origin` stays the
+repository's own URL. Without a connection the machine clones the URL as its
+own git would. The machine answers at once with 200 and a blank, then a blank
+every 10 s, and ends with the outcome as the body's one JSON value, since a
+clone outlasts the relay's 30 s wait for a response to start; `callMachine`
+reads a refusal there under its own status. Cloning runs `cloneInto`
+(`packages/claxedo-server-core/src/hosts/machine/clone.ts`), the same code the
+desktop's own project store clones with. The app then assigns the folder with
+`machines.assign`, carrying the repository URL.
+
 ## B. The client sees the machine and its workspace
 
 **B.1 Boot and declaration** — the app learns which machine it is attached to

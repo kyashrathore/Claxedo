@@ -23,7 +23,8 @@ export type GitOptions = {
 }
 
 /**
- * An `Authorization` header git sends to one HTTPS host.
+ * An `Authorization` header git sends to one HTTPS host, or, brokered, to a
+ * broker git fetches one repository from in its place.
  *
  * A clone of a private repository has to authenticate, and the credential may
  * not ride on argv where `ps` reads it, so git takes it from `GIT_CONFIG_*`.
@@ -31,12 +32,13 @@ export type GitOptions = {
  * filter set through them is command execution inside the checkout — which is
  * why `CALLER_SET_ENV` refuses them and `buildSafeEnv` denies them. A caller
  * hands over the host and the header value instead, and this module writes the
- * one config entry those two can express.
+ * one config entry those two can express. A brokered credential adds the one
+ * rewrite of `repoUrl` to the broker: the header goes to the broker alone, and
+ * the checkout's `origin` stays `repoUrl`.
  */
-export type GitHttpCredential = {
-  host: string
-  authorization: string
-}
+export type GitHttpCredential =
+  | { host: string; authorization: string }
+  | { broker: string; repoUrl: string; authorization: string }
 
 /** Per-invocation overrides of the bounds, the environment and the credential a runner applies. */
 export type GitRunOptions = {
@@ -99,14 +101,50 @@ function requireCallerEnv(env: Readonly<Record<string, string>> | undefined) {
 
 const CREDENTIAL_HOST = /^[A-Za-z0-9.-]+(?::\d+)?$/
 
-function credentialEnv(credential: GitHttpCredential) {
-  if (!CREDENTIAL_HOST.test(credential.host)) {
-    throw new GitCredentialError(`git credential host ${credential.host} is not a host name`)
+function parsedUrl(value: string) {
+  try {
+    return new URL(value)
+  } catch {
+    return undefined
   }
+}
+
+/**
+ * Where git fetches `repoUrl` through a broker at `brokerUrl`: the broker's
+ * URL followed by the repository's path. The broker is HTTPS, or plain HTTP
+ * on loopback only, and neither URL carries a credential, query or fragment.
+ */
+export function brokeredRepositoryUrl(brokerUrl: string, repoUrl: string) {
+  const broker = parsedUrl(brokerUrl)
+  const repository = parsedUrl(repoUrl)
+  const loopback = broker?.protocol === "http:" && ["127.0.0.1", "[::1]", "localhost"].includes(broker.hostname)
+  if (!broker || (broker.protocol !== "https:" && !loopback) || broker.username || broker.password || broker.search || broker.hash) {
+    throw new GitCredentialError("git credential broker is not an HTTPS URL")
+  }
+  if (!repository || !["https:", "http:"].includes(repository.protocol) || repository.username || repository.password || repository.search || repository.hash) {
+    throw new GitCredentialError("a brokered git repository is not an HTTP(S) URL")
+  }
+  return `${broker.origin}${broker.pathname.replace(/\/+$/, "")}${repository.pathname}`
+}
+
+function credentialEnv(credential: GitHttpCredential) {
   // git sends this value as a request header, so a line break in it is a second
   // header the repository host never agreed to receive.
   if (/[\r\n]/.test(credential.authorization)) {
     throw new GitCredentialError("git credential header may not contain a line break")
+  }
+  if ("broker" in credential) {
+    const brokered = brokeredRepositoryUrl(credential.broker, credential.repoUrl)
+    return {
+      GIT_CONFIG_COUNT: "2",
+      GIT_CONFIG_KEY_0: `url.${brokered}.insteadOf`,
+      GIT_CONFIG_VALUE_0: credential.repoUrl,
+      GIT_CONFIG_KEY_1: `http.${brokered}.extraheader`,
+      GIT_CONFIG_VALUE_1: `Authorization: ${credential.authorization}`,
+    }
+  }
+  if (!CREDENTIAL_HOST.test(credential.host)) {
+    throw new GitCredentialError(`git credential host ${credential.host} is not a host name`)
   }
   return {
     GIT_CONFIG_COUNT: "1",

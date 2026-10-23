@@ -272,7 +272,25 @@ takes over [Remote machine connection](./2026-09-14-003-feat-connect-implementat
 - [ ] **Clone onto <machine>.** A repository URL or a code-host repository is cloned onto the chosen connected
   machine, into a folder the person can change (by default beside the machine's first shared folder). The clone's
   credential is brokered (single use, scoped to that repository, from the connections capability), never the
-  account's code-host token sent to the machine. Progress:
+  account's code-host token sent to the machine. Progress: 2026-10-23 (lane C5), built; one criterion unproven live.
+  In Repository, "Clone onto" picks this computer (Cloud on a hosted plane) or a machine place, and "Clone into a
+  folder on <machine>" defaults to the parent of the machine's first shared folder and opens its own folder dialog
+  to change it. `machines.clone` (`POST /api/claxedo/host/machines/:enrollmentId/clone`) asks `repositoryConnection`
+  whether one of the caller's connections reads the repository. If one does, the egress broker mints a machine
+  repository binding for that clone alone: only `info/refs` and `git-upload-pack` of that repository, the
+  connection's token read per request, the enrollment checked at its serving generation, and the stand-in recorded
+  in the pass register and spent when the machine answers. The machine's git fetches through it for that one
+  process, with `origin` staying the repository's URL. The machine clones with `cloneInto`
+  (`claxedo-server-core/src/hosts/machine/clone.ts`, the desktop project store's clone too) and answers
+  through a long answer that outlasts the relay's 30 s first-byte wait. Then `machines.assign` files the folder with
+  its repository URL. Live: `02-projects-machine` clones the signed stack's git server onto a paired `claxedo connect`
+  machine, beside its shared folder and then into a folder picked in its dialog, on web and phone; red with the
+  machine's clone route unmounted ("build-box did not answer: HTTP 404"). Unproven live: a private GitHub repository
+  through the broker. The signed stack's scripted GitHub serves no git smart-HTTP, and a machine's git (GnuTLS)
+  would have to trust the stack's per-run certificate. Focused tests cover it: the composed broker against a
+  stub GitHub (`hosted-egress-broker.test.ts`: fetch, refusal of push, other repositories, a superseded or paused
+  machine, a gone connection, and the spent stand-in), and a real git clone through a loopback broker on the
+  machine (`host-management.test.ts`).
 - [ ] **New worktree on <machine>.** The Where chip offers "New worktree on <name>" for a connected machine's folder,
   with the base-branch choice it has locally, created on first send as local worktrees are. Progress:
 - [ ] **Where it runs.** Settings → Projects → Where it runs offers Open, and "Clone at this location" for a

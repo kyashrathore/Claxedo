@@ -9,7 +9,7 @@ import { createIntegrationsApi } from "./integrations"
 import { createProviderConnectApi } from "./provider-connect"
 import { createProviderCatalogsApi } from "./provider-catalogs"
 import { createFoldersApi } from "./folders"
-import { machineFolderProjectCreator } from "./machine-projects"
+import { machineProjectCreator } from "./machine-projects"
 import type { ServerConfig } from "./config"
 import { isRetryableServerError } from "./errors"
 import { createEventIntake, type EventIntake } from "./event-intake"
@@ -95,7 +95,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     sessions: createSessionsApi(transport, workspaces, status, coverage, wakes, projection, telemetry, account),
     sharedSessions: workspaces.shared,
     projects: {
-      ...createProjectsApi(transport, queryClient, workspaces, cloud.create, machineFolderProjectCreator(account, workspaces, () => queryClient.fetchQuery(queries.machines.list()))),
+      ...createProjectsApi(transport, queryClient, workspaces, cloud.create, machineProjectCreator(account, workspaces, () => queryClient.fetchQuery(queries.machines.list()))),
       ...createProjectEnvironmentApi(transport, queryClient, workspaces, account),
     },
     placements: placementsApi(transport, workspaces),

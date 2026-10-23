@@ -1,5 +1,6 @@
 import fs from "node:fs/promises"
 import os from "node:os"
+import path from "node:path"
 import { Hono, type Context } from "hono"
 import { createRemoteJWKSet, type JWTVerifyGetKey } from "jose"
 import type { RelayHostAuthContext } from "@claxedo/session-core/relay-host"
@@ -10,8 +11,9 @@ import {
   verifyHostManagementGrant,
   type HostManagementOperation,
 } from "@claxedo/server-core/platform/auth/host-management-grant"
+import { cloneInto, RepositoryCloneError } from "@claxedo/server-core/hosts/machine/clone"
 import { directoryEntries, searchFolders } from "@claxedo/server-core/hosts/machine/folders"
-import { readFiniteNumber, readString } from "@claxedo/helpers/readers"
+import { readField, readFiniteNumber, readRecord, readString } from "@claxedo/helpers/readers"
 
 export type HostManagementOptions = {
   enrollmentId: string
@@ -25,7 +27,7 @@ export type HostManagement = {
   readonly contribution: NonNullable<WorkspaceRuntimeServerOptions["routeContributions"]>[number]
 }
 
-type Refusal = { status: 400 | 401 | 403 | 404 | 409; code: string; message: string }
+type Refusal = { status: 400 | 401 | 403 | 404 | 409 | 502; code: string; message: string }
 
 const MAX_SEARCH_RESULTS = 200
 
@@ -115,6 +117,70 @@ async function answerFolderRead(c: Context, request: FolderRead) {
   }
 }
 
+type CloneRequest = { repoUrl: string; directory: string; broker?: { url: string; authorization: string } }
+
+function cloneRequest(body: unknown): CloneRequest | undefined {
+  const repoUrl = nonBlankField(body, "repoUrl")
+  const directory = nonBlankField(body, "directory")
+  if (!repoUrl || !directory || !path.isAbsolute(directory)) return undefined
+  if (readField(body, "broker") === undefined) return { repoUrl, directory }
+  const broker = readRecord(body, "broker")
+  const url = nonBlankField(broker, "url")
+  const authorization = nonBlankField(broker, "authorization")
+  return url && authorization ? { repoUrl, directory, broker: { url, authorization } } : undefined
+}
+
+async function cloneOutcome(request: CloneRequest): Promise<{ answer: Record<string, unknown> } | { refusal: Refusal }> {
+  await fs.mkdir(path.dirname(request.directory), { recursive: true })
+  try {
+    await fs.mkdir(request.directory)
+  } catch (error) {
+    if (readString(error, "code") !== "EEXIST") throw error
+    return { refusal: { status: 409, code: "folder_exists", message: `${request.directory} already exists on this machine` } }
+  }
+  const credential = request.broker && { broker: request.broker.url, repoUrl: request.repoUrl, authorization: request.broker.authorization }
+  try {
+    await cloneInto(request.repoUrl, request.directory, credential)
+  } catch (error) {
+    if (error instanceof RepositoryCloneError) return { refusal: { status: 502, code: "repository_clone_failed", message: error.message } }
+    throw error
+  }
+  return { answer: { directory: request.directory } }
+}
+
+/** How often a long answer sends a blank while its outcome is still to come. */
+const LONG_ANSWER_BEAT_MS = 10_000
+
+/**
+ * The answer to an operation that outlasts the relay's 30 s wait for a
+ * response to start: it starts at once with 200 and a blank, carries one
+ * blank per beat, and ends with its outcome as the body's one JSON value,
+ * the answer itself or `{ error: { code, message, status } }`. JSON allows
+ * the blanks before it.
+ */
+function answerWhenDone(work: () => Promise<{ answer: Record<string, unknown> } | { refusal: Refusal }>): Response {
+  const encoder = new TextEncoder()
+  let beat: ReturnType<typeof setInterval> | undefined
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode(" "))
+      beat = setInterval(() => controller.enqueue(encoder.encode(" ")), LONG_ANSWER_BEAT_MS)
+      void work()
+        .catch((error: unknown) => ({ refusal: { status: 502 as const, code: "host_management_failed", message: error instanceof Error ? error.message : String(error) } }))
+        .then((outcome) => {
+          clearInterval(beat)
+          const value = "answer" in outcome ? outcome.answer : { error: { code: outcome.refusal.code, message: outcome.refusal.message, status: outcome.refusal.status } }
+          controller.enqueue(encoder.encode(JSON.stringify(value)))
+          controller.close()
+        })
+    },
+    cancel() {
+      clearInterval(beat)
+    },
+  })
+  return new Response(body, { status: 200, headers: { "content-type": "application/json" } })
+}
+
 /**
  * The machine-wide operations a connected machine answers for its owner,
  * reached through any workspace it serves: the relay's proof says who asks,
@@ -129,6 +195,12 @@ export function createHostManagement(options: HostManagementOptions): HostManage
     const refusal = await admit(c, "folders.read", request.read === "home" ? "~" : request.directory)
     if (refusal) return answerRefusal(c, refusal)
     return await answerFolderRead(c, request)
+  }).post(HOST_MANAGEMENT_ROUTES.clone, async (c) => {
+    const request = cloneRequest(await c.req.json().catch(() => undefined))
+    if (!request) return answerRefusal(c, { status: 400, code: "host_management_request_invalid", message: "Name the repository and the full path of the folder it is cloned into" })
+    const refusal = await admit(c, "clone", request.directory)
+    if (refusal) return answerRefusal(c, refusal)
+    return answerWhenDone(() => cloneOutcome(request))
   })
   return {
     contribution: {

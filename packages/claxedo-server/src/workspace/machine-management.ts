@@ -9,8 +9,13 @@ import {
 } from "@claxedo/server-core/platform/auth/host-management-grant"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { decodeApiError } from "@claxedo/helpers/api-error"
+import { readFiniteNumber, readRecord } from "@claxedo/helpers/readers"
+import { safeRepoUrl } from "@claxedo/sandbox-contract"
 import type { ControlPlaneServices } from "../authority/services"
+import type { MachineRepositoryClone } from "../credentials/hosted-egress-broker"
 import { connectCallerRuntime, openCallerRuntimeTarget } from "./relay-runtime-client"
+import { repositoryConnection, type GitHubRepositoryVisibility, type RepositoryConnectionRequest } from "./repository-connection"
+import type { WorkspaceRouteOptions } from "./route-support"
 
 /** A refusal about the machine (`machine_*`), or the machine's own refusal relayed with its code and status. */
 export class MachineManagementError extends ClaxedoError {
@@ -53,9 +58,19 @@ export type MachineOperation = {
 }
 
 /**
+ * The outcome a machine reports at the end of a long answer, which started
+ * with 200 before the outcome was known: its refusal under its own status.
+ */
+function longAnswerRefusal(answer: unknown) {
+  const error = readRecord(answer, "error")
+  return error && decodeApiError(readFiniteNumber(error, "status") ?? 502, answer)
+}
+
+/**
  * One host-management request to the caller's machine: a grant minted for
  * this operation and destination alone, carried through the first folder the
- * machine serves, as the caller. The machine's refusal comes back as its own.
+ * machine serves, as the caller. The machine's refusal comes back as its own,
+ * whether its answer said so up front or at the end of a long one.
  */
 export async function callMachine(
   services: ControlPlaneServices,
@@ -83,8 +98,53 @@ export async function callMachine(
     body: JSON.stringify(request.body),
   })
   const answer: unknown = await response.json().catch(() => undefined)
-  if (response.ok) return answer
-  const refusal = decodeApiError(response.status, answer)
-  if (refusal) throw new MachineManagementError(refusal.code, response.status, refusal.message)
+  const refusal = response.ok ? longAnswerRefusal(answer) : decodeApiError(response.status, answer)
+  if (response.ok && !refusal) return answer
+  if (refusal) throw new MachineManagementError(refusal.code, refusal.status, refusal.message)
   throw unreachable(`HTTP ${response.status}`)
+}
+
+export type MachineCloneRequest = RepositoryConnectionRequest & { directory: string }
+
+export type MachineCloneOptions = {
+  connections?: WorkspaceRouteOptions["connections"]
+  visibility: GitHubRepositoryVisibility
+  clones?: { machineRepositoryClone(input: { enrollmentId: string; connectionId: string; fullName: string }): Promise<MachineRepositoryClone | undefined> }
+}
+
+/**
+ * A repository cloned onto the caller's machine into `directory`. When one
+ * of the caller's code-host connections reads it, the machine's git fetches
+ * it through the broker on a stand-in minted for this clone and spent when
+ * it ends, so no code-host token reaches the machine; otherwise the machine
+ * clones the URL as its own git would. Answers the URL the checkout records.
+ */
+export async function cloneOntoMachine(
+  services: ControlPlaneServices,
+  env: Record<string, string | undefined>,
+  auth: SignedControlPlaneAuth,
+  machine: ManagedMachine,
+  request: MachineCloneRequest,
+  options: MachineCloneOptions,
+): Promise<{ repoUrl: string; directory: string }> {
+  const pasted = request.repoUrl === undefined ? undefined : safeRepoUrl(request.repoUrl.trim())
+  if (request.repoUrl !== undefined && !pasted) throw new MachineManagementError("repository_url_invalid", 400, "That is not a repository URL a machine can clone")
+  const connected = await repositoryConnection(auth, { ...request, ...(pasted ? { repoUrl: pasted } : {}) }, { ...(options.connections ? { connections: options.connections } : {}), visibility: options.visibility })
+  if (connected && !connected.ok) throw new MachineManagementError(connected.code, connected.status, connected.message)
+  const brokered = connected && await options.clones?.machineRepositoryClone({ enrollmentId: machine.enrollmentId, connectionId: connected.connectionId, fullName: connected.repository.fullName })
+  if (connected && !brokered) {
+    throw new MachineManagementError("repository_broker_unavailable", 503, `This plane cannot broker the clone of ${connected.repository.fullName} onto ${machine.name}`)
+  }
+  const repoUrl = brokered ? brokered.repoUrl : pasted
+  if (!repoUrl) throw new MachineManagementError("repository_url_invalid", 400, "Name the repository by its URL, or by a connection and its full name")
+  try {
+    await callMachine(services, env, auth, machine, {
+      operation: "clone",
+      destination: request.directory,
+      body: { repoUrl, directory: request.directory, ...(brokered ? { broker: { url: brokered.brokerUrl, authorization: brokered.authorization } } : {}) },
+    })
+  } finally {
+    await brokered?.spent()
+  }
+  return { repoUrl, directory: request.directory }
 }

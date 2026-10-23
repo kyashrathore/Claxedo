@@ -43,6 +43,7 @@ import type { ControlPlaneCredentials, ControlPlaneServices } from "../../author
 import { signedOrError, type RepositoryConnectionAccess } from "../../workspace/route-support"
 import { cloudRootPrivateRepository } from "../../workspace/cloud-root-backing"
 import type { HostedRepositoryClone } from "../../workspace/repository-clone"
+import type { HostedConnectionToken } from "../../credentials/hosted-egress-broker/repository-binding"
 import { createCredentialStoreAdapter } from "../credential-store-adapter"
 import { readableCodeHostRepository } from "../repository-access"
 import { githubIntegrationForEnv } from "../github-oauth"
@@ -269,30 +270,43 @@ export function createHostedRepositoryAccess(input: HostedD1ConnectionsSetupInpu
 }
 
 /**
- * The clone a cloud workspace's sandbox is given, read afresh on every call:
- * none for a repository anyone can clone, else a fresh token of the
- * connection its private repository was created through. Nothing is listed,
- * and a connection that is gone or refused yields none, so a checkout that
- * already exists boots without it and a clone that needs it fails in git. A
- * token read that failed transiently throws instead: answering none would
- * withdraw the credential and restart a running runtime over a blip.
+ * A fresh code-host token of `connectionId`, while it is the owner's own or
+ * their organization's connection. Nothing is listed, and a connection that
+ * is gone or refused yields none. A token read that failed transiently
+ * throws instead: answering none would withdraw the credential from a
+ * runtime that holds it, over a blip.
  */
-export function createHostedRepositoryClone(input: HostedD1ConnectionsSetupInput) {
-  return async (workspace: { workspaceId: string; ownerUserId: string; orgId: string }): Promise<HostedRepositoryClone | undefined> => {
-    const repository = await cloudRootPrivateRepository(input.database, workspace.workspaceId)
-    if (!repository) return undefined
-    const service = await hostedConnectionsService(input, { ownerUserId: workspace.ownerUserId, orgId: workspace.orgId })
+export function createHostedConnectionToken(input: HostedD1ConnectionsSetupInput): HostedConnectionToken {
+  return async (owner, connectionId) => {
+    const service = await hostedConnectionsService(input, owner)
     try {
-      const owned = (await service.list({ owner: `user:${workspace.ownerUserId}`, orgOwner: `org:${workspace.orgId}` }))
-        .some((connection) => connection.id === repository.connectionId)
+      const owned = (await service.list({ owner: `user:${owner.ownerUserId}`, orgOwner: `org:${owner.orgId}` }))
+        .some((connection) => connection.id === connectionId)
       if (!owned) return undefined
-      const token = await service.getToken(repository.connectionId, "code-host")
-      if (token.ok) return { repoUrl: repository.repoUrl, connectionId: repository.connectionId, token: token.response.token }
+      const token = await service.getToken(connectionId, "code-host")
+      if (token.ok) return token.response.token
       if (token.status === 503) throw new Error(`The repository connection is unavailable: ${token.code}`)
       return undefined
     } finally {
       service.dispose()
     }
+  }
+}
+
+/**
+ * The clone a cloud workspace's sandbox is given, read afresh on every call:
+ * none for a repository anyone can clone, else a fresh token of the
+ * connection its private repository was created through, so a checkout that
+ * already exists boots without one that is gone and a clone that needs it
+ * fails in git.
+ */
+export function createHostedRepositoryClone(input: HostedD1ConnectionsSetupInput) {
+  const connectionToken = createHostedConnectionToken(input)
+  return async (workspace: { workspaceId: string; ownerUserId: string; orgId: string }): Promise<HostedRepositoryClone | undefined> => {
+    const repository = await cloudRootPrivateRepository(input.database, workspace.workspaceId)
+    if (!repository) return undefined
+    const token = await connectionToken({ ownerUserId: workspace.ownerUserId, orgId: workspace.orgId }, repository.connectionId)
+    return token === undefined ? undefined : { repoUrl: repository.repoUrl, connectionId: repository.connectionId, token }
   }
 }
 

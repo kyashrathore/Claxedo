@@ -161,4 +161,6 @@ export default {
   "projects.environment.valueless": "\"{{name}}\" needs a value",
   "projects.edit.action": "Edit",
   "projects.create.machine": "Machine",
+  "projects.create.cloneOnto": "Clone onto",
+  "projects.create.cloneInto": "Clone into a folder on {{machine}}",
 }

@@ -5,7 +5,7 @@ import type { CloudSourceCreateInput, CloudWorkspace } from "./cloud-types"
 import { ServerError } from "./errors"
 import type { HostedAccount } from "./account"
 import { machineId, placementId, projectId } from "./ids"
-import { machineFolderProjectCreator } from "./machine-projects"
+import { machineProjectCreator } from "./machine-projects"
 import type { Machine } from "./machine-types"
 import { createProjectsApi } from "./projects"
 import { queryKeys } from "./query-keys"
@@ -31,6 +31,7 @@ function world(serverKind: "daemon" | "hosted") {
   const requests: string[] = []
   const created: CloudSourceCreateInput[] = []
   const assigned: Array<Readonly<Record<string, unknown>>> = []
+  const cloned: Array<Readonly<Record<string, unknown>>> = []
   const transport = {
     serverUrl,
     json: async (path: string) => {
@@ -47,6 +48,10 @@ function world(serverKind: "daemon" | "hosted") {
   } as unknown as Workspaces
   const account = {
     run: async (operation: string, input: Readonly<Record<string, unknown>>) => {
+      if (operation === "machines.clone") {
+        cloned.push(input)
+        return { repoUrl: input.repoUrl ?? `https://github.com/${String(input.repoFullName)}.git`, directory: input.directory }
+      }
       if (operation !== "machines.assign") throw new Error(`unexpected ${operation}`)
       assigned.push(input)
       return { assignment: { assigned: true, workspace_id: input.workspaceId, host_id: input.hostId } }
@@ -58,8 +63,8 @@ function world(serverKind: "daemon" | "hosted") {
     return { id: placementId("ws_new"), projectId: accountProject.id } as CloudWorkspace
   }
   const queryClient = new QueryClient()
-  const createMachineFolder = machineFolderProjectCreator(account, workspaces, async () => [buildBox])
-  return { api: createProjectsApi(transport, queryClient, workspaces, createCloudWorkspace, createMachineFolder), requests, created, assigned, queryClient }
+  const createOnMachine = machineProjectCreator(account, workspaces, async () => [buildBox])
+  return { api: createProjectsApi(transport, queryClient, workspaces, createCloudWorkspace, createOnMachine), requests, created, assigned, cloned, queryClient }
 }
 
 test("a hosted plane creates a project from a repository URL as that repository's first cloud workspace, named after the repository, and answers the catalog's project", async () => {
@@ -110,7 +115,25 @@ test("a folder on a connected machine becomes a new workspace assigned to that m
 })
 
 test("a folder on a machine that is not the account's is refused before anything is assigned", async () => {
-  const { api, assigned } = world("hosted")
+  const { api, assigned, cloned } = world("hosted")
   await expect(api.create({ source: { kind: "folder", path: "/srv/app", machine: machineId("enr_other") } })).rejects.toMatchObject({ class: "not_found" })
+  await expect(api.create({ source: { ...repository, onMachine: { machine: machineId("enr_other"), parent: "/srv" } } })).rejects.toMatchObject({ class: "not_found" })
   expect(assigned).toEqual([])
+  expect(cloned).toEqual([])
+})
+
+test("a repository cloned onto a connected machine lands in a folder named for it under the chosen one, and that folder is assigned with its remote", async () => {
+  const { api, created, cloned, assigned } = world("hosted")
+  const onMachine = { machine: buildBox.id, parent: "/home/ada/code" }
+  await api.create({ source: { ...repository, onMachine } })
+  await api.create({ source: { kind: "connectedRepository", connectionId: "conn_gh", fullName: "acme/private", onMachine }, name: "Private" })
+  expect(created).toEqual([])
+  expect(cloned).toEqual([
+    { enrollmentId: "enr_box", directory: "/home/ada/code/Spoon-Knife", repoUrl: repository.url },
+    { enrollmentId: "enr_box", directory: "/home/ada/code/private", connectionId: "conn_gh", repoFullName: "acme/private" },
+  ])
+  expect(assigned.map(({ workspaceId: _id, ...rest }) => rest)).toEqual([
+    { hostId: "host_box", displayName: "Spoon-Knife", repoName: "Spoon-Knife", remoteDirectory: "/home/ada/code/Spoon-Knife", repoUrl: repository.url },
+    { hostId: "host_box", displayName: "Private", repoName: "Private", remoteDirectory: "/home/ada/code/private", repoUrl: "https://github.com/acme/private.git" },
+  ])
 })

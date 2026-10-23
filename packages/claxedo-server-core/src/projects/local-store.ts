@@ -2,8 +2,9 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { lookup } from "node:dns/promises"
-import { createBoundedGit, GIT_CLONE_TIMEOUT_MS, runGit, type GitHttpCredential } from "@claxedo/workspace-runtime/host"
+import { runGit, type GitHttpCredential } from "@claxedo/workspace-runtime/host"
 import type { RepoAddressResolver } from "@claxedo/sandbox-contract"
+import { cloneInto, RepositoryCloneError, type CloneRepository } from "../hosts/machine/clone"
 import { dataDir } from "../platform/runtime/lib/paths"
 import type { SignedControlPlaneAuth } from "../platform/auth/auth"
 import { defaultControlPlaneCredentials } from "../authority/default-credentials"
@@ -45,29 +46,8 @@ import {
  * Names are unique per server (case-insensitive).
  */
 
-/**
- * A clone runs on a pool of its own: on the shared runner it would hold a slot
- * the file tree and diff routes are waiting for.
- */
-const cloneGit = createBoundedGit({ timeoutMs: GIT_CLONE_TIMEOUT_MS })
-
 export function projectsDirectory() {
   return path.join(dataDir(), "projects")
-}
-
-export type CloneOptions = {
-  /** An `Authorization` header value for the repository's host, never placed in argv. */
-  authorization?: string
-  host?: string
-}
-
-async function cloneRepository(repoUrl: string, directory: string, options: CloneOptions = {}) {
-  const parent = path.dirname(directory)
-  await fs.mkdir(parent, { recursive: true })
-  await cloneGit(["clone", "--", repoUrl, directory], parent,
-    options.authorization && options.host
-      ? { credential: { host: options.host, authorization: options.authorization } }
-      : {})
 }
 
 /**
@@ -106,7 +86,7 @@ export type LocalProjectWorkspaceRegistration = {
 }
 
 export type LocalProjectStoreDeps = {
-  clone?: typeof cloneRepository
+  clone?: CloneRepository
   /**
    * Registers the workspace with the signed caller's authority. Required of a
    * signed composition and checked before the first write, since it is the
@@ -180,8 +160,6 @@ function expandHome(directory: string): string {
 }
 
 export function localProjectStore(deps: LocalProjectStoreDeps = {}): ProjectStore {
-  const clone = deps.clone ?? cloneRepository
-
   async function checkout(input: ProjectCreateInput): Promise<{ directory: string; repoUrl?: string; name: string; credential?: GitHttpCredential }> {
     if (input.source.kind === "directory") {
       const directory = expandHome(input.source.directory.trim())
@@ -207,14 +185,12 @@ export function localProjectStore(deps: LocalProjectStoreDeps = {}): ProjectStor
     return { directory, repoUrl: repository.repoUrl, name, ...(repository.credential ? { credential: repository.credential } : {}) }
   }
 
-  /** Clones into a `directory` this call owns, removing it again when the clone fails. */
-  async function cloneInto(repoUrl: string, directory: string, credential: GitHttpCredential | undefined) {
+  async function cloneCheckout(repoUrl: string, directory: string, credential: GitHttpCredential | undefined) {
     try {
-      await clone(repoUrl, directory, credential ?? {})
+      await cloneInto(repoUrl, directory, credential, deps.clone)
     } catch (cause) {
-      await fs.rm(directory, { recursive: true, force: true }).catch(() => undefined)
-      const message = cause instanceof Error ? cause.message : String(cause)
-      throw new ProjectStoreError(502, "project_clone_failed", `Cloning failed: ${message.split("\n").find((line) => line.trim()) ?? message}`)
+      if (cause instanceof RepositoryCloneError) throw new ProjectStoreError(502, "project_clone_failed", cause.message)
+      throw cause
     }
   }
 
@@ -240,7 +216,7 @@ export function localProjectStore(deps: LocalProjectStoreDeps = {}): ProjectStor
         throw new ProjectStoreError(409, "project_name_taken", `A project named "${input.name}" already exists`)
       }
       const { directory, repoUrl, name, credential } = await checkout(input)
-      if (repoUrl) await cloneInto(repoUrl, directory, credential)
+      if (repoUrl) await cloneCheckout(repoUrl, directory, credential)
       const workspace = await ensureWorkspace({ directory, kind: "local", project_name: name, ...(repoUrl ? { repo_url: repoUrl } : {}) })
       if (!workspace?.project_id) {
         throw new ProjectStoreError(400, "project_not_git", "Only git repositories can be projects; that folder is not one")
@@ -321,7 +297,7 @@ export function localProjectStore(deps: LocalProjectStoreDeps = {}): ProjectStor
         if (cause.code === "EEXIST") throw new ProjectStoreError(409, "project_checkout_present", `${checkout.directory} already exists on this server`)
         throw cause
       })
-      await cloneInto(repoUrl, checkout.directory, credential)
+      await cloneCheckout(repoUrl, checkout.directory, credential)
       return findProject(id)
     },
   }

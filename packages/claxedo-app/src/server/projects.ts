@@ -10,7 +10,7 @@ import type { Workspaces } from "./workspaces"
 import { ServerError } from "./errors"
 import { repositoryName } from "./repository-name"
 import { oneProjectFromWire, projectsFromWire, projectSourceBody } from "./wire/projects"
-import { isMachineFolder, type MachineFolderCreate } from "./machine-projects"
+import { isMachineSource, type MachineProjectCreate } from "./machine-projects"
 
 const PROJECTS_PATH = "/api/claxedo/projects"
 
@@ -105,7 +105,7 @@ export function createProjectsApi(
   queryClient: QueryClient,
   workspaces: Pick<Workspaces, "catalog" | "load" | "refresh" | "accountProjects">,
   createCloudWorkspace: CreateCloudWorkspace,
-  createMachineFolder: (input: MachineFolderCreate) => Promise<Project>,
+  createOnMachine: (input: MachineProjectCreate) => Promise<Project>,
 ): ProjectsApi {
   const remember = projectCache(queryClient, transport.serverUrl)
   const hosted = async () => (await workspaces.load()).declaration.serverKind !== "daemon"
@@ -118,7 +118,7 @@ export function createProjectsApi(
     configurationAvailable: () => workspaces.catalog()?.declaration.serverKind === "daemon",
     create: async (input) => {
       const { source } = input
-      const project = await (isMachineFolder(source) ? createMachineFolder({ ...input, source }) : (await hosted()) ? hostedCreate(input) : daemonCreate(input))
+      const project = await (isMachineSource(source) ? createOnMachine({ ...input, source }) : (await hosted()) ? hostedCreate(input) : daemonCreate(input))
       remember(project)
       return project
     },

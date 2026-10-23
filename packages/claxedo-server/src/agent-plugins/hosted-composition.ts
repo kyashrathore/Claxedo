@@ -31,6 +31,7 @@ import {
   createHostedCapabilityAuthFailureReporter,
   createHostedCapabilityConnectionResolver,
   createHostedCapabilityTokenResolver,
+  createHostedConnectionToken,
   createHostedD1ConnectionsSetup,
   createHostedRepositoryAccess,
   createHostedRepositoryClone,
@@ -327,7 +328,7 @@ export function createHostedAgentPluginsComposition(input: {
   }
   const integrationRoutes = createHostedD1ConnectionsSetup(connectionsInput)
   const repositoryClone = createHostedRepositoryClone(connectionsInput)
-  input.egressBroker?.serveRepositoryClones(hostedRepositoryBindings(repositoryClone))
+  input.egressBroker?.serveRepositoryClones(hostedRepositoryBindings(repositoryClone, createHostedConnectionToken(connectionsInput)), input.passes)
   const cloneDelivery = hostedRepositoryCloneDelivery({
     clone: repositoryClone,
     secretBrokering: workspaceSecretBrokering(input.plane),
