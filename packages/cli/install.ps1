@@ -1,8 +1,11 @@
 # Installs the claxedo command for the current Windows user, with no admin, and
 # given a pairing code from Claxedo's "Connect a machine..." also connects this
 # machine, sharing the folder the command runs in once its owner approves it.
+# Given the drawer's pre-approved invitation instead, it connects with no
+# approval and shares the folder -Root names.
 #
 #   & ([scriptblock]::Create((irm https://<control plane>/api/claxedo/connect.ps1))) <pairing code>
+#   & ([scriptblock]::Create((irm https://<control plane>/api/claxedo/connect.ps1))) -Invitation <token> -Root <folder>
 #
 # The control plane serves this file at /api/claxedo/connect.ps1 with the
 # defaults of -ControlPlane and -MinimumCliVersion filled in, so a code is
@@ -13,7 +16,7 @@
 #   CLAXEDO_CLI_TARBALL   one or more local .tgz paths, space-separated; installed
 #                         instead of the registry package (a release-check seam)
 #   CLAXEDO_INSTALL_DIR   where a private Node and npm prefix go (default: %LOCALAPPDATA%\Claxedo)
-param([string]$Code = "", [string]$ControlPlane = "", [string]$MinimumCliVersion = "")
+param([string]$Code = "", [string]$ControlPlane = "", [string]$MinimumCliVersion = "", [string]$Invitation = "", [string]$Root = "")
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
@@ -22,7 +25,7 @@ $InstallDir = if ($env:CLAXEDO_INSTALL_DIR) { $env:CLAXEDO_INSTALL_DIR } else { 
 $NodeDir = Join-Path $InstallDir "node"
 $NpmPrefix = Join-Path $InstallDir "npm"
 $script:StepIndex = 0
-$StepTotal = if ($Code) { 4 } else { 2 }
+$StepTotal = if ($Code) { 4 } elseif ($Invitation) { 3 } else { 2 }
 
 class InstallRefusal : System.Exception { InstallRefusal([string]$message) : base($message) {} }
 
@@ -40,6 +43,28 @@ function Add-UserPath([string]$directory) {
     [Environment]::SetEnvironmentVariable("Path", (@($directory) + $entries -join ";"), "User")
   }
   if (($env:Path -split ";") -notcontains $directory) { $env:Path = "$directory;$env:Path" }
+}
+
+function Check-Invitation {
+  if ($Code) { Refuse "Give a pairing code or an invitation, not both." }
+  if (-not $Root) { Refuse "-Root names the folder to share; copy the command from Connect a machine... again." }
+  if (-not [System.IO.Path]::IsPathRooted($Root)) { Refuse "-Root must be an absolute path on this machine: $Root" }
+}
+
+function Write-Invitation {
+  New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+  $tokenFile = Join-Path $InstallDir "invitation.token"
+  Remove-Item -Force $tokenFile -ErrorAction SilentlyContinue
+  New-Item -ItemType File -Path $tokenFile | Out-Null
+  if ($IsLinux -or $IsMacOS) {
+    & chmod 600 $tokenFile
+  } else {
+    $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+    & icacls $tokenFile /inheritance:r /grant:r "${me}:F" | Out-Null
+  }
+  if ($LASTEXITCODE -ne 0) { Refuse "cannot make $tokenFile readable by this user only" }
+  Set-Content -Path $tokenFile -Value $Invitation -NoNewline
+  return $tokenFile
 }
 
 function Pairing-Refusal([string]$answer) {
@@ -144,12 +169,20 @@ function Install-Cli {
 }
 
 function Main {
+  if ($Invitation) { Check-Invitation }
   if ($Code) {
     Step "Checking the code with Claxedo"
     Report-Pairing
   }
   Ensure-Node
   $claxedo = Install-Cli
+  if ($Invitation) {
+    Step "Connecting this machine"
+    $tokenFile = Write-Invitation
+    if ($ControlPlane) { $env:CLAXEDO_CONTROL_PLANE_URL = $ControlPlane }
+    & $claxedo connect --token-file $tokenFile --root $Root --install-service
+    return
+  }
   if (-not $Code) {
     Write-Host ""
     Write-Host "claxedo is installed at $claxedo"

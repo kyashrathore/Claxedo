@@ -15,7 +15,7 @@ import { canonicalRepositoryKey } from "@claxedo/server-core/authority/repositor
 import { normalizeStoredDirectory } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { HOST_SERVING_WORKSPACE_SQL } from "./host-access-authority"
 import { activeGuard, batchUnder, may, mayGuard, maySql, orgMemberSql, readProjectRole, type AuthorizationPrincipal } from "./authorization"
-import { namedPrincipal, ownerMembershipStatements, requireHuman, requireText, type D1AccessContext } from "./access-context"
+import { namedPrincipal, ownerMembershipStatements, requireHuman, requireText, requireWriter, type D1AccessContext, type InvitationOwner } from "./access-context"
 import { asOrgId, type OrgId } from "@claxedo/server-core/platform/auth/branded-id"
 import { D1WorkspaceAuthorityError, guardedBatch } from "./workspace-authority-error"
 import { workspaceCreationStatements } from "./workspace-creation"
@@ -291,9 +291,9 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
    * organization the caller may administer is admitted here rather than
    * refused for disagreeing with their default.
    */
-  async authorizeLocalWorkspaceRegistration(auth: SignedControlPlaneAuth, args: { orgId?: string; projectId?: string }) {
-    const who = await this.requirePrincipal(auth)
-    await this.admitCreationOrganization(who, await this.localRegistrationOrgId(auth, args))
+  async authorizeLocalWorkspaceRegistration(writer: SignedControlPlaneAuth | InvitationOwner, args: { orgId?: string; projectId?: string }) {
+    const who = await requireWriter(this.database, this.options.deploymentId, writer)
+    await this.admitCreationOrganization(who, await this.localRegistrationOrgId(writer, args))
   }
 
   /** Who may create in an organization: one rule, whatever resolved the organization. */
@@ -304,12 +304,13 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     }
   }
 
-  /** The organization a machine-placed registration files into. */
-  private async localRegistrationOrgId(auth: SignedControlPlaneAuth, args: { orgId?: string; projectId?: string }) {
+  /** The organization a machine-placed registration files into; an invitation's owner files only into one the assignment names. */
+  private async localRegistrationOrgId(writer: SignedControlPlaneAuth | InvitationOwner, args: { orgId?: string; projectId?: string }) {
     const named = args.orgId?.trim()
     if (named) return named
+    if ("invitationOwner" in writer) throw denied("Workspace creation authority was denied")
     const projectId = args.projectId?.trim()
-    return await this.creationOrgId(auth, projectId ? projectId : undefined)
+    return await this.creationOrgId(writer, projectId ? projectId : undefined)
   }
 
   async openWorkspace(auth: SignedControlPlaneAuth, args: { workspaceId: string }) {
@@ -433,9 +434,9 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
   }
 
   /** A machine-placed workspace's creation, as statements for the host assignment's batch. */
-  async localWorkspaceRegistration(auth: SignedControlPlaneAuth, args: D1LocalWorkspaceRegistrationArgs) {
-    const who = await this.requirePrincipal(auth)
-    return await this.workspaceCreation(who, await this.localWorkspaceArgs(auth, args))
+  async localWorkspaceRegistration(writer: SignedControlPlaneAuth | InvitationOwner, args: D1LocalWorkspaceRegistrationArgs) {
+    const who = await requireWriter(this.database, this.options.deploymentId, writer)
+    return await this.workspaceCreation(who, await this.localWorkspaceArgs(writer, args))
   }
 
   /**
@@ -455,12 +456,12 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
   }
 
   private async localWorkspaceArgs(
-    auth: SignedControlPlaneAuth,
+    writer: SignedControlPlaneAuth | InvitationOwner,
     args: D1LocalWorkspaceRegistrationArgs,
   ): Promise<D1WorkspaceCreateArgs> {
     return {
       ...args,
-      orgId: await this.localRegistrationOrgId(auth, args),
+      orgId: await this.localRegistrationOrgId(writer, args),
       backing: "local-worktree",
     }
   }

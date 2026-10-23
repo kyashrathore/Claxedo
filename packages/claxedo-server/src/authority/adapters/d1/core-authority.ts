@@ -154,7 +154,11 @@ export function createD1CoreAuthority(database: D1Database, options: D1CoreAutho
     localWorkspaceRegistration: (auth, input) => workspace.localWorkspaceRegistration(auth, input),
     authorizeLocalWorkspaceRegistration: (auth, args) => workspace.authorizeLocalWorkspaceRegistration(auth, args),
   })
-  const hostInvitations = new D1HostInvitationAuthority(database, { ...shared, resolveOrgId: (auth) => workspace.resolveOrgId(auth) })
+  const hostInvitations = new D1HostInvitationAuthority(database, {
+    ...shared,
+    resolveOrgId: (auth) => workspace.resolveOrgId(auth),
+    assignWorkspaceHost: (writer, args) => hosts.assignWorkspaceHost(writer, args),
+  })
   const hostPairings = new D1HostPairingAuthority(database, { ...shared, resolveOrgId: (auth) => workspace.resolveOrgId(auth) })
   const hostProviderConfig = new D1HostProviderConfigAuthority(database, shared)
   const audit = new D1AuditAuthority(database, shared)

@@ -572,7 +572,14 @@ export const desktopRenderer: Policy = {
   // answers (owner: the app's server adapter, `server/wire/pairings.ts`). They
   // add no package edge.
   // 1566/37, no headroom.
-  ceilings: { modules: 1566, packages: 37 },
+  // The drawer's section for a server without a browser, which mints a
+  // pre-approved invitation, with the copyable command both sections show and
+  // the decoder of the invitation answer (owner: the settings domain,
+  // `settings/server-invitation.ts`, `settings/view/server-connect.tsx`,
+  // `settings/view/command-line.tsx`; its server adapter,
+  // `server/wire/invitations.ts`). They add no package edge.
+  // 1570/37, no headroom.
+  ceilings: { modules: 1570, packages: 37 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

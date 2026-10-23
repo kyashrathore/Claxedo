@@ -55,3 +55,7 @@ export type Pairing = {
 export type ConnectCommands = { readonly posix: string; readonly windows: string }
 
 export type MintedPairing = { readonly id: string; readonly code: string; readonly expiresAt: number; readonly commands: ConnectCommands }
+
+export type ServerConnectCommands = ConnectCommands & { readonly cloudInit: string }
+
+export type MintedInvitation = { readonly id: string; readonly expiresAt: number; readonly commands: ServerConnectCommands }

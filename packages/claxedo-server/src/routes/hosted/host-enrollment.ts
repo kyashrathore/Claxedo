@@ -68,6 +68,7 @@ import {
   parsedBody,
   type WorkspaceRouteOptions,
 } from "../../workspace/route-support"
+import { invitationCommands } from "./connect-scripts"
 
 const hostId = z.string().trim().min(1).max(200)
 const enrollmentId = z.string().trim().min(1).max(200)
@@ -160,6 +161,7 @@ const invitationBody = z
     scope: scopeBody,
     displayName: z.string().trim().min(1).max(120).optional(),
     expiresInMs: z.number().int().positive().optional(),
+    sharesRoot: z.boolean().optional(),
   })
   .strict()
 
@@ -614,13 +616,16 @@ export function HostInvitationRoutes(services: ControlPlaneServices, options: Ho
           scope: { allowed_roots: body.scope.allowed_roots },
           ...(body.displayName ? { displayName: body.displayName } : {}),
           ...(body.expiresInMs === undefined ? {} : { expiresInMs: body.expiresInMs }),
+          ...(body.sharesRoot ? { sharesRoot: true } : {}),
         })
         await authority.auditAllow(auth, {
           action: "host_invitation.created",
           metadata: { invitationId: created.invitationId, expiresAt: created.expiresAt },
         })
         const token = invitationToken({ controlPlaneUrl: options.controlPlaneOrigin, invitationId: created.invitationId, secret: created.secret })
-        return { invitation_id: created.invitationId, token, expires_at: created.expiresAt }
+        const [root] = body.scope.allowed_roots
+        const commands = body.sharesRoot && root ? { commands: invitationCommands(options.controlPlaneOrigin, token, root) } : {}
+        return { invitation_id: created.invitationId, token, expires_at: created.expiresAt, ...commands }
       }, "POST", {
         limiter: createRateLimiter,
         key: "host.invitations.create",

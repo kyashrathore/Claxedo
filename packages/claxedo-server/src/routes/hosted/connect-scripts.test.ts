@@ -4,7 +4,7 @@ import path from "node:path"
 import { describe, expect, test } from "vitest"
 import { MINIMUM_CONNECT_CLI_VERSION } from "@claxedo/account-contract/machine"
 import { connectInstallersModule } from "../../../scripts/connect-installers"
-import { ConnectScriptRoutes, connectCommands, posixConnectScript, powershellConnectScript } from "./connect-scripts"
+import { ConnectScriptRoutes, connectCommands, invitationCommands, posixConnectScript, powershellConnectScript } from "./connect-scripts"
 
 const ORIGIN = "https://app.claxedo.test"
 
@@ -31,7 +31,7 @@ describe("connect scripts", () => {
 
   test("the PowerShell script keeps param first and fills in its defaults", () => {
     const script = powershellConnectScript(ORIGIN)
-    expect(script).toContain(`param([string]$Code = "", [string]$ControlPlane = '${ORIGIN}', [string]$MinimumCliVersion = '${MINIMUM_CONNECT_CLI_VERSION}')`)
+    expect(script).toContain(`param([string]$Code = "", [string]$ControlPlane = '${ORIGIN}', [string]$MinimumCliVersion = '${MINIMUM_CONNECT_CLI_VERSION}', [string]$Invitation = "", [string]$Root = "")`)
     expect(script.split("\n").filter((line) => line.trim() && !line.startsWith("#"))[0]).toMatch(/^param\(/)
   })
 
@@ -45,5 +45,19 @@ describe("connect scripts", () => {
     expect(posix.headers.get("content-type")).toContain("text/x-shellscript")
     expect(await posix.text()).toBe(posixConnectScript(ORIGIN))
     expect(await (await routes.request("/connect.ps1")).text()).toBe(powershellConnectScript(ORIGIN))
+  })
+
+  test("an invitation's commands pass the token and the folder exactly as written, and cloud-init runs the same shell command", () => {
+    const folder = "/srv/it's: #app"
+    const commands = invitationCommands(ORIGIN, "chx_inv_2.aHR0cHM.invitation_1.c2VjcmV0", folder)
+    const [fetch, run] = commands.posix.split(" | ")
+    expect(fetch).toBe(`curl -fsSL ${ORIGIN}/api/claxedo/connect`)
+    const args = run!.replace(/^sh -s -- /, "")
+    const read = spawnSync("sh", ["-c", `set -- ${args}; printf '%s\\n' "$@"`], { encoding: "utf8" })
+    expect(read.stdout.split("\n").slice(0, -1)).toEqual(["--invitation", "chx_inv_2.aHR0cHM.invitation_1.c2VjcmV0", "--root", folder])
+    expect(commands.windows).toBe(`& ([scriptblock]::Create((irm ${ORIGIN}/api/claxedo/connect.ps1))) -Invitation chx_inv_2.aHR0cHM.invitation_1.c2VjcmV0 -Root '/srv/it''s: #app'`)
+    const [header, key, item] = commands.cloudInit.split("\n")
+    expect([header, key]).toEqual(["#cloud-config", "runcmd:"])
+    expect(JSON.parse(item!.replace(/^ {2}- /, ""))).toBe(commands.posix)
   })
 })

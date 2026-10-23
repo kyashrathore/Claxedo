@@ -1,10 +1,13 @@
 #!/bin/sh
 # Installs the claxedo command for the current user, with no sudo, and given a
 # pairing code from Claxedo's "Connect a machine…" also connects this machine,
-# sharing the folder the command runs in once its owner approves it.
+# sharing the folder the command runs in once its owner approves it. Given the
+# drawer's pre-approved invitation instead, it connects with no approval and
+# shares the folder --root names, which is how cloud-init connects a server.
 #
 #   curl -fsSL https://raw.githubusercontent.com/kyashrathore/Claxedo/dev/packages/cli/install.sh | sh
 #   curl -fsSL https://<control plane>/api/claxedo/connect | sh -s -- <pairing code>
+#   curl -fsSL https://<control plane>/api/claxedo/connect | sh -s -- --invitation <token> --root <folder>
 #
 # The control plane serves this file at /api/claxedo/connect with
 # CLAXEDO_CONTROL_PLANE_URL and CLAXEDO_CLI_MIN_VERSION set above this line, so
@@ -17,17 +20,51 @@
 #   CLAXEDO_INSTALL_DIR   where a private Node and npm prefix go (default: ~/.claxedo)
 set -eu
 
+say() { printf '%s\n' "$*"; }
+fail() { printf '%s\n' "$*" >&2; exit 1; }
+
+pairing_code=""
+invitation=""
+root=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --invitation | --root)
+      [ "$#" -ge 2 ] && [ -n "$2" ] || fail "$1 needs a value; copy the command from Connect a machine… again."
+      if [ "$1" = --invitation ]; then invitation="$2"; else root="$2"; fi
+      shift 2
+      ;;
+    -*) fail "Unknown option $1; copy the command from Connect a machine… again." ;;
+    *)
+      [ -z "$pairing_code" ] || fail "Give one pairing code; copy the command from Connect a machine… again."
+      pairing_code="$1"
+      shift
+      ;;
+  esac
+done
+if [ -n "$invitation" ]; then
+  [ -z "$pairing_code" ] || fail "Give a pairing code or an invitation, not both."
+  case "$root" in
+    /*) ;;
+    "") fail "--root names the folder to share; copy the command from Connect a machine… again." ;;
+    *) fail "--root must be an absolute path on this machine: $root" ;;
+  esac
+elif [ -n "$root" ]; then
+  fail "--root goes with --invitation; a pairing code shares the folder the command runs in."
+fi
+
+# A cloud-init run can start with no HOME.
+[ -n "${HOME:-}" ] || HOME="$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f6)"
+[ -n "$HOME" ] || fail "HOME is not set and $(id -un) has no home folder; set HOME and run this again."
+export HOME
+
 NODE_MAJOR=24
 CLAXEDO_INSTALL_DIR="${CLAXEDO_INSTALL_DIR:-$HOME/.claxedo}"
 NODE_DIR="$CLAXEDO_INSTALL_DIR/node"
 NPM_PREFIX="$CLAXEDO_INSTALL_DIR/npm"
-pairing_code="${1:-}"
 path_lines=""
 step_index=0
-if [ -n "$pairing_code" ]; then step_total=4; else step_total=2; fi
+if [ -n "$pairing_code" ]; then step_total=4; elif [ -n "$invitation" ]; then step_total=3; else step_total=2; fi
 
-say() { printf '%s\n' "$*"; }
-fail() { printf '%s\n' "$*" >&2; exit 1; }
 step() {
   step_index=$((step_index + 1))
   say "$step_index/$step_total $*"
@@ -194,13 +231,39 @@ install_cli() {
   "$bin_dir/claxedo" --help >/dev/null || fail "$bin_dir/claxedo --help failed"
 }
 
-# A user service outlives the login only while lingering is on; a user may turn
-# it on for themselves where polkit allows it, and `claxedo connect` names the
-# one command that does it otherwise.
+# A user service outlives the login only while lingering is on, which root and,
+# where polkit allows it, the user may turn on; `systemctl --user` then finds
+# the user manager through XDG_RUNTIME_DIR, which a cloud-init run leaves unset
+# and the manager's bus takes a moment to appear under. loginctl reads no
+# stdin: under `curl | sh` stdin is the rest of this script.
 enable_linger() {
   [ "$(uname -s)" = Linux ] && command -v loginctl >/dev/null 2>&1 || return 0
-  [ "$(loginctl show-user "$(id -un)" --property=Linger --value 2>/dev/null)" = yes ] && return 0
-  loginctl enable-linger "$(id -un)" >/dev/null 2>&1 || true
+  user="$(id -un)"
+  if [ "$(loginctl show-user "$user" --property=Linger --value </dev/null 2>/dev/null)" != yes ]; then
+    if ! loginctl --no-ask-password enable-linger "$user" </dev/null >/dev/null 2>&1; then
+      say "    run \`sudo loginctl enable-linger $user\` so the service runs while no one is logged in"
+      return 0
+    fi
+    say "    lingering is on for $user, so the service runs while no one is logged in"
+  fi
+  [ -z "${XDG_RUNTIME_DIR:-}" ] || return 0
+  runtime_dir="/run/user/$(id -u)"
+  waited=0
+  while [ ! -S "$runtime_dir/bus" ] && [ "$waited" -lt 10 ]; do
+    sleep 1
+    waited=$((waited + 1))
+  done
+  if [ -S "$runtime_dir/bus" ]; then
+    XDG_RUNTIME_DIR="$runtime_dir"
+    export XDG_RUNTIME_DIR
+  fi
+}
+
+write_invitation() {
+  token_file="$CLAXEDO_INSTALL_DIR/invitation.token"
+  mkdir -p "$CLAXEDO_INSTALL_DIR"
+  rm -f "$token_file"
+  (umask 077 && printf '%s\n' "$invitation" >"$token_file") || fail "cannot write the invitation to $token_file"
 }
 
 print_path_lines() {
@@ -216,6 +279,13 @@ if [ -n "$pairing_code" ]; then
 fi
 ensure_node
 install_cli
+if [ -n "$invitation" ]; then
+  step "Connecting this machine"
+  write_invitation
+  enable_linger
+  print_path_lines
+  exec "$bin_dir/claxedo" connect --token-file "$token_file" --root "$root" --install-service
+fi
 if [ -z "$pairing_code" ]; then
   say ""
   say "claxedo is installed at $bin_dir/claxedo"

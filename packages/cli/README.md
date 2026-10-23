@@ -78,9 +78,27 @@ and it asks you, in the app, to share that folder too; it never enrolls the
 machine twice. On a machine whose owner removed it, or that is connected to
 another control plane, it asks once before connecting again.
 
-For a machine with no one to approve from a browser at hand, mint a pre-approved
-invitation instead. On a signed-in laptop (`claxedo login`), mint a single-use
-invitation scoped to the folders the machine may serve:
+For a server no one approves from a browser, such as a cloud VM on its first
+boot, the drawer's **For a server without a browser** takes a name and the
+folder to share, typed as the server writes it, and mints a pre-approved
+invitation. It shows a cloud-init snippet and the same as one command:
+
+```sh
+curl -fsSL https://app.claxedo.com/api/claxedo/connect | sh -s -- --invitation chx_inv_2.… --root '/srv/app'
+```
+
+`connect.ps1` takes `-Invitation` and `-Root`. The script writes the invitation
+to a file only this user can read and runs `claxedo connect --token-file <file>
+--root <folder> --install-service`: the machine connects with no approval, the
+control plane makes the folder its one root and assigns it as its first
+workspace, and the invitation's name is the machine's. On Linux the script turns
+lingering on where it may (root, which is what cloud-init runs as, always may)
+and otherwise prints the one command that does, so the service runs with no one
+logged in. The invitation works once, within the hour.
+
+A signed-in CLI mints the same kind of invitation, scoped to any folders. On a
+signed-in laptop (`claxedo login`), mint a single-use invitation scoped to the
+folders the machine may serve:
 
 ```sh
 claxedo host invite --name build-box --root /srv/projects

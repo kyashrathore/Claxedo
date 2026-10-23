@@ -13,15 +13,19 @@ const CORE = hostedOperationTable()
  */
 
 describe("CORE_HOSTED_OPERATIONS", () => {
-  test("reaches no machine-signed, invitation or relay-fence route", () => {
+  test("reaches no machine-signed or relay-fence route, and of the invitation routes only the owner's mint", () => {
     // Those routes authenticate a machine or an invitation secret, never an
     // account. An entry here would spend the account credential on them.
-    const forbidden = ["/enrollments/redeem", "/enrollments/acquire", "/enrollments/heartbeat", "/host/invitations", "/internal/relay/"]
+    const forbidden = ["/enrollments/redeem", "/enrollments/acquire", "/enrollments/heartbeat", "/internal/relay/"]
     const reached = Object.entries(CORE_HOSTED_OPERATIONS)
       .filter(([, operation]) => forbidden.some((fragment) => operation.path.pattern!.includes(fragment)))
       .map(([name]) => name)
 
     expect(reached).toEqual([])
+    const invitations = Object.entries(CORE_HOSTED_OPERATIONS)
+      .filter(([, operation]) => operation.path.pattern!.includes("/host/invitations"))
+      .map(([name, operation]) => [name, operation.method, operation.path.pattern])
+    expect(invitations).toEqual([["machines.invite", "POST", "/api/claxedo/host/invitations"]])
   })
 
   test("declares no generic proxy", () => {
@@ -618,6 +622,16 @@ describe("resolve", () => {
     for (const name of ["machines.pairing", "machines.approve", "machines.deny"] as const) {
       expect(() => CORE.resolve(name, {}), name).toThrow(MissingOperationParameter)
     }
+  })
+
+  test("mints a pre-approved invitation that shares the one folder it names", () => {
+    expect(CORE.resolve("machines.invite", { folder: "/srv/app", displayName: "build-box" })).toEqual({
+      method: "POST", path: "/api/claxedo/host/invitations", body: { scope: { allowed_roots: ["/srv/app"] }, sharesRoot: true, displayName: "build-box" },
+    })
+    expect(CORE.resolve("machines.invite", { folder: "/srv/app" })).toEqual({
+      method: "POST", path: "/api/claxedo/host/invitations", body: { scope: { allowed_roots: ["/srv/app"] }, sharesRoot: true },
+    })
+    expect(() => CORE.resolve("machines.invite", {})).toThrow(MissingOperationParameter)
   })
 
   test("omits a body entirely for operations that take none", () => {
