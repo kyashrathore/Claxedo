@@ -79,8 +79,12 @@ function bareRepository(projectRoot: string, fullName: string, readme: string) {
   const working = path.join(projectRoot, "working", fullName)
   const git = (...args: string[]) => execFileSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.test", ...args], { cwd: working })
   execFileSync("git", ["init", "--quiet", "--initial-branch=main", working])
-  return fs.writeFile(path.join(working, "README.md"), readme).then(() => {
-    git("add", "README.md")
+  return Promise.all([
+    fs.writeFile(path.join(working, "README.md"), readme),
+    // Git for Windows installs with core.autocrlf=true, which would check README.md out as CRLF.
+    fs.writeFile(path.join(working, ".gitattributes"), "* -text\n"),
+  ]).then(() => {
+    git("add", "README.md", ".gitattributes")
     git("commit", "--quiet", "-m", "init")
     execFileSync("git", ["clone", "--quiet", "--bare", working, path.join(projectRoot, `${fullName}.git`)])
   })
