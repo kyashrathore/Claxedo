@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import { base64UrlDecode, base64UrlEncode } from "@claxedo/helpers/crypto"
 import {
   MACHINE_REQUEST_HEADERS,
+  cliVersionBelowAccepted,
   decodeInvitationToken,
   decodeMachineSeal,
   encodeMachineSeal,
@@ -58,6 +59,11 @@ test("an invitation carries the control plane that minted it, and decoding refus
     "",
   ])
     expect(decodeInvitationToken(raw)).toBeUndefined()
+})
+
+test("a reported CLI is below the accepted one by its first three numeric parts, and an unreadable one never is", () => {
+  expect(["0.2.1", "v0.1.9", "0.2.1-beta.3"].map((version) => cliVersionBelowAccepted(version, "0.2.2"))).toEqual([true, true, true])
+  expect(["0.2.2", "0.2.2-beta.1", "0.10.0", "1.0.0", "dev", ""].map((version) => cliVersionBelowAccepted(version, "0.2.2"))).toEqual([false, false, false, false, false, false])
 })
 
 test("machine request header names", () => {

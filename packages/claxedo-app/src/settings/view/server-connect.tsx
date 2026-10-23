@@ -26,7 +26,7 @@ function ServerCommands(props: { readonly invitation: MintedInvitation }) {
           <Tabs.Trigger value="windows">{t("settings.machines.connect.windows")}</Tabs.Trigger>
         </Tabs.List>
         <Tabs.Content value="cloudInit" forceMount class="settings-connect-panel">
-          <CommandLine command={props.invitation.commands.cloudInit} label={t("settings.machines.server.copySnippet")} snippet />
+          <CommandLine command={props.invitation.commands.cloudInit} label={t("settings.machines.server.copySnippet")} layout="snippet" />
         </Tabs.Content>
         <Tabs.Content value="posix" forceMount class="settings-connect-panel">
           <CommandLine command={props.invitation.commands.posix} label={t("settings.machines.connect.copy")} />

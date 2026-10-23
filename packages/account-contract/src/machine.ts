@@ -14,6 +14,35 @@ const PAIRING_CODE_PATTERN = new RegExp(`^[${PAIRING_CODE_ALPHABET}]{${PAIRING_C
 /** The oldest `claxedo` that understands `connect --pair`; a connect script reuses an installed CLI only at or above it. */
 export const MINIMUM_CONNECT_CLI_VERSION = "0.2.2"
 
+/** Read as the connect script reads it: the first three numeric parts, so `0.2.2-beta.1` is `0.2.2`. */
+function cliVersionParts(version: string): [number, number, number] | undefined {
+  const match = /^v?(\d+)\.(\d+)\.(\d+)/.exec(version.trim())
+  return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : undefined
+}
+
+/** Whether a machine's reported `claxedo` is older than the one this control plane accepts; a version it cannot read is not. */
+export function cliVersionBelowAccepted(version: string, accepted = MINIMUM_CONNECT_CLI_VERSION) {
+  const reported = cliVersionParts(version)
+  const minimum = cliVersionParts(accepted)
+  if (!reported || !minimum) return false
+  const difference = reported[0] - minimum[0] || reported[1] - minimum[1] || reported[2] - minimum[2]
+  return difference < 0
+}
+
+/**
+ * Why a machine that should serve cannot, as the machine itself saw it: its
+ * Linux user manager is out of reach (lingering off, or no runtime dir or
+ * manager answering), its Windows task waits for its user's next logon, the
+ * desktop app's daemon already runs beside it, or it was told to stop.
+ */
+export const MACHINE_BLOCKED_REASONS = ["linger_off", "user_manager_unreachable", "waiting_for_logon", "desktop_daemon", "stopped"] as const
+
+export type MachineBlockedReason = (typeof MACHINE_BLOCKED_REASONS)[number]
+
+export function isMachineBlockedReason(value: unknown): value is MachineBlockedReason {
+  return typeof value === "string" && (MACHINE_BLOCKED_REASONS as readonly string[]).includes(value)
+}
+
 export const MACHINE_REQUEST_HEADERS = {
   enrollmentId: "x-claxedo-enrollment-id",
   ts: "x-claxedo-host-ts",

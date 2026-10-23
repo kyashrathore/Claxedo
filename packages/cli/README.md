@@ -114,10 +114,19 @@ That redeems the invitation, removes the token file, and installs a user
 service (`systemd --user` on Linux, a LaunchAgent on macOS) that keeps
 `claxedo connect --foreground` running. The unit carries the PATH of the shell
 that installed it, so the service finds the same `codex`, `node` and other
-tools the shell does; run `--install-service` again after changing it. `claxedo connect --help` documents every
+tools the shell does; run `--install-service` again after changing it or after
+updating the CLI, since it restarts a service that already runs. `claxedo connect --help` documents every
 flag, the exit codes (78 = the control plane decided against this machine, so a
 service manager must not restart into it), and what a user service does and
 does not isolate.
+
+A connected machine reports its CLI version and system to the control plane
+each time it starts serving. When it cannot serve, it reports why with the
+command that fixes it: its service could not start (lingering off, no user
+manager, or a Windows task waiting for its user's logon), the desktop app's
+daemon already runs beside it, or it was stopped. Settings → Machines shows that
+line until the machine next starts serving, and a CLI below the version the
+control plane accepts shows the command that updates it.
 
 `claxedo doctor` checks, one line each, what a connected machine needs: Node
 24, the control plane and the relay it uses answering, the enrollment, the

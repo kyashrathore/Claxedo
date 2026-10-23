@@ -822,6 +822,58 @@ describe("POST /acquire", () => {
   })
 })
 
+describe("POST /report", () => {
+  const report = (overrides: Record<string, unknown> = {}) => ({ enrollmentId: "enr_1", hostId: "host_1", keyVersion: 1, cliVersion: "0.2.1", os: "Ubuntu 24.04", arch: "x64", ...overrides })
+
+  test("a machine held for approval or paused still reports, and the owner's app hears of what was recorded", async () => {
+    const key = await machineKey()
+    for (const held of [{ approval_requested_at: NOW - 1_000 }, { paused_at: NOW - 1_000 }]) {
+      const recordHostMachineReport = vi.fn(async () => ({ recorded: true }))
+      const machineChanged = vi.fn(async (_input: { ownerUserId: string; hostId?: string }) => undefined)
+      const { signedCall } = await mountedRoutes(machineAuthority(enrollmentRow(key, held), { recordHostMachineReport }), { machineChanged })
+      const blocked = { reason: "linger_off", fix: "sudo loginctl enable-linger ubuntu && claxedo connect --install-service" }
+      const response = await signedCall(key, "/report", report({ blocked }))
+      expect(response.status, await response.clone().text()).toBe(200)
+      expect(await response.json()).toEqual({ recorded: true })
+      expect(recordHostMachineReport).toHaveBeenCalledWith(
+        expect.objectContaining({ enrollmentId: "enr_1", generation: 2 }),
+        { cliVersion: "0.2.1", os: "Ubuntu 24.04", arch: "x64", blocked },
+      )
+      expect(machineChanged).toHaveBeenCalledWith({ ownerUserId: "usr_owner", hostId: "host_1" })
+    }
+  })
+
+  test("a report the authority did not record tells no one, and a removed machine is refused before it", async () => {
+    const key = await machineKey()
+    const recordHostMachineReport = vi.fn(async () => ({ recorded: false }))
+    const machineChanged = vi.fn(async () => undefined)
+    const { signedCall } = await mountedRoutes(machineAuthority(enrollmentRow(key), { recordHostMachineReport }), { machineChanged })
+    expect(await (await signedCall(key, "/report", report({ generation: 1 }))).json()).toEqual({ recorded: false })
+    expect(recordHostMachineReport).toHaveBeenCalledWith(expect.anything(), { cliVersion: "0.2.1", os: "Ubuntu 24.04", arch: "x64", generation: 1 })
+    expect(machineChanged).not.toHaveBeenCalled()
+
+    const removed = machineAuthority(enrollmentRow(key, { revoked_at: NOW - 1 }), { recordHostMachineReport: vi.fn() })
+    const refused = await (await mountedRoutes(removed)).signedCall(key, "/report", report())
+    expect(refused.status).toBe(403)
+    expect(removed.recordHostMachineReport).not.toHaveBeenCalled()
+  })
+
+  test("refuses a reason it does not know, a fix past 500 characters and an unknown field", async () => {
+    const key = await machineKey()
+    const api = machineAuthority(enrollmentRow(key), { recordHostMachineReport: vi.fn(async () => ({ recorded: true })) })
+    const { signedCall } = await mountedRoutes(api)
+    for (const body of [
+      report({ blocked: { reason: "disk_full", fix: "rm -rf /" } }),
+      report({ blocked: { reason: "stopped", fix: "x".repeat(501) } }),
+      report({ hostname: "build-box" }),
+      report({ cliVersion: "" }),
+    ]) {
+      expect((await signedCall(key, "/report", body)).status).toBe(400)
+    }
+    expect(api.recordHostMachineReport).not.toHaveBeenCalled()
+  })
+})
+
 describe("POST /redeem", () => {
   const redeemBody = (overrides: Record<string, unknown> = {}) => ({
     invitationId: "invitation_1",

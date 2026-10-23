@@ -571,15 +571,19 @@ export const desktopRenderer: Policy = {
   // (`settings/view/pairing-request.tsx`), and the decoder of the pairing
   // answers (owner: the app's server adapter, `server/wire/pairings.ts`). They
   // add no package edge.
-  // 1566/37, no headroom.
   // The drawer's section for a server without a browser, which mints a
-  // pre-approved invitation, with the copyable command both sections show and
-  // the decoder of the invitation answer (owner: the settings domain,
-  // `settings/server-invitation.ts`, `settings/view/server-connect.tsx`,
+  // pre-approved invitation, with the copyable command the drawer and Details
+  // share and the decoder of the invitation answer (owner: the settings
+  // domain, `settings/server-invitation.ts`, `settings/view/server-connect.tsx`,
   // `settings/view/command-line.tsx`; its server adapter,
   // `server/wire/invitations.ts`). They add no package edge.
-  // 1570/37, no headroom.
-  ceilings: { modules: 1570, packages: 37 },
+  // Managing a machine from its Details: what the machine reported and the
+  // command that fixes or updates it (`settings/view/machine-report.tsx`),
+  // Rename (`settings/view/machine-rename.tsx`) and its shared folders with
+  // Stop sharing (`settings/view/machine-roots.tsx`) (owner: the app's settings
+  // domain). They add no package edge.
+  // 1573/37, no headroom.
+  ceilings: { modules: 1573, packages: 37 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

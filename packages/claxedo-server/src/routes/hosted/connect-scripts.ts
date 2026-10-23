@@ -26,10 +26,11 @@ export function powershellConnectScript(origin: string) {
     .replace('[string]$MinimumCliVersion = ""', `[string]$MinimumCliVersion = ${powershellQuote(MINIMUM_CONNECT_CLI_VERSION)}`)
 }
 
-export function connectCommands(origin: string, code: string) {
+/** With no code the script only installs, replacing a CLI below the accepted version. */
+export function connectCommands(origin: string, code?: string) {
   return {
-    posix: `curl -fsSL ${origin}${CONNECT_SCRIPT_PATH} | sh -s -- ${code}`,
-    windows: `& ([scriptblock]::Create((irm ${origin}${CONNECT_SCRIPT_PATH}.ps1))) ${code}`,
+    posix: `curl -fsSL ${origin}${CONNECT_SCRIPT_PATH} | sh${code ? ` -s -- ${code}` : ""}`,
+    windows: `& ([scriptblock]::Create((irm ${origin}${CONNECT_SCRIPT_PATH}.ps1)))${code ? ` ${code}` : ""}`,
   }
 }
 

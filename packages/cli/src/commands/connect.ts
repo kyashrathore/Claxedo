@@ -15,6 +15,7 @@ import { desktopDaemonDiscoveryFiles, desktopDaemonState, type DesktopDaemonStat
 import { connectPaths, connectStateStore } from "../connect/paths"
 import { defaultServiceDeps, serviceKind, startService, uninstallService, writeServiceUnit, type ServiceDeps } from "../connect/service"
 import { defaultPairingDeps, pair, reportPairing, type PairingDeps } from "../connect/pair"
+import { reportMachine } from "../connect/report"
 
 export type ConnectDeps = {
   host: HostDeps
@@ -51,7 +52,7 @@ export const connectHelp = `${connectUsage}
   --root DIR            serve only under DIR (repeatable, absolute as this machine writes it); the effective roots are the owner's scope ∩ these
   --name N              this machine's display name at first enrollment (default: the name this computer answers to); a name the invitation carries wins
   --direct on|off       whether this machine also listens, TLS only, on its private-network addresses (LAN, tailnet) so the owner's desktop app on the same network reaches it without the relay; on by default, remembered until changed, and off means nothing listens and no route is reported
-  --install-service     enroll if --token-file is given, then install and start a user service that runs \`claxedo connect --foreground\`
+  --install-service     enroll if --token-file is given, then install and start a user service that runs \`claxedo connect --foreground\`, restarting it when it already runs
   --uninstall-service   stop and remove that service
   --foreground          serve in this process (the default when no service flag is given)
   --alongside-desktop   serve even while the Claxedo desktop app's daemon is running on this machine; without it, connect refuses to start beside a live daemon (exit 78), since the desktop serves this machine under its own enrollment when its remote access is on
@@ -210,7 +211,22 @@ async function installAndStartService(deps: ConnectDeps, state: HostState, args:
   await deps.store.save({ ...state, service: installed })
   const start = await startService(service, installed)
   for (const line of start.lines) log(line)
-  return start.started ? 0 : DECISION_EXIT_CODE
+  if (start.started) return 0
+  await reportMachine(state, { fetch: deps.host.fetch, log, blocked: start.blocked })
+  return DECISION_EXIT_CODE
+}
+
+/** A live desktop daemon owns this machine; one already enrolled tells its owner why it is not serving too. */
+async function refuseBesideDesktop(deps: ConnectDeps, daemon: Extract<DesktopDaemonState, { state: "live" }>): Promise<never> {
+  const enrolled = await deps.store.load().catch(() => undefined)
+  if (enrolled?.enrollment) {
+    const fix = enrolled.service ? "claxedo connect --install-service --alongside-desktop" : "claxedo connect --alongside-desktop"
+    await reportMachine(enrolled, { fetch: deps.host.fetch, log: deps.host.log, blocked: { reason: "desktop_daemon", fix } })
+  }
+  throw new HostConnectDecisionError(
+    `the Claxedo desktop app's daemon is running on this machine (pid ${daemon.pid}, port ${daemon.port}, ${daemon.file}); the desktop serves this machine under its own enrollment when its remote access is on, so pass --alongside-desktop to run \`claxedo connect\` as a second machine beside it`,
+    {},
+  )
 }
 
 /**
@@ -249,12 +265,7 @@ export async function connect(argv: string[], deps: ConnectDeps = defaultConnect
       // Only `absent` means nothing owns this machine. The other three each
       // name an owner, and starting a competing one over the same data
       // directory would make the damage worse than whatever is wrong with it.
-      if (daemon.state === "live") {
-        throw new HostConnectDecisionError(
-          `the Claxedo desktop app's daemon is running on this machine (pid ${daemon.pid}, port ${daemon.port}, ${daemon.file}); the desktop serves this machine under its own enrollment when its remote access is on, so pass --alongside-desktop to run \`claxedo connect\` as a second machine beside it`,
-          {},
-        )
-      }
+      if (daemon.state === "live") await refuseBesideDesktop(deps, daemon)
       if (daemon.state === "unresponsive") {
         throw new HostConnectDecisionError(
           `the Claxedo desktop app's daemon is published on this machine (pid ${daemon.pid}, port ${daemon.port}, ${daemon.file}) but is not answering; it still owns that data directory, so recover it from the desktop app or stop that process yourself before running \`claxedo connect\``,

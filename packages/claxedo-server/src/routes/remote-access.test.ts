@@ -112,4 +112,29 @@ describe("remote access routes", () => {
       .resolves.toEqual({ revoked: true })
     expect(service.revoke).toHaveBeenCalledWith(auth, "host_1")
   })
+
+  test("a machine's row carries what it reported, its roots with what each would retire, and the update the plane offers", async () => {
+    const device = {
+      hostId: "host_1", enrollmentId: "enr_1", displayName: "build-box", lastSeenAt: 10, state: "offline" as const, workspaceIds: ["ws_1"], servingWorkspaceIds: [],
+      cliVersion: "0.2.1", os: "Ubuntu 24.04", arch: "x64",
+      roots: [{ path: "/srv", retires: [{ workspaceId: "ws_1", displayName: "app", directory: "/srv/app" }] }],
+      blocked: { reason: "stopped" as const, fix: "claxedo connect --install-service", reportedAt: 9 },
+      update: { version: "0.2.2", command: "curl -fsSL https://cp.test/api/claxedo/connect | sh && claxedo connect --install-service" },
+    }
+    const app = RemoteAccessOwnerRoutes({
+      deviceLoginConfigured: true,
+      relayConfigured: true,
+      authenticate: vi.fn(async () => auth),
+      service: { status: vi.fn(), devices: vi.fn(async () => [device]), revoke: vi.fn(), rename: vi.fn() },
+    })
+    await expect((await app.request("http://localhost/devices")).json()).resolves.toEqual({
+      devices: [{
+        host_id: "host_1", enrollment_id: "enr_1", display_name: "build-box", last_seen_at: 10, state: "offline", workspace_ids: ["ws_1"], serving_workspace_ids: [],
+        cli_version: "0.2.1", os: "Ubuntu 24.04", arch: "x64",
+        roots: [{ path: "/srv", retires: [{ workspace_id: "ws_1", display_name: "app", directory: "/srv/app" }] }],
+        blocked: { reason: "stopped", fix: "claxedo connect --install-service", reported_at: 9 },
+        update: { version: "0.2.2", command: "curl -fsSL https://cp.test/api/claxedo/connect | sh && claxedo connect --install-service" },
+      }],
+    })
+  })
 })

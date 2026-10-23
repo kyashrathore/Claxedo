@@ -1,10 +1,27 @@
 import type { MachineId, UserId } from "./ids"
 import type { AppError } from "./types"
 
+export type MachineBlockReason = "lingerOff" | "userManagerUnreachable" | "waitingForLogon" | "desktopDaemon" | "stopped"
+
+export type MachineBlock = { readonly reason: MachineBlockReason; readonly fix: string; readonly reportedAt: number }
+
+export type MachineAssignment = { readonly workspaceId: string; readonly name: string; readonly directory: string }
+
+export type MachineRoot = { readonly path: string; readonly retires: readonly MachineAssignment[] }
+
+export type MachineUpdate = { readonly version: string; readonly command: string }
+
 export type MachineEnrollment = {
   readonly hostId: string
+  readonly enrollmentId: string
   readonly lastSeenAt: number
   readonly servingWorkspaceIds: readonly string[]
+  readonly cliVersion?: string
+  readonly os?: string
+  readonly arch?: string
+  readonly roots?: readonly MachineRoot[]
+  readonly blocked?: MachineBlock
+  readonly update?: MachineUpdate
 }
 
 export type Machine = {

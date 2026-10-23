@@ -40,6 +40,10 @@ describe("connect scripts", () => {
       posix: `curl -fsSL ${ORIGIN}/api/claxedo/connect | sh -s -- K7QM4PXD9R2TWB6HJ3NF`,
       windows: `& ([scriptblock]::Create((irm ${ORIGIN}/api/claxedo/connect.ps1))) K7QM4PXD9R2TWB6HJ3NF`,
     })
+    expect(connectCommands(ORIGIN), "with no code they only install").toEqual({
+      posix: `curl -fsSL ${ORIGIN}/api/claxedo/connect | sh`,
+      windows: `& ([scriptblock]::Create((irm ${ORIGIN}/api/claxedo/connect.ps1)))`,
+    })
     const routes = ConnectScriptRoutes(ORIGIN)
     const posix = await routes.request("/connect")
     expect(posix.headers.get("content-type")).toContain("text/x-shellscript")

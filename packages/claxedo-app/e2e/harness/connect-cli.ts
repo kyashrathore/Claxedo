@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process"
-import { writeFileSync } from "node:fs"
+import { readFileSync, writeFileSync } from "node:fs"
 import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -10,6 +10,8 @@ import type { SignedStack } from "./signed-stack"
 const CLI_ENTRY = path.join(REPO_ROOT, "packages/cli/src/index.ts")
 const LOCALHOST_RESOLVER = pathToFileURL(path.join(REPO_ROOT, "packages/harness/e2e/harness/localhost-resolver.mjs")).href
 const TEXT_IMPORTS = pathToFileURL(path.join(REPO_ROOT, "packages/workspace-runtime/src/text-imports.mjs")).href
+
+export const CONNECT_CLI_VERSION = (JSON.parse(readFileSync(path.join(REPO_ROOT, "packages/cli/package.json"), "utf8")) as { version: string }).version
 
 export type ConnectCli = {
   readonly folder: string

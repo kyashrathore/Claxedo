@@ -1,6 +1,26 @@
 import { machine as stateMachine, unreachable, type Transition } from "@/lib/machine"
-import { toAppError, type AppError, type Machine, type MachineEnrollment, type MachineProbe, type MachinesApi } from "@/server"
+import { toAppError, type AppError, type Machine, type MachineBlock, type MachineBlockReason, type MachineEnrollment, type MachineProbe, type MachineRoot, type MachinesApi } from "@/server"
 import type { SettingsKey } from "./i18n"
+
+const BLOCKED_KEY = {
+  lingerOff: "settings.machines.blocked.lingerOff",
+  userManagerUnreachable: "settings.machines.blocked.userManager",
+  waitingForLogon: "settings.machines.blocked.waitingForLogon",
+  desktopDaemon: "settings.machines.blocked.desktopDaemon",
+  stopped: "settings.machines.blocked.stopped",
+} as const satisfies Record<MachineBlockReason, SettingsKey>
+
+export function blockedKey(block: MachineBlock): SettingsKey {
+  return BLOCKED_KEY[block.reason]
+}
+
+export function offlineCause(machine: Machine): MachineBlock | undefined {
+  return machine.online ? undefined : machine.enrollment?.blocked
+}
+
+export function rootsWithout(roots: readonly MachineRoot[], path: string): readonly string[] {
+  return roots.map((root) => root.path).filter((root) => root !== path)
+}
 
 export type HopId = "claxedo" | "machine" | "runtime"
 

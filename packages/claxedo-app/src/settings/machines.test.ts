@@ -4,7 +4,7 @@ import { createRoot } from "solid-js"
 import { ServerError, machineId, type Machine, type MachineProbe } from "@/server"
 import { adviceKey, checkTransition, createMachineCheck, headlineKey, hopsOf, type MachineCheck } from "./machines"
 
-const box: Machine = { id: machineId("enr_box"), name: "build-box", online: true, isThisMachine: false, enrolled: true, enrollment: { hostId: "host_box", lastSeenAt: 10, servingWorkspaceIds: ["ws_box"] } }
+const box: Machine = { id: machineId("enr_box"), name: "build-box", online: true, isThisMachine: false, enrolled: true, enrollment: { hostId: "host_box", enrollmentId: "enr_box", lastSeenAt: 10, servingWorkspaceIds: ["ws_box"] } }
 const offline = new ServerError({ class: "network", message: "offline" })
 
 function settle(machine: Machine | undefined, probe?: MachineProbe): MachineCheck {

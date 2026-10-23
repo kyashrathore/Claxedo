@@ -1,4 +1,4 @@
-import type { HostDevice } from "./host-devices"
+import type { HostDevice, HostMachineReport } from "./host-devices"
 import type { HostDirectRoutes, HostEnrollment, HostEnrollmentListRow, HostEnrollmentState, HostInvitationCreateInput, HostInvitationCreateResult, HostInvitationRedeemInput, HostInvitationRedeemResult, HostInvitationRow, HostMachineHeartbeatInput, HostPairingCreateResult, HostPairingDecision, HostPairingFolderInput, HostPairingRedeemInput, HostPairingRedeemResult, HostPairingSelf, HostPairingView, HostMachineHeartbeatResult, HostProviderConfigPushInput, HostProviderConfigTarget, HostScopeDefinition, HostScopeUpdateResult, HostSessionAuthority, MachineAuthAdapter, MachinePrincipal } from "./host-connect-contract"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "./auth"
 import type { OrgId, ProjectId } from "./branded-id"
@@ -345,6 +345,13 @@ export type WorkspaceAuthority = OrgAccessAuthority & SessionShareAuthority & Pa
    * Absent on an authority that hands out no direct routes.
    */
   recordHostDirectRoutes?: (machine: MachinePrincipal, routes: HostDirectRoutes | undefined) => Promise<void>
+  /**
+   * What the machine reports about itself: its CLI version and system, and
+   * what stops it serving, which also ends its lease. Not recorded, and
+   * `recorded` false, when the reporting instance is not the one the row
+   * serves under.
+   */
+  recordHostMachineReport?: (machine: MachinePrincipal, report: HostMachineReport) => Promise<{ recorded: boolean }>
   /**
    * The direct routes of the enrollment serving this workspace now. It decides
    * no access: the caller asks only once it has decided the workspace is the

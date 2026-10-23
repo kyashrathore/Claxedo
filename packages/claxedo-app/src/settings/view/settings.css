@@ -317,6 +317,42 @@
   border-top: 1px solid var(--v2-border-border-muted);
 }
 
+.settings-command-wrapped code {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.settings-machine-report {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-machine-rename {
+  align-items: flex-end;
+}
+
+.settings-machine-name {
+  flex: 1;
+  min-width: 160px;
+}
+
+.settings-machine-roots {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-machine-root {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--font-size-small);
+}
+
 .settings-font-field {
   width: 220px;
   max-width: 100%;

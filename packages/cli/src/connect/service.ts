@@ -5,6 +5,7 @@ import path from "node:path"
 import { promisify } from "node:util"
 import type { HostState } from "@claxedo/host-connector/host-state"
 import { EXIT_TIMEOUT_S } from "./paths"
+import type { MachineBlock } from "./report"
 import { WINDOWS_TASK, windowsScriptPath, windowsTaskStatus, windowsTaskXml, windowsTaskXmlPath, windowsWrapperScript, xmlTextNode } from "./service-windows"
 
 const execFileAsync = promisify(execFile)
@@ -248,7 +249,9 @@ async function must(deps: ServiceDeps, file: string, args: readonly string[]) {
   return result
 }
 
-export type UserManagerCheck = { reachable: true } | { reachable: false; reason: string; remedy: string[] }
+export type UserManagerCheck =
+  | { reachable: true }
+  | { reachable: false; cause: "linger_off" | "user_manager_unreachable"; reason: string; remedy: string[] }
 
 /**
  * Whether `systemctl --user` can start anything for this user right now.
@@ -265,6 +268,7 @@ export async function linuxUserManager(deps: ServiceDeps): Promise<UserManagerCh
   if (linger.code !== 0 || linger.stdout.trim() !== "yes") {
     return {
       reachable: false,
+      cause: "linger_off",
       reason: `lingering is off for ${deps.username}, so no user manager runs outside a login session`,
       remedy: [enableLinger, `claxedo connect --install-service`],
     }
@@ -274,6 +278,7 @@ export async function linuxUserManager(deps: ServiceDeps): Promise<UserManagerCh
   if (!runtimeDir) {
     return {
       reachable: false,
+      cause: "user_manager_unreachable",
       reason: "XDG_RUNTIME_DIR is unset, so systemctl --user cannot find the user manager's bus",
       remedy: [exportRuntimeDir, `claxedo connect --install-service`],
     }
@@ -284,6 +289,7 @@ export async function linuxUserManager(deps: ServiceDeps): Promise<UserManagerCh
   if (manager.stdout.trim() === "") {
     return {
       reachable: false,
+      cause: "user_manager_unreachable",
       reason: `systemctl --user reached no user manager for ${deps.username} (XDG_RUNTIME_DIR=${runtimeDir})`,
       remedy: [enableLinger, exportRuntimeDir, `claxedo connect --install-service`],
     }
@@ -291,7 +297,13 @@ export async function linuxUserManager(deps: ServiceDeps): Promise<UserManagerCh
   return { reachable: true }
 }
 
-export type StartServiceResult = { started: boolean; lines: string[] }
+/** A service that did not start says why in the terminal and, as `blocked`, to its owner's app. */
+export type StartServiceResult = { started: true; lines: string[] } | { started: false; lines: string[]; blocked: MachineBlock }
+
+/**
+ * Installing again restarts a service that is already running, so a machine
+ * whose CLI was just updated serves on the new one.
+ */
 
 export async function startService(deps: ServiceDeps, service: InstalledService): Promise<StartServiceResult> {
   if (service.kind === "systemd-user") {
@@ -304,10 +316,12 @@ export async function startService(deps: ServiceDeps, service: InstalledService)
           `Run, as ${deps.username}:`,
           ...manager.remedy.map((line) => `  ${line}`),
         ],
+        blocked: { reason: manager.cause, fix: manager.remedy.join(" && ") },
       }
     }
     await must(deps, "systemctl", ["--user", "daemon-reload"])
-    await must(deps, "systemctl", ["--user", "enable", "--now", SYSTEMD_UNIT])
+    await must(deps, "systemctl", ["--user", "enable", SYSTEMD_UNIT])
+    await must(deps, "systemctl", ["--user", "restart", SYSTEMD_UNIT])
     return {
       started: true,
       lines: [
@@ -340,6 +354,9 @@ export async function startService(deps: ServiceDeps, service: InstalledService)
   } finally {
     await deps.unlink(taskXml)
   }
+  // A task already running keeps its old process through `/Create /F`, and
+  // `/End` answers an error for one that is not running.
+  await deps.run("schtasks.exe", ["/End", "/TN", WINDOWS_TASK])
   // `/Run` answers success for an InteractiveToken task whether or not its
   // user has a session to run in; the task's own status says what happened.
   await must(deps, "schtasks.exe", ["/Run", "/TN", WINDOWS_TASK])
@@ -352,6 +369,7 @@ export async function startService(deps: ServiceDeps, service: InstalledService)
         `Installed the scheduled task ${WINDOWS_TASK} (${service.unit}) but it is ${status}: it runs in ${deps.username}'s desktop session, so it starts at that user's next logon.`,
         restarts,
       ],
+      blocked: { reason: "waiting_for_logon", fix: `schtasks /Run /TN ${WINDOWS_TASK}` },
     }
   }
   return { started: true, lines: [`Installed and started the scheduled task ${WINDOWS_TASK} (${service.unit}).`, restarts] }

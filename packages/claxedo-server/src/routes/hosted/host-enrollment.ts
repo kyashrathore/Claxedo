@@ -26,6 +26,8 @@ import type { ProviderDirect, ProviderProjectionSource } from "@claxedo/agent-ru
  *     POST /heartbeat  → machine-signed: renew, ack descriptions, discover assignments,
  *                        and for a `claxedo connect` machine take the provider
  *                        configuration built from its owner's accounts.
+ *     POST /report     → machine-signed, admitted while held: its CLI version and
+ *                        system, and what stops it serving.
  *
  * An account credential buys no beat here. Enrollment is where the owner
  * speaks; everything after it is the machine speaking for itself.
@@ -41,7 +43,7 @@ import { z } from "zod"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority, type WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { MachinePrincipal } from "@claxedo/server-core/platform/auth/host-connect-contract"
-import { invitationToken, machineSealAad } from "@claxedo/account-contract/machine"
+import { MACHINE_BLOCKED_REASONS, invitationToken, machineSealAad } from "@claxedo/account-contract/machine"
 import { sealForMachine } from "@claxedo/account-contract/machine-seal"
 import type { HostTunnelTokenSignerInput } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { serializeHostProviderConfig } from "@claxedo/server-core/credentials/host-provider-config"
@@ -144,6 +146,19 @@ function servingMoved(caller: MachinePrincipal, acks: readonly { workspaceId: st
 }
 
 const acquireBody = z.object({ enrollmentId, hostId, keyVersion: z.number().int().min(1).optional() }).strict()
+
+const reportBody = z
+  .object({
+    enrollmentId,
+    hostId,
+    keyVersion: z.number().int().min(1).optional(),
+    cliVersion: z.string().trim().min(1).max(64),
+    os: z.string().trim().min(1).max(64).optional(),
+    arch: z.string().trim().min(1).max(32).optional(),
+    generation: z.number().int().min(0).optional(),
+    blocked: z.object({ reason: z.enum(MACHINE_BLOCKED_REASONS), fix: z.string().trim().min(1).max(500) }).strict().optional(),
+  })
+  .strict()
 
 const redeemBody = z
   .object({
@@ -314,9 +329,10 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
       c: Context
     }) => Promise<Record<string, unknown>>,
     key: string,
+    admission: { admitHeld?: boolean } = {},
   ) =>
     async (c: Context) => {
-      const admitted = await admitMachineCaller(c, services, budgets, key)
+      const admitted = await admitMachineCaller(c, services, budgets, key, admission)
       if (admitted instanceof Response) return admitted
       const parsed = parsedBody(schema, parseJsonText(admitted.bodyText))
       if (!parsed.ok) return c.json({ error: parsed.error }, parsed.status)
@@ -432,6 +448,18 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
       await options.machineChanged?.({ ownerUserId: caller.ownerUserId, hostId: caller.hostId })
       return { generation: result.generation, generation_acquired_at: result.generation_acquired_at }
     }, "host.enrollments.acquire"))
+    .post("/report", tooLarge(MACHINE_BODY_LIMIT_BYTES), machine(reportBody, async ({ body, machine: caller, authority }) => {
+      if (!authority.recordHostMachineReport) throw unsupportedError("Machine reports")
+      const result = await authority.recordHostMachineReport(caller, {
+        cliVersion: body.cliVersion,
+        ...(body.os ? { os: body.os } : {}),
+        ...(body.arch ? { arch: body.arch } : {}),
+        ...(body.generation === undefined ? {} : { generation: body.generation }),
+        ...(body.blocked ? { blocked: body.blocked } : {}),
+      })
+      if (result.recorded) await options.machineChanged?.({ ownerUserId: caller.ownerUserId, hostId: caller.hostId })
+      return result
+    }, "host.enrollments.report", { admitHeld: true }))
     .post("/redeem", tooLarge(REDEEM_BODY_LIMIT_BYTES), async (c) => {
       const limited = clientBudget(c, clientRateLimiter, "client:host.enrollments.redeem")
       if (limited) return limited
