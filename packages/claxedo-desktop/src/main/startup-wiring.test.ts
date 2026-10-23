@@ -108,7 +108,7 @@ describe("desktop cold startup wiring", () => {
     expect(refuse).toBeGreaterThan(judge)
     expect(start).toBeGreaterThan(refuse)
     expect(setupServer).toContain("build: app.getVersion()")
-    expect(serverStart).toContain("CLAXEDO_DAEMON_BUILD: app.getVersion()")
+    expect(serverStart).toContain("build: app.getVersion()")
   })
 
   test("still closes the child when readiness fails", () => {

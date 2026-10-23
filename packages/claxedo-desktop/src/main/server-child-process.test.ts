@@ -9,7 +9,7 @@ describe("Claxedo server daemon process", () => {
     const env = claxedoServerChildEnv({ ...child, controlPlaneOrigin: "https://core.example" })
 
     expect(env.CLAXEDO_CONTROL_PLANE_JWKS_URL).toBe("https://core.example/.well-known/jwks.json")
-    expect([env.CLAXEDO_CHILD_PORT, env.CLAXEDO_DATA_DIR, env.CLAXEDO_DAEMON_PROTOCOL, env.CLAXEDO_DAEMON_TOKEN]).toEqual(["3210", "/data", "4", "daemon-token"])
+    expect([env.CLAXEDO_CHILD_PORT, env.CLAXEDO_DATA_DIR, env.CLAXEDO_DAEMON_PROTOCOL, env.CLAXEDO_DAEMON_TOKEN, env.CLAXEDO_DAEMON_BUILD]).toEqual(["3210", "/data", "4", "daemon-token", "1.2.3"])
   })
 
   test("without a configured account it names no key set, so the daemon serves no connected machine", () => {
