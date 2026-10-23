@@ -13,6 +13,9 @@ export const PAIRING_CODE_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 const PAIRING_CODE_PATTERN = new RegExp(`^[${PAIRING_CODE_ALPHABET}]{${PAIRING_CODE_LENGTH}}$`)
 /** The oldest `claxedo` that understands `connect --pair`; a connect script reuses an installed CLI only at or above it. */
 export const MINIMUM_CONNECT_CLI_VERSION = "0.2.2"
+export const CONNECT_SCRIPT_PATH = "/api/claxedo/connect"
+/** The hex sha256 of the connect script's decoded text, stated beside it; an edge's compression does not change it. */
+export const CONNECT_SCRIPT_SHA256_HEADER = "x-claxedo-script-sha256"
 
 export const MACHINE_REQUEST_HEADERS = {
   enrollmentId: "x-claxedo-enrollment-id",
