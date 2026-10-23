@@ -4,6 +4,7 @@ import type { SandboxManager } from "@claxedo/sandbox-manager"
 import type { ControlPlaneTelemetry } from "@claxedo/server-core/platform/telemetry/ports"
 import type { WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/authority"
 import { destinationAuthMode } from "@claxedo/server-core/credentials/built-in-destinations"
+import { mintOwnerBrokerPass } from "@claxedo/server-core/credentials/owner-broker-pass"
 import type { HarnessCredentialBroker } from "@claxedo/server-core/credentials/native-delivery-plan"
 import type { ControlPlaneCredentials } from "../../authority/services"
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
@@ -83,6 +84,8 @@ export type HostedEgressBroker = {
   binder(input: { orgId: string; workspaceId: string; lease?: BrokerLease }): HarnessCredentialBroker
   /** The account binder for a connected machine's deliveries: one binding per provider under its enrollment, for every workspace it serves. */
   machineBinder(input: { orgId: string; machine: MachineBrokerLease }): HarnessCredentialBroker
+  /** This broker's admission of a connected machine, stamped for its owner's desktop broker; nothing for a machine it would refuse. */
+  ownerBrokerPass(input: { enrollmentId: string; spkiSha256: string }): Promise<{ token: string; expiresAt: number } | undefined>
   /** The workspace's repository binding for `lease`, through which its sandbox's git reaches the repository while that lease serves or boots. */
   repositoryBinding(input: { orgId: string; ownerUserId: string; workspaceId: string; connectionId: string; lease: BrokerLease }): Promise<{ baseUrl: string; placeholder: string; expiresAt: number }>
   /** Installs how every repository binding resolves; until it is installed, none does. */
@@ -253,5 +256,10 @@ export function createHostedEgressBroker(input: {
       leaseGeneration: machine.servingGeneration,
       runtimeId: machine.hostId,
     }),
+    ownerBrokerPass: async ({ enrollmentId, spkiSha256 }) => {
+      const subject = await input.machine?.(enrollmentId)
+      if (!subject) return undefined
+      return await mintOwnerBrokerPass({ ownerUserId: subject.ownerUserId, orgId: subject.orgId, enrollmentId, hostId: subject.hostId, spkiSha256 }, input.env, { now })
+    },
   }
 }

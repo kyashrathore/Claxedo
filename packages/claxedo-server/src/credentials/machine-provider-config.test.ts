@@ -194,3 +194,31 @@ describe("a connected machine's provider configuration, built on its beat", () =
     expect(await configs.beat(MACHINE)).toMatchObject({ revision: 5 })
   })
 })
+
+describe("the owner broker pass a connected machine's beat carries", () => {
+  test("is the broker's, for the direct listener the machine reports; none without one, and none when the broker cannot mint it", async () => {
+    const memory = memoryStore({
+      enrollmentId: MACHINE.enrollmentId, hostId: MACHINE.hostId, ownerUserId: "alice", orgId: "org-1", servingGeneration: 2,
+      sealingPublicKey: "{}", nextRevision: 4, ownerPushPending: false, rekeyed: false,
+    })
+    const asked: Array<{ enrollmentId: string; spkiSha256: string }> = []
+    let mint = async (): Promise<{ token: string; expiresAt: number }> => ({ token: "the-pass", expiresAt: NOW + 60_000 })
+    const configs = createMachineProviderConfig({
+      store: memory.store,
+      credentials: () => { throw new Error("no account is read for a pass") },
+      broker: {
+        machineBinder: () => { throw new Error("nothing is bound for a pass") },
+        ownerBrokerPass: async (input) => {
+          asked.push(input)
+          return await mint()
+        },
+      },
+    })
+
+    expect(await configs.ownerBrokerPass(MACHINE, undefined)).toBeUndefined()
+    expect(await configs.ownerBrokerPass(MACHINE, { spkiSha256: "spki-of-the-listener" })).toEqual({ token: "the-pass", expires_at: NOW + 60_000 })
+    expect(asked).toEqual([{ enrollmentId: MACHINE.enrollmentId, spkiSha256: "spki-of-the-listener" }])
+    mint = async () => { throw new Error("the runtime signing key is not configured") }
+    expect(await configs.ownerBrokerPass(MACHINE, { spkiSha256: "spki-of-the-listener" })).toBeUndefined()
+  })
+})

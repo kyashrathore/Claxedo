@@ -25,9 +25,9 @@
 
 import { hostPathWithinRoots } from "@claxedo/account-contract/host-path"
 import type { HostScope } from "./host-state"
-import type { HostSessionAuthority, Enrollment, AssignmentDescription, AssignmentAck, HostEndpoints, ProviderConfigRevision, HeartbeatResponse, DirectRoutes, MachineHeartbeatInput, MachineTransport } from "./connector-contract"
+import type { HostSessionAuthority, Enrollment, AssignmentDescription, AssignmentAck, HostEndpoints, ProviderConfigRevision, HeartbeatResponse, DirectRoutes, MachineHeartbeatInput, MachineTransport, OwnerBrokerPass } from "./connector-contract"
 
-export type { HostSessionAuthority, Enrollment, AssignmentDescription, AssignmentAck, HostEndpoints, ProviderConfigRevision, HeartbeatResponse, DirectRoutes, MachineHeartbeatInput, MachineTransport } from "./connector-contract"
+export type { HostSessionAuthority, Enrollment, AssignmentDescription, AssignmentAck, HostEndpoints, ProviderConfigRevision, HeartbeatResponse, DirectRoutes, MachineHeartbeatInput, MachineTransport, OwnerBrokerPass } from "./connector-contract"
 
 export type ConnectorErrorStage = "heartbeat" | "acquire" | "reconcile" | "provider-config" | "events" | "direct-routes"
 
@@ -91,9 +91,10 @@ export type ConnectorOptions = MachineDirectoryScope & {
    * The serving credential from the latest beat — one token whose claim is
    * exactly the workspaces this machine is currently routable for, or
    * undefined when nothing is. The consumer (the daemon's tunnel runner, via
-   * the parent process) owns opening and closing the relay connection.
+   * the parent process) owns opening and closing the relay connection. The
+   * same beat's owner broker pass rides beside it and goes when serving does.
    */
-  onServing?: (tunnel: Record<string, unknown> | undefined) => void
+  onServing?: (tunnel: Record<string, unknown> | undefined, ownerBrokerPass?: OwnerBrokerPass) => void
   /**
    * Every time a heartbeat renews the lease — on the timer, or forced by
    * `ack`/`unack` — with the state that now holds it.
@@ -547,7 +548,7 @@ export function createHostConnector(options: ConnectorOptions) {
         options.onPaused?.(false)
       }
       if (watchRefused) openWatch()
-      options.onServing?.(result.hostTunnel)
+      options.onServing?.(result.hostTunnel, result.ownerBrokerPass)
       options.onLeaseRenewed?.(state)
     } catch (error) {
       settleFailedBeat(startedIn, error)
