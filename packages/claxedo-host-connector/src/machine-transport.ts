@@ -34,6 +34,9 @@ export const HOST_ENROLLMENT_HEARTBEAT_PATH = "/api/claxedo/host/enrollments/hea
 export const HOST_ENROLLMENT_REDEEM_PATH = "/api/claxedo/host/enrollments/redeem"
 /** The machine's doorbell stream (`./machine-events`); a signed GET, held open. */
 export const HOST_ENROLLMENT_EVENTS_PATH = "/api/claxedo/host/enrollments/events"
+export const HOST_PAIRING_REDEEM_PATH = "/api/claxedo/host/pairings/redeem"
+export const HOST_PAIRING_SELF_PATH = "/api/claxedo/host/pairings/self"
+export const HOST_PAIRING_FOLDER_PATH = "/api/claxedo/host/pairings/folder"
 
 /**
  * Headers and body of one beat or acquire; a beat that outlives this is
@@ -309,7 +312,12 @@ export type MachineSignedTransportOptions = {
   requestTimeoutMs?: number
 }
 
-export function createMachineSignedTransport(options: MachineSignedTransportOptions): MachineTransport {
+/**
+ * Signs and sends one machine request. Every call signs fresh: the nonce is
+ * single-use at the control plane and the timestamp is checked against its
+ * clock.
+ */
+export function machineRequestSigner(options: MachineSignedTransportOptions) {
   // Refused here rather than on the first beat: a transport that exists is one
   // whose every request has an endpoint it is allowed to reach.
   const controlPlaneUrl = canonicalControlPlaneUrl(options.controlPlaneUrl)
@@ -317,10 +325,6 @@ export function createMachineSignedTransport(options: MachineSignedTransportOpti
   const nonce = options.nonce ?? randomNonce
   const timeoutMs = options.requestTimeoutMs ?? MACHINE_REQUEST_TIMEOUT_MS
 
-  const keyVersion = options.keyVersion === undefined ? {} : { keyVersion: options.keyVersion }
-
-  // Fresh per request, never reused: the nonce is single-use at the control
-  // plane and the timestamp is checked against its clock.
   const signedHeaders = async (method: string, url: URL, bodyText: string) => {
     const ts = Math.floor(now())
     const requestNonce = nonce()
@@ -345,6 +349,13 @@ export function createMachineSignedTransport(options: MachineSignedTransportOpti
     const bodyText = JSON.stringify({ enrollmentId: options.enrollmentId, hostId: options.hostId, ...body })
     return await postJson(options.fetch, url, bodyText, await signedHeaders("POST", url, bodyText), requestTimeoutMs)
   }
+
+  return { controlPlaneUrl, timeoutMs, signedHeaders, signedPost }
+}
+
+export function createMachineSignedTransport(options: MachineSignedTransportOptions): MachineTransport {
+  const { controlPlaneUrl, timeoutMs, signedHeaders, signedPost } = machineRequestSigner(options)
+  const keyVersion = options.keyVersion === undefined ? {} : { keyVersion: options.keyVersion }
 
   return {
     watch: (listener) =>
@@ -398,6 +409,46 @@ export function createMachineSignedTransport(options: MachineSignedTransportOpti
           : {}),
       })
       return decodeHeartbeatResponse(value)
+    },
+  }
+}
+
+export type MachinePairingStage = "awaiting_approval" | "approved" | "connected" | "ready" | "denied" | "expired"
+
+/** The machine's own pairing as the control plane answers it; `stage` is the one field a waiting machine acts on. */
+export type MachinePairing = { pairingId: string; stage: MachinePairingStage; folder: string; displayName?: string; workspaceId?: string }
+
+const MACHINE_PAIRING_STAGES: ReadonlySet<unknown> = new Set(["awaiting_approval", "approved", "connected", "ready", "denied", "expired"])
+
+const isMachinePairingStage = (value: unknown): value is MachinePairingStage => MACHINE_PAIRING_STAGES.has(value)
+
+function decodeMachinePairing(value: unknown): MachinePairing | undefined {
+  if (!isPlainRecord(value) || !isMachinePairingStage(value.stage)) return undefined
+  return {
+    pairingId: requireString(value.pairing_id, "pairing_id"),
+    stage: value.stage,
+    folder: typeof value.folder === "string" ? value.folder : "",
+    ...(typeof value.display_name === "string" ? { displayName: value.display_name } : {}),
+    ...(typeof value.workspace_id === "string" ? { workspaceId: value.workspace_id } : {}),
+  }
+}
+
+/**
+ * A connected machine's signed pairing calls: the request to share another
+ * folder, and the read a machine makes on each ring while its owner answers.
+ */
+export function createMachinePairingClient(options: MachineSignedTransportOptions) {
+  const signer = machineRequestSigner(options)
+  return {
+    self: async (): Promise<MachinePairing | undefined> => {
+      const value = await signer.signedPost(HOST_PAIRING_SELF_PATH, {})
+      return decodeMachinePairing(isPlainRecord(value) ? value.pairing : undefined)
+    },
+    requestFolder: async (input: { code: string; folder: string; home?: string }) => {
+      const value = await signer.signedPost(HOST_PAIRING_FOLDER_PATH, input)
+      const pairing = decodeMachinePairing(value)
+      if (!pairing || !isPlainRecord(value)) throw new Error("control plane returned no pairing")
+      return { pairing, approvalUrl: canonicalFetchEndpointUrl(requireString(value.approval_url, "approval_url"), "approval_url") }
     },
   }
 }

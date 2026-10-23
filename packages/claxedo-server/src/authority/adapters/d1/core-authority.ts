@@ -33,6 +33,11 @@ import {
   type D1HostInvitationAuthorityPort,
 } from "./host-invitation-authority"
 import {
+  D1HostPairingAuthority,
+  D1_HOST_PAIRING_AUTHORITY_METHODS,
+  type D1HostPairingAuthorityPort,
+} from "./host-pairing-authority"
+import {
   D1HostProviderConfigAuthority,
   D1_HOST_PROVIDER_CONFIG_AUTHORITY_METHODS,
   D1_MACHINE_PROVIDER_CONFIG_METHODS,
@@ -74,6 +79,7 @@ export type D1CoreAuthorityPort = D1WorkspaceAuthorityCore &
   SessionTurnAuthority &
   D1HostAccessAuthorityPort &
   D1HostInvitationAuthorityPort &
+  D1HostPairingAuthorityPort &
   D1HostProviderConfigAuthorityPort &
   D1AuditAuthorityPort &
   D1ChannelRuntimeAuthorityPort
@@ -149,6 +155,7 @@ export function createD1CoreAuthority(database: D1Database, options: D1CoreAutho
     authorizeLocalWorkspaceRegistration: (auth, args) => workspace.authorizeLocalWorkspaceRegistration(auth, args),
   })
   const hostInvitations = new D1HostInvitationAuthority(database, { ...shared, resolveOrgId: (auth) => workspace.resolveOrgId(auth) })
+  const hostPairings = new D1HostPairingAuthority(database, { ...shared, resolveOrgId: (auth) => workspace.resolveOrgId(auth) })
   const hostProviderConfig = new D1HostProviderConfigAuthority(database, shared)
   const audit = new D1AuditAuthority(database, shared)
   const channelsAndRuntime = new D1ChannelRuntimeAuthority(database, shared)
@@ -163,6 +170,7 @@ export function createD1CoreAuthority(database: D1Database, options: D1CoreAutho
     ...bindMethods(sessions, D1_SESSION_AUTHORITY_METHODS),
     ...bindMethods(hosts, D1_HOST_ACCESS_AUTHORITY_METHODS),
     ...bindMethods(hostInvitations, D1_HOST_INVITATION_AUTHORITY_METHODS),
+    ...bindMethods(hostPairings, D1_HOST_PAIRING_AUTHORITY_METHODS),
     ...bindMethods(hostProviderConfig, D1_HOST_PROVIDER_CONFIG_AUTHORITY_METHODS),
     ...bindMethods(audit, D1_AUDIT_AUTHORITY_METHODS),
     ...bindMethods(channelsAndRuntime, D1_CHANNEL_RUNTIME_AUTHORITY_METHODS),

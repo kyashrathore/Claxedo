@@ -1,8 +1,8 @@
 import { base64UrlDecode, sha256Hex } from "@claxedo/helpers/crypto"
 import { isRecord } from "@claxedo/helpers/guards"
-import type { MachineAuthAdapter, MachinePrincipal } from "./host-connect-contract"
+import type { MachineAuthAdapter, MachineEnrollmentRow, MachinePrincipal } from "./host-connect-contract"
 import { MACHINE_NONCE_TTL_MS, MACHINE_REQUEST_SKEW_MS, isMachineNonce } from "./host-connect-contract"
-import { MACHINE_REQUEST_HEADERS, isBase64Url, machineRequestPayload } from "@claxedo/account-contract/machine"
+import { MACHINE_REQUEST_HEADERS, PAIRING_TTL_MS, isBase64Url, machineRequestPayload } from "@claxedo/account-contract/machine"
 
 /**
  * Verifies a machine-signed request and returns the machine principal.
@@ -15,8 +15,9 @@ import { MACHINE_REQUEST_HEADERS, isBase64Url, machineRequestPayload } from "@cl
  * proven the key: an unknown id, a stored key that will not import and a
  * signature that does not verify are the one refusal
  * `machine_request_denied`. Only a verified signature earns the distinct
- * eligibility codes (revoked, paused, owner ineligible, key version
- * replaced) — the host exits on those, so they have to be true and specific.
+ * eligibility codes (revoked, denied, approval expired, paused, awaiting
+ * approval, owner ineligible, key version replaced) — the host exits or waits
+ * on those, so they have to be true and specific.
  *
  * The verifier reads the enrollment once and returns what it read
  * (`keyVersion`, `generation`); the mutation re-asserts both inside its batch.
@@ -46,7 +47,10 @@ export type MachineAuthRefusal = {
     | "machine_request_denied"
     | "machine_nonce_replayed"
     | "enrollment_revoked"
+    | "enrollment_denied"
+    | "enrollment_approval_expired"
     | "enrollment_paused"
+    | "enrollment_awaiting_approval"
     | "enrollment_owner_ineligible"
     | "enrollment_key_version_mismatch"
 }
@@ -57,13 +61,15 @@ const MAX_ENROLLMENT_ID_LENGTH = 200
 const MAX_SIGNATURE_LENGTH = 200
 
 /**
- * `admitPaused` is for the doorbell alone: it carries nothing a machine acts
- * on, and a paused machine that holds it hears its owner's resume at once.
+ * `admitHeld` is for the doorbell and a waiting machine's own pairing read:
+ * neither carries anything a machine serves from, and a machine the owner has
+ * paused, or not yet approved, that holds the doorbell hears the resume or the
+ * approval at once.
  */
 export async function verifyMachineRequest(
   request: MachineRequest,
   deps: MachineAuthDeps,
-  options: { admitPaused?: boolean } = {},
+  options: { admitHeld?: boolean } = {},
 ): Promise<MachineAuthResult> {
   const url = URL.canParse(request.url) ? new URL(request.url) : undefined
   if (!url || url.search) return machineRefusal(400, "machine_query_unsigned")
@@ -97,8 +103,12 @@ export async function verifyMachineRequest(
   )
   if (!verified) return machineRefusal(401, "machine_request_denied")
 
-  if (row.revoked_at !== null) return machineRefusal(403, "enrollment_revoked")
-  if (row.paused_at !== null && !options.admitPaused) return machineRefusal(403, "enrollment_paused")
+  if (row.revoked_at !== null) return machineRefusal(403, revokedCode(row.revoked_reason))
+  if (row.approval_requested_at !== null && now - row.approval_requested_at > PAIRING_TTL_MS) {
+    return machineRefusal(403, "enrollment_approval_expired")
+  }
+  if (row.approval_requested_at !== null && !options.admitHeld) return machineRefusal(403, "enrollment_awaiting_approval")
+  if (row.paused_at !== null && !options.admitHeld) return machineRefusal(403, "enrollment_paused")
   if (!row.ownerEligible) return machineRefusal(403, "enrollment_owner_ineligible")
   if (body.keyVersion !== undefined && body.keyVersion !== row.key_version) {
     return machineRefusal(403, "enrollment_key_version_mismatch")
@@ -124,6 +134,12 @@ export async function verifyMachineRequest(
       generation: row.serving_generation,
     },
   }
+}
+
+function revokedCode(reason: MachineEnrollmentRow["revoked_reason"]) {
+  if (reason === "denied") return "enrollment_denied"
+  if (reason === "approval_expired") return "enrollment_approval_expired"
+  return "enrollment_revoked"
 }
 
 function machineRefusal(status: MachineAuthRefusal["status"], code: MachineAuthRefusal["code"]): MachineAuthRefusal {

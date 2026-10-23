@@ -13,7 +13,7 @@ import type { D1WorkspaceAuthority } from "./workspace-authority"
 import {
   activeGuard, batchUnder, deleteAssertion, mayGuard, maySql, wonAssertion, type WorkspaceAction,
 } from "./authorization"
-import { d1BatchAssertionFailed, d1ConstraintFailure, d1UniqueFailureOn } from "../../../platform/db/d1-constraint"
+import { d1BatchAssertionFailed, d1UniqueFailureOn } from "../../../platform/db/d1-constraint"
 import { requireHuman } from "./access-context"
 import { D1HostAccessAuthorityError } from "./host-access-errors"
 import { randomBase64Url, storedKeyFingerprint, verifiedPublicKey, verifyHostSignature } from "./host-attestation-codec"
@@ -31,6 +31,7 @@ import {
   type EnrollmentRow,
 } from "./host-enrollment-records"
 import { declaredSealingPublicKey } from "./host-provider-config-authority"
+import { d1MachineAuth } from "./host-machine-auth"
 
 export const D1_HOST_ACCESS_AUTHORITY_METHODS = [
   "createHostEnrollmentRequest",
@@ -115,7 +116,7 @@ const MAX_SCOPE_ROOT_LENGTH = 1_024
  * revision) or a superseded instance (new generation) therefore stops routing
  * on the next read, not on the next token.
  */
-export const HOST_SERVING_WORKSPACE_SQL = `enrollment.revoked_at is null and enrollment.paused_at is null
+export const HOST_SERVING_WORKSPACE_SQL = `enrollment.revoked_at is null and enrollment.paused_at is null and enrollment.approval_requested_at is null
         and enrollment.expires_at > ?
         and exists (
           select 1 from host_assignment_readiness readiness
@@ -139,45 +140,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     this.now = options.now ?? Date.now
     this.randomId = options.randomId ?? ((prefix) => `${prefix}_${randomBase64Url(16)}`)
     this.randomNonce = options.randomNonce ?? (() => randomBase64Url(32))
-    this.machineAuth = {
-      lookupEnrollment: async (enrollmentId) => {
-        const row = await this.database.prepare(`
-          select enrollment.*, exists (
-            select 1 from users owner
-            join actors owner_actor on owner_actor.actor_id = enrollment.owner_actor_id
-              and owner_actor.user_id = owner.user_id
-            where owner.user_id = enrollment.owner_user_id
-              and owner.state = 'active' and owner_actor.state = 'active'
-          ) as owner_eligible
-          from host_enrollments enrollment where enrollment.enrollment_id = ?
-        `).bind(enrollmentId).first<EnrollmentRow & { owner_eligible: number }>()
-        if (!row) return undefined
-        return {
-          enrollment_id: row.enrollment_id,
-          host_id: row.host_id,
-          owner_user_id: row.owner_user_id,
-          owner_actor_id: row.owner_actor_id,
-          public_key_json: row.public_key_json,
-          key_version: row.key_version,
-          serving_generation: row.serving_generation,
-          revoked_at: row.revoked_at,
-          paused_at: row.paused_at,
-          scope: hostEnrollmentScope(row.scope_json, row.scope_revision),
-          ownerEligible: row.owner_eligible === 1,
-        }
-      },
-      consumeNonce: async (input) => {
-        try {
-          await this.database.prepare(`
-            insert into host_request_nonces (enrollment_id, nonce, expires_at) values (?, ?, ?)
-          `).bind(input.enrollmentId, input.nonce, input.expiresAt).run()
-          return true
-        } catch (error) {
-          if (d1ConstraintFailure(error)?.kind === "unique") return false
-          throw error
-        }
-      },
-    }
+    this.machineAuth = d1MachineAuth(database)
   }
 
   /**
@@ -620,7 +583,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
   async activeHostEnrollment(auth: SignedControlPlaneAuth): Promise<HostEnrollmentState> {
     const who = await this.requirePrincipal(auth)
     const row = await this.database.prepare(`
-      select * from host_enrollments where owner_actor_id = ?
+      select * from host_enrollments where owner_actor_id = ? and approval_requested_at is null
       order by last_seen_at desc, enrollment_id limit 1
     `).bind(who.actorId).first<EnrollmentRow>()
     if (!row) return { active: false, reason: "not-enrolled" }
@@ -633,7 +596,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
   async listHostEnrollments(auth: SignedControlPlaneAuth): Promise<HostEnrollmentListRow[]> {
     const who = await this.requirePrincipal(auth)
     const rows = await this.database.prepare(`
-      select * from host_enrollments where owner_actor_id = ? and revoked_at is null
+      select * from host_enrollments where owner_actor_id = ? and revoked_at is null and approval_requested_at is null
       order by last_seen_at desc, enrollment_id
     `).bind(who.actorId).all<EnrollmentRow>()
     const ready = await this.database.prepare(`

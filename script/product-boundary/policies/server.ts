@@ -316,7 +316,21 @@ export const serverWorkerd: Policy = {
   // own and read only for the workspace owner's connection
   // (`authority/adapters/d1/host-direct-routes.ts`). It adds no package edge.
   // 192/23, no headroom.
-  ceilings: { modules: 192, packages: 23 },
+  // +7 modules (owner: machine pairing): a machine connects through a short
+  // code its owner mints in the app and then approves. The code's
+  // redemption, the waiting enrollment and the owner's answer
+  // (`authority/adapters/d1/host-pairing-authority.ts`) over the pairing
+  // rows and the stage they show (`authority/adapters/d1/host-pairing-records.ts`);
+  // the machine-request verifier's D1 reads, split out of the host access
+  // authority so a waiting machine's own pairing read can admit it
+  // (`authority/adapters/d1/host-machine-auth.ts`); the pairing routes
+  // (`routes/hosted/host-pairing.ts`) and the request handling they share with
+  // the enrollment routes (`routes/hosted/host-route-support.ts`); and the
+  // connect scripts the app's command fetches (`routes/hosted/connect-scripts.ts`
+  // over the generated `routes/hosted/connect-installers.generated.ts`). It
+  // adds no package edge.
+  // 199/23, no headroom.
+  ceilings: { modules: 199, packages: 23 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

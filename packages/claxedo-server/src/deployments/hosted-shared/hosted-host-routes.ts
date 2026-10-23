@@ -5,7 +5,9 @@ import type { HostedControlPlane } from "../../authority/hosted-services"
 import { ownerDirectDelivery, PI_DIRECT_PROVIDERS } from "../../credentials/direct-rows"
 import type { MachineProviderConfig } from "../../credentials/machine-provider-config"
 import { liveSyncRoomNameForPrincipal, nudgeLiveSyncRoom, type LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
+import { ConnectScriptRoutes } from "../../routes/hosted/connect-scripts"
 import { HostEnrollmentRoutes, HostInvitationRoutes } from "../../routes/hosted/host-enrollment"
+import { HostPairingRoutes } from "../../routes/hosted/host-pairing"
 import { HostSessionRowsRoutes } from "../../routes/hosted/host-session-rows"
 import type { HostedWorkspaceRouteOptions } from "../../routes/hosted/workspace"
 import { RemoteAccessOwnerRoutes } from "../../routes/remote-access"
@@ -16,8 +18,9 @@ import { hostedRemoteAccessService } from "./hosted-remote-access-service"
 
 /**
  * The routes a machine is connected through: its owner's enrollment and the
- * machine's own beat, the session rows it publishes, the owner's invitations,
- * and remote access.
+ * machine's own beat, the session rows it publishes, the owner's invitations
+ * and pairings, the connect scripts a pairing's command fetches, and remote
+ * access.
  */
 export function mountHostedHostRoutes(app: Hono, input: {
   plane: HostedControlPlane
@@ -52,10 +55,10 @@ export function mountHostedHostRoutes(app: Hono, input: {
         }
       : {}),
   }))
-  app.route("/api/claxedo/host/invitations", HostInvitationRoutes(services, {
-    ...workspaceOptions,
-    controlPlaneOrigin: authentication.descriptor.native.cli.controlPlaneOrigin,
-  }))
+  const controlPlaneOrigin = authentication.descriptor.native.cli.controlPlaneOrigin
+  app.route("/api/claxedo/host/invitations", HostInvitationRoutes(services, { ...workspaceOptions, controlPlaneOrigin }))
+  app.route("/api/claxedo/host/pairings", HostPairingRoutes(services, { ...workspaceOptions, controlPlaneOrigin }))
+  app.route("/api/claxedo", ConnectScriptRoutes(controlPlaneOrigin))
   app.route("/api/claxedo/remote-access", RemoteAccessOwnerRoutes({
     deviceLoginConfigured: true,
     relayConfigured: !!services.relay.provider,

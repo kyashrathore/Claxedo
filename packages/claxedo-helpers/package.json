@@ -109,6 +109,13 @@
       "import": "./dist/claxedo-daemon.mjs",
       "default": "./dist/claxedo-daemon.mjs"
     },
+    "./shell": {
+      "development": "./src/shell.ts",
+      "bun": "./src/shell.ts",
+      "types": "./dist/shell.d.ts",
+      "import": "./dist/shell.mjs",
+      "default": "./dist/shell.mjs"
+    },
     "./sse": {
       "development": "./src/sse.ts",
       "bun": "./src/sse.ts",

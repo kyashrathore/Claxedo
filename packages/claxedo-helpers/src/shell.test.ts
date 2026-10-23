@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { shellQuote } from "./shell"
+import { powershellQuote, shellQuote } from "./shell"
 
 describe("shellQuote", () => {
   test("the shell reads back exactly what went in", async () => {
@@ -15,5 +15,12 @@ describe("shellQuote", () => {
       stdout: "pipe",
     })
     expect(await new Response(proc.stdout).text()).toBe(value)
+  })
+})
+
+describe("powershellQuote", () => {
+  test("quotes are doubled and nothing else changes", () => {
+    expect(powershellQuote("C:\\Users\\it's $env:HOME")).toBe("'C:\\Users\\it''s $env:HOME'")
+    expect(powershellQuote("")).toBe("''")
   })
 })

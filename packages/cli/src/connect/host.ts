@@ -1,6 +1,6 @@
 import fs from "node:fs/promises"
 import path from "node:path"
-import { createHostConnector, type AssignmentDescription, type HostEndpoints } from "@claxedo/host-connector/connector"
+import { createHostConnector, type AssignmentDescription, type HostEndpoints, type OwnerHold } from "@claxedo/host-connector/connector"
 import { DECISION_EXIT_CODE, DECISION_STATUSES, HostConnectDecisionError } from "@claxedo/host-connector/bootstrap"
 import { hostKeyPairFromJwk } from "@claxedo/host-connector/host-identity"
 import { hostPathWithinRoots } from "@claxedo/account-contract/host-path"
@@ -172,6 +172,17 @@ async function drainWithin(drain: Promise<void>, deps: Pick<HostDeps, "setTimeou
   } finally {
     timer?.cancel()
   }
+}
+
+/** The owner's answers a machine exits on, in the words a person reads in the machine's terminal. */
+const OWNER_DECISIONS: Readonly<Record<string, string>> = {
+  enrollment_denied: "The owner denied this machine in Claxedo.",
+  enrollment_approval_expired: "No one approved this machine within 15 minutes; run the connect command again.",
+}
+
+function ownerDecisionLine(error: unknown) {
+  const code = decisionCode(error)
+  return code ? OWNER_DECISIONS[code] : undefined
 }
 
 /** The heartbeat ack's `hostTunnel` verbatim from the control plane, or nothing serveable. */
@@ -432,6 +443,8 @@ export async function runHost(input: HostRunInput): Promise<number> {
   }
 
   let decided: ((code: number) => void) | undefined
+  let heldBy: OwnerHold | undefined
+  let refusal: string | undefined
   const decision = new Promise<number>((resolve) => {
     decided = resolve
   })
@@ -553,14 +566,20 @@ export async function runHost(input: HostRunInput): Promise<number> {
         },
       })
     },
-    onPaused: (paused) => {
-      direct?.withhold(paused)
-      if (!paused) return deps.log("resumed by the owner: serving again")
+    onHeld: (hold) => {
+      direct?.withhold(hold !== undefined)
+      const released = heldBy
+      heldBy = hold
+      if (!hold) return deps.log(released === "awaiting_approval" ? "approved by the owner: serving" : "resumed by the owner: serving again")
+      if (hold === "awaiting_approval") {
+        return deps.log(`waiting for the owner to approve this machine${state.pairing ? `: ${state.pairing.approval_url}` : ""}`)
+      }
       deps.log("paused by the owner: serving nothing until the owner resumes this machine")
       const run = state.run ?? { pid: deps.pid, started_at: startedAt, generation: connector.generation() ?? 0 }
       void persist({ ...state, run: { ...run, paused_at: deps.now() } })
     },
     onError: (stage, error) => {
+      refusal = ownerDecisionLine(error) ?? refusal
       deps.log(`${stage} failed: ${errorMessage(error)}`)
       if (stage !== "heartbeat") return
       void persist({ ...state, ...(state.run ? { run: { ...state.run, last_beat_error: errorMessage(error) } } : {}) })
@@ -568,7 +587,7 @@ export async function runHost(input: HostRunInput): Promise<number> {
       queueMicrotask(() => {
         const current = connector.state()
         if (current.status === "stopped" && current.reason === "revoked") {
-          deps.log(`the control plane no longer accepts this machine (${decisionCode(error) ?? current.detail})`)
+          deps.log(ownerDecisionLine(error) ?? `the control plane no longer accepts this machine (${decisionCode(error) ?? current.detail})`)
           decided?.(DECISION_EXIT_CODE)
         }
       })
@@ -602,7 +621,7 @@ export async function runHost(input: HostRunInput): Promise<number> {
     const started = await Promise.race([starting, stopSignal])
     if (typeof started === "number") code = started
     else if (started.status === "stopped") {
-      deps.log(`the control plane refused this machine: ${started.detail}`)
+      deps.log(refusal ?? `the control plane refused this machine: ${started.detail}`)
       code = DECISION_EXIT_CODE
     } else {
       deps.log(`serving as ${enrollment.enrollment_id} (generation ${connector.generation()})`)

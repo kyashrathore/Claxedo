@@ -22,7 +22,7 @@ export type HostEventsOptions = MachineCallerBudgets & {
 
 export function machineEventsHandler(services: ControlPlaneServices, options: HostEventsOptions) {
   return async (c: Context) => {
-    const admitted = await admitMachineCaller(c, services, options, "host.enrollments.events", { admitPaused: true })
+    const admitted = await admitMachineCaller(c, services, options, "host.enrollments.events", { admitHeld: true })
     if (admitted instanceof Response) return admitted
     const room = options.liveSyncRoom
     if (!room) {

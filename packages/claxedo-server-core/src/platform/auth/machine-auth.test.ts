@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, test } from "vitest"
 import { base64UrlEncode, sha256Hex } from "@claxedo/helpers/crypto"
 import { MACHINE_NONCE_TTL_MS, MACHINE_REQUEST_SKEW_MS } from "./host-connect-contract"
-import { MACHINE_REQUEST_HEADERS, machineRequestPayload } from "@claxedo/account-contract/machine"
+import { MACHINE_REQUEST_HEADERS, PAIRING_TTL_MS, machineRequestPayload } from "@claxedo/account-contract/machine"
 import type { MachineEnrollmentRow } from "./host-connect-contract"
 import { type MachineAuthDeps, type MachineRequest, verifyMachineRequest } from "./machine-auth"
 
@@ -45,7 +45,9 @@ function row(overrides: Partial<MachineEnrollmentRow> = {}): MachineEnrollmentRo
     key_version: 1,
     serving_generation: 3,
     revoked_at: null,
+    revoked_reason: null,
     paused_at: null,
+    approval_requested_at: null,
     scope: { revision: 2, allowed_roots: ["/srv"] },
     ownerEligible: true,
     ...overrides,
@@ -278,7 +280,10 @@ describe("verifyMachineRequest", () => {
   describe("eligibility → 403, only once the signature verified", () => {
     const cases: Array<[string, Partial<MachineEnrollmentRow>, string]> = [
       ["revoked", { revoked_at: NOW - 1 }, "enrollment_revoked"],
+      ["denied by the owner", { revoked_at: NOW - 1, revoked_reason: "denied" }, "enrollment_denied"],
       ["paused", { paused_at: NOW - 1 }, "enrollment_paused"],
+      ["waiting for the owner's approval", { approval_requested_at: NOW - 1 }, "enrollment_awaiting_approval"],
+      ["unanswered for the whole wait", { approval_requested_at: NOW - PAIRING_TTL_MS - 1 }, "enrollment_approval_expired"],
       ["suspended owner", { ownerEligible: false }, "enrollment_owner_ineligible"],
     ]
     for (const [name, overrides, code] of cases) {
@@ -294,11 +299,15 @@ describe("verifyMachineRequest", () => {
       expect(await verifyMachineRequest(await signedRequest({}), d.deps)).toMatchObject({ code: "enrollment_revoked" })
     })
 
-    test("the doorbell's admission lets a paused machine in, and nothing past it: a revoked one is still refused", async () => {
+    test("the doorbell's admission lets a paused or waiting machine in, and nothing past it: a revoked or expired one is still refused", async () => {
       const paused = deps({ row: row({ paused_at: NOW - 1 }) })
-      expect(await verifyMachineRequest(await signedRequest({}), paused.deps, { admitPaused: true })).toMatchObject({ ok: true })
+      expect(await verifyMachineRequest(await signedRequest({}), paused.deps, { admitHeld: true })).toMatchObject({ ok: true })
+      const waiting = deps({ row: row({ approval_requested_at: NOW - 1 }) })
+      expect(await verifyMachineRequest(await signedRequest({}), waiting.deps, { admitHeld: true })).toMatchObject({ ok: true })
+      const expired = deps({ row: row({ approval_requested_at: NOW - PAIRING_TTL_MS - 1 }) })
+      expect(await verifyMachineRequest(await signedRequest({}), expired.deps, { admitHeld: true })).toMatchObject({ code: "enrollment_approval_expired" })
       const revoked = deps({ row: row({ revoked_at: NOW - 1, paused_at: NOW - 1 }) })
-      expect(await verifyMachineRequest(await signedRequest({}), revoked.deps, { admitPaused: true })).toMatchObject({ code: "enrollment_revoked" })
+      expect(await verifyMachineRequest(await signedRequest({}), revoked.deps, { admitHeld: true })).toMatchObject({ code: "enrollment_revoked" })
     })
   })
 

@@ -38,7 +38,7 @@ export async function listHostDevices(database: D1Database, deploymentId: string
     from host_enrollments enrollment
     left join host_workspace_assignments assignment on assignment.host_id = enrollment.host_id
       and assignment.owner_actor_id = enrollment.owner_actor_id
-    where enrollment.owner_actor_id = ? and enrollment.revoked_at is null
+    where enrollment.owner_actor_id = ? and enrollment.revoked_at is null and enrollment.approval_requested_at is null
     order by enrollment.last_seen_at desc, enrollment.enrollment_id, assignment.workspace_id
   `).bind(who.actorId).all<DeviceRow>()])
   const devices = new Map<string, HostDevice>()

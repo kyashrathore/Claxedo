@@ -1,5 +1,6 @@
 import path from "node:path"
 import type { ServiceDeps, ServiceUnitOptions } from "./service"
+import { powershellQuote } from "@claxedo/helpers/shell"
 
 export const WINDOWS_TASK = "ClaxedoConnect"
 
@@ -18,10 +19,6 @@ export function windowsScriptPath(deps: Pick<ServiceDeps, "homedir" | "env">) {
 
 export function windowsTaskXmlPath(deps: Pick<ServiceDeps, "homedir" | "env">) {
   return path.win32.join(windowsServiceDir(deps), "claxedo-connect.xml")
-}
-
-function powershellQuoted(value: string) {
-  return `'${value.replaceAll("'", "''")}'`
 }
 
 /**
@@ -43,9 +40,9 @@ export function windowsWrapperScript(
   const log = path.win32.join(windowsServiceDir(deps), "claxedo-connect.log")
   return [
     `$ErrorActionPreference = 'Continue'`,
-    ...(deps.claxedoHome ? [`$env:CLAXEDO_HOME = ${powershellQuoted(deps.claxedoHome)}`] : []),
+    ...(deps.claxedoHome ? [`$env:CLAXEDO_HOME = ${powershellQuote(deps.claxedoHome)}`] : []),
     `while ($true) {`,
-    `  & ${connect.map(powershellQuoted).join(" ")} 2>&1 | ForEach-Object { $_.ToString() } | Out-File -Append -Encoding utf8 ${powershellQuoted(log)}`,
+    `  & ${connect.map(powershellQuote).join(" ")} 2>&1 | ForEach-Object { $_.ToString() } | Out-File -Append -Encoding utf8 ${powershellQuote(log)}`,
     `  $code = $LASTEXITCODE`,
     `  if ($code -eq 78) { schtasks.exe /Change /TN ${WINDOWS_TASK} /Disable | Out-Null; exit 78 }`,
     `  if ($code -eq 0) { exit 0 }`,

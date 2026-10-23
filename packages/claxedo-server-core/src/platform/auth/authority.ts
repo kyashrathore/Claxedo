@@ -1,5 +1,5 @@
 import type { HostDevice } from "./host-devices"
-import type { HostDirectRoutes, HostEnrollment, HostEnrollmentListRow, HostEnrollmentState, HostInvitationCreateInput, HostInvitationCreateResult, HostInvitationRedeemInput, HostInvitationRedeemResult, HostInvitationRow, HostMachineHeartbeatInput, HostMachineHeartbeatResult, HostProviderConfigPushInput, HostProviderConfigTarget, HostScopeDefinition, HostScopeUpdateResult, HostSessionAuthority, MachineAuthAdapter, MachinePrincipal } from "./host-connect-contract"
+import type { HostDirectRoutes, HostEnrollment, HostEnrollmentListRow, HostEnrollmentState, HostInvitationCreateInput, HostInvitationCreateResult, HostInvitationRedeemInput, HostInvitationRedeemResult, HostInvitationRow, HostMachineHeartbeatInput, HostPairingCreateResult, HostPairingDecision, HostPairingFolderInput, HostPairingRedeemInput, HostPairingRedeemResult, HostPairingSelf, HostPairingView, HostMachineHeartbeatResult, HostProviderConfigPushInput, HostProviderConfigTarget, HostScopeDefinition, HostScopeUpdateResult, HostSessionAuthority, MachineAuthAdapter, MachinePrincipal } from "./host-connect-contract"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "./auth"
 import type { OrgId, ProjectId } from "./branded-id"
 import type { SandboxMachineClass } from "@claxedo/sandbox-contract"
@@ -368,6 +368,30 @@ export type WorkspaceAuthority = OrgAccessAuthority & SessionShareAuthority & Pa
   ) => Promise<{ revoked: boolean }>
   /** No caller auth: the single-use invitation secret is the credential. */
   redeemHostInvitation?: (args: HostInvitationRedeemInput) => Promise<HostInvitationRedeemResult>
+  /** A single-use pairing code for the caller, valid for `PAIRING_TTL_MS`; the response is the only place to read it. */
+  createHostPairing?: (auth: SignedControlPlaneAuth) => Promise<HostPairingCreateResult>
+  /** One pairing the caller minted, wherever it is. */
+  hostPairing?: (auth: SignedControlPlaneAuth, args: { pairingId: string }) => Promise<HostPairingView>
+  /** The caller's pairings a machine has redeemed that wait for an answer. */
+  listHostPairingRequests?: (auth: SignedControlPlaneAuth) => Promise<HostPairingView[]>
+  /** Signing out ends every code the caller minted that no machine has redeemed. */
+  cancelHostPairings?: (auth: SignedControlPlaneAuth) => Promise<{ cancelled: number }>
+  /** No caller auth: the code is the credential. What an installing machine reports before it can sign. */
+  recordHostPairingProgress?: (args: { code: string; hostname: string; os: string }) => Promise<{ pairingId: string; ownerUserId: string }>
+  /** No caller auth: the code is the credential. The enrollment it makes waits for the minting person's approval. */
+  redeemHostPairing?: (args: HostPairingRedeemInput) => Promise<HostPairingRedeemResult>
+  /** A machine already enrolled to the code's minting person asks to share another folder. */
+  requestHostPairingFolder?: (machine: MachinePrincipal, args: HostPairingFolderInput) => Promise<HostPairingSelf>
+  /** The latest pairing this machine redeemed or asked through, as the machine reads it while it waits. */
+  hostPairingSelf?: (machine: MachinePrincipal) => Promise<HostPairingSelf | undefined>
+  /** Minting person only. The route assigns the approved folder and records it with `recordHostPairingWorkspace`. */
+  approveHostPairing?: (
+    auth: SignedControlPlaneAuth,
+    args: HostPairingDecision,
+  ) => Promise<{ hostId: string; ownerUserId: string; folder: string; workspaceId: string | undefined }>
+  recordHostPairingWorkspace?: (auth: SignedControlPlaneAuth, args: { pairingId: string; workspaceId: string }) => Promise<HostPairingView>
+  /** Minting person only. A denied machine is revoked and told so on its next request. */
+  denyHostPairing?: (auth: SignedControlPlaneAuth, args: { pairingId: string }) => Promise<{ hostId: string; ownerUserId: string }>
   /**
    * Owner only. Assignments whose directory falls outside the new roots are
    * deleted and their workspaces retired in the same batch.

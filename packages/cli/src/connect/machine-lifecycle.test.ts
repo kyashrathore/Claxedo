@@ -26,6 +26,7 @@ import { createFakeSystemdUserManager, provision, type FakeServiceManager } from
 import { connectPaths, connectStateStore } from "./paths"
 import { relayStub, until, type RelayStub } from "./relay-stub.test-support"
 import { SYSTEMD_UNIT } from "./service"
+import { defaultPairingDeps } from "./pair"
 
 /**
  * The EC2 proof, on a machine this process owns: cloud-init writes the
@@ -140,6 +141,7 @@ async function machine(input: { linger: boolean }): Promise<Machine> {
     displayName: "ip-10-0-0-12",
     removeDir: (dir) => fs.rm(dir, { recursive: true, force: true }),
     desktopDaemon: () => desktopDaemonState({ files: desktopDaemonDiscoveryFiles({}, home) }),
+    pairing: defaultPairingDeps(),
   }
   return {
     home,
@@ -468,6 +470,7 @@ async function inProcessHost() {
     displayName: "build-box",
     removeDir: (dir) => fs.rm(dir, { recursive: true, force: true }),
     desktopDaemon: async () => ({ state: "absent" }) as const,
+    pairing: defaultPairingDeps(),
   }
   let running: Promise<number> | undefined
   const stateText = () => fs.readFile(connectPaths(home).stateFile, "utf8")

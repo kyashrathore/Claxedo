@@ -85,8 +85,11 @@ export type ConnectorOptions = MachineDirectoryScope & {
   /** Injected so a test does not wait, and so Electron can use its own timer. */
   setInterval: (fn: () => void, ms: number) => { cancel: () => void }
   onError?: (stage: ConnectorErrorStage, error: unknown) => void
-  /** True when a beat finds the owner paused this machine, false when a later beat finds it resumed; once per change. */
-  onPaused?: (paused: boolean) => void
+  /**
+   * The owner's hold when a request finds this machine paused or not yet
+   * approved, and undefined when a later beat finds it released; once per change.
+   */
+  onHeld?: (hold: OwnerHold | undefined) => void
   /**
    * The serving credential from the latest beat — one token whose claim is
    * exactly the workspaces this machine is currently routable for, or
@@ -195,9 +198,16 @@ export function transientHeartbeatFailure(error: unknown) {
   return !new Set([400, 401, 403, 404, 409, 410]).has(status)
 }
 
-/** The owner paused this machine: the one decision that same owner undoes from anywhere, so the connector waits it out. */
-export function pausedByOwner(error: unknown) {
-  return !!error && typeof error === "object" && "status" in error && error.status === 403 && "code" in error && error.code === "enrollment_paused"
+export type OwnerHold = "paused" | "awaiting_approval"
+
+/**
+ * The owner paused this machine, or has not yet approved it: the decisions
+ * that same owner undoes from anywhere, so the connector waits them out.
+ */
+export function ownerHold(error: unknown): OwnerHold | undefined {
+  if (!error || typeof error !== "object" || !("status" in error) || error.status !== 403 || !("code" in error)) return undefined
+  if (error.code === "enrollment_paused") return "paused"
+  return error.code === "enrollment_awaiting_approval" ? "awaiting_approval" : undefined
 }
 
 export function createHostConnector(options: ConnectorOptions) {
@@ -274,8 +284,8 @@ export function createHostConnector(options: ConnectorOptions) {
   let watch: { close: () => void } | undefined
   /** The control plane refused the doorbell (a paused machine may not hold one); the next good beat reopens it. */
   let watchRefused = false
-  /** Serving withdrawn because the owner paused the machine, until a beat succeeds again. */
-  let paused = false
+  /** Serving withdrawn because the owner holds the machine, until a beat succeeds again. */
+  let held: OwnerHold | undefined
   /** Ends a paused start's wait for its next acquire: true asks again now (the doorbell rang), false gives up (the connector stopped). */
   let settlePausedStart: ((askAgain: boolean) => void) | undefined
 
@@ -343,12 +353,13 @@ export function createHostConnector(options: ConnectorOptions) {
     // made from any device, is heard at the next beat. It is the owner's
     // choice, not a failure, so it is reported once rather than as every
     // refused beat.
-    if (pausedByOwner(error)) {
-      if (!paused) {
+    const hold = ownerHold(error)
+    if (hold) {
+      if (held !== hold) {
         options.onServing?.(undefined)
-        options.onPaused?.(true)
+        options.onHeld?.(hold)
       }
-      paused = true
+      held = hold
       return
     }
     options.onError?.("heartbeat", error)
@@ -540,9 +551,9 @@ export function createHostConnector(options: ConnectorOptions) {
         options.onError?.("reconcile", error)
       }
       if (startedIn !== era || draining) return state
-      if (paused) {
-        paused = false
-        options.onPaused?.(false)
+      if (held) {
+        held = undefined
+        options.onHeld?.(undefined)
       }
       if (watchRefused) openWatch()
       options.onServing?.(result.hostTunnel, result.ownerBrokerPass)
@@ -670,13 +681,15 @@ export function createHostConnector(options: ConnectorOptions) {
           break
         } catch (error) {
           // A machine that starts while its owner has it paused (a reboot, a
-          // restart, an upgrade) holds its doorbell, asks again when the
-          // resume rings it and each interval regardless, rather than exiting
-          // with a decision its service manager would never restart, which
-          // would make the pause permanent.
-          if (pausedByOwner(error) && state.status !== "stopped") {
-            if (!paused) options.onPaused?.(true)
-            paused = true
+          // restart, an upgrade), or before the owner approved it, holds its
+          // doorbell, asks again when the resume or approval rings it and each
+          // interval regardless, rather than exiting with a decision its
+          // service manager would never restart, which would make the hold
+          // permanent.
+          const hold = ownerHold(error)
+          if (hold && state.status !== "stopped") {
+            if (held !== hold) options.onHeld?.(hold)
+            held = hold
             if (!watch) openWatch()
             if (await untilNextAcquire()) continue
             return state

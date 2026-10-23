@@ -171,6 +171,47 @@ export const CORE_HOSTED_OPERATIONS = {
     output: object, retry: "never",
     exposure: { renderer: true, app: false },
   }),
+  "machines.pair": defineOperation({
+    method: "POST", path: operationPath("/api/claxedo/host/pairings"),
+    input: operationInput({}),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: false },
+    body: () => ({}),
+  }),
+  "machines.pairing": defineOperation({
+    method: "GET", path: operationPath("/api/claxedo/host/pairings/:pairingId"),
+    input: operationInput({ pairingId: requiredParameter }),
+    output: object, retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
+  "machines.requests": defineOperation({
+    method: "GET", path: operationPath("/api/claxedo/host/pairings"),
+    input: operationInput({}),
+    output: withArrays("requests"), retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
+  "machines.approve": defineOperation({
+    method: "POST", path: operationPath("/api/claxedo/host/pairings/:pairingId/approve"),
+    input: operationInput({ pairingId: requiredParameter, displayName: optionalParameter }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: false },
+    body: selectBody("displayName"),
+  }),
+  "machines.deny": defineOperation({
+    method: "POST", path: operationPath("/api/claxedo/host/pairings/:pairingId/deny"),
+    input: operationInput({ pairingId: requiredParameter }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: false },
+    body: () => ({}),
+  }),
+  // Run before a sign-out ends the session, so a pasted command whose code
+  // no machine redeemed yet answers that its person signed out.
+  "machines.cancelPairings": defineOperation({
+    method: "DELETE", path: operationPath("/api/claxedo/host/pairings"),
+    input: operationInput({}),
+    output: object, retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
   "workspace.list.provisioner": defineOperation({
     method: "GET", path: operationPath("/api/workspace?host=provisioner"),
     input: operationInput({}),

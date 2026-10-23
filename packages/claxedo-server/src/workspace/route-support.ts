@@ -290,6 +290,22 @@ export function configuredHostRelay(options: WorkspaceRouteOptions) {
   return { url, jwks_url: jwksUrl }
 }
 
+/** The relay and session authority a machine is told to use, beside its enrollment in every redeem answer. */
+export function machineHostEndpoints(options: WorkspaceRouteOptions) {
+  const relay = configuredHostRelay(options)
+  return {
+    ...(relay ? { relay } : {}),
+    ...(options.sessionAuthorityUrl || options.sessionRowsUrl
+      ? {
+          authority: {
+            ...(options.sessionAuthorityUrl ? { session_authority_url: options.sessionAuthorityUrl } : {}),
+            ...(options.sessionRowsUrl ? { session_rows_url: options.sessionRowsUrl } : {}),
+          },
+        }
+      : {}),
+  }
+}
+
 export function configuredRuntimeAccessTokenSigner(options: WorkspaceRouteOptions) {
   if (options.runtimeAccessTokenSigner) return options.runtimeAccessTokenSigner
   throw new ControlPlaneAuthError(

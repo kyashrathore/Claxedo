@@ -75,6 +75,12 @@ export type HostState = {
   control_plane_url: string
   /** Present from "key persisted" until "enrollment persisted + token removed". */
   bootstrap?: { invitation_id: string; token_file: string }
+  /**
+   * The pairing this machine was enrolled through, and where its owner
+   * answers it; kept after the approval so `claxedo status` and a second
+   * `connect --pair` know which request is theirs.
+   */
+  pairing?: { pairing_id: string; approval_url: string }
   enrollment?: {
     enrollment_id: string
     owner_display: string
@@ -397,6 +403,13 @@ export function parseHostState(text: string): HostState {
     state.bootstrap = {
       invitation_id: stateString(record.invitation_id, "bootstrap.invitation_id"),
       token_file: stateString(record.token_file, "bootstrap.token_file"),
+    }
+  }
+  if (value.pairing !== undefined) {
+    const record = stateRecord(value.pairing, "pairing")
+    state.pairing = {
+      pairing_id: stateString(record.pairing_id, "pairing.pairing_id"),
+      approval_url: canonicalFetchEndpointUrl(stateString(record.approval_url, "pairing.approval_url"), "pairing.approval_url"),
     }
   }
   if (value.enrollment !== undefined) {

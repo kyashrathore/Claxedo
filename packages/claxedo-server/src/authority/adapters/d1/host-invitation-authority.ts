@@ -19,10 +19,10 @@ import { D1HostAccessAuthorityError } from "./host-access-errors"
 import { randomBase64Url, storedKeyFingerprint, verifiedPublicKey, verifyHostSignature } from "./host-attestation-codec"
 import {
   DEFAULT_TTL_MS,
-  denied,
   enrollmentById,
   enrollmentJson,
   enrollmentOf,
+  invitationOrgIdFor,
   optionalText,
   requireText,
   type InvitationRow,
@@ -76,7 +76,7 @@ export class D1HostInvitationAuthority implements D1HostInvitationAuthorityPort 
     const who = await this.requirePrincipal(auth)
     const scope = requireScope(args.scope)
     const displayName = optionalText(args.displayName, "displayName", 200)
-    const orgId = await this.currentOrgId(who, auth)
+    const orgId = await invitationOrgIdFor(this.database, who, auth, this.options.resolveOrgId)
     const now = this.now()
     const expiresAt = now + invitationTtl(args.expiresInMs)
     const invitationId = this.randomId("invitation")
@@ -148,7 +148,7 @@ export class D1HostInvitationAuthority implements D1HostInvitationAuthorityPort 
     const secretHash = await sha256Hex(secret)
     // One answer for a wrong id and a wrong secret: the id is not secret, and
     // an answer that told them apart would confirm which ids exist.
-    if (!invitation || !timingSafeEqualStrings(invitation.secret_hash, secretHash)) {
+    if (!invitation || invitation.kind !== "preapproved" || !timingSafeEqualStrings(invitation.secret_hash, secretHash)) {
       throw new D1HostAccessAuthorityError("invitation_invalid", "Invitation is invalid")
     }
     const publicKey = await verifiedPublicKey(args.publicKey)
@@ -239,31 +239,6 @@ export class D1HostInvitationAuthority implements D1HostInvitationAuthorityPort 
   private async invitation(invitationId: string) {
     return await this.database.prepare(`select * from host_invitations where invitation_id = ?`)
       .bind(invitationId).first<InvitationRow>()
-  }
-
-  /**
-   * The caller's current organization: the token's org claim when it names
-   * one the caller is a live member or owner of, else the single organization
-   * the caller belongs to. Recorded on the invitation at creation and never
-   * inferred later.
-   */
-  private async currentOrgId(who: HumanPrincipal, auth: SignedControlPlaneAuth) {
-    const claimed = auth.user.orgId?.trim()
-    if (claimed) {
-      const member = await this.database.prepare(`
-        select 1 from orgs organization
-        left join org_memberships membership
-          on membership.org_id = organization.org_id and membership.user_id = ? and membership.revoked_at is null
-        where organization.org_id = ? and organization.deleted_at is null
-          and (organization.owner_user_id = ? or membership.user_id is not null)
-      `).bind(who.userId, claimed, who.userId).first()
-      if (!member) throw denied("Invitation organization is not one the caller belongs to")
-      return claimed
-    }
-    if (!this.options.resolveOrgId) {
-      throw new D1HostAccessAuthorityError("invalid_input", "Invitation organization resolution is unavailable")
-    }
-    return requireText(await this.options.resolveOrgId(auth), "orgId")
   }
 
   private async settledRedeem(

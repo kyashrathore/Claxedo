@@ -11,3 +11,12 @@
 export function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`
 }
+
+/**
+ * Wraps a value in single quotes for a PowerShell command line or script.
+ * Inside single quotes PowerShell expands nothing, and a quote is written by
+ * doubling it.
+ */
+export function powershellQuote(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`
+}

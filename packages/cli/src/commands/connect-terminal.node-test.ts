@@ -14,6 +14,7 @@ import type { HostDeps } from "../connect/host"
 import { connectPaths, connectStateStore, EXIT_TIMEOUT_S } from "../connect/paths"
 import { desktopDaemonDiscoveryFiles, desktopDaemonState } from "../connect/desktop-daemon"
 import { connect, type ConnectDeps } from "./connect"
+import { defaultPairingDeps } from "../connect/pair"
 
 /**
  * Real terminals behave only under Node: under Bun a PTY's shell answers one
@@ -58,6 +59,7 @@ void test("a SIGTERM with a terminal still open retires it, so the process can e
     displayName: "build-box",
     removeDir: (dir) => fs.rm(dir, { recursive: true, force: true }),
     desktopDaemon: () => desktopDaemonState({ files: desktopDaemonDiscoveryFiles({}, home) }),
+    pairing: defaultPairingDeps(),
   }
   const invitation = await cp.createInvitation({ displayName: "build-box", scope: { allowed_roots: [home] } })
   const tokenFile = path.join(home, "invite.txt")

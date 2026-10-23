@@ -605,6 +605,21 @@ describe("resolve", () => {
     }
   })
 
+  test("mints, follows and answers a pairing by its id, and cancels every unredeemed code at sign-out", () => {
+    expect(CORE.resolve("machines.pair")).toEqual({ method: "POST", path: "/api/claxedo/host/pairings", body: {} })
+    expect(CORE.resolve("machines.pairing", { pairingId: "invitation_1" })).toEqual({ method: "GET", path: "/api/claxedo/host/pairings/invitation_1" })
+    expect(CORE.resolve("machines.requests")).toEqual({ method: "GET", path: "/api/claxedo/host/pairings" })
+    expect(CORE.resolve("machines.approve", { pairingId: "invitation_1", displayName: "Build box" })).toEqual({
+      method: "POST", path: "/api/claxedo/host/pairings/invitation_1/approve", body: { displayName: "Build box" },
+    })
+    expect(CORE.resolve("machines.approve", { pairingId: "invitation_1" })).toEqual({ method: "POST", path: "/api/claxedo/host/pairings/invitation_1/approve", body: {} })
+    expect(CORE.resolve("machines.deny", { pairingId: "invitation_1" })).toEqual({ method: "POST", path: "/api/claxedo/host/pairings/invitation_1/deny", body: {} })
+    expect(CORE.resolve("machines.cancelPairings")).toEqual({ method: "DELETE", path: "/api/claxedo/host/pairings" })
+    for (const name of ["machines.pairing", "machines.approve", "machines.deny"] as const) {
+      expect(() => CORE.resolve(name, {}), name).toThrow(MissingOperationParameter)
+    }
+  })
+
   test("omits a body entirely for operations that take none", () => {
     expect(CORE.resolve("account.mode")).toEqual({ method: "GET", path: "/api/claxedo/mode" })
   })
