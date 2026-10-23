@@ -79,3 +79,24 @@ function unquote(value: string) {
     || (value.startsWith("'") && value.endsWith("'"))
   return quoted && value.length >= 2 ? value.slice(1, -1) : value
 }
+
+/** Loopback bypasses any proxy, for main's own requests and for the server child that inherits this environment. */
+export function ensureLoopbackNoProxy(env: NodeJS.ProcessEnv = process.env) {
+  const loopback = ["127.0.0.1", "localhost", "::1"]
+  const upsert = (key: string) => {
+    const items = (env[key] ?? "")
+      .split(",")
+      .map((value: string) => value.trim())
+      .filter((value: string) => Boolean(value))
+
+    for (const host of loopback) {
+      if (items.some((value: string) => value.toLowerCase() === host)) continue
+      items.push(host)
+    }
+
+    env[key] = items.join(",")
+  }
+
+  upsert("NO_PROXY")
+  upsert("no_proxy")
+}

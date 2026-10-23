@@ -226,6 +226,17 @@ const api: ElectronAPI = {
       return () => ipcRenderer.removeListener("claxedo.account.stream.error", handler)
     },
   },
+  sshConnect: {
+    check: (target) => invoke("claxedo.sshConnect.check", target),
+    trust: (input) => invoke("claxedo.sshConnect.trust", input),
+    install: (input) => invoke("claxedo.sshConnect.install", input),
+    cancel: (input) => invoke("claxedo.sshConnect.cancel", input),
+    onStep: (listener) => {
+      const handler = (_event: unknown, step: unknown) => listener(step)
+      ipcRenderer.on("claxedo.sshConnect.step", handler)
+      return () => ipcRenderer.removeListener("claxedo.sshConnect.step", handler)
+    },
+  },
 }
 
 contextBridge.exposeInMainWorld("api", api)

@@ -244,7 +244,15 @@ export const desktopMainComposition: Policy = {
   // hands out and echoes them, since main's fetch has no cookie jar; the
   // recovery contract package it reads the bookmark format from was already
   // an edge. 90/26, no headroom.
-  ceilings: { modules: 90, packages: 26 },
+  // +4 modules: `main/ssh-connect/ssh.ts`, `host-key.ts`, `install.ts` and
+  // `ipc.ts`, adding a machine over SSH from the desktop. Reviewed owner:
+  // Electron main, the only process that may run the person's own `ssh` and
+  // fetch the connect script from the account's control plane; the renderer
+  // names a fixed operation and the data the person typed. The script is
+  // fetched through `account/no-reuse-fetch.ts`, already in this closure, and
+  // the pairing code rule and script header are `@claxedo/account-contract`'s,
+  // already an edge, so no package edge. 94/26, no headroom.
+  ceilings: { modules: 94, packages: 26 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
