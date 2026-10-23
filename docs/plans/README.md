@@ -8,9 +8,14 @@ doc or package README that owns it.
   — planned, owner-approved direction. Direct routes with the relay as fallback, access checked on the machine
   with live revocation, one connection per workspace, owner accounts through the hosted broker (cloud machines) or
   the main machine's broker (LAN), then peer-to-peer and end-to-end encryption. Three owner decisions open.
+- [Connecting a machine: one paste, one click](./2026-10-23-002-feat-connect-a-machine-ux-plan.md)
+  — planned, not started. The app mints the one command a machine runs in the folder it should share, the person
+  approves the machine in the app, a connected machine creates projects (folder, clone, worktree) as this computer
+  does, and every failure shows in the app; Windows installer and SSH add included. Two owner decisions open.
 - [Remote machine connection](./2026-09-14-003-feat-connect-implementation-plan.md)
-  — P1–P3 shipped; P4–P6 (host folder operations, machine worktrees, the
-  remote access panel) are not started. Onboarding v2 records P4 as its gap.
+  — P1–P3 shipped; P4–P6 (the remote access panel, the composer's machine chips, unattended checkpointing) are not
+  started; host folder operations and machines in the create-project form moved to Connecting a machine (C5).
+  Onboarding v2 records P4 as its gap.
 - [Onboarding v2: project → AI → where it runs](./2026-09-15-001-feat-onboarding-v2-project-ai-execution.md)
   — built on `feat/onboarding-v2`, awaiting merge to `dev`.
 - [App rebuild: the first proof](./2026-09-24-001-refactor-app-rebuild-first-proof-plan.md)
