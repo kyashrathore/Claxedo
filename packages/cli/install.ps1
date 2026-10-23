@@ -113,6 +113,7 @@ function Install-Node {
     if ($actual -ne $expected) { Refuse "sha256 mismatch for ${file}: expected $expected, got $actual" }
     Expand-Archive -Path $zip -DestinationPath $temp
     if (Test-Path $NodeDir) { Remove-Item -Recurse -Force $NodeDir }
+    New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
     Move-Item -Path (Join-Path $temp ($file -replace "\.zip$", "")) -Destination $NodeDir
   } finally {
     Remove-Item -Recurse -Force $temp -ErrorAction SilentlyContinue
