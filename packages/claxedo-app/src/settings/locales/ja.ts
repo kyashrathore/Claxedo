@@ -77,8 +77,4 @@ export default {
   "settings.connections.replaceConfirm": "置き換え",
   "settings.connections.secretRequired": "接続する前に必要なシークレットを入力してください。",
   "settings.machines.yours": "あなたのマシン",
-  "settings.machines.step.here": "今使っているコンピューター",
-  "settings.machines.step.another": "所有している別のマシン",
-  "settings.machines.copyInvite": "招待コマンドをコピー",
-  "settings.machines.copyConnect": "接続コマンドをコピー",
 }

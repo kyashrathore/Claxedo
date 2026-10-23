@@ -239,9 +239,26 @@ export type HostChangedEvent = {
   ts: number
 } & D1Announced
 
+/**
+ * One of a person's machines, or a pairing they minted, moved: a code was
+ * redeemed or its install reported, an answer was given, the machine came
+ * online, went away or changed what it serves, or its owner paused, resumed,
+ * renamed or removed it. A doorbell: the owner's app re-reads its machines and
+ * the pairing it follows.
+ */
+export type MachineChangedEvent = {
+  type: "machine.changed"
+  /** The machine's owner, the one person the notice reaches. */
+  ownerUserId: string
+  hostId?: string
+  pairingId?: string
+  ts: number
+} & D1Announced
+
 export type ControlPlaneEvent =
   | ProvisionEvent
   | HostChangedEvent
+  | MachineChangedEvent
   | { type: "worktree.ready"; directory: string; name: string; branch: string }
   | { type: "worktree.failed"; directory: string; message: string }
   | DocumentChangedEvent

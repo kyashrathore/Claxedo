@@ -76,8 +76,4 @@ export default {
   "settings.connections.replaceConfirm": "Заменить",
   "settings.connections.secretRequired": "Перед подключением введите нужный секрет.",
   "settings.machines.yours": "Ваши машины",
-  "settings.machines.step.here": "Компьютер, за которым вы сидите",
-  "settings.machines.step.another": "Другая ваша машина",
-  "settings.machines.copyInvite": "Копировать команду приглашения",
-  "settings.machines.copyConnect": "Копировать команду подключения",
 }

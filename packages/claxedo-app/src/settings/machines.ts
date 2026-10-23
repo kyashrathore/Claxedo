@@ -148,24 +148,25 @@ export function createMachineCheck(api: Pick<MachinesApi, "recheck" | "probe">, 
 
 export type MachineAction = "pause" | "resume" | "remove"
 
-export type ActionState =
-  | { readonly kind: "idle" }
-  | { readonly kind: "working"; readonly action: MachineAction }
-  | { readonly kind: "done"; readonly action: Exclude<MachineAction, "remove"> }
-  | { readonly kind: "failed"; readonly action: MachineAction; readonly error: AppError }
+export type PairingAnswer = "approve" | "deny"
 
-export type ActionEvent =
-  | { readonly type: "started"; readonly action: MachineAction }
+export type ActionState<Action extends string = MachineAction> =
+  | { readonly kind: "idle" }
+  | { readonly kind: "working"; readonly action: Action }
+  | { readonly kind: "done"; readonly action: Action }
+  | { readonly kind: "failed"; readonly action: Action; readonly error: AppError }
+
+export type ActionEvent<Action extends string = MachineAction> =
+  | { readonly type: "started"; readonly action: Action }
   | { readonly type: "succeeded" }
   | { readonly type: "failed"; readonly error: AppError }
 
-export const actionTransition: Transition<ActionState, ActionEvent> = (state, event) => {
+export function actionTransition<Action extends string>(state: ActionState<Action>, event: ActionEvent<Action>): ActionState<Action> {
   switch (event.type) {
     case "started":
       return { kind: "working", action: event.action }
     case "succeeded":
-      if (state.kind !== "working") return state
-      return state.action === "remove" ? { kind: "idle" } : { kind: "done", action: state.action }
+      return state.kind === "working" ? { kind: "done", action: state.action } : state
     case "failed":
       return state.kind === "working" ? { kind: "failed", action: state.action, error: event.error } : state
     default:
@@ -173,58 +174,4 @@ export const actionTransition: Transition<ActionState, ActionEvent> = (state, ev
   }
 }
 
-export const machineActions = () => stateMachine<ActionState, ActionEvent>({ kind: "idle" }, actionTransition)
-
-export type ConnectWait =
-  | { readonly kind: "instructions" }
-  | { readonly kind: "checking"; readonly name: string }
-  | { readonly kind: "waiting"; readonly name: string }
-  | { readonly kind: "connected"; readonly machine: Machine }
-  | { readonly kind: "failed"; readonly name: string; readonly error: AppError }
-
-export type ConnectWaitEvent =
-  | { readonly type: "ranIt"; readonly name: string }
-  | { readonly type: "absent" }
-  | { readonly type: "appeared"; readonly machine: Machine }
-  | { readonly type: "failed"; readonly error: AppError }
-
-export const connectWaitTransition: Transition<ConnectWait, ConnectWaitEvent> = (state, event) => {
-  switch (event.type) {
-    case "ranIt":
-      return { kind: "checking", name: event.name }
-    case "absent":
-      return state.kind === "checking" ? { kind: "waiting", name: state.name } : state
-    case "appeared":
-      return state.kind === "checking" ? { kind: "connected", machine: event.machine } : state
-    case "failed":
-      return state.kind === "checking" ? { kind: "failed", name: state.name, error: event.error } : state
-    default:
-      return unreachable(event)
-  }
-}
-
-export function knownHostIds(listed: readonly Machine[] | undefined): ReadonlySet<string> | undefined {
-  return listed ? new Set(listed.flatMap((machine) => (machine.enrollment ? [machine.enrollment.hostId] : []))) : undefined
-}
-
-export function newMachine(listed: readonly Machine[], known: ReadonlySet<string> | undefined, name: string): Machine | undefined {
-  return listed.find((machine) => {
-    const hostId = machine.enrollment?.hostId
-    if (!hostId) return false
-    return known ? !known.has(hostId) : machine.name === name
-  })
-}
-
-export function createConnectWait(api: Pick<MachinesApi, "recheck">, known: ReadonlySet<string> | undefined) {
-  const wait = stateMachine<ConnectWait, ConnectWaitEvent>({ kind: "instructions" }, connectWaitTransition)
-  const check = async (name: string) => {
-    wait.send({ type: "ranIt", name })
-    try {
-      const found = newMachine(await api.recheck(), known, name)
-      wait.send(found ? { type: "appeared", machine: found } : { type: "absent" })
-    } catch (error) {
-      wait.send({ type: "failed", error: toAppError(error) })
-    }
-  }
-  return { state: wait.state, check: (name: string) => void check(name) }
-}
+export const machineActions = <Action extends string = MachineAction>() => stateMachine<ActionState<Action>, ActionEvent<Action>>({ kind: "idle" }, actionTransition)

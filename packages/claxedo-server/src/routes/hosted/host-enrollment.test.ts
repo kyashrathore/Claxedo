@@ -504,6 +504,24 @@ describe("POST /heartbeat, machine caller (v3)", () => {
     })
   })
 
+  test("tells the owner's app when a machine comes back or serves another set, says nothing when a beat changes neither, and on every acquire", async () => {
+    const key = await machineKey()
+    const served = (ackedWorkspaceIds: string[], leaseExpiresAt: number) => enrollmentRow(key, { served: { ackedWorkspaceIds, leaseExpiresAt } })
+    const told = async (row: MachineEnrollmentRow, path = "/heartbeat", body: unknown = beat()) => {
+      const machineChanged = vi.fn(async (_input: { ownerUserId: string; hostId?: string }) => undefined)
+      const { signedCall } = await mountedRoutes(machineAuthority(row), { machineChanged })
+      const response = await signedCall(key, path, body)
+      expect(response.status, await response.clone().text()).toBe(200)
+      return machineChanged.mock.calls.map(([input]) => input)
+    }
+    const owner = [{ ownerUserId: "usr_owner", hostId: "host_1" }]
+    expect(await told(served(["ws_1", "ws_2"], NOW + 30_000)), "the same set on a live lease").toEqual([])
+    expect(await told(served(["ws_1"], NOW + 30_000)), "a workspace became ready").toEqual(owner)
+    expect(await told(served(["ws_1", "ws_2"], NOW + 30_000), "/heartbeat", beat({ acks: [] })), "the machine withdrew what it served").toEqual(owner)
+    expect(await told(served(["ws_1", "ws_2"], NOW - 1)), "the lease had lapsed").toEqual(owner)
+    expect(await told(served(["ws_1", "ws_2"], NOW + 30_000), "/acquire", { enrollmentId: "enr_1", hostId: "host_1", keyVersion: 1 }), "a new serving generation").toEqual(owner)
+  })
+
   // The daemon that holds this credential declares the machine's identity to
   // its own clients, and a client compares it against the host a control-plane
   // workspace row names. The body states what the token already claims.

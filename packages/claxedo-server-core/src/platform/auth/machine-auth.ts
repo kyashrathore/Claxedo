@@ -132,6 +132,7 @@ export async function verifyMachineRequest(
       scope: row.scope,
       keyVersion: row.key_version,
       generation: row.serving_generation,
+      ...(row.served ? { served: row.served } : {}),
     },
   }
 }

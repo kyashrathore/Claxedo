@@ -10,7 +10,7 @@ import type { HarnessOptions } from "./harness-types"
 import type { ConnectionState, ServerEvent } from "./events"
 import type { AgentConnectionsApi, AgentConnectionsQueries } from "./agent-connections"
 import type { IntegrationQueries, IntegrationsApi } from "./integrations"
-import type { Machine } from "./machine-types"
+import type { Machine, Pairing } from "./machine-types"
 import type { MachinesApi } from "./machines"
 import type { ProviderConnectApi, ProviderConnectQueries } from "./provider-connect"
 import type { ProviderCatalogQueries, ProviderCatalogsApi } from "./provider-catalogs"
@@ -189,7 +189,11 @@ export type ServerQueries = {
     readonly list: () => FetchQuery<readonly Placement[]>
     readonly byProject: (projectId: ProjectId) => FetchQuery<readonly Placement[]>
   }
-  readonly machines: { readonly list: () => FetchQuery<readonly Machine[]> }
+  readonly machines: {
+    readonly list: () => FetchQuery<readonly Machine[]>
+    readonly pairing: (pairingId: string) => FetchQuery<Pairing>
+    readonly pairingRequests: () => FetchQuery<readonly Pairing[]>
+  }
   readonly organizations: {
     readonly signedIn: boolean
     readonly mine: () => FetchQuery<readonly OrgMembership[]>

@@ -323,6 +323,8 @@ export type WorkspaceAuthority = OrgAccessAuthority & SessionShareAuthority & Pa
   >
   /** The machine each of these workspaces is assigned to, with that machine's owner: whom a revocation rings. */
   machinesServingWorkspaces?: (workspaceIds: readonly string[]) => Promise<Array<{ hostId: string; ownerUserId: string }>>
+  /** The organizations a machine's owner belongs to, whose rooms their app may hold when one of their machines changes. */
+  machineOwnerOrgIds?: (ownerUserId: string) => Promise<string[]>
   /** Every unrevoked enrollment on the account, each with its state and its machine's assigned workspaces. */
   listHostDevices: (
     auth: SignedControlPlaneAuth,

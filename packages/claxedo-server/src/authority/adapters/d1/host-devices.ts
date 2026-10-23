@@ -16,7 +16,8 @@ export function stringList(value: unknown): string[] {
 }
 
 /** A stored JSON array of ids; a column that is not one contributes no ids. */
-function storedStringList(raw: string): string[] {
+export function storedStringList(raw: string | null): string[] {
+  if (raw === null) return []
   try {
     return stringList(parseJson(raw))
   } catch {

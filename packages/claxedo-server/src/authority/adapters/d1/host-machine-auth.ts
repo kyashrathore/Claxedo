@@ -2,6 +2,7 @@ import type { D1Database } from "@cloudflare/workers-types"
 import { hostEnrollmentScope, type MachineAuthAdapter } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { d1ConstraintFailure } from "../../../platform/db/d1-constraint"
 import type { EnrollmentRow } from "./host-enrollment-records"
+import { storedStringList } from "./host-devices"
 
 /**
  * What `verifyMachineRequest` reads about a machine in D1: the enrollment by
@@ -20,7 +21,7 @@ export function d1MachineAuth(database: D1Database): MachineAuthAdapter {
             and owner.state = 'active' and owner_actor.state = 'active'
         ) as owner_eligible
         from host_enrollments enrollment where enrollment.enrollment_id = ?
-      `).bind(enrollmentId).first<EnrollmentRow & { owner_eligible: number }>()
+      `).bind(enrollmentId).first<EnrollmentRow & { owner_eligible: number; acked_workspace_ids: string | null }>()
       if (!row) return undefined
       return {
         enrollment_id: row.enrollment_id,
@@ -35,6 +36,7 @@ export function d1MachineAuth(database: D1Database): MachineAuthAdapter {
         paused_at: row.paused_at,
         approval_requested_at: row.approval_requested_at,
         scope: hostEnrollmentScope(row.scope_json, row.scope_revision),
+        served: { ackedWorkspaceIds: storedStringList(row.acked_workspace_ids), leaseExpiresAt: row.expires_at },
         ownerEligible: row.owner_eligible === 1,
       }
     },

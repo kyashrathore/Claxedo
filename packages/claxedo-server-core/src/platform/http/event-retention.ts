@@ -36,17 +36,23 @@ export function isRetainedControlPlaneEvent(event: ControlPlaneEvent): boolean {
       return false
     case "provision":
       return event.step !== "starting"
+    case "machine.changed":
+      // Rung on every beat that changes what a machine serves; the doorbell
+      // names nothing a re-read does not, so the latest one is enough.
+      return false
     default:
       return false
   }
 }
 
 /**
- * A status notice states the whole status of one session for one reader, and
- * a reader notice all of one reader's marks on it, so a later one of the same
- * kind makes an earlier one moot: a replay sends the latest of each.
+ * A status notice states the whole status of one session for one reader, a
+ * reader notice all of one reader's marks on it, and a machine notice sends
+ * its owner's app to re-read every machine and pairing, so a later one of the
+ * same kind makes an earlier one moot: a replay sends the latest of each.
  */
 export function supersededControlPlaneEventKey(event: ControlPlaneEvent): string | undefined {
+  if (event.type === "machine.changed") return `${event.type}\u0000${event.ownerUserId}`
   if (event.type !== "session.status.changed" && event.type !== "session.reader.changed") return undefined
   return `${event.type}\u0000${event.ownerUserId}\u0000${event.sessionId}`
 }

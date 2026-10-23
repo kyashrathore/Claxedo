@@ -75,8 +75,4 @@ export default {
   "settings.connections.replaceConfirm": "Ersetzen",
   "settings.connections.secretRequired": "Gib vor dem Verbinden das erforderliche Geheimnis ein.",
   "settings.machines.yours": "Deine Maschinen",
-  "settings.machines.step.here": "Der Computer, an dem du sitzt",
-  "settings.machines.step.another": "Eine weitere Maschine, die dir gehört",
-  "settings.machines.copyInvite": "Einladungsbefehl kopieren",
-  "settings.machines.copyConnect": "Verbindungsbefehl kopieren",
 }

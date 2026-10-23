@@ -55,8 +55,32 @@ package is published.
 
 ## Connect a machine
 
-On a signed-in laptop (`claxedo login`), mint a single-use invitation scoped to
-the folders the machine may serve:
+In Claxedo, **Connect a machine…** shows one command with a pairing code in it.
+Run it on the machine, in the folder you want to share:
+
+```sh
+curl -fsSL https://app.claxedo.com/api/claxedo/connect | sh -s -- K7QM4PXD9R2TWB6HJ3NF
+```
+
+On Windows the drawer's Windows tab shows the PowerShell twin, which fetches
+`connect.ps1` instead. The script is `install.sh` (or `install.ps1`) served by
+the control plane with its own URL set inside, so a code is redeemed where it
+was minted. It reuses an installed `claxedo` the control plane accepts, else
+installs one as below, then runs `claxedo connect --pair <code>
+--install-service`. The machine waits for you to approve it in the app; the
+approval names it, makes the folder the command ran in its one root and shares
+that folder. A denial, or 15 minutes with no answer, ends the command with exit
+78 and one line saying why. The code is single use and lasts 15 minutes; signing
+out of the app cancels the codes no machine has used yet.
+
+Run the command again in another folder on a machine that is already connected
+and it asks you, in the app, to share that folder too; it never enrolls the
+machine twice. On a machine whose owner removed it, or that is connected to
+another control plane, it asks once before connecting again.
+
+For a machine with no one to approve from a browser at hand, mint a pre-approved
+invitation instead. On a signed-in laptop (`claxedo login`), mint a single-use
+invitation scoped to the folders the machine may serve:
 
 ```sh
 claxedo host invite --name build-box --root /srv/projects

@@ -53,8 +53,6 @@ const DEFAULT_CLIENT_LIMIT = 120
 export type HostPairingRouteOptions = WorkspaceRouteOptions & {
   /** The public origin the connect commands fetch their script from and a machine's approval link opens. */
   controlPlaneOrigin: string
-  /** Tells the minting person's app that a pairing moved, so an open drawer follows it. */
-  pairingChanged?: (input: { ownerUserId: string; pairingId: string }) => Promise<void>
   now?: () => number
   codeRateLimiter?: ConnectionRateLimiter
   mintRateLimiter?: ConnectionRateLimiter
@@ -85,7 +83,7 @@ export function HostPairingRoutes(services: ControlPlaneServices, options: HostP
   const budgets = { clientRateLimiter: clientLimiter, machineRateLimiter: limiter(options.machineRateLimiter, DEFAULT_ACCOUNT_LIMIT, DEFAULT_ACCOUNT_WINDOW_MS), now }
   const handle = signedAccountHandler(services, options)
   const budget = (key: string) => ({ limiter: accountLimiter, key: `host.pairings.${key}`, action: `host_pairing.${key}.denied` })
-  const changed = async (ownerUserId: string, pairingId: string) => { await options.pairingChanged?.({ ownerUserId, pairingId }) }
+  const changed = async (ownerUserId: string, pairingId: string) => { await options.machineChanged?.({ ownerUserId, pairingId }) }
 
   const byCode = <Schema extends z.ZodType<{ code: string }>>(schema: Schema, key: string, run: (body: z.infer<Schema>, authority: WorkspaceAuthority, c: Context) => Promise<Response>) =>
     async (c: Context) => {

@@ -106,6 +106,7 @@ export function AccountCard(props: { readonly anchor: () => HTMLElement | undefi
 function AccountMenu(props: { readonly anchor: () => HTMLElement | undefined; readonly view: () => AccountView }): JSX.Element {
   const t = useTranslator(railDictionary)
   const auth = useAuth()
+  const server = useServer()
   const routing = useShellRoute()
   const location = useLocation()
   const view = props.view
@@ -123,7 +124,8 @@ function AccountMenu(props: { readonly anchor: () => HTMLElement | undefined; re
   const signIn = () => void settle(auth.signIn({ redirectUrl: appUrl(location) }), t("rail.account.signInFailed"))
   const signOut = () => {
     setSigningOut(true)
-    void settle(auth.signOut(), t("rail.account.signOutFailed")).finally(() => setSigningOut(false))
+    const unusedCodes = settle(server.machines.cancelPairings(), t("rail.account.codesNotCancelled"))
+    void settle(unusedCodes.then(() => auth.signOut()), t("rail.account.signOutFailed")).finally(() => setSigningOut(false))
   }
   return (
     <DropdownMenu

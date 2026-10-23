@@ -135,6 +135,13 @@ const providerConfigBody = z
   .object({ providers: z.record(z.string().min(1).max(200), z.record(z.string(), z.unknown())) })
   .strict()
 
+/** A beat from a machine whose lease had lapsed, or that acks another set of workspaces than its last beat did. */
+function servingMoved(caller: MachinePrincipal, acks: readonly { workspaceId: string }[], now: number) {
+  if (!caller.served || caller.served.leaseExpiresAt <= now) return true
+  const acked = acks.map((ack) => ack.workspaceId).sort()
+  return acked.length !== caller.served.ackedWorkspaceIds.length || acked.some((workspaceId, index) => workspaceId !== caller.served?.ackedWorkspaceIds[index])
+}
+
 const acquireBody = z.object({ enrollmentId, hostId, keyVersion: z.number().int().min(1).optional() }).strict()
 
 const redeemBody = z
@@ -333,6 +340,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
       ...(body.providerConfigRevision === undefined ? {} : { providerConfigAckedRevision: body.providerConfigRevision }),
     })
     await authority.recordHostDirectRoutes?.(caller, body.directRoutes)
+    if (servingMoved(caller, body.acks, now())) await options.machineChanged?.({ ownerUserId: caller.ownerUserId, hostId: caller.hostId })
     // Exactly the set the batch just made ready: an ack at the assignment's
     // current revision. A stale ack renews the lease but earns no credential
     // for that workspace, the same answer every other routability reader gives.
@@ -419,6 +427,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
     .post("/acquire", tooLarge(MACHINE_BODY_LIMIT_BYTES), machine(acquireBody, async ({ machine: caller, authority }) => {
       if (!authority.acquireHostServingGeneration) throw unsupportedError("Serving generation acquisition")
       const result = await authority.acquireHostServingGeneration(caller)
+      await options.machineChanged?.({ ownerUserId: caller.ownerUserId, hostId: caller.hostId })
       return { generation: result.generation, generation_acquired_at: result.generation_acquired_at }
     }, "host.enrollments.acquire"))
     .post("/redeem", tooLarge(REDEEM_BODY_LIMIT_BYTES), async (c) => {

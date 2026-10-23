@@ -76,8 +76,4 @@ export default {
   "settings.connections.replaceConfirm": "Zamijeni",
   "settings.connections.secretRequired": "Unesite potrebnu tajnu prije povezivanja.",
   "settings.machines.yours": "Vaše mašine",
-  "settings.machines.step.here": "Računar za kojim sjedite",
-  "settings.machines.step.another": "Druga mašina koju posjedujete",
-  "settings.machines.copyInvite": "Kopiraj naredbu pozivnice",
-  "settings.machines.copyConnect": "Kopiraj naredbu povezivanja",
 }

@@ -8,6 +8,7 @@ import { settingsDictionary } from "../i18n"
 import { useConnectMachine } from "../connect-machine"
 import { MachineDetails } from "./machine-details"
 import { MachineDot, MachineStatus } from "./machine-status"
+import { PairingRequestCard } from "./pairing-request"
 import { SettingsEmpty, SettingsGroup, SettingsIntro, SettingsList, SettingsListSkeleton, SettingsRow } from "./section"
 
 function DetailsButton(props: { readonly name: string; readonly enrollment: MachineEnrollment }) {
@@ -50,6 +51,20 @@ function MachineList(props: { readonly machines: readonly Machine[]; readonly ac
   )
 }
 
+function PairingRequests() {
+  const t = useTranslator(settingsDictionary)
+  const server = useServer()
+  const requests = useQuery(() => server.queries.machines.pairingRequests())
+  const asking = () => (requests.data ?? []).flatMap((pairing) => (pairing.machine ? [{ pairing, machine: pairing.machine }] : []))
+  return (
+    <Show when={asking().length > 0}>
+      <SettingsGroup title={t("settings.machines.requests")}>
+        <For each={asking()}>{(request) => <PairingRequestCard pairing={request.pairing} machine={request.machine} />}</For>
+      </SettingsGroup>
+    </Show>
+  )
+}
+
 export function MachinesSection() {
   const t = useTranslator(settingsDictionary)
   const errorCopy = useErrorCopy("machines")
@@ -64,6 +79,7 @@ export function MachinesSection() {
   return (
     <div class="settings-body">
       <SettingsIntro description={t("settings.machines.description")} />
+      <PairingRequests />
       <SettingsGroup title={t("settings.machines.yours")} action={query.data && query.data.length > 0 ? action : undefined}>
         <Switch fallback={<SettingsListSkeleton />}>
           <Match when={query.data}>{(machines) => <MachineList machines={machines()} action={action} />}</Match>

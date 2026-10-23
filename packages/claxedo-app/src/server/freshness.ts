@@ -13,10 +13,12 @@ export type CacheName = Exclude<keyof typeof queryKeys, CachePrefix>
 const catalogEvents = ["projectChanged", "placementsChanged", "cloudWorkspaceChanged", "streamGap"] as const
 const placementEvents = ["placementsChanged", "cloudWorkspaceChanged", "streamGap"] as const
 const placementFileEvents = ["filesChanged", "statusChanged", "streamGap"] as const
+const machineEvents = ["placementsChanged", "cloudWorkspaceChanged", "streamGap", "machinesChanged"] as const
 
 const catalog: Freshness = { kind: "event-owned", events: catalogEvents }
 const placementOwned: Freshness = { kind: "event-owned", events: placementEvents }
 const fileOwned: Freshness = { kind: "event-owned", events: placementFileEvents }
+const machineOwned: Freshness = { kind: "event-owned", events: machineEvents }
 
 export const freshness = {
   bootstrap: catalog,
@@ -27,7 +29,9 @@ export const freshness = {
   projectEnvironment: catalog,
   placements: catalog,
   placementsOf: catalog,
-  machines: placementOwned,
+  machines: machineOwned,
+  pairing: machineOwned,
+  pairingRequests: machineOwned,
   organizations: { kind: "once", reason: "membership changes only through an invitation or an admin, neither of which this app does; the next sign-in reads it again" },
   organizationMembers: { kind: "once", reason: "read when the Organization section opens; membership changes happen elsewhere" },
   cloud: placementOwned,

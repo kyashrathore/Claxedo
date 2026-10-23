@@ -77,8 +77,4 @@ export default {
   "settings.connections.replaceConfirm": "바꾸기",
   "settings.connections.secretRequired": "연결하기 전에 필요한 비밀 값을 입력하세요.",
   "settings.machines.yours": "내 머신",
-  "settings.machines.step.here": "지금 사용 중인 컴퓨터",
-  "settings.machines.step.another": "소유한 다른 머신",
-  "settings.machines.copyInvite": "초대 명령 복사",
-  "settings.machines.copyConnect": "연결 명령 복사",
 }

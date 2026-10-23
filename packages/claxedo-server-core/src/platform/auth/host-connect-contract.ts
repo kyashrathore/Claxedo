@@ -115,7 +115,11 @@ export type MachinePrincipal = {
   scope: HostEnrollmentScope | undefined
   keyVersion: number
   generation: number
+  /** What the machine's last beat left: what a beat compares against to tell its owner's app that the machine came online or changed what it serves. */
+  served?: MachineServed
 }
+
+export type MachineServed = { ackedWorkspaceIds: readonly string[]; leaseExpiresAt: number }
 
 /** The enrollment as the verifier needs it, read once by `enrollment_id`. */
 export type MachineEnrollmentRow = {
@@ -134,6 +138,7 @@ export type MachineEnrollmentRow = {
   /** Set from a pairing's redeem until the owner approves it; the machine serves nothing meanwhile. */
   approval_requested_at: number | null
   scope: HostEnrollmentScope | undefined
+  served?: MachineServed
   /** Owner eligibility is adapter-specific (D1: user and actor `active`; SQLite: the users row exists), so the adapter answers it. */
   ownerEligible: boolean
 }
@@ -407,6 +412,8 @@ export type HostPairingProgress = { stage: "installing"; hostname: string; os: s
 export type HostPairingView = {
   pairing_id: string
   expires_at: number
+  /** When a machine redeemed the code: when it asked. */
+  asked_at?: number
   request: "machine" | "folder" | undefined
   stage: "waiting" | "installing" | "awaiting_approval" | "approved" | "connected" | "ready" | "denied" | "expired"
   progress?: HostPairingProgress

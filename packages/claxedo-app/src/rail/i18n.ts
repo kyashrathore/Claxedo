@@ -54,6 +54,7 @@ const en = {
   "rail.account.logout": "Log out",
   "rail.account.signInFailed": "Sign-in failed",
   "rail.account.signOutFailed": "Sign-out failed",
+  "rail.account.codesNotCancelled": "Your unused machine codes stay valid until they expire",
   "rail.account.signingOut": "Signing out…",
   "rail.copySessionLink": "Copy session link",
   "rail.copyDeepLink": "Copy deep link",

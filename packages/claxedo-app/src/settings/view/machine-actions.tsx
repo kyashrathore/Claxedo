@@ -30,7 +30,7 @@ function ActionNotice(props: { readonly state: ActionState; readonly name: strin
   const errorCopy = useErrorCopy("machines")
   return (
     <Switch>
-      <Match when={props.state.kind === "done" && props.state}>
+      <Match when={props.state.kind === "done" && props.state.action !== "remove" && props.state}>
         {(done) => <p class="settings-row-description" role="status">{t(done().action === "pause" ? "settings.machines.paused.notice" : "settings.machines.resumed.notice", { name: props.name })}</p>}
       </Match>
       <Match when={props.state.kind === "failed" && props.state}>

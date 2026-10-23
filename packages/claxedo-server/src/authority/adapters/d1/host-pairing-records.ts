@@ -132,6 +132,7 @@ export async function pairingView(database: D1Database, invitation: InvitationRo
   return {
     pairing_id: invitation.invitation_id,
     expires_at: invitation.redeemed_at === null ? invitation.expires_at : pairingAnswerDue(invitation),
+    ...(invitation.redeemed_at !== null ? { asked_at: invitation.redeemed_at } : {}),
     request: request?.request,
     stage: await pairingStage(database, invitation, enrollment, now),
     ...(progress ? { progress } : {}),

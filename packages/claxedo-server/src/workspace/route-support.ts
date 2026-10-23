@@ -58,6 +58,9 @@ export type RepositoryConnectionAccess =
 /** What a host route rings the owner's machine with: the host, and the person whose room holds its stream. */
 export type HostChangedInput = { ownerUserId: string; hostId: string }
 
+/** Whose app a machine notice reaches, and what moved: a machine, a pairing, or both. */
+export type MachineChangedInput = { ownerUserId: string; hostId?: string; pairingId?: string }
+
 export type WorkspaceRouteOptions = {
   authentication?: RequestAuthenticationAdapter
   /**
@@ -67,6 +70,12 @@ export type WorkspaceRouteOptions = {
    * delivery.
    */
   hostChanged?: (input: HostChangedInput) => Promise<void>
+  /**
+   * Tell the owner's app that one of their machines or pairings moved, so a
+   * list or a pairing it shows is read again. Absent on a plane with no app
+   * rooms, where the app's next read shows it.
+   */
+  machineChanged?: (input: MachineChangedInput) => Promise<void>
   authConfig?: ControlPlaneAuthConfig
   verifier?: ControlPlaneTokenVerifier
   cliTokenEnv?: Record<string, string | undefined>

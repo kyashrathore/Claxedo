@@ -43,7 +43,7 @@ async function setup() {
   const bob = await signed(workspace, "bob", "org_bob")
   await workspace.createHostedOrganization(alice, { name: "Acme", orgId: "org_acme" })
   await workspace.createHostedOrganization(bob, { name: "Bobco", orgId: "org_bob" })
-  return { database, hostAccess, pairings, invitations, alice, bob, advance: (ms: number) => { clock += ms } }
+  return { database, workspace, hostAccess, pairings, invitations, alice, bob, advance: (ms: number) => { clock += ms } }
 }
 
 type Input = Awaited<ReturnType<typeof setup>>
@@ -218,5 +218,14 @@ describe("machine pairing", () => {
       invitationId: minted.pairingId, secret: minted.code, hostId: "host_skip", publicKey: key.publicKey,
       signature: await key.sign(invitationRedeemPayload({ invitationId: minted.pairingId, hostId: "host_skip", publicKeySha256: key.fingerprint })),
     })).rejects.toMatchObject({ code: "invitation_invalid" })
+  })
+
+  test("a machine's owner is told of it in each organization they belong to, and in none they left", async () => {
+    const input = await setup()
+    const alice = input.alice.principal?.userId ?? ""
+    const personal = await input.database.prepare(`select org_id from orgs where owner_user_id = ? and kind = 'personal'`).bind(alice).first<{ org_id: string }>()
+    expect(await input.workspace.machineOwnerOrgIds(alice), "her personal organization and Acme").toEqual([personal?.org_id, "org_acme"].sort())
+    await input.database.prepare(`update org_memberships set revoked_at = 1 where user_id = ?`).bind(alice).run()
+    expect(await input.workspace.machineOwnerOrgIds(alice)).toEqual([])
   })
 })

@@ -40,6 +40,7 @@ export const D1_WORKSPACE_AUTHORITY_METHODS = [
   "deleteWorkspace",
   "setWorkspaceMachineClass",
   "machinesServingWorkspaces",
+  "machineOwnerOrgIds",
 ] as const satisfies readonly (keyof WorkspaceAuthority)[]
 
 export type D1WorkspaceAuthorityCore = Pick<WorkspaceAuthority, (typeof D1_WORKSPACE_AUTHORITY_METHODS)[number]>
@@ -487,6 +488,14 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       .bind(JSON.stringify([...new Set(workspaceIds)]))
       .all<{ host_id: string; owner_user_id: string }>()
     return rows.results.map((row) => ({ hostId: row.host_id, ownerUserId: row.owner_user_id }))
+  }
+
+  async machineOwnerOrgIds(ownerUserId: string) {
+    const rows = await this.database
+      .prepare("select org_id from org_memberships where user_id = ? and revoked_at is null order by org_id")
+      .bind(requireText(ownerUserId, "ownerUserId"))
+      .all<{ org_id: string }>()
+    return rows.results.map((row) => row.org_id)
   }
 
   private async deleteWorkspaceAs(who: Principal, args: { workspaceId: string }) {

@@ -25,3 +25,33 @@ export type MachineProbe =
   | { readonly kind: "unhealthy"; readonly status: string }
   | { readonly kind: "unreachable"; readonly error: AppError }
   | { readonly kind: "servesNothing" }
+
+export type PairingStage = "waiting" | "installing" | "awaitingApproval" | "approved" | "connected" | "ready" | "denied" | "expired"
+
+export type PairingFolderKind = "home" | "root" | "folder"
+
+export type PairingMachine = {
+  readonly hostname: string
+  readonly os: string
+  readonly arch: string
+  readonly folder: string
+  readonly folderKind: PairingFolderKind
+  readonly country?: string
+}
+
+export type Pairing = {
+  readonly id: string
+  readonly stage: PairingStage
+  readonly expiresAt: number
+  readonly askedAt?: number
+  readonly request?: "machine" | "folder"
+  readonly machine?: PairingMachine
+  readonly installingOn?: { readonly hostname: string; readonly os: string }
+  readonly hostId?: string
+  readonly name?: string
+  readonly workspaceId?: string
+}
+
+export type ConnectCommands = { readonly posix: string; readonly windows: string }
+
+export type MintedPairing = { readonly id: string; readonly code: string; readonly expiresAt: number; readonly commands: ConnectCommands }

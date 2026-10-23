@@ -77,8 +77,4 @@ export default {
   "settings.connections.replaceConfirm": "取代",
   "settings.connections.secretRequired": "連線前請輸入必要的密鑰。",
   "settings.machines.yours": "你的機器",
-  "settings.machines.step.here": "你正在使用的電腦",
-  "settings.machines.step.another": "你擁有的另一台機器",
-  "settings.machines.copyInvite": "複製邀請指令",
-  "settings.machines.copyConnect": "複製連線指令",
 }
