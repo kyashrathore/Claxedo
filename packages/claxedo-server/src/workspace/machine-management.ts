@@ -9,7 +9,8 @@ import {
 } from "@claxedo/server-core/platform/auth/host-management-grant"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { decodeApiError } from "@claxedo/helpers/api-error"
-import { readFiniteNumber, readRecord } from "@claxedo/helpers/readers"
+import { hostPathEqual } from "@claxedo/account-contract/host-path"
+import { readFiniteNumber, readRecord, readString } from "@claxedo/helpers/readers"
 import { safeRepoUrl } from "@claxedo/sandbox-contract"
 import type { ControlPlaneServices } from "../authority/services"
 import type { MachineRepositoryClone } from "../credentials/hosted-egress-broker"
@@ -30,12 +31,12 @@ export type ManagedMachine = {
   readonly name: string
   readonly roots: readonly string[]
   readonly servedWorkspaceIds: readonly string[]
+  readonly servedFolders: readonly string[]
 }
 
-function servedWorkspaceIds(row: HostEnrollmentListRow) {
+function servedAssignments(row: HostEnrollmentListRow) {
   return row.assignments
     .filter((assignment) => row.acked.some((ack) => ack.workspaceId === assignment.workspace_id && ack.revision === assignment.revision))
-    .map((assignment) => assignment.workspace_id)
 }
 
 /** The caller's own machine, live and serving a folder its operations can be reached through. */
@@ -46,9 +47,16 @@ export async function ownedMachine(services: ControlPlaneServices, auth: SignedC
   const name = row.display_name ?? row.host_id
   if (row.paused_at !== undefined) throw new MachineManagementError("machine_paused", 409, `${name} is paused`)
   if (row.expires_at <= now) throw new MachineManagementError("machine_offline", 409, `${name} is offline`)
-  const served = servedWorkspaceIds(row)
+  const served = servedAssignments(row)
   if (served.length === 0) throw new MachineManagementError("machine_serves_nothing", 409, `${name} serves no folder yet`)
-  return { enrollmentId, hostId: row.host_id, name, roots: row.scope?.allowed_roots ?? [], servedWorkspaceIds: served }
+  return {
+    enrollmentId,
+    hostId: row.host_id,
+    name,
+    roots: row.scope?.allowed_roots ?? [],
+    servedWorkspaceIds: served.map((assignment) => assignment.workspace_id),
+    servedFolders: served.flatMap((assignment) => assignment.remote_directory ? [assignment.remote_directory] : []),
+  }
 }
 
 export type MachineOperation = {
@@ -147,4 +155,39 @@ export async function cloneOntoMachine(
     await brokered?.spent()
   }
   return { repoUrl, directory: request.directory }
+}
+
+export type MachineWorktreeRequest = { repository: string; projectId: string; name?: string; baseRef?: string }
+
+/**
+ * A new git worktree of a folder the caller's machine serves, made by the
+ * machine under its own worktree root on a `claxedo/<name>` branch from
+ * `baseRef`, or from the folder's current commit. Answers where it is and
+ * its branch; the caller assigns it as a new workspace of the project.
+ */
+export async function worktreeOnMachine(
+  services: ControlPlaneServices,
+  env: Record<string, string | undefined>,
+  auth: SignedControlPlaneAuth,
+  machine: ManagedMachine,
+  request: MachineWorktreeRequest,
+): Promise<Record<string, unknown>> {
+  if (!machine.servedFolders.some((folder) => hostPathEqual(folder, request.repository))) {
+    throw new MachineManagementError("folder_not_served", 409, `${machine.name} does not serve ${request.repository}`)
+  }
+  const answer = await callMachine(services, env, auth, machine, {
+    operation: "worktree",
+    destination: request.repository,
+    body: {
+      repository: request.repository,
+      project: request.projectId,
+      ...(request.name ? { name: request.name } : {}),
+      ...(request.baseRef ? { baseRef: request.baseRef } : {}),
+    },
+  })
+  const directory = readString(answer, "directory")
+  const branch = readString(answer, "branch")
+  const name = readString(answer, "name")
+  if (!directory || !branch || !name) throw new MachineManagementError("machine_unreachable", 502, `${machine.name} did not name the worktree it made`)
+  return { directory, branch, name }
 }

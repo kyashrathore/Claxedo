@@ -39,7 +39,7 @@ import { createTerminalsApi } from "./terminals"
 import { createTransport, type Transport } from "./transport"
 import { createWorkspaces, type Workspaces } from "./workspaces"
 import { createWorkspaceWakes } from "./workspace-wakes"
-import { createWorktreeCreator } from "./worktrees"
+import { createWorktreeCreator, type MachineWorktrees } from "./worktrees"
 
 const QUERY_GC_TIME_MS = 10 * 60_000
 const QUERY_RETRY_LIMIT = 2
@@ -68,7 +68,7 @@ export type ServerHandle = Server & {
   readonly dispose: () => void
 }
 
-function placementsApi(transport: Transport, workspaces: Workspaces): PlacementsApi {
+function placementsApi(transport: Transport, workspaces: Workspaces, machines: MachineWorktrees): PlacementsApi {
   return {
     byId: workspaces.byId,
     list: workspaces.list,
@@ -78,7 +78,7 @@ function placementsApi(transport: Transport, workspaces: Workspaces): Placements
       await workspaces.load()
       return workspaces.list()
     },
-    createWorktree: createWorktreeCreator(transport, workspaces),
+    createWorktree: createWorktreeCreator(transport, workspaces, machines),
     locateSession: workspaces.locateSession,
     runtimeRoute: transport.runtimeRoute,
   }
@@ -90,15 +90,16 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
   const project = (id: ProjectId) => queryClient.fetchQuery(queries.projects.byId(id))
   const wakes = createWorkspaceWakes(transport, workspaces, events)
   const cloud = createCloudApi(transport, workspaces, wakes, project, account)
+  const machines = () => queryClient.fetchQuery(queries.machines.list())
   return {
     telemetry,
     sessions: createSessionsApi(transport, workspaces, status, coverage, wakes, projection, telemetry, account),
     sharedSessions: workspaces.shared,
     projects: {
-      ...createProjectsApi(transport, queryClient, workspaces, cloud.create, machineProjectCreator(account, workspaces, () => queryClient.fetchQuery(queries.machines.list()))),
+      ...createProjectsApi(transport, queryClient, workspaces, cloud.create, machineProjectCreator(account, workspaces, machines)),
       ...createProjectEnvironmentApi(transport, queryClient, workspaces, account),
     },
-    placements: placementsApi(transport, workspaces),
+    placements: placementsApi(transport, workspaces, { account, machines }),
     terminals: createTerminalsApi(transport, workspaces, telemetry, wakes),
     git: createGitApi(transport, workspaces, queryClient),
     cloud,

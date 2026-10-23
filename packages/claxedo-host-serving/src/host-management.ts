@@ -13,6 +13,7 @@ import {
 } from "@claxedo/server-core/platform/auth/host-management-grant"
 import { cloneInto, RepositoryCloneError } from "@claxedo/server-core/hosts/machine/clone"
 import { directoryEntries, searchFolders } from "@claxedo/server-core/hosts/machine/folders"
+import { addGitWorktree, nextWorktreeInfo, resolveWorktreeCheckout, WorktreeProvisionError } from "@claxedo/server-core/hosts/machine/worktree"
 import { readField, readFiniteNumber, readRecord, readString } from "@claxedo/helpers/readers"
 
 export type HostManagementOptions = {
@@ -148,6 +149,36 @@ async function cloneOutcome(request: CloneRequest): Promise<{ answer: Record<str
   return { answer: { directory: request.directory } }
 }
 
+type WorktreeRequest = { repository: string; project: string; name?: string; baseRef?: string }
+
+const PROJECT_ID = /^[A-Za-z0-9_-]{1,128}$/
+
+function worktreeRequest(body: unknown): WorktreeRequest | undefined {
+  const repository = nonBlankField(body, "repository")
+  const project = nonBlankField(body, "project")
+  if (!repository || !path.isAbsolute(repository) || !project || !PROJECT_ID.test(project)) return undefined
+  const name = nonBlankField(body, "name")
+  const baseRef = nonBlankField(body, "baseRef")
+  if ((readField(body, "name") !== undefined && !name) || (readField(body, "baseRef") !== undefined && !baseRef)) return undefined
+  return { repository, project, ...(name ? { name } : {}), ...(baseRef ? { baseRef } : {}) }
+}
+
+async function worktreeOutcome(request: WorktreeRequest): Promise<{ answer: Record<string, unknown> } | { refusal: Refusal }> {
+  if (!(await fs.stat(request.repository).then((stat) => stat.isDirectory(), () => false))) {
+    return { refusal: { status: 404, code: "folder_not_found", message: `${request.repository} is not a folder on this machine` } }
+  }
+  try {
+    const info = await nextWorktreeInfo(request.repository, request.project, request.name)
+    if (!info) return { refusal: { status: 409, code: "worktree_name_taken", message: "No free name for a new worktree of that folder" } }
+    const checkout = await resolveWorktreeCheckout(request.repository, { kind: "branch", branch: info.branch, ...(request.baseRef ? { baseRef: request.baseRef } : {}) })
+    await addGitWorktree(request.repository, info.directory, checkout)
+    return { answer: { directory: info.directory, branch: info.branch, name: info.name } }
+  } catch (error) {
+    if (error instanceof WorktreeProvisionError) return { refusal: { status: 400, code: "worktree_create_failed", message: error.detail || error.message } }
+    throw error
+  }
+}
+
 /** How often a long answer sends a blank while its outcome is still to come. */
 const LONG_ANSWER_BEAT_MS = 10_000
 
@@ -201,6 +232,12 @@ export function createHostManagement(options: HostManagementOptions): HostManage
     const refusal = await admit(c, "clone", request.directory)
     if (refusal) return answerRefusal(c, refusal)
     return answerWhenDone(() => cloneOutcome(request))
+  }).post(HOST_MANAGEMENT_ROUTES.worktree, async (c) => {
+    const request = worktreeRequest(await c.req.json().catch(() => undefined))
+    if (!request) return answerRefusal(c, { status: 400, code: "host_management_request_invalid", message: "Name the folder's full path and its project, with an optional name and base" })
+    const refusal = await admit(c, "worktree", request.repository)
+    if (refusal) return answerRefusal(c, refusal)
+    return answerWhenDone(() => worktreeOutcome(request))
   })
   return {
     contribution: {

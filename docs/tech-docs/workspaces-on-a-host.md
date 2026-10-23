@@ -242,6 +242,20 @@ reads a refusal there under its own status. Cloning runs `cloneInto`
 desktop's own project store clones with. The app then assigns the folder with
 `machines.assign`, carrying the repository URL.
 
+A new worktree on the machine (`machines.worktree`) takes the route with the
+`worktree` operation and the folder it branches from as its destination;
+`worktreeOnMachine` refuses a folder the machine does not serve. The machine
+names it with `nextWorktreeInfo` under `~/.claxedo/worktree/<project>` on a
+`claxedo/<name>` branch, resolves the base with `resolveWorktreeCheckout`, and
+adds it with `addGitWorktree`
+(`packages/claxedo-server-core/src/hosts/machine/worktree.ts`), the same code
+the desktop's worktree route runs. The app then assigns it with
+`machines.assign` naming the folder's project: a machine folder filed into a
+named project takes that project's repository key
+(`creationRepositoryKey` in
+`packages/claxedo-server/src/authority/adapters/d1/workspace-authority.ts`),
+since a worktree's directory names no repository of its own.
+
 ## B. The client sees the machine and its workspace
 
 **B.1 Boot and declaration** — the app learns which machine it is attached to

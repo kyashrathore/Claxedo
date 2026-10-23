@@ -363,6 +363,24 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
   }
 
   /**
+   * The repository a new workspace is filed under. A machine's folder the
+   * owner files into one of their projects is that project's repository,
+   * whatever its own directory: a worktree's folder names no repository of
+   * its own, and a key derived from it would match no project. Every other
+   * workspace is keyed by its repository URL, else its directory.
+   */
+  private async creationRepositoryKey(orgId: string, workspaceId: string, input: D1WorkspaceCreateArgs, remoteDirectory: string | null) {
+    if (input.backing === "local-worktree" && input.projectId) {
+      const named = await this.database
+        .prepare("select repo_key from projects where project_id = ? and org_id = ? and deleted_at is null")
+        .bind(input.projectId, orgId)
+        .first<{ repo_key: string }>()
+      if (named) return named.repo_key
+    }
+    return canonicalRepositoryKey({ repoUrl: input.repoUrl, remoteDirectory, workspaceId })
+  }
+
+  /**
    * A creation's admission and project, and its statements for a caller that
    * composes them into its own batch: the host assignment lands a cold
    * workspace and the assignment together, so a batch its guard refuses leaves
@@ -381,11 +399,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     }
     const homeRegion = validateHomeRegion(input.homeRegion)
     const remoteDirectory = input.remoteDirectory === undefined ? null : normalizeStoredDirectory(input.remoteDirectory)
-    const repoKey = canonicalRepositoryKey({
-      repoUrl: input.repoUrl,
-      remoteDirectory,
-      workspaceId,
-    })
+    const repoKey = await this.creationRepositoryKey(orgId, workspaceId, input, remoteDirectory)
     const existingProject = await this.database
       .prepare(
         `

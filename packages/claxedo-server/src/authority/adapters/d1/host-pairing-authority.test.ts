@@ -250,6 +250,22 @@ describe("a folder the owner picks on a paired machine", () => {
     expect((await input.hostAccess.listHostDevices(input.alice))[0]?.workspace_ids.sort()).toEqual([`ws_${minted.pairingId}`, "ws_notes"].sort())
   })
 
+  test("a worktree of a folder the machine serves, filed into that folder's project, becomes another workspace of it", async () => {
+    const input = await setup()
+    const minted = await input.pairings.createHostPairing(input.alice)
+    await redeem(input, minted.code, "host_tree")
+    await approve(input, minted.pairingId)
+    const folder = await input.database.prepare(`select project_id from workspaces where workspace_id = ?`).bind(`ws_${minted.pairingId}`).first<{ project_id: string }>()
+    const tree = "/home/ubuntu/.claxedo/worktree/prj/fix"
+    await addD1HostEnrollmentRoot(input.database, "deployment-a", input.alice, { hostId: "host_tree", folder: tree }, 1_800_000_000_000)
+    await input.hostAccess.assignWorkspaceHost(input.alice, {
+      workspaceId: "ws_tree", hostId: "host_tree", displayName: "fix", projectId: folder?.project_id ?? "", gitBranch: "claxedo/fix", remoteDirectory: tree,
+    })
+    expect(await input.database.prepare(`select project_id, git_branch, remote_directory from workspaces where workspace_id = 'ws_tree'`).first())
+      .toEqual({ project_id: folder?.project_id, git_branch: "claxedo/fix", remote_directory: tree })
+    expect((await input.database.prepare(`select count(*) as projects from projects`).first<{ projects: number }>())?.projects).toBe(1)
+  })
+
   test("is refused on another person's machine and on one still waiting for approval", async () => {
     const input = await setup()
     const minted = await input.pairings.createHostPairing(input.alice)

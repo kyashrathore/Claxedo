@@ -291,8 +291,18 @@ takes over [Remote machine connection](./2026-09-14-003-feat-connect-implementat
   stub GitHub (`hosted-egress-broker.test.ts`: fetch, refusal of push, other repositories, a superseded or paused
   machine, a gone connection, and the spent stand-in), and a real git clone through a loopback broker on the
   machine (`host-management.test.ts`).
-- [ ] **New worktree on <machine>.** The Where chip offers "New worktree on <name>" for a connected machine's folder,
-  with the base-branch choice it has locally, created on first send as local worktrees are. Progress:
+- [x] **New worktree on <machine>.** The Where chip offers "New worktree on <name>" for a connected machine's folder,
+  with the base-branch choice it has locally, created on first send as local worktrees are. Progress: done
+  2026-10-23 (lane C5). The Where chip offers it once per connected machine holding a checkout of the project (the
+  account catalog does not tell its folder from its worktrees). The base branch comes from that checkout's refs
+  through the relay. On the first send the app runs `machines.worktree`, and the machine makes it with the code
+  the desktop's worktree route runs, now in `claxedo-server-core/src/hosts/machine/worktree.ts`. Then
+  `machines.assign` files it into the folder's project on its branch, under the project's own repository key. Live:
+  `02-projects-machine` picks "New worktree on build-box" with base `release`, sends, and reads back the worktree's
+  commit on the machine, its catalog row in the folder's project on its branch, the machine's served set and the
+  draft's route `/w/<worktree>/session`, on web and phone; red with the machine's worktree route unmounted (502). The
+  first turn itself is not run there: the machine runtime has no scripted ACP connection ("Connection scripted-acp
+  is not configured on this runtime"), which is the harness on a connected machine, not this item.
 - [ ] **Where it runs.** Settings → Projects → Where it runs offers Open, and "Clone at this location" for a
   connected machine's folder that is gone, as it does for this computer's. Progress:
 - [ ] **Again in another folder.** Running the connect command in another folder on a machine that is already

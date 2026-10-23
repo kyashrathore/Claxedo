@@ -42,7 +42,7 @@ function routes(machines: HostEnrollmentListRow[], options: Record<string, unkno
   const app = HostMachineRoutes({ authority, relay: {} } as unknown as ControlPlaneServices, { authConfig, verifier, env: {}, now: () => NOW, ...options } as never)
   const post = (operation: string) => (enrollmentId: string, body: unknown, headers: Record<string, string> = { authorization: "Bearer user_ada" }) =>
     app.request(`http://control.test/${enrollmentId}/${operation}`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) })
-  return { authority, read: post("folders"), clone: post("clone") }
+  return { authority, read: post("folders"), clone: post("clone"), worktree: post("worktree") }
 }
 
 describe("host machine routes", () => {
@@ -102,6 +102,18 @@ describe("host machine routes", () => {
     const response = await clone("enr_box", { directory: "/home/ada/private", connectionId: "conn", repo: { fullName: "acme/private" } })
     expect(response.status).toBe(503)
     expect(await response.json()).toMatchObject({ error: { code: "repository_broker_unavailable" } })
+    expect(authority.openWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("a worktree is made only of a folder the machine serves, for a project named by its id", async () => {
+    const { worktree, authority } = routes([enrollment()])
+    const refused = async (body: unknown) => {
+      const response = await worktree("enr_box", body)
+      return [response.status, ((await response.json()) as { error: { code: string } }).error.code]
+    }
+    expect(await refused({ repository: "/home/ada/other", projectId: "prj_app" })).toEqual([409, "folder_not_served"])
+    expect((await worktree("enr_box", { repository: "/home/ada/app", projectId: "../prj" })).status).toBe(400)
+    expect((await worktree("enr_box", { repository: "/home/ada/app", projectId: "prj_app", baseRef: "" })).status).toBe(400)
     expect(authority.openWorkspace).not.toHaveBeenCalled()
   })
 })

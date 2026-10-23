@@ -280,6 +280,44 @@ describe("host management through a served workspace", () => {
     await expect(fs.stat(directory)).rejects.toThrow()
   })
 
+  async function worktree(body: Record<string, unknown>, destination: string) {
+    const response = await listener.fetch(new Request(`${listener.url}/workspaces/${WORKSPACE}${HOST_MANAGEMENT_ROUTES.worktree}`, {
+      method: "POST",
+      headers: { ...await relayHeaders(), [HOST_MANAGEMENT_GRANT_HEADER]: await grant("worktree", destination) },
+      body: JSON.stringify(body),
+    }))
+    return { status: response.status, body: JSON.parse(await response.text()) as Record<string, unknown> }
+  }
+
+  test("the owner makes a worktree of a folder on a new branch from the base they chose, under this machine's worktree root", async () => {
+    const repository = path.join(root, "worktree-source")
+    execFileSync("git", ["clone", "--quiet", path.join(root, "repositories", "acme/public.git"), repository])
+    const base = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repository, encoding: "utf8" }).trim()
+    const made = await worktree({ repository, project: "prj_app", name: "Fix login", baseRef: "main" }, repository)
+    expect(made).toEqual({ status: 200, body: { directory: path.join(root, "data", "worktree", "prj_app", "fix-login"), branch: "claxedo/fix-login", name: "fix-login" } })
+    const directory = String(made.body.directory)
+    expect(execFileSync("git", ["branch", "--show-current"], { cwd: directory, encoding: "utf8" }).trim()).toBe("claxedo/fix-login")
+    expect(execFileSync("git", ["rev-parse", "HEAD"], { cwd: directory, encoding: "utf8" }).trim()).toBe(base)
+
+    const again = await worktree({ repository, project: "prj_app", name: "Fix login" }, repository)
+    expect(again.body.directory).not.toBe(directory)
+    expect(String(again.body.branch)).toMatch(/^claxedo\/fix-login-/)
+
+    const listed = () => execFileSync("git", ["worktree", "list", "--porcelain"], { cwd: repository, encoding: "utf8" })
+    const before = listed()
+    expect(await worktree({ repository, project: "prj_app", baseRef: "missing" }, repository)).toMatchObject({ status: 200, body: { error: { code: "worktree_create_failed", status: 400 } } })
+    expect(listed()).toBe(before)
+  })
+
+  test("a worktree names a folder's full path that is there and a project id, and its grant names that folder", async () => {
+    const missing = path.join(root, "no-such-repository")
+    expect(await worktree({ repository: missing, project: "prj_app" }, missing)).toMatchObject({ status: 200, body: { error: { code: "folder_not_found", status: 404 } } })
+    expect(await worktree({ repository: tree, project: "../escape" }, tree)).toMatchObject({ status: 400, body: { error: { code: "host_management_request_invalid" } } })
+    expect(await worktree({ repository: "relative", project: "prj_app" }, "relative")).toMatchObject({ status: 400 })
+    expect(await worktree({ repository: tree, project: "prj_app", baseRef: " " }, tree)).toMatchObject({ status: 400 })
+    expect(await worktree({ repository: tree, project: "prj_app" }, root)).toMatchObject({ status: 403, body: { error: { code: "host_management_grant_mismatch" } } })
+  })
+
   test("a caller the relay names as anyone but the owner reads nothing, grant or not", async () => {
     const body = { read: "children", directory: tree }
     expect(await readFolders(body, { ...await relayHeaders({ role: "editor" }), [HOST_MANAGEMENT_GRANT_HEADER]: await grant("folders.read", tree) }))
