@@ -210,10 +210,10 @@ const ENTRIES = [
   // request against D1 in a module of its own
   // (`authority/adapters/d1/host-machine-auth.ts`), mounts the pairing routes
   // (`routes/hosted/host-pairing.ts`) beside the enrollment routes with the
-  // request handling both share (`routes/hosted/host-route-support.ts`), and
+  // request handling both share (`workspace/host-route-support.ts`), and
   // serves the connect scripts the app's command fetches
   // (`routes/hosted/connect-scripts.ts` over the generated
-  // `routes/hosted/connect-installers.generated.ts`).
+  // `workspace/connect-installers.generated.ts`).
   { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 199, packages: 23 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the

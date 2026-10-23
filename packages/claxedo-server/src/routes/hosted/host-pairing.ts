@@ -15,7 +15,7 @@ import {
   tooLarge,
   unsupported,
   unsupportedError,
-} from "./host-route-support"
+} from "../../workspace/host-route-support"
 import { connectCommands } from "./connect-scripts"
 
 const boundedText = (max: number) => z.string().trim().min(1).max(max)

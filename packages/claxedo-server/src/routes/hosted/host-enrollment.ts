@@ -58,7 +58,7 @@ import {
   tooLarge,
   unsupported,
   unsupportedError,
-} from "./host-route-support"
+} from "../../workspace/host-route-support"
 import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import type { LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
 import type { MachineProviderConfig } from "../../credentials/machine-provider-config"

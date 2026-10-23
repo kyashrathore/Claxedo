@@ -11,7 +11,7 @@ const ORIGIN = "https://app.claxedo.test"
 
 describe("connect scripts", () => {
   test("the Worker's copy of the installers is the CLI's own install.sh and install.ps1", () => {
-    const generated = readFileSync(path.join(import.meta.dirname, "connect-installers.generated.ts"), "utf8")
+    const generated = readFileSync(path.join(import.meta.dirname, "../../workspace/connect-installers.generated.ts"), "utf8")
     expect(generated, "run bun run generate:connect-installers").toBe(connectInstallersModule())
   })
 
@@ -57,13 +57,13 @@ describe("connect scripts", () => {
     const commands = invitationCommands(ORIGIN, "chx_inv_2.aHR0cHM.invitation_1.c2VjcmV0", folder)
     const [fetch, run] = commands.posix.split(" | ")
     expect(fetch).toBe(`curl -fsSL ${ORIGIN}/api/claxedo/connect`)
-    const args = run!.replace(/^sh -s -- /, "")
+    const args = run.replace(/^sh -s -- /, "")
     const read = spawnSync("sh", ["-c", `set -- ${args}; printf '%s\\n' "$@"`], { encoding: "utf8" })
     expect(read.stdout.split("\n").slice(0, -1)).toEqual(["--invitation", "chx_inv_2.aHR0cHM.invitation_1.c2VjcmV0", "--root", folder])
     expect(commands.windows).toBe(`& ([scriptblock]::Create((irm ${ORIGIN}/api/claxedo/connect.ps1))) -Invitation chx_inv_2.aHR0cHM.invitation_1.c2VjcmV0 -Root '/srv/it''s: #app'`)
     const [header, key, item] = commands.cloudInit.split("\n")
     expect([header, key]).toEqual(["#cloud-config", "runcmd:"])
-    expect(JSON.parse(item!.replace(/^ {2}- /, ""))).toBe(commands.posix)
+    expect(JSON.parse(item.replace(/^ {2}- /, ""))).toBe(commands.posix)
   })
 
   test("each script states the sha256 of exactly the text it serves", async () => {

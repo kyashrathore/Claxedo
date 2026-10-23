@@ -9,11 +9,11 @@ import {
 import { requireAuthority, type WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { isClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { asRecord } from "@claxedo/server-core/platform/json/index"
-import type { ControlPlaneServices } from "../../authority/services"
-import type { ConnectionRateLimiter } from "../../platform/auth/rate-limit"
-import { contentfulStatus } from "../../platform/http/status"
-import { controlPlaneRateLimitError } from "../../workspace/runtime-token-guards"
-import { parsedBody, signedOrError, type WorkspaceRouteOptions } from "../../workspace/route-support"
+import type { ControlPlaneServices } from "../authority/services"
+import type { ConnectionRateLimiter } from "../platform/auth/rate-limit"
+import { contentfulStatus } from "../platform/http/status"
+import { controlPlaneRateLimitError } from "./runtime-token-guards"
+import { parsedBody, signedOrError, type WorkspaceRouteOptions } from "./route-support"
 
 export type AccountRouteBudget = { limiter: ConnectionRateLimiter; key: string; action: string }
 

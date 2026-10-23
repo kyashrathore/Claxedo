@@ -41,7 +41,10 @@ function scriptedSpawn(reply: (call: Call) => Reply) {
       const call = { program, args, stdin: Buffer.concat(input).toString("utf8") }
       calls.push(call)
       const answer = reply(call)
-      if (answer === "missing") return child.emit("error", Object.assign(new Error("spawn ssh ENOENT"), { code: "ENOENT" }))
+      if (answer === "missing") {
+        child.emit("error", Object.assign(new Error("spawn ssh ENOENT"), { code: "ENOENT" }))
+        return
+      }
       if (answer.stdout) child.stdout.write(answer.stdout)
       if (answer.stderr) child.stderr.write(answer.stderr)
       if (!answer.hang) void close(answer.code ?? 0)

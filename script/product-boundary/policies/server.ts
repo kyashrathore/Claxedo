@@ -325,9 +325,9 @@ export const serverWorkerd: Policy = {
   // authority so a waiting machine's own pairing read can admit it
   // (`authority/adapters/d1/host-machine-auth.ts`); the pairing routes
   // (`routes/hosted/host-pairing.ts`) and the request handling they share with
-  // the enrollment routes (`routes/hosted/host-route-support.ts`); and the
+  // the enrollment routes (`workspace/host-route-support.ts`); and the
   // connect scripts the app's command fetches (`routes/hosted/connect-scripts.ts`
-  // over the generated `routes/hosted/connect-installers.generated.ts`). It
+  // over the generated `workspace/connect-installers.generated.ts`). It
   // adds no package edge.
   // 199/23, no headroom.
   ceilings: { modules: 199, packages: 23 },

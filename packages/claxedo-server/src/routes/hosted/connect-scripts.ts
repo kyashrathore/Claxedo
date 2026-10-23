@@ -2,7 +2,7 @@ import { Hono } from "hono"
 import { CONNECT_SCRIPT_PATH, CONNECT_SCRIPT_SHA256_HEADER, MINIMUM_CONNECT_CLI_VERSION } from "@claxedo/account-contract/machine"
 import { sha256Hex } from "@claxedo/helpers/crypto"
 import { powershellQuote, shellQuote } from "@claxedo/helpers/shell"
-import { POSIX_INSTALLER, POWERSHELL_INSTALLER } from "./connect-installers.generated"
+import { POSIX_INSTALLER, POWERSHELL_INSTALLER } from "../../workspace/connect-installers.generated"
 
 const SCRIPT_HEADERS = { "cache-control": "no-store", "x-content-type-options": "nosniff" }
 

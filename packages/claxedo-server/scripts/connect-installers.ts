@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync } from "node:fs"
 import path from "node:path"
 
 const cli = path.resolve(import.meta.dirname, "../../cli")
-const target = path.resolve(import.meta.dirname, "../src/routes/hosted/connect-installers.generated.ts")
+const target = path.resolve(import.meta.dirname, "../src/workspace/connect-installers.generated.ts")
 
 export function connectInstallersModule() {
   const posix = readFileSync(path.join(cli, "install.sh"), "utf8")
