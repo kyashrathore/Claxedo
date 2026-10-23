@@ -1,5 +1,6 @@
 import { spawn as nodeSpawn } from "node:child_process"
 import { homedir } from "node:os"
+import { join } from "node:path"
 import { readField } from "@claxedo/helpers/readers"
 import { shellQuote } from "@claxedo/helpers/shell"
 
@@ -65,8 +66,9 @@ function readPath(value: unknown): string | undefined | null {
   return value.trim() || undefined
 }
 
-function resolveKeyFile(path: string): string {
-  return path === "~" || path.startsWith("~/") ? `${homedir()}${path.slice(1)}` : path
+function resolveKeyFile(file: string): string {
+  if (file === "~") return homedir()
+  return file.startsWith("~/") ? join(homedir(), file.slice(2)) : file
 }
 
 /** `[user@]host` resolved through the person's own ssh config; a leading `-` never reaches ssh as an option. */
