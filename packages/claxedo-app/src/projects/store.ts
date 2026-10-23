@@ -64,5 +64,6 @@ export function useProjectCommands() {
     remove: (id: ProjectId) => server.projects.remove(id),
     reclone: (id: ProjectId) => server.projects.reclone(id),
     recloneOnMachine: (id: PlacementId) => server.placements.recloneOnMachine(id),
+    removeFromMachine: (id: PlacementId) => server.placements.removeFromMachine(id),
   }
 }

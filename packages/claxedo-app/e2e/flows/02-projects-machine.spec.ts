@@ -23,7 +23,7 @@ async function openCreateDialog(page: Page) {
   return page.getByRole("dialog", { name: "Create project" })
 }
 
-test("02 projects on a connected machine: the machine's own folder dialog picks a folder there, and it becomes a project served by that machine", async ({ signed, page }, testInfo) => {
+test("02 projects on a connected machine: the machine's own folder dialog picks a folder there, it becomes a project served by that machine, and Remove takes it off the machine and leaves the folder", async ({ signed, page }, testInfo) => {
   test.setTimeout(180_000)
   const machine = await connectMachine(signed, "build-box", testInfo)
   try {
@@ -49,6 +49,17 @@ test("02 projects on a connected machine: the machine's own folder dialog picks 
     expect(row?.placement?.host_enrollment_id, "the folder is a workspace on that machine").toBeTruthy()
     expect(row?.workspace_id).not.toBe(machine.firstWorkspaceId)
     await expect.poll(() => machine.servedWorkspaceIds(), { timeout: 30_000 }).toContain(row?.workspace_id)
+
+    await page.goto(`${signed.url}/settings/projects`)
+    await page.getByRole("region", { name: "Projects" }).getByRole("link", { name: "alpha", exact: true }).click()
+    await page.getByRole("group", { name: "Where it runs" }).getByRole("button", { name: "Remove", exact: true }).click()
+    const confirm = page.getByRole("dialog", { name: "Remove alpha from build-box?" })
+    await expect(confirm).toContainText("The folder and its files stay there.")
+    await confirm.getByRole("button", { name: "Remove from machine", exact: true }).click()
+    await expect(confirm).toHaveCount(0)
+    await expect.poll(async () => (await machineRows(signed)).some((candidate) => candidate.remote_directory === alpha), { timeout: 30_000 }).toBe(false)
+    await expect.poll(() => machine.servedWorkspaceIds(), { timeout: 30_000 }).not.toContain(row?.workspace_id)
+    expect(await fs.readFile(path.join(alpha, "README.md"), "utf8")).toBe("alpha\n")
   } finally {
     await machine.close()
   }

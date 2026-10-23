@@ -105,3 +105,14 @@ export function machineRecloner(account: HostedAccount | undefined, workspaces: 
     cloned(machine, placement.path)
   }
 }
+
+export function machineUnassigner(account: HostedAccount | undefined, workspaces: MachinePlacements) {
+  return async (id: PlacementId): Promise<void> => {
+    const placement = workspaces.byId(id)
+    if (!account || !placement || placement.onThisMachine || placement.machineId === undefined) {
+      throw new ServerError({ class: "invalid", message: "Only a connected machine's folder is removed from that machine" })
+    }
+    await account.run("machines.unassign", { workspaceId: placement.id })
+    await workspaces.refresh()
+  }
+}

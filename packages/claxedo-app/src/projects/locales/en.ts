@@ -163,4 +163,8 @@ export default {
   "projects.create.machine": "Machine",
   "projects.create.cloneOnto": "Clone onto",
   "projects.create.cloneInto": "Clone into a folder on {{machine}}",
+  "projects.where.removeMachine": "Remove",
+  "projects.where.removeMachine.title": "Remove {{name}} from {{machine}}?",
+  "projects.where.removeMachine.body": "Claxedo stops using this folder on {{machine}}. The folder and its files stay there.",
+  "projects.where.removeMachine.confirm": "Remove from machine",
 }

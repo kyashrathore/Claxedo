@@ -314,13 +314,26 @@ takes over [Remote machine connection](./2026-09-14-003-feat-connect-implementat
   only through a folder it serves, so a machine whose one folder is gone cannot be asked.
 - [ ] **Again in another folder.** Running the connect command in another folder on a machine that is already
   connected asks the owner in the app to add that folder; it never re-enrolls the machine. Progress:
-- [ ] **One path.** Hosted operations for these (`machines.folders`, `machines.assign`, `machines.unassign`,
+- [x] **One path.** Hosted operations for these (`machines.folders`, `machines.assign`, `machines.unassign`,
   `machines.clone`, and the worktree create) reuse the route `claxedo host assign` uses and the local server's clone
   and worktree code moved behind the grant, so each operation has one implementation for every machine. Progress:
+  done 2026-10-23 (lane C5). `machines.assign` and `machines.unassign` are the host-assignment routes `claxedo host
+  assign` and `claxedo host unassign` use. Where it runs' "Remove" on a connected machine's row is
+  `machines.unassign`: the folder stays on the machine. `machines.folders`, `machines.clone` and
+  `machines.worktree` reach the machine under a host-management grant. Each runs the code the desktop runs for its
+  own folders: `claxedo-server-core/src/hosts/machine/folders.ts` (listing and bounded search),
+  `hosts/machine/clone.ts` (`cloneInto`, which the local project store now calls) and `hosts/machine/worktree.ts`
+  (naming, base, `git worktree add`, which the local worktree route now calls). The local copies are gone. Not yet:
+  a desktop that serves its folders to other devices through remote access does not mount host management, so
+  another device cannot run these operations on it.
 - [ ] **Parity proof.** e2e flow 2 (add a folder, clone, edit, remove, deep link, worktree branches) passes against a
   connected machine as it does against this computer, on the web and the desktop. Progress:
-- [ ] The terminal never lists folders; in the app, folders appear only through the folder dialog's search and one
-  level at a time, as on this computer. Progress:
+- [x] The terminal never lists folders; in the app, folders appear only through the folder dialog's search and one
+  level at a time, as on this computer. Progress: done 2026-10-23 (lane C5). A machine answers folder reads only as
+  its home, one folder's subfolders, or a search under one folder (at most 200 results, three levels deep, 400
+  folders visited), each on its own one-minute grant. The app reads them only from the folder dialog. The CLI
+  prints the folder it shares while pairing and, in `claxedo status`, the folders it serves; it lists no other
+  folder.
 
 ### C6 — Failures, explained where the person looks
 

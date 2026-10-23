@@ -30,25 +30,43 @@ function useCheckoutMissing(placement: Accessor<Placement>, machine: Accessor<Ma
   return () => connectedCheckout(placement(), machine()) !== undefined && presence.data === "missing"
 }
 
-function useRecloneOnMachine(placement: Accessor<Placement>) {
+function useMachineCheckoutCommands(placement: Accessor<Placement>, machineName: Accessor<string>) {
+  const t = useProjectsText()
+  const dialog = useDialog()
   const commands = useProjectCommands()
-  const flow = createFlow<"cloning", void>()
-  const cloning = () => flow.state().kind === "running"
+  const flow = createFlow<"cloning" | "removing", void>()
+  const step = () => {
+    const state = flow.state()
+    return state.kind === "running" ? state.step : undefined
+  }
   const failure = () => {
     const state = flow.state()
     return state.kind === "failed" ? state.error.message : undefined
   }
-  const start = () => {
-    if (!cloning()) void runFlow(flow, "cloning", () => commands.recloneOnMachine(placement().id), toAppError)
+  const reclone = () => {
+    if (!step()) void runFlow(flow, "cloning", () => commands.recloneOnMachine(placement().id), toAppError)
   }
-  return { cloning, failure, start }
+  const remove = async () => {
+    if (step()) return
+    const machine = machineName()
+    const confirmed = await requestConfirm(dialog, {
+      title: t("projects.where.removeMachine.title", { name: placement().label ?? placement().id, machine }),
+      body: t("projects.where.removeMachine.body", { machine }),
+      confirmLabel: t("projects.where.removeMachine.confirm"),
+      cancelLabel: t("projects.where.cancel"),
+      destructive: true,
+    })
+    if (confirmed) await runFlow(flow, "removing", () => commands.removeFromMachine(placement().id), toAppError)
+  }
+  return { step, failure, reclone, remove }
 }
 
 function MachinePlacementRow(props: { readonly placement: Placement; readonly machine: Machine | undefined }): JSX.Element {
   const t = useProjectsText()
   const open = usePlacementOpener()
   const missing = useCheckoutMissing(() => props.placement, () => props.machine)
-  const reclone = useRecloneOnMachine(() => props.placement)
+  const commands = useMachineCheckoutCommands(() => props.placement, () => props.machine?.name ?? "")
+  const connected = () => !props.placement.onThisMachine && props.placement.machineId !== undefined
   const path = () => (props.placement.path ? homeRelativePath(props.placement.path) : undefined)
   const state = (): ProjectsKey => {
     if (props.machine?.paused) return "projects.where.paused"
@@ -60,15 +78,20 @@ function MachinePlacementRow(props: { readonly placement: Placement; readonly ma
     <>
       <SettingsRow title={props.placement.label} description={detail()}>
         <Show when={missing() && props.placement.gitRemote}>
-          <Button variant="contrast" size="small" disabled={reclone.cloning()} onClick={reclone.start}>
-            {reclone.cloning() ? t("projects.checkout.cloning") : t("projects.checkout.clone")}
+          <Button variant="contrast" size="small" disabled={commands.step() !== undefined} onClick={commands.reclone}>
+            {commands.step() === "cloning" ? t("projects.checkout.cloning") : t("projects.checkout.clone")}
           </Button>
         </Show>
         <Button variant="neutral" size="small" onClick={() => open(props.placement.id)}>
           {t("projects.placement.open")}
         </Button>
+        <Show when={connected()}>
+          <Button variant="ghost" size="small" disabled={commands.step() !== undefined} onClick={() => void commands.remove()}>
+            {t("projects.where.removeMachine")}
+          </Button>
+        </Show>
       </SettingsRow>
-      <Show when={reclone.failure()}>{(message) => <SettingsNote tone="danger">{message()}</SettingsNote>}</Show>
+      <Show when={commands.failure()}>{(message) => <SettingsNote tone="danger">{message()}</SettingsNote>}</Show>
     </>
   )
 }

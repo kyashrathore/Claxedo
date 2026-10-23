@@ -250,6 +250,14 @@ export const CORE_HOSTED_OPERATIONS = {
     exposure: { renderer: true, app: false },
     body: (input) => ({ ...selectBody("hostId", "displayName", "repoName", "repoUrl", "remoteDirectory", "projectId", "gitBranch")(input), addRoot: true }),
   }),
+  // The route `claxedo host unassign` uses: the person's own machine stops
+  // serving the folder, the workspace is retired, and the folder stays there.
+  "machines.unassign": defineOperation({
+    method: "DELETE", path: operationPath("/api/workspace/:workspaceId/host-assignment"),
+    input: operationInput({ workspaceId: requiredParameter }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: false },
+  }),
   "workspace.list.provisioner": defineOperation({
     method: "GET", path: operationPath("/api/workspace?host=provisioner"),
     input: operationInput({}),

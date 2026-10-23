@@ -5,7 +5,7 @@ import type { CloudSourceCreateInput, CloudWorkspace } from "./cloud-types"
 import { ServerError } from "./errors"
 import type { HostedAccount } from "./account"
 import { machineId, placementId, projectId } from "./ids"
-import { machineProjectCreator, machineRecloner } from "./machine-projects"
+import { machineProjectCreator, machineRecloner, machineUnassigner } from "./machine-projects"
 import type { Machine } from "./machine-types"
 import { createProjectsApi } from "./projects"
 import { queryKeys } from "./query-keys"
@@ -156,5 +156,25 @@ test("a connected machine's gone checkout is cloned back at its folder from the 
   expect(runs).toEqual([["machines.clone", { enrollmentId: "enr_box", directory: "/home/ada/gamma", repoUrl: "https://example.test/gamma.git" }]])
   expect(cloned).toEqual(["enr_box:/home/ada/gamma"])
   for (const placement of [here, bare]) await expect(reclone(placement.id)).rejects.toMatchObject({ class: "invalid" })
+  expect(runs).toHaveLength(1)
+})
+
+test("a connected machine's folder is removed from that machine through the route `claxedo host unassign` uses, and this computer's is not", async () => {
+  const runs: Array<[string, Readonly<Record<string, unknown>>]> = []
+  let refreshed = 0
+  const account = {
+    run: async (operation: string, input: Readonly<Record<string, unknown>>) => {
+      runs.push([operation, input])
+      return { unassigned: true }
+    },
+  } as unknown as HostedAccount
+  const remote: Placement = { id: placementId("ws_alpha"), projectId: accountProject.id, kind: "worktree", label: "alpha", path: "/home/ada/alpha", machineId: buildBox.id, onThisMachine: false, reachable: true }
+  const here: Placement = { ...remote, id: placementId("ws_here"), onThisMachine: true }
+  const listed = new Map([remote, here].map((placement) => [placement.id, placement]))
+  const remove = machineUnassigner(account, { byId: (id) => listed.get(id), refresh: async () => void (refreshed += 1) })
+  await remove(remote.id)
+  expect(runs).toEqual([["machines.unassign", { workspaceId: "ws_alpha" }]])
+  expect(refreshed).toBe(1)
+  await expect(remove(here.id)).rejects.toMatchObject({ class: "invalid" })
   expect(runs).toHaveLength(1)
 })
