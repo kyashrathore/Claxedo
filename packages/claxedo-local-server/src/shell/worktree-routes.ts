@@ -1,20 +1,17 @@
 import type { Context } from "hono"
-import path from "path"
 import { deleteWorkspaceByDirectory, getProjectWorkspace, listWorkspaces, resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { workspaceInput } from "./request-context"
 import { containsCanonical, defaultBranch, gitRun, locate, shell, trees } from "./git"
-import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
-import { nextWorktreeInfo, publishWorktreeFailed, publishWorktreeReady } from "./worktree"
-import { provisionRegisteredWorktree, WorktreeProvisionError } from "../workspace/worktree"
+import { nextWorktreeInfo, worktreeRoot, WorktreeProvisionError, type WorktreeInfo } from "@claxedo/server-core/hosts/machine/worktree"
+import { publishWorktreeFailed, publishWorktreeReady } from "./worktree"
+import { provisionRegisteredWorktree } from "../workspace/worktree"
 import { raw, record, trimmed } from "../platform/json"
-
-type WorktreeInfo = NonNullable<Awaited<ReturnType<typeof nextWorktreeInfo>>>
 
 /** The project checkout and its managed worktree root bound the registry lookup below. */
 async function withinProjectScope(project_id: string, repositoryDirectory: string, target: string) {
   const [managed, repository] = await Promise.all([
-    containsCanonical(path.join(dataDir(), "worktree", project_id), target),
+    containsCanonical(worktreeRoot(project_id), target),
     containsCanonical(repositoryDirectory, target),
   ])
   return managed || repository

@@ -1,9 +1,8 @@
-import fs from "fs"
-import path from "path"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { workspaceInput, workspacePath, workspaceRoot, type ShellRequestContext } from "./request-context"
 import { globSearch, grepSearch } from "./files"
 import { machineFileIndex } from "@claxedo/workspace-runtime/file-index"
+import { directoryEntries } from "@claxedo/server-core/hosts/machine/folders"
 
 export async function findTextBody(c: ShellRequestContext) {
   const pattern = c.req.query("pattern") ?? ""
@@ -34,27 +33,10 @@ export async function directoryEntriesBody(c: ShellRequestContext) {
     directory: input.directory,
   })
   const root = workspaceRoot(ws, input)
-  // Outside the try on purpose: the catch below answers fs errors with `[]`, and
+  // Outside the catch on purpose: it answers fs errors with `[]`, and
   // swallowing the containment 400 into that would hide a traversal probe.
   const dirPath = await workspacePath(root, c.req.query("path"))
-  try {
-    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true })
-    return entries
-      .filter((entry) => ![".git", ".DS_Store"].includes(entry.name))
-      .map((entry) => ({
-        name: entry.name,
-        path: path.relative(root, path.join(dirPath, entry.name)),
-        absolute: path.join(dirPath, entry.name),
-        type: entry.isDirectory() ? "directory" : "file",
-        ignored: entry.name.startsWith(".") || entry.name === "node_modules",
-      }))
-      .sort((a, b) => {
-        if (a.type !== b.type) return a.type === "directory" ? -1 : 1
-        return a.name.localeCompare(b.name)
-      })
-  } catch {
-    return []
-  }
+  return await directoryEntries(root, dirPath).catch(() => [])
 }
 
 export async function allFilesBody(c: ShellRequestContext) {

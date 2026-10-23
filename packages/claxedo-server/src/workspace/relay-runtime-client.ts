@@ -1,8 +1,13 @@
 import type { RelayProvider, RelayTokenInput } from "@claxedo/server-core/adapters/relay-port"
 import type { ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
-import { RELAY_REGION_HEADER } from "@claxedo/workspace-relay"
-import { CONTROL_PLANE_RUNTIME_ACTOR } from "@claxedo/server-core/platform/auth/runtime-actor"
+import { RELAY_REGION_HEADER, type RelayRole } from "@claxedo/workspace-relay"
+import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { requireAuthority, type WorkspaceRecord } from "@claxedo/server-core/platform/auth/authority"
+import { CONTROL_PLANE_RUNTIME_ACTOR, resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
+import { asString } from "@claxedo/helpers/guards"
 import type { ControlPlaneServices } from "../authority/services"
+import { resolveWorkspaceRuntimeTarget } from "../authority/runtime-target"
+import { relayRole } from "../authority/pulled-session"
 
 export type RelayRuntimeCapability = RelayTokenInput & { homeRegion: ClaxedoRegion }
 export type RelayRuntimeErrorFactory = (status: number, code: string, message: string) => Error
@@ -77,4 +82,55 @@ export function createHostedRuntimeFetch(services: ControlPlaneServices) {
       homeRegion: target.homeRegion,
     }, requestPath, init)
   }
+}
+
+export type CallerRuntimeTarget = {
+  readonly workspaceId: string
+  readonly orgId: string | undefined
+  readonly workspace: WorkspaceRecord | undefined
+  readonly role: RelayRole
+}
+
+/** The workspace the caller may open, with the role the relay grants them, or nothing when the authority refuses it. */
+export async function openCallerRuntimeTarget(services: ControlPlaneServices, auth: SignedControlPlaneAuth, workspaceId: string): Promise<CallerRuntimeTarget | undefined> {
+  const authority = requireAuthority(services)
+  const opened = await authority.openWorkspace(auth, { workspaceId }).catch((err) => {
+    if (err instanceof ControlPlaneAuthError) return undefined
+    throw err
+  })
+  const role = relayRole(opened?.role)
+  if (!opened || !role) return undefined
+  const orgId = asString(opened.workspace?.org_id) ?? asString(await authority.resolveOrgId(auth))
+  return { workspaceId, orgId, workspace: opened.workspace, role }
+}
+
+/**
+ * The workspace's runtime over the relay as the caller: its target and actor
+ * are resolved once and one token is minted for every request made through
+ * it. `hostId` is the host the relay routes it to.
+ */
+export async function connectCallerRuntime(services: ControlPlaneServices, auth: SignedControlPlaneAuth, target: CallerRuntimeTarget, error: RelayRuntimeErrorFactory) {
+  const [targetRead, actorRead] = await Promise.allSettled([
+    resolveWorkspaceRuntimeTarget(services, auth, { workspaceId: target.workspaceId, ...(target.workspace ? { workspace: target.workspace } : {}) }),
+    resolveRuntimeActor(requireAuthority(services), auth),
+  ])
+  if (targetRead.status === "rejected") throw targetRead.reason
+  if (actorRead.status === "rejected") throw actorRead.reason
+  const runtime = targetRead.value
+  const provider = services.relay.provider
+  if (!provider) throw new Error("Workspace runtime pull transport is not configured")
+  if (!target.orgId) throw new Error("Workspace is missing org identity for runtime token minting")
+  const connection = createRelayRuntimeClient({ provider, error }).connect({
+    workspaceId: target.workspaceId,
+    hostId: runtime.hostId,
+    routingId: runtime.routingId,
+    principalKind: "user",
+    auth,
+    ...actorRead.value,
+    orgId: target.orgId,
+    role: target.role,
+    ttlMs: 10 * 60_000,
+    homeRegion: runtime.homeRegion,
+  })
+  return { ...connection, hostId: runtime.hostId }
 }

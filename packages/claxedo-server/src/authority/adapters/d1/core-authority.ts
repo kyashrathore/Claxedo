@@ -53,6 +53,7 @@ import { D1ApplicationIdentityAuthority, D1_APPLICATION_IDENTITY_METHODS } from 
 import { D1OrgInvitationAuthority, D1_ORG_INVITATION_AUTHORITY_METHODS, type D1OrgInvitationAuthorityPort } from "./org-invitation-authority"
 import { publishD1HostSessionRows } from "./host-session-rows"
 import { readD1HostDirectRoutes, recordD1HostDirectRoutes } from "./host-direct-routes"
+import { addD1HostEnrollmentRoot } from "./host-enrollment-roots"
 import { recordD1HostMachineReport } from "./host-devices"
 import { deleteD1HostedSession, listD1HostedSessions } from "./hosted-session-delete"
 import { recordD1SessionReader } from "./session-reader-store"
@@ -199,6 +200,7 @@ export function createD1CoreAuthority(database: D1Database, options: D1CoreAutho
     recordHostDirectRoutes: (machine, routes) => recordD1HostDirectRoutes(database, machine, routes, (options.now ?? Date.now)()),
     hostDirectRoutes: ({ workspaceId }) => readD1HostDirectRoutes(database, workspaceId, (options.now ?? Date.now)()),
     recordHostMachineReport: (machine, report) => recordD1HostMachineReport(database, machine, report, (options.now ?? Date.now)()),
+    addHostEnrollmentRoot: (auth, args) => addD1HostEnrollmentRoot(database, options.deploymentId, auth, args, (options.now ?? Date.now)()),
   }
 }
 

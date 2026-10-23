@@ -36,6 +36,7 @@ import {
   type HostServingCredential,
 } from "@claxedo/host-serving/serving"
 import { privateNetworkAddresses, startDirectListener, type DirectListener } from "@claxedo/host-serving/direct-listener"
+import { controlPlaneKeySet, createHostManagement } from "@claxedo/host-serving/host-management"
 import { createOwnerBrokerChannels, type OwnerBrokerChannels } from "@claxedo/host-serving/owner-broker-channel"
 import { startOwnerBrokerShim } from "@claxedo/host-serving/owner-broker-shim"
 import { createDirectTlsKey, directTlsIdentity } from "@claxedo/host-serving/direct-certificate"
@@ -371,6 +372,11 @@ export async function runHost(input: HostRunInput): Promise<number> {
   })
   const composition = { localBaseUrl: listener.url, sessionAuthority: () => "managed-private" as const }
   const owned = new Map<string, { directory: string }>()
+  const management = createHostManagement({
+    enrollmentId: enrollment.enrollment_id,
+    hostId: state.host_id,
+    controlPlaneKeys: controlPlaneKeySet(state.control_plane_url),
+  })
   let credential: HostServingCredential | null = null
 
   // One update at a time: a credential, a withdrawal or a pushed provider
@@ -440,6 +446,7 @@ export async function runHost(input: HostRunInput): Promise<number> {
       sessionAuthorityUrl: authority.sessionAuthorityUrl,
       ...(direct ? { runtimeAccessJwksUrl: `${state.control_plane_url}/.well-known/jwks.json` } : {}),
       storeRoot: path.join(state.storage_root, workspaceId),
+      routeContributions: [management.contribution],
     })
   }
 

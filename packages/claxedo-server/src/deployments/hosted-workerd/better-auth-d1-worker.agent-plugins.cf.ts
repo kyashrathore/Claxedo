@@ -153,6 +153,7 @@ export function composeBetterAuthD1AgentPlugins(
       productWorkspace: {
         ...base.options.productWorkspace,
         connections: { repositoryForAuth: feature.repositoryForAuth },
+        ...(base.egressBroker ? { machineRepositoryClones: base.egressBroker } : {}),
         releaseRuntime: feature.releaseRuntime,
       },
     },

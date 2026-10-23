@@ -330,7 +330,17 @@ export const serverWorkerd: Policy = {
   // over the generated `workspace/connect-installers.generated.ts`). It
   // adds no package edge.
   // 199/23, no headroom.
-  ceilings: { modules: 199, packages: 23 },
+  // +3 modules (owner: host management on a connected machine): the owner's
+  // requests to their machine itself, each carried to it under a grant this
+  // plane mints for that request alone (`routes/hosted/host-machines.ts`), the
+  // owned-and-serving check and the call through the relay
+  // (`workspace/machine-management.ts`), and a folder the owner picks joining
+  // that machine's roots (`authority/adapters/d1/host-enrollment-roots.ts`).
+  // Reaching a runtime as the caller moved from the harness probe into
+  // `workspace/relay-runtime-client.ts`, which both now share. The grant is
+  // server-core's pass family. It adds no package edge.
+  // 202/23, no headroom.
+  ceilings: { modules: 202, packages: 23 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

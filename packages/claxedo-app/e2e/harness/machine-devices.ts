@@ -4,6 +4,7 @@ import type { SignedStack } from "./signed-stack"
 
 type Device = {
   readonly host_id: string
+  readonly enrollment_id: string
   readonly display_name: string
   readonly state: string
   readonly workspace_ids: readonly string[]

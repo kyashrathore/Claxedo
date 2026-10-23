@@ -36,7 +36,15 @@ export type HostedBrokerIdentity = RuntimeIdentity & BrokerServing
  * account the operator moved off and is refused once that row is gone, and
  * answers the moved-off account only while the owner still holds it.
  */
-export type HostedBrokerClaims = RuntimeTokenClaims & BrokerServing & { credentialId: string }
+export type HostedBrokerClaims = RuntimeTokenClaims & BrokerServing & {
+  credentialId: string
+  /**
+   * A connected machine's clone stand-in only: the GitHub repository it
+   * clones, through the connection `credentialId` names, and the pass's own
+   * id, under which the register spends it once the clone is done.
+   */
+  repository?: { fullName: string; jti: string }
+}
 
 /**
  * A binding names a provider under a workspace for one identity, never an
@@ -65,6 +73,11 @@ export function servingBindingId(identity: { userId: string; orgId: string } & B
     : machineBindingId({ userId: identity.userId, orgId: identity.orgId, enrollmentId: identity.enrollmentId, providerId })
 }
 
+/** A connected machine's clone of one repository: under a name no stored account carries, one binding per repository. */
+export function machineRepositoryBindingId(input: { userId: string; orgId: string; enrollmentId: string; fullName: string }): string {
+  return machineBindingId({ userId: input.userId, orgId: input.orgId, enrollmentId: input.enrollmentId, providerId: `github-repository:${input.fullName.toLowerCase()}` })
+}
+
 /** A workspace's repository binding: derived under a name no stored account carries, so no account binding shares its id. */
 export function repositoryBindingId(identity: { userId: string; orgId: string; workspaceId: string }): string {
   return brokerBindingId({ ...identity, providerId: "github-repository" })
@@ -76,6 +89,7 @@ const CLAIM = {
   leaseId: "lease_id",
   leaseGeneration: "lease_generation",
   runtimeId: "runtime_id",
+  repository: "repository",
 } as const
 
 export async function mintBrokerPlaceholder(
@@ -85,10 +99,13 @@ export async function mintBrokerPlaceholder(
     credentialId: string
     /** Claims the destination asks its stand-in to carry (`ProviderDestination.standInClaims`). */
     claims?: Readonly<Record<string, Readonly<Record<string, string>>>>
+    /** The `owner/repo` a machine's clone stand-in clones. */
+    repository?: string
+    ttlSeconds?: number
   },
   env: Record<string, string | undefined>,
   options: { now?: () => number } = {},
-): Promise<{ placeholder: string; expiresAt: number }> {
+): Promise<{ placeholder: string; expiresAt: number; jti: string }> {
   const { identity } = input
   const minted = await mintSandboxPass({
     audience: EGRESS_BROKER_PASS_AUDIENCE,
@@ -103,11 +120,12 @@ export async function mintBrokerPlaceholder(
       [CLAIM.leaseId]: identity.leaseId,
       [CLAIM.leaseGeneration]: String(identity.leaseGeneration),
       [CLAIM.runtimeId]: identity.runtimeId,
+      ...(input.repository !== undefined ? { [CLAIM.repository]: input.repository } : {}),
     },
-    ttlSeconds: PLACEHOLDER_TTL_SECONDS,
+    ttlSeconds: input.ttlSeconds ?? PLACEHOLDER_TTL_SECONDS,
     ...(options.now ? { now: options.now } : {}),
   }, env, fault)
-  return { placeholder: minted.token, expiresAt: minted.expiresAt }
+  return { placeholder: minted.token, expiresAt: minted.expiresAt, jti: minted.jti }
 }
 
 function extraClaim(extra: Readonly<Record<string, unknown>>, name: string): string | undefined {
@@ -136,6 +154,8 @@ export async function verifyBrokerPlaceholder(
     const leaseGeneration = Number(extraClaim(pass.extra, CLAIM.leaseGeneration))
     if (!bindingId || !credentialId || !leaseId || !runtimeId || !Number.isSafeInteger(leaseGeneration) || leaseGeneration < 1) return undefined
     const scope = pass.scope
+    const repository = extraClaim(pass.extra, CLAIM.repository)
+    if (repository !== undefined && !("enrollmentId" in scope)) return undefined
     return {
       userId: scope.userId,
       orgId: scope.orgId,
@@ -146,6 +166,7 @@ export async function verifyBrokerPlaceholder(
       bindingIds: [bindingId],
       exp: Math.floor(pass.expiresAt / 1_000),
       credentialId,
+      ...(repository !== undefined ? { repository: { fullName: repository, jti: pass.jti } } : {}),
     }
   } catch (error) {
     if (error instanceof EgressBrokerConfigurationError || error instanceof SandboxPassError || error instanceof errors.JOSEError) return undefined

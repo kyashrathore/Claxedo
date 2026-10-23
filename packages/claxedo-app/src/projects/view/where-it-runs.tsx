@@ -1,32 +1,98 @@
-import { For, Match, Show, Switch, type JSX } from "solid-js"
+import { createEffect, For, Match, Show, Switch, type Accessor, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { canStart, canStartFresh, canStop, cloudStatusReason, useCloudCommandFailureText, useCloudStatusText, useCloudWorkspaces, useStartFreshConfirm, useWorkspaceName, type CloudWorkspaceRow, type CloudWorkspaces } from "@/cloud"
 import { useErrorCopy } from "@/i18n"
 import { FailureNotice } from "@/lib/failure"
-import { machineOfPlacement, useServer, type AppError, type Machine, type Placement, type Project } from "@/server"
+import { createFlow, runFlow } from "@/lib/flow"
+import { machineId, machineOfPlacement, toAppError, useServer, type AppError, type Machine, type Placement, type Project } from "@/server"
 import { SettingsEmpty, SettingsGroup, SettingsList, SettingsListSkeleton, SettingsNote, SettingsRow, useConnectMachine } from "@/settings"
 import { Button, requestConfirm, useDialog } from "@/ui"
 import { homeRelativePath } from "../folder-paths"
 import { useProjectsText, type ProjectsKey } from "../i18n"
 import { usePlacementOpener } from "../open"
-import { useProjectPlacements } from "../store"
+import { useProjectCommands, useProjectPlacements } from "../store"
 import { DialogNewCloudWorkspace } from "./new-cloud-workspace-dialog"
+
+function connectedCheckout(placement: Placement, machine: Machine | undefined) {
+  if (placement.onThisMachine || placement.machineId === undefined || placement.path === undefined) return undefined
+  return machine?.online && !machine.paused ? { machine: placement.machineId, directory: placement.path } : undefined
+}
+
+function useCheckoutMissing(placement: Accessor<Placement>, machine: Accessor<Machine | undefined>): Accessor<boolean> {
+  const server = useServer()
+  const presence = useQuery(() => {
+    const checkout = connectedCheckout(placement(), machine())
+    return { ...server.queries.folders.presence(checkout?.directory ?? "", checkout?.machine ?? machineId("")), enabled: checkout !== undefined }
+  })
+  createEffect(() => {
+    if (presence.error) console.error("Reading whether a machine still holds a checkout failed", { placement: placement().id, error: presence.error })
+  })
+  return () => connectedCheckout(placement(), machine()) !== undefined && presence.data === "missing"
+}
+
+function useMachineCheckoutCommands(placement: Accessor<Placement>, machineName: Accessor<string>) {
+  const t = useProjectsText()
+  const dialog = useDialog()
+  const commands = useProjectCommands()
+  const flow = createFlow<"cloning" | "removing", void>()
+  const step = () => {
+    const state = flow.state()
+    return state.kind === "running" ? state.step : undefined
+  }
+  const failure = () => {
+    const state = flow.state()
+    return state.kind === "failed" ? state.error.message : undefined
+  }
+  const reclone = () => {
+    if (!step()) void runFlow(flow, "cloning", () => commands.recloneOnMachine(placement().id), toAppError)
+  }
+  const remove = async () => {
+    if (step()) return
+    const machine = machineName()
+    const confirmed = await requestConfirm(dialog, {
+      title: t("projects.where.removeMachine.title", { name: placement().label ?? placement().id, machine }),
+      body: t("projects.where.removeMachine.body", { machine }),
+      confirmLabel: t("projects.where.removeMachine.confirm"),
+      cancelLabel: t("projects.where.cancel"),
+      destructive: true,
+    })
+    if (confirmed) await runFlow(flow, "removing", () => commands.removeFromMachine(placement().id), toAppError)
+  }
+  return { step, failure, reclone, remove }
+}
 
 function MachinePlacementRow(props: { readonly placement: Placement; readonly machine: Machine | undefined }): JSX.Element {
   const t = useProjectsText()
   const open = usePlacementOpener()
+  const missing = useCheckoutMissing(() => props.placement, () => props.machine)
+  const commands = useMachineCheckoutCommands(() => props.placement, () => props.machine?.name ?? "")
+  const connected = () => !props.placement.onThisMachine && props.placement.machineId !== undefined
   const path = () => (props.placement.path ? homeRelativePath(props.placement.path) : undefined)
   const state = (): ProjectsKey => {
     if (props.machine?.paused) return "projects.where.paused"
     return (props.machine?.online ?? props.placement.reachable) ? "projects.where.online" : "projects.where.offline"
   }
-  const detail = () => [props.machine?.name, path(), props.placement.branch, t(state())].filter(Boolean).join(" · ")
+  const where = () => (missing() && props.placement.path ? t("projects.checkout.missing.row", { directory: props.placement.path }) : path())
+  const detail = () => [props.machine?.name, where(), props.placement.branch, t(state())].filter(Boolean).join(" · ")
   return (
-    <SettingsRow title={props.placement.label} description={detail()}>
-      <Button variant="neutral" size="small" onClick={() => open(props.placement.id)}>
-        {t("projects.placement.open")}
-      </Button>
-    </SettingsRow>
+    <>
+      <SettingsRow title={props.placement.label} description={detail()}>
+        <Show when={missing() && props.placement.gitRemote}>
+          <Button variant="contrast" size="small" disabled={commands.step() !== undefined} onClick={commands.reclone}>
+            {commands.step() === "cloning" ? t("projects.checkout.cloning") : t("projects.checkout.clone")}
+          </Button>
+        </Show>
+        <Button variant="neutral" size="small" onClick={() => open(props.placement.id)}>
+          {t("projects.placement.open")}
+        </Button>
+        <Show when={connected()}>
+          <Button variant="ghost" size="small" disabled={commands.step() !== undefined} onClick={() => void commands.remove()}>
+            {t("projects.where.removeMachine")}
+          </Button>
+        </Show>
+      </SettingsRow>
+      <Show when={commands.failure()}>{(message) => <SettingsNote tone="danger">{message()}</SettingsNote>}</Show>
+    </>
   )
 }
 

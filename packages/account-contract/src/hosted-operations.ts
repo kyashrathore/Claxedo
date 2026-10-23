@@ -1,9 +1,10 @@
 import { isPluginId } from "@claxedo/plugin-api/id"
 import { CREDENTIAL_OPERATIONS } from "./credential-operations"
+import { MACHINE_OPERATIONS } from "./machine-operations"
 import { sharedSessions } from "./shared-sessions"
 import { USAGE_OPERATIONS } from "./usage-operations"
 import {
-  defineOperation, operationPath, requiredParameter, optionalParameter, bodyField, stringListParameter,
+  defineOperation, operationPath, requiredParameter, optionalParameter, bodyField,
   selectBody, operationHeaders, pluginMethod, pluginBody, connectedRepositoryBody,
   type Decoder, type ResolvedRequest,
   MissingOperationParameter, UnknownHostedOperation,
@@ -13,6 +14,7 @@ import { object, withStrings, array, withArrays, sessionPeople, withRecord, null
 
 export const CORE_HOSTED_OPERATIONS = {
   ...CREDENTIAL_OPERATIONS,
+  ...MACHINE_OPERATIONS,
   ...USAGE_OPERATIONS,
   "session.shared.list": defineOperation({
     method: "GET", path: operationPath("/api/workspace/shared-sessions"),
@@ -142,98 +144,6 @@ export const CORE_HOSTED_OPERATIONS = {
     output: statusResult, retry: "safe",
     exposure: { renderer: false, app: false },
     response: "http",
-  }),
-  "machines.list": defineOperation({
-    method: "GET", path: operationPath("/api/claxedo/remote-access/devices"),
-    input: operationInput({}),
-    output: withArrays("devices"), retry: "safe",
-    exposure: { renderer: true, app: false },
-  }),
-  // The route pauses every machine of the owner's when it is handed no
-  // `hostId`, so these two require one and fix `paused` in the body.
-  "machines.pause": defineOperation({
-    method: "POST", path: operationPath("/api/claxedo/host/enrollments/pause"),
-    input: operationInput({ hostId: requiredParameter }),
-    output: object, retry: "safe",
-    exposure: { renderer: true, app: false },
-    body: (input) => ({ hostId: input.hostId, paused: true }),
-  }),
-  "machines.resume": defineOperation({
-    method: "POST", path: operationPath("/api/claxedo/host/enrollments/pause"),
-    input: operationInput({ hostId: requiredParameter }),
-    output: object, retry: "safe",
-    exposure: { renderer: true, app: false },
-    body: (input) => ({ hostId: input.hostId, paused: false }),
-  }),
-  "machines.remove": defineOperation({
-    method: "DELETE", path: operationPath("/api/claxedo/remote-access/devices/:hostId"),
-    input: operationInput({ hostId: requiredParameter }),
-    output: object, retry: "never",
-    exposure: { renderer: true, app: false },
-  }),
-  "machines.rename": defineOperation({
-    method: "PATCH", path: operationPath("/api/claxedo/remote-access/devices/:hostId"),
-    input: operationInput({ hostId: requiredParameter, displayName: requiredParameter }),
-    output: object, retry: "never",
-    exposure: { renderer: true, app: false },
-    body: (input) => ({ display_name: input.displayName }),
-  }),
-  // The route replaces the whole list, and an assignment outside the roots
-  // it is handed is retired in the same write.
-  "machines.setRoots": defineOperation({
-    method: "PATCH", path: operationPath("/api/claxedo/host/enrollments/:enrollmentId/scope"),
-    input: operationInput({ enrollmentId: requiredParameter, roots: stringListParameter }),
-    output: object, retry: "never",
-    exposure: { renderer: true, app: false },
-    body: (input) => ({ allowed_roots: input.roots }),
-  }),
-  "machines.pair": defineOperation({
-    method: "POST", path: operationPath("/api/claxedo/host/pairings"),
-    input: operationInput({}),
-    output: object, retry: "never",
-    exposure: { renderer: true, app: false },
-    body: () => ({}),
-  }),
-  "machines.invite": defineOperation({
-    method: "POST", path: operationPath("/api/claxedo/host/invitations"),
-    input: operationInput({ folder: requiredParameter, displayName: optionalParameter }),
-    output: object, retry: "never",
-    exposure: { renderer: true, app: false },
-    body: (input) => ({ scope: { allowed_roots: [input.folder] }, sharesRoot: true, ...(input.displayName ? { displayName: input.displayName } : {}) }),
-  }),
-  "machines.pairing": defineOperation({
-    method: "GET", path: operationPath("/api/claxedo/host/pairings/:pairingId"),
-    input: operationInput({ pairingId: requiredParameter }),
-    output: object, retry: "safe",
-    exposure: { renderer: true, app: false },
-  }),
-  "machines.requests": defineOperation({
-    method: "GET", path: operationPath("/api/claxedo/host/pairings"),
-    input: operationInput({}),
-    output: withArrays("requests"), retry: "safe",
-    exposure: { renderer: true, app: false },
-  }),
-  "machines.approve": defineOperation({
-    method: "POST", path: operationPath("/api/claxedo/host/pairings/:pairingId/approve"),
-    input: operationInput({ pairingId: requiredParameter, displayName: optionalParameter }),
-    output: object, retry: "never",
-    exposure: { renderer: true, app: false },
-    body: selectBody("displayName"),
-  }),
-  "machines.deny": defineOperation({
-    method: "POST", path: operationPath("/api/claxedo/host/pairings/:pairingId/deny"),
-    input: operationInput({ pairingId: requiredParameter }),
-    output: object, retry: "never",
-    exposure: { renderer: true, app: false },
-    body: () => ({}),
-  }),
-  // Run before a sign-out ends the session, so a pasted command whose code
-  // no machine redeemed yet answers that its person signed out.
-  "machines.cancelPairings": defineOperation({
-    method: "DELETE", path: operationPath("/api/claxedo/host/pairings"),
-    input: operationInput({}),
-    output: object, retry: "safe",
-    exposure: { renderer: true, app: false },
   }),
   "workspace.list.provisioner": defineOperation({
     method: "GET", path: operationPath("/api/workspace?host=provisioner"),

@@ -9,6 +9,7 @@ import { D1ApplicationIdentityAuthority } from "./application-identity"
 import { D1HostAccessAuthority } from "./host-access-authority"
 import { D1HostInvitationAuthority } from "./host-invitation-authority"
 import { D1HostPairingAuthority } from "./host-pairing-authority"
+import { addD1HostEnrollmentRoot } from "./host-enrollment-roots"
 import { D1WorkspaceAuthority } from "./workspace-authority"
 import { applyControlPlaneBaseline } from "../../../test-support/control-plane-migrations"
 import { WORKERS_COMPATIBILITY_DATE } from "../../../../scripts/deploy/hosted-worker-bundle"
@@ -227,5 +228,50 @@ describe("machine pairing", () => {
     expect(await input.workspace.machineOwnerOrgIds(alice), "her personal organization and Acme").toEqual([personal?.org_id ?? "", "org_acme"].toSorted((a, b) => a.localeCompare(b)))
     await input.database.prepare(`update org_memberships set revoked_at = 1 where user_id = ?`).bind(alice).run()
     expect(await input.workspace.machineOwnerOrgIds(alice)).toEqual([])
+  })
+})
+
+describe("a folder the owner picks on a paired machine", () => {
+  test("joins its roots unless one covers it, and the assignment that follows is a new workspace in the machine's organization", async () => {
+    const input = await setup()
+    const minted = await input.pairings.createHostPairing(input.alice)
+    const { result } = await redeem(input, minted.code, "host_pick")
+    await approve(input, minted.pairingId)
+    const add = (folder: string) => addD1HostEnrollmentRoot(input.database, "deployment-a", input.alice, { hostId: "host_pick", folder }, 1_800_000_000_000)
+
+    expect(await add("/home/ubuntu/code/app/web"), "already under a root").toEqual({ changed: false, scope_revision: 2 })
+    expect(await add("/home/ubuntu/notes")).toEqual({ changed: true, scope_revision: 3 })
+    expect(await input.hostAccess.machineAuth.lookupEnrollment(result.enrollment.enrollment_id)).toMatchObject({
+      scope: { allowed_roots: ["/home/ubuntu/code/app", "/home/ubuntu/notes"], revision: 3 },
+    })
+    await input.hostAccess.assignWorkspaceHost(input.alice, { workspaceId: "ws_notes", hostId: "host_pick", displayName: "notes", repoName: "notes", remoteDirectory: "/home/ubuntu/notes" })
+    const notes = await input.database.prepare(`select org_id, backing, remote_directory from workspaces where workspace_id = 'ws_notes'`).first()
+    expect(notes).toEqual({ org_id: "org_acme", backing: "local-worktree", remote_directory: "/home/ubuntu/notes" })
+    expect((await input.hostAccess.listHostDevices(input.alice))[0]?.workspace_ids.sort()).toEqual([`ws_${minted.pairingId}`, "ws_notes"].sort())
+  })
+
+  test("a worktree of a folder the machine serves, filed into that folder's project, becomes another workspace of it", async () => {
+    const input = await setup()
+    const minted = await input.pairings.createHostPairing(input.alice)
+    await redeem(input, minted.code, "host_tree")
+    await approve(input, minted.pairingId)
+    const folder = await input.database.prepare(`select project_id from workspaces where workspace_id = ?`).bind(`ws_${minted.pairingId}`).first<{ project_id: string }>()
+    const tree = "/home/ubuntu/.claxedo/worktree/prj/fix"
+    await addD1HostEnrollmentRoot(input.database, "deployment-a", input.alice, { hostId: "host_tree", folder: tree }, 1_800_000_000_000)
+    await input.hostAccess.assignWorkspaceHost(input.alice, {
+      workspaceId: "ws_tree", hostId: "host_tree", displayName: "fix", projectId: folder?.project_id ?? "", gitBranch: "claxedo/fix", remoteDirectory: tree,
+    })
+    expect(await input.database.prepare(`select project_id, git_branch, remote_directory from workspaces where workspace_id = 'ws_tree'`).first())
+      .toEqual({ project_id: folder?.project_id, git_branch: "claxedo/fix", remote_directory: tree })
+    expect((await input.database.prepare(`select count(*) as projects from projects`).first<{ projects: number }>())?.projects).toBe(1)
+  })
+
+  test("is refused on another person's machine and on one still waiting for approval", async () => {
+    const input = await setup()
+    const minted = await input.pairings.createHostPairing(input.alice)
+    await redeem(input, minted.code, "host_waiting")
+    await expect(addD1HostEnrollmentRoot(input.database, "deployment-a", input.alice, { hostId: "host_waiting", folder: "/srv" }, 1)).rejects.toMatchObject({ code: "host_enrollment_not_found" })
+    await approve(input, minted.pairingId)
+    await expect(addD1HostEnrollmentRoot(input.database, "deployment-a", input.bob, { hostId: "host_waiting", folder: "/srv" }, 1)).rejects.toMatchObject({ code: "host_enrollment_not_found" })
   })
 })

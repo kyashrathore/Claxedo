@@ -214,7 +214,13 @@ const ENTRIES = [
   // serves the connect scripts the app's command fetches
   // (`routes/hosted/connect-scripts.ts` over the generated
   // `workspace/connect-installers.generated.ts`).
-  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 199, packages: 23 },
+  // Every entry carries the owner's requests to a connected machine itself,
+  // each under a grant the plane mints for that request alone
+  // (`routes/hosted/host-machines.ts`), the owned-and-serving check and the
+  // call through the relay (`workspace/machine-management.ts`), and a folder
+  // the owner picks joining that machine's roots
+  // (`authority/adapters/d1/host-enrollment-roots.ts`).
+  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 202, packages: 23 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the
   // manifest, and `cloudflare:workers` for the supervisor and its entrypoints,
@@ -241,7 +247,7 @@ const ENTRIES = [
   // The hosted connections setup picks which code-host connection can read a
   // pasted repository by the rule the local connections host shares
   // (`connections/repository-access.ts`).
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 252, packages: 27 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 255, packages: 27 },
   // The full-hosted entry alone carries the session rows pass
   // (`session/session-rows-pass.ts`) and its wiring to the sandbox and the
   // relay (`hosted-workerd/full-hosted-sandbox.ts`): it delivers the pass to a
@@ -256,7 +262,7 @@ const ENTRIES = [
   // their readers (`workspace/runtime-lost.ts`,
   // `authority/adapters/d1/runtime-lost-sessions.ts`), since only this entry
   // has cloud runtimes to lose.
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 264, packages: 27 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 267, packages: 27 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {

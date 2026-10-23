@@ -18,6 +18,7 @@ import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
 import { HOSTED_CREDENTIALS_FLAG, hostedBrokerCredentialReader, hostedOrgCredentials } from "../worker/index"
 import { hostedRepositoryCloneDelivery } from "../../workspace/repository-clone"
+import { memorySandboxPassRegister } from "@claxedo/server-core/platform/auth/sandbox-pass-register"
 import { hostedRepositoryBindings } from "./repository-binding"
 import { createHostedEgressBroker, HOSTED_EGRESS_BROKER_GUARD_EXEMPTION, RUNTIME_UPSTREAM_LANES, verifyBrokerPlaceholder, type MachineBrokerLease, type MachineBrokerSubject } from "./index"
 
@@ -754,5 +755,92 @@ describe("a connected machine spending its owner's accounts through the hosted b
     expect(sent.request.url).toBe("https://chatgpt.com/backend-api/codex/responses")
     expect(sent.request.headers.get("authorization")).toBe("Bearer chatgpt-real-access")
     expect(sent.request.headers.get("chatgpt-account-id")).toBe("acct_plan")
+  })
+})
+
+describe("a connected machine cloning a private repository through the hosted broker", () => {
+  const ENROLLMENT = "enrollment_clone"
+  const LIVE: MachineBrokerSubject = { ownerUserId: "alice", orgId: "org-1", hostId: "host_machine", servingGeneration: 2 }
+  const refusal = async (response: Response) => [response.status, (await response.json() as { error: { code: string } }).error.code]
+
+  async function cloning(options: { register?: boolean } = {}) {
+    const rig = await composition()
+    const tokens = ["ghs_first", "ghs_second"]
+    const asked: unknown[] = []
+    rig.broker.serveRepositoryClones(
+      hostedRepositoryBindings(async () => undefined, async (owner, connectionId) => {
+        asked.push({ owner, connectionId })
+        return connectionId === "conn_alice" ? tokens.shift() ?? "ghs_last" : undefined
+      }),
+      options.register === false ? undefined : memorySandboxPassRegister(),
+    )
+    machines.set(ENROLLMENT, LIVE)
+    const git = (clone: { brokerUrl: string; authorization: string }, path: string, init: { method?: string; headers?: Record<string, string>; body?: string } = {}) =>
+      rig.app.request(`${clone.brokerUrl}${path}`, { ...init, headers: { authorization: clone.authorization, ...init.headers } })
+    return { ...rig, git, asked }
+  }
+
+  test("the machine's git fetches the one repository with the connection's token of each request, until the clone is spent", async () => {
+    const { broker, git, upstream, asked } = await cloning()
+    const clone = await broker.machineRepositoryClone({ enrollmentId: ENROLLMENT, connectionId: "conn_alice", fullName: "acme/private" })
+    if (!clone) throw new Error("no clone was brokered")
+    expect(clone.repoUrl).toBe("https://github.com/acme/private.git")
+    expect(clone.brokerUrl).toMatch(new RegExp(`^${ORIGIN}/bindings/[0-9a-f]{32}$`))
+
+    expect((await git(clone, "/acme/private.git/info/refs?service=git-upload-pack")).status).toBe(200)
+    expect((await git(clone, "/acme/private.git/git-upload-pack", { method: "POST", body: "0032want deadbeef\n" })).status).toBe(200)
+    expect(upstream.seen.map(({ request }) => [request.method, request.url, request.headers.get("authorization")])).toEqual([
+      ["GET", "https://github.com/acme/private.git/info/refs?service=git-upload-pack", `Basic ${Buffer.from("x-access-token:ghs_first").toString("base64")}`],
+      ["POST", "https://github.com/acme/private.git/git-upload-pack", `Basic ${Buffer.from("x-access-token:ghs_second").toString("base64")}`],
+    ])
+    expect(JSON.stringify(upstream.seen.map(({ request }) => [...request.headers]))).not.toContain(clone.authorization.slice("Bearer ".length))
+    expect(asked).toEqual([
+      { owner: { ownerUserId: "alice", orgId: "org-1" }, connectionId: "conn_alice" },
+      { owner: { ownerUserId: "alice", orgId: "org-1" }, connectionId: "conn_alice" },
+    ])
+
+    await clone.spent()
+    expect(await refusal(await git(clone, "/acme/private.git/info/refs?service=git-upload-pack"))).toEqual([403, "binding_unavailable"])
+    expect(upstream.seen).toHaveLength(2)
+  })
+
+  test("a push, another repository, a paused or superseded machine and a gone connection never reach GitHub", async () => {
+    const { broker, git, upstream } = await cloning()
+    const clone = await broker.machineRepositoryClone({ enrollmentId: ENROLLMENT, connectionId: "conn_alice", fullName: "acme/private" })
+    const gone = await broker.machineRepositoryClone({ enrollmentId: ENROLLMENT, connectionId: "conn_gone", fullName: "acme/private" })
+    if (!clone || !gone) throw new Error("no clone was brokered")
+    expect(await refusal(await git(clone, "/acme/private.git/git-receive-pack", { method: "POST", body: "" }))).toEqual([403, "request_outside_policy"])
+    expect(await refusal(await git(clone, "/acme/other.git/info/refs?service=git-upload-pack"))).toEqual([403, "request_outside_policy"])
+    expect(await refusal(await git(gone, "/acme/private.git/info/refs?service=git-upload-pack"))).toEqual([403, "binding_unavailable"])
+    machines.set(ENROLLMENT, { ...LIVE, servingGeneration: 3 })
+    expect(await refusal(await git(clone, "/acme/private.git/info/refs?service=git-upload-pack"))).toEqual([403, "binding_unavailable"])
+    machines.set(ENROLLMENT, undefined)
+    expect(await refusal(await git(clone, "/acme/private.git/info/refs?service=git-upload-pack"))).toEqual([403, "binding_unavailable"])
+    expect(upstream.seen).toHaveLength(0)
+  })
+
+  test("nothing is brokered for a machine the broker refuses, or before a register to spend it in", async () => {
+    const { broker } = await cloning({ register: false })
+    expect(await broker.machineRepositoryClone({ enrollmentId: ENROLLMENT, connectionId: "conn_alice", fullName: "acme/private" })).toBeUndefined()
+    const registered = await cloning()
+    machines.set(ENROLLMENT, undefined)
+    expect(await registered.broker.machineRepositoryClone({ enrollmentId: ENROLLMENT, connectionId: "conn_alice", fullName: "acme/private" })).toBeUndefined()
+  })
+
+  test("a clone stand-in spends no account and no workspace's repository, and theirs spend no clone", async () => {
+    const { app, broker, store, git, upstream, delivered, sandboxes } = await cloning()
+    const clone = await broker.machineRepositoryClone({ enrollmentId: ENROLLMENT, connectionId: "conn_alice", fullName: "acme/private" })
+    if (!clone) throw new Error("no clone was brokered")
+    const key = await store.putCredential({ owner: "alice", provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-real-key" })
+    const account = await delivered(key, { workspaceId: "ws_root" })
+    expect(await refusal(await app.request(`${account.baseUrl}/v1/messages`, { method: "POST", headers: { authorization: clone.authorization }, body: "{}" })))
+      .toEqual([403, "binding_not_permitted"])
+    expect(await refusal(await git({ brokerUrl: clone.brokerUrl, authorization: `Bearer ${account.placeholder}` }, "/acme/private.git/info/refs")))
+      .toEqual([403, "binding_not_permitted"])
+    sandboxes.boot("ws_private", { epoch: 1, hostId: "boat" })
+    const workspace = await broker.repositoryBinding({ orgId: "org-1", ownerUserId: "alice", workspaceId: "ws_private", connectionId: "conn_alice", lease: { epoch: 1, hostId: "boat" } })
+    expect(await refusal(await git({ brokerUrl: workspace.baseUrl, authorization: clone.authorization }, "/acme/private.git/info/refs")))
+      .toEqual([403, "binding_not_permitted"])
+    expect(upstream.seen).toHaveLength(0)
   })
 })

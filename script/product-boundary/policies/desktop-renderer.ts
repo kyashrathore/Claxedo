@@ -587,8 +587,18 @@ export const desktopRenderer: Policy = {
   // bridge's answers and its view (owner: the app's settings domain,
   // `settings/ssh-connect.ts`, `settings/ssh-bridge.ts` and
   // `settings/view/machine-ssh.tsx`). They add no package edge.
-  // 1576/37, no headroom.
-  ceilings: { modules: 1576, packages: 37 },
+  // The create-project form's folder places, this computer and each connected
+  // machine the person owns that serves a folder (owner: the app's projects
+  // domain, `projects/folder-places.ts`), and the creation of a project from a
+  // folder on another machine through the route `claxedo host assign` uses
+  // (owner: the app's server adapter, `server/machine-projects.ts`). They add
+  // no package edge.
+  // The adapter's freshness table, which the first read with a lifetime of its
+  // own cites at the read: whether a connected machine still holds a checkout
+  // (owner: the app's server adapter, `server/freshness.ts`, read by
+  // `server/folders.ts`). It adds no package edge.
+  // 1579/37, no headroom.
+  ceilings: { modules: 1579, packages: 37 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

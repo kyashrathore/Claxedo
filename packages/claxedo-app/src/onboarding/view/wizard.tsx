@@ -53,7 +53,7 @@ function StepPanels(props: { readonly wizard: Wizard; readonly facts: ExecutionF
       <Show when={wizard().visited().has("project")}>
         <div hidden={wizard().step() !== "project"} data-step-panel="project">
           <ProjectCreateForm
-            {...(props.facts.localExecution && props.facts.machineName ? { folderMachine: props.facts.machineName } : {})}
+            {...(props.facts.localExecution && props.facts.machineName ? { folderPlaces: [{ name: props.facts.machineName }] } : {})}
             namedByRepository={!props.facts.localExecution}
             pickFolder={props.pickFolder}
             submitLabel={t("onboarding.continue")}

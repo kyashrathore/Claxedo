@@ -3,6 +3,7 @@ import { useServer, type PlacementId, type Project } from "@/server"
 import { FormDialog, useDialog } from "@/ui"
 import { useProjectsText } from "../i18n"
 import { pickProjectFolderWith } from "../pick-project-folder"
+import { useFolderPlaces } from "../store"
 import { createProjectCreateDraft } from "./project-create-draft"
 import { ProjectCreateFields } from "./project-create-form"
 
@@ -11,7 +12,7 @@ export function DialogCreateProject(props: { readonly onCreated: (project: Proje
   const dialog = useDialog()
   const server = useServer()
   const draft = createProjectCreateDraft({
-    folderMachine: () => server.capabilities()?.servingMachine?.name,
+    folderPlaces: useFolderPlaces(),
     pickFolder: pickProjectFolderWith(dialog),
     send: async (source, name) => {
       let placementId: PlacementId | undefined

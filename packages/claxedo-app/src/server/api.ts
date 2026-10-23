@@ -130,6 +130,8 @@ export type PlacementsApi = {
   readonly openable: () => ReadonlySet<PlacementId> | undefined
   readonly load: () => Promise<readonly Placement[]>
   readonly createWorktree: (root: PlacementId, input: WorktreeCreateInput) => Promise<Placement>
+  readonly recloneOnMachine: (id: PlacementId) => Promise<void>
+  readonly removeFromMachine: (id: PlacementId) => Promise<void>
   readonly locateSession: Workspaces["locateSession"]
   readonly runtimeRoute: (id: PlacementId) => RuntimeRouteKind
 }

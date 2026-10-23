@@ -27,7 +27,9 @@ import { controlPlaneRateLimitError } from "./runtime-token-guards"
  * lease and consent is the machine's heartbeat-acked served set. The answer
  * carries no tunnel credential; the machine receives its fenced one in the
  * answer to the heartbeat that acks this assignment, and each verb rings the
- * machine (`options.hostChanged`) so that heartbeat is its next one.
+ * machine (`options.hostChanged`) so that heartbeat is its next one. With
+ * `addRoot` the directory first joins the machine's roots: it is a folder the
+ * owner picked from the machine's own listing.
  */
 
 /** Names, ids and a repository URL — the control-plane JSON bound. */
@@ -52,6 +54,7 @@ const assignBody = z
     repoName: z.string().optional(),
     gitBranch: z.string().optional(),
     remoteDirectory: z.string().optional(),
+    addRoot: z.boolean().optional(),
   })
   .strict()
 
@@ -103,6 +106,11 @@ export function hostAssignmentHandlers(
         if (rateLimit) return c.json(rateLimit.body, rateLimit.status)
         const authority = requireAuthority(services)
         await authority.usersMe(auth)
+        if (body.addRoot) {
+          if (!body.remoteDirectory) return c.json({ error: apiError("invalid_input", "addRoot needs the remoteDirectory it adds") }, 400)
+          if (!authority.addHostEnrollmentRoot) return c.json({ error: apiError("workspace_authority_unavailable", "This authority cannot widen a machine's roots") }, 503)
+          await authority.addHostEnrollmentRoot(auth, { hostId: body.hostId, folder: body.remoteDirectory })
+        }
         const assignment = await authority.assignWorkspaceHost(auth, {
           workspaceId,
           hostId: body.hostId,

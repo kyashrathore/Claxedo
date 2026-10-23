@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
+import { brokeredRepositoryUrl } from "@claxedo/workspace-runtime/host"
 
 const run = promisify(execFile)
 
@@ -44,16 +45,6 @@ async function brokeredRewrites(repoUrl: string, env: GitEnv) {
     const match = /^url\.(.+)\.insteadof (.+)$/.exec(line.trim())
     return match?.[2] === repoUrl ? [match[1]] : []
   })
-}
-
-/** Where git fetches and pushes the repository through the broker: the binding URL followed by the repository's path. */
-function brokeredRepositoryUrl(brokerUrl: string, repoUrl: string) {
-  const broker = new URL(brokerUrl)
-  const loopback = broker.protocol === "http:" && ["127.0.0.1", "[::1]", "localhost"].includes(broker.hostname)
-  if ((broker.protocol !== "https:" && !loopback) || broker.username || broker.password || broker.search || broker.hash) {
-    throw new Error("Invalid GitHub clone broker URL")
-  }
-  return `${broker.origin}${broker.pathname.replace(/\/+$/, "")}${new URL(repoUrl).pathname}`
 }
 
 /**

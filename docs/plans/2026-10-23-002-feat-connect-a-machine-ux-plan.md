@@ -263,33 +263,115 @@ since worktrees are the local server's own route. This workstream gives a connec
 takes over [Remote machine connection](./2026-09-14-003-feat-connect-implementation-plan.md)'s deferred P5.3
 (machines in the create-project form) and P5b (host folder operations).
 
-- [ ] **The boundary.** A workspace token authorizes one workspace, not the machine, so an operation on the
+- [x] **The boundary.** A workspace token authorizes one workspace, not the machine, so an operation on the
   machine as a whole (listing folders, adding a folder, cloning, a new worktree as its own checkout) runs on a
   host-management grant. The control plane mints it for (person, enrollment, operation, destination, expiry), only
   to the machine's owner; the machine verifies it against the control plane's key, and it is distinct from the
   relay's proof. Such an operation creates new workspace rows scoped to that enrollment and never rewrites an
-  existing one (the rule P3.3 set). Progress:
-- [ ] **Folder on <machine>.** The create-project form offers "Folder on <name>" for each online connected machine
+  existing one (the rule P3.3 set). Progress: done 2026-10-23 (lane C5). The grant is a member of the pass family
+  (`claxedo-server-core/src/platform/auth/host-management-grant.ts`, audience `claxedo-host-management`, one
+  operation of `folders.read`, `clone`, `worktree`, a destination, the host, one minute). The plane mints one per
+  request, only after `ownedMachine` finds the caller's own unpaused, live enrollment serving a folder, and carries
+  it as `x-claxedo-host-grant` through the relay as the caller under that folder (`workspace/machine-management.ts`).
+  The machine (`claxedo-host-serving/src/host-management.ts`, a route contribution of every runtime `claxedo connect`
+  serves) needs the relay's proof naming the workspace owner and the grant verified against the plane's JWKS for
+  its own enrollment and host, that person, operation and destination, and spends each grant once. A folder the
+  owner picks becomes a new workspace on that enrollment's organization through `assignWorkspaceHost` with an id
+  the app mints, so none is re-pointed. The desktop daemon does not mount it yet (no app surface enables its remote
+  access).
+- [x] **Folder on <machine>.** The create-project form offers "Folder on <name>" for each online connected machine
   the person owns. The same folder dialog opens with that machine's folders (its paths, children and search,
   answered by the machine under the grant; `~` is the machine's home). Picking a folder adds it to the machine's
-  roots and assigns it, and it becomes a project the way `claxedo host assign` makes one today. Progress:
+  roots and assigns it, and it becomes a project the way `claxedo host assign` makes one today. Progress: done
+  2026-10-23 (lane C5). Folder places are this computer and each of the person's online, unpaused machines that
+  serve a folder (`projects/folder-places.ts`); with more than one a Machine select picks it. The dialog reads
+  through `machines.folders` (`POST /api/claxedo/host/machines/:enrollmentId/folders`: home, one folder's
+  subfolders, or a search under one), and the pick is `machines.assign`, the route `claxedo host assign` uses
+  (`/api/workspace/:id/host-assignment`) with `addRoot`. Live: `02-projects-machine` pairs a real `claxedo connect
+  --pair` machine on the signed stack, picks `~/folders/al…` in the machine's dialog, and reads the new workspace back
+  from the catalog and the machine's served set, on web and phone; red with the machine's host management unmounted
+  (no folders listed).
 - [ ] **Clone onto <machine>.** A repository URL or a code-host repository is cloned onto the chosen connected
   machine, into a folder the person can change (by default beside the machine's first shared folder). The clone's
   credential is brokered (single use, scoped to that repository, from the connections capability), never the
-  account's code-host token sent to the machine. Progress:
-- [ ] **New worktree on <machine>.** The Where chip offers "New worktree on <name>" for a connected machine's folder,
-  with the base-branch choice it has locally, created on first send as local worktrees are. Progress:
-- [ ] **Where it runs.** Settings → Projects → Where it runs offers Open, and "Clone at this location" for a
-  connected machine's folder that is gone, as it does for this computer's. Progress:
+  account's code-host token sent to the machine. Progress: 2026-10-23 (lane C5), built; one criterion unproven live.
+  In Repository, "Clone onto" picks this computer (Cloud on a hosted plane) or a machine place, and "Clone into a
+  folder on <machine>" defaults to the parent of the machine's first shared folder and opens its own folder dialog
+  to change it. `machines.clone` (`POST /api/claxedo/host/machines/:enrollmentId/clone`) asks `repositoryConnection`
+  whether one of the caller's connections reads the repository. If one does, the egress broker mints a machine
+  repository binding for that clone alone: only `info/refs` and `git-upload-pack` of that repository, the
+  connection's token read per request, the enrollment checked at its serving generation, and the stand-in recorded
+  in the pass register and spent when the machine answers. The machine's git fetches through it for that one
+  process, with `origin` staying the repository's URL. The machine clones with `cloneInto`
+  (`claxedo-server-core/src/hosts/machine/clone.ts`, the desktop project store's clone too) and answers
+  through a long answer that outlasts the relay's 30 s first-byte wait. Then `machines.assign` files the folder with
+  its repository URL. Live: `02-projects-machine` clones the signed stack's git server onto a paired `claxedo connect`
+  machine, beside its shared folder and then into a folder picked in its dialog, on web and phone; red with the
+  machine's clone route unmounted ("build-box did not answer: HTTP 404"). Unproven live: a private GitHub repository
+  through the broker. The signed stack's scripted GitHub serves no git smart-HTTP, and a machine's git (GnuTLS)
+  would have to trust the stack's per-run certificate. Focused tests cover it: the composed broker against a
+  stub GitHub (`hosted-egress-broker.test.ts`: fetch, refusal of push, other repositories, a superseded or paused
+  machine, a gone connection, and the spent stand-in), and a real git clone through a loopback broker on the
+  machine (`host-management.test.ts`).
+- [x] **New worktree on <machine>.** The Where chip offers "New worktree on <name>" for a connected machine's folder,
+  with the base-branch choice it has locally, created on first send as local worktrees are. Progress: done
+  2026-10-23 (lane C5). The Where chip offers it once per connected machine holding a checkout of the project (the
+  account catalog does not tell its folder from its worktrees). The base branch comes from that checkout's refs
+  through the relay. On the first send the app runs `machines.worktree`, and the machine makes it with the code
+  the desktop's worktree route runs, now in `claxedo-server-core/src/hosts/machine/worktree.ts`. Then
+  `machines.assign` files it into the folder's project on its branch, under the project's own repository key. Live:
+  `02-projects-machine` picks "New worktree on build-box" with base `release`, sends, and reads back the worktree's
+  commit on the machine, its catalog row in the folder's project on its branch, the machine's served set and the
+  draft's route `/w/<worktree>/session`, on web and phone; red with the machine's worktree route unmounted (502). The
+  first turn itself is not run there: the machine runtime has no scripted ACP connection ("Connection scripted-acp
+  is not configured on this runtime"), which is the harness on a connected machine, not this item.
+- [x] **Where it runs.** Settings → Projects → Where it runs offers Open, and "Clone at this location" for a
+  connected machine's folder that is gone, as it does for this computer's. Progress: done 2026-10-23 (lane C5).
+  Each connected machine's row has Open. While its machine is online the row also asks the machine whether the
+  folder is still there (`queries.folders.presence`, one level through `machines.folders`, fresh for 30 s). A gone
+  folder reads "Folder missing: <path>" with "Clone at this location", which clones the workspace's recorded
+  remote back into it through `machines.clone`. Live: `02-projects-machine` deletes a clone on a paired machine,
+  finds it missing in Settings → Projects, clones it back, and reads the checkout and its origin on the machine, on
+  web and phone; red with the presence read switched off (no "Folder missing"). A machine reaches host management
+  only through a folder it serves, so a machine whose one folder is gone cannot be asked.
 - [ ] **Again in another folder.** Running the connect command in another folder on a machine that is already
   connected asks the owner in the app to add that folder; it never re-enrolls the machine. Progress:
-- [ ] **One path.** Hosted operations for these (`machines.folders`, `machines.assign`, `machines.unassign`,
+- [x] **One path.** Hosted operations for these (`machines.folders`, `machines.assign`, `machines.unassign`,
   `machines.clone`, and the worktree create) reuse the route `claxedo host assign` uses and the local server's clone
   and worktree code moved behind the grant, so each operation has one implementation for every machine. Progress:
+  done 2026-10-23 (lane C5). `machines.assign` and `machines.unassign` are the host-assignment routes `claxedo host
+  assign` and `claxedo host unassign` use. Where it runs' "Remove" on a connected machine's row is
+  `machines.unassign`: the folder stays on the machine. `machines.folders`, `machines.clone` and
+  `machines.worktree` reach the machine under a host-management grant. Each runs the code the desktop runs for its
+  own folders: `claxedo-server-core/src/hosts/machine/folders.ts` (listing and bounded search),
+  `hosts/machine/clone.ts` (`cloneInto`, which the local project store now calls) and `hosts/machine/worktree.ts`
+  (naming, base, `git worktree add`, which the local worktree route now calls). The local copies are gone. Not yet:
+  a desktop that serves its folders to other devices through remote access does not mount host management, so
+  another device cannot run these operations on it.
 - [ ] **Parity proof.** e2e flow 2 (add a folder, clone, edit, remove, deep link, worktree branches) passes against a
-  connected machine as it does against this computer, on the web and the desktop. Progress:
-- [ ] The terminal never lists folders; in the app, folders appear only through the folder dialog's search and one
-  level at a time, as on this computer. Progress:
+  connected machine as it does against this computer, on the web and the desktop. Progress: 2026-10-23 (lane C5),
+  partly. Covered on web and phone (`02-projects-machine`, 5 flows, 10 runs green, each with a recorded red run):
+  - add a folder;
+  - clone, beside the shared folder or into a picked one;
+  - deep link to the project's settings;
+  - remove from the machine;
+  - Clone at this location for a gone folder;
+  - a new worktree from a chosen base;
+  - a gone base kept for a corrected retry.
+
+  Open, each for its own reason:
+  - edit: the hosted plane serves no project configuration for any project, its own or a machine's;
+  - the worktree cases that run a turn on the machine (a refused session kept for retry, dirty-source and tag
+    cases with sessions): the machine runtime has no scripted ACP connection, "Connection scripted-acp is not
+    configured on this runtime";
+  - the desktop app as the client: `packages/claxedo-desktop` is lane C9's, and the desktop's own folders are not
+    reachable through host management.
+- [x] The terminal never lists folders; in the app, folders appear only through the folder dialog's search and one
+  level at a time, as on this computer. Progress: done 2026-10-23 (lane C5). A machine answers folder reads only as
+  its home, one folder's subfolders, or a search under one folder (at most 200 results, three levels deep, 400
+  folders visited), each on its own one-minute grant. The app reads them only from the folder dialog. The CLI
+  prints the folder it shares while pairing and, in `claxedo status`, the folders it serves; it lists no other
+  folder.
 
 ### C6 — Failures, explained where the person looks
 
