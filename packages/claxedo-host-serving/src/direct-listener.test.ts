@@ -7,6 +7,7 @@ import os from "node:os"
 import path from "node:path"
 import { decodeJwt, exportJWK, generateKeyPair } from "jose"
 import { mintRelayHostToken, mintRuntimeAccessToken } from "@claxedo/workspace-relay"
+import { Pty } from "@claxedo/workspace-runtime"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { createDirectTlsKey, directTlsIdentity, type DirectTlsIdentity } from "./direct-certificate"
 import { privateNetworkAddresses, startDirectListener, type DirectListener } from "./direct-listener"
@@ -99,6 +100,7 @@ describe("the direct listener in front of the host runtimes", () => {
     else process.env.CLAXEDO_DATA_DIR = previousDataDir
     await direct?.close()
     await runtime?.close()
+    await Pty.dispose()
     ClaxedoDB.close()
     await new Promise<void>((resolve) => keys?.close(() => resolve()))
     await new Promise<void>((resolve) => authority?.close(() => resolve()))
@@ -241,6 +243,18 @@ describe("the direct listener in front of the host runtimes", () => {
 
     direct.withhold(false)
     expect((await call(`/workspaces/${WS_A}/session`, bearer(token))).status).toBe(200)
+    const removed = await new Promise<number>((resolve, reject) => {
+      const request = httpsRequest({
+        host: "127.0.0.1", port, path: `/workspaces/${WS_A}/api/wr/pty/${created.id}`, method: "DELETE", headers: bearer(token),
+        ca: identity.certPem, checkServerIdentity: () => undefined,
+      }, (response) => {
+        response.resume()
+        response.on("end", () => resolve(response.statusCode ?? 0))
+      })
+      request.on("error", reject)
+      request.end()
+    })
+    expect(removed, "the terminal the test opened is closed through the same route").toBeLessThan(300)
   })
 })
 
@@ -269,11 +283,11 @@ describe("the addresses and port the direct listener holds", () => {
       expect(reported).toEqual([first?.port])
       expect(first).toEqual({ port: first?.port, addresses: ["127.0.0.1"], spkiSha256: identity.spkiSha256 })
 
-      addresses = ["127.0.0.2"]
-      expect(await direct.routes()).toEqual({ port: first?.port, addresses: ["127.0.0.2"], spkiSha256: identity.spkiSha256 })
-
       addresses = []
       expect(await direct.routes()).toBeUndefined()
+
+      addresses = ["127.0.0.1"]
+      expect(await direct.routes(), "an address that comes back is served on the port it had").toEqual({ port: first?.port, addresses: ["127.0.0.1"], spkiSha256: identity.spkiSha256 })
     } finally {
       await direct.close()
       await new Promise<void>((resolve) => blocker.close(() => resolve()))
