@@ -425,6 +425,10 @@ async function inProcessHost() {
   // Strictly increasing, so the run record each beat writes afterwards is
   // distinguishable from the previous beat's even inside one millisecond.
   let clock = 0
+  // A serving beat reads the machine's addresses before it signs its request,
+  // and beats run one at a time, so at each read every earlier beat has been
+  // answered and has computed its run record.
+  const beatStarts: Array<{ clockAt: number; beatsSent: number }> = []
   const deps: ConnectDeps = {
     host: {
       ...defaultHostDeps(),
@@ -437,7 +441,10 @@ async function inProcessHost() {
         listener = await createHostRuntimeListener({ hostname: "127.0.0.1", port: 0, drainTimeoutMs: 500 })
         return listener
       },
-      directAddresses: () => [],
+      directAddresses: () => {
+        beatStarts.push({ clockAt: clock, beatsSent: cp.beats().length })
+        return []
+      },
       setServing: setHostServing,
       servingState: hostServingState,
       stopServing: stopHostServing,
@@ -495,12 +502,18 @@ async function inProcessHost() {
       running = connect(argv, deps)
       await beatReconciled(since, "the first beat")
     },
-    /** One beat, reconciled; returns what the request declared. */
+    /**
+     * The first beat to start after this call, reconciled; returns what its
+     * request declared. A beat a ring started earlier may still be in flight,
+     * and its run record is not this beat's.
+     */
     beat: async () => {
-      const since = await lastBeatAt()
+      const started = beatStarts.length
       tick?.()
-      await beatReconciled(since, "a beat")
-      return cp.beats().at(-1)!.body
+      await until(() => beatStarts.length > started, "a beat to start")
+      const { clockAt, beatsSent } = beatStarts[started]
+      await beatReconciled(clockAt, "a beat")
+      return cp.beats()[beatsSent].body
     },
     stop: async () => {
       stop?.("SIGTERM")
