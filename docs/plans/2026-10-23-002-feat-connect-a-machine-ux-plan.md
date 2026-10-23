@@ -1,0 +1,345 @@
+# Connecting a machine: one paste, one click
+
+This plan makes adding your own persistent machine (a laptop, a home or office desktop, a cloud VM you keep
+running) to Claxedo the easiest step in the product: from **Connect a machine…** in the web or desktop app to the
+first session running in a folder on that machine, with one command pasted on the machine and every other step in
+the app. It covers living with the machine afterwards too: its state, its failures and how to recover, its folders,
+and removing it.
+
+A connected machine is not a cloud workspace:
+
+| | Connected machine (this plan) | Cloud workspace (`claxedo-app/src/cloud`) |
+|---|---|---|
+| Whose computer | One the person already runs and keeps | A sandbox Claxedo creates on the organization's provider key |
+| Lifecycle | The person's: Claxedo never starts or stops it | The server's: provisioning, starting, ready, stopping, stopped ("Asleep"), failed |
+| Files | Folders that already exist on it, assigned as they are | The project's repository cloned in; `.claxedo/setup.sh` and `.claxedo/start.sh` run; stopped workspaces resume from a checkpoint |
+| Tools and logins | Whatever the machine has: its CLIs, SSH keys, Docker, GPUs | The workspace image and setup script |
+| How Claxedo reaches it | The machine dials out (`claxedo connect`) to the relay | The control plane drives the provider's API |
+| State in the app | Online, Offline (last seen), Paused | The lifecycle states above |
+| Model accounts | The hosted broker, or the owner's desktop on the same LAN (machine-connection plan, W4) | Kept outside the VM, through the control plane |
+
+How fast and safe a connected machine is once it serves (routes, access checks, model accounts) stays with
+[Machine connection](./2026-10-23-001-feat-machine-connection-plan.md). Its W5 keeps `claxedo doctor` and the
+service's PATH; W5's Windows installer, the 29-minute Windows install and adding a machine over SSH move here.
+
+The bar: Tailscale's "install, open a link, approve" and Vercel's `vercel link`. Nobody copies a token into a file,
+needs a second computer with the CLI signed in, or types a path from memory.
+
+## 0. Decisions
+
+Decided by the owner on 2026-10-23:
+
+- **Connecting is the focus.** The web app's direct LAN route (W7 in the machine-connection plan) is parked: it
+  needs per-machine certificates, a domain of our own and DNS infrastructure, which cost more than they return now.
+  The web keeps the relay.
+- **The first folder is the one the command runs in.** The machine shares that folder and nothing wider. The
+  terminal never lists folders to choose from.
+- **A connected machine creates projects as this computer does.** The create-project form, the folder dialog,
+  cloning a repository and new worktrees work on a connected machine as they do on the desktop's own machine (C5).
+  The machine's roots stop being something a person types: they are the record of the folders the owner has chosen.
+
+Open, for the owner (each blocks only its own workstream):
+
+1. **How a machine pairs (C1, C3).**
+   - **A (recommended):** the app shows one command carrying a single-use pairing code; the machine redeems it and
+     waits; the person approves it in the app, seeing its hostname, OS and country, before it serves anything.
+   - **B:** the machine prints a short code (as `claxedo login` does today) and the person types it into the app.
+   - **C:** the app's command enrolls at once with no approval, as today's invitation does, just minted by the
+     app.
+
+   A pastes once and clicks once, and a leaked command does nothing without the click. B needs typing. C is
+   fastest, but anyone who sees the command within its lifetime can enroll their own machine into the account.
+2. **Install weight (C2).** The connector installs the full runtime: every harness SDK, the embedded OpenCode engine
+   and a 224 MB Claude Code binary. Fetch each harness's payload the first time it is used, or keep the full
+   install and accept its time? C2's measurement says what each choice saves.
+
+## 1. Where it stands
+
+Observed on `origin/dev` cb9b7e2a6e, 2026-10-23.
+
+**A. The app.** Settings → Machines → **Connect a machine…** opens `ConnectMachineDrawer`
+(`claxedo-app/src/settings/view/machine-connect.tsx`). The composer's Where chip, Projects → Where it runs and
+onboarding open the same drawer through `useConnectMachine`. The drawer has two steps:
+
+1. "The computer you are sitting at": install the desktop app and sign in.
+2. "Another machine you own": a name field fills in two commands, `claxedo host invite --name <name> --root ~/code`
+   ("on a computer where the Claxedo app is signed in") and `claxedo connect --token-file ./invite.txt
+   --install-service` ("on the machine you are adding"), then **I've run it**.
+
+**B. Minting the invitation, on a second computer.** `claxedo host invite` needs the CLI's credentials
+(`requireAccessToken` reads `~/.claxedo/credentials.json`, written by `claxedo login`'s device code or by a signed-in
+desktop app through `cli-credential-file.ts`). It posts `{ displayName, scope.allowed_roots, expiresInMs }` to
+`/api/claxedo/host/invitations` and prints the token once (`inviteOutput`). The invitation lasts 1 h by default and is
+single use. Roots are required: "an invitation with no roots can serve nothing".
+
+**C. Installing on the machine.** Linux and macOS: `install.sh` from `raw.githubusercontent.com/.../packages/cli/
+install.sh` uses Node 24 or downloads it (sha256 checked), installs `@claxedo/cli` with npm's install scripts off,
+then runs `install-opencode-node.mjs`. Windows has no installer; the CLI README gives two commands to run by hand.
+The drawer has no install step at all.
+
+**D. Connecting.** `claxedo connect --token-file F --install-service` (`cli/src/commands/connect.ts`) refuses beside
+a live desktop daemon (exit 78), redeems the invitation (`redeemInvitation`), removes the token file, writes a
+systemd user unit, LaunchAgent or scheduled task, and starts it. On Linux without `loginctl enable-linger` the unit
+is written but not started (exit 78). Every message lands in the machine's terminal only.
+
+**E. Waiting in the app.** **I've run it** runs `createConnectWait` (`settings/machines.ts`): one `machines.list`
+recheck, then "Waiting for <name>…" until the person presses **Check again**. The machines query is refreshed by
+placement events (`placementsChanged`, `cloudWorkspaceChanged`, `streamGap` in `server/freshness.ts`). No event
+names an enrollment or an online change; C4 verifies what a new or departed machine does to the list today.
+
+**F. Getting a folder to work in.** A new machine serves nothing until a folder is assigned, and only `claxedo host
+assign --machine <name> <dir>` from a signed-in CLI does that (`/api/workspace/:id/host-assignment`). The app's
+hosted operations for machines are `machines.list`, `machines.pause`, `machines.resume` and `machines.remove`
+(`account-contract/src/hosted-operations.ts`); none assigns, scopes or invites. The machine acks an assignment
+2.5–3.8 s later through the `host.changed` ring.
+
+**Measured:**
+
+| Step | Today |
+|---|---|
+| Install, fresh Ubuntu 24.04, from npm | 182 s |
+| Install, macOS | 2–3 min |
+| Install, one Windows Server 2025 run (local packs) | 29 min, cause unknown |
+| What `@claxedo/cli@latest` installs (macOS arm64, 2026-10-23) | 568 packages, ~56,000 files, 939 MB; the largest is `claude-agent-sdk-darwin-arm64` at 224 MB |
+| Assign → the machine serves it | 2.5–3.8 s |
+| Terminal mint → first output | 5.0–5.3 s |
+
+**Defects in today's flow:**
+
+1. The drawer's invite command prints the token to the terminal; its connect command reads `./invite.txt`, which
+   nobody wrote.
+2. `--root ~/code` is expanded by the laptop's shell to the *laptop's* home, which is the wrong path on any machine
+   whose home differs, and in PowerShell it reaches the CLI unexpanded and is refused ("--root must be an absolute
+   path").
+3. A web-only person has no signed-in CLI. Connecting takes five steps across two computers: install the CLI
+   somewhere, `claxedo login`, invite, move the token, connect.
+4. Nothing says how to install, and Windows has no installer.
+5. Once connected there is nothing to work in until a CLI assigns a folder.
+6. The wait checks once and then needs clicks.
+7. Failures (an expired invitation, no linger, the desktop daemon conflict, a stopped service) are explained only in
+   the machine's terminal; the app shows "Offline" or nothing.
+8. Connecting a machine again after a removal or a reset needs `claxedo connect --reset`, which only the CLI's help
+   mentions.
+
+## 2. Target
+
+Proposed. Every step except the paste happens in the app, and the app follows the machine live.
+
+1. **Connect a machine…** The drawer opens on the command for the person's guess of the machine's OS, with tabs
+   for the others. The code inside it is minted when the drawer opens and lives 15 minutes.
+
+   ```
+   Connect a machine
+     Run this on the machine:
+       [macOS / Linux]  Windows
+       curl -fsSL https://app.claxedo.com/connect | sh -s -- K7QM4PXD   [copy]
+
+     ◌ Waiting for the command…                          code valid 14:52
+   ```
+2. **The machine installs and pairs.** The drawer shows each step as the machine reports it: "Installing on
+   build-box… → Waiting for your approval".
+3. **Approve.** The person sees what is asking to join and the folder the command ran in, which is what it will
+   share:
+
+   ```
+   ┌ Approve build-box? ─────────────────────────────────────────────┐
+   │ Ubuntu 24.04 · x64 · India · asked 8 s ago                      │
+   │ Name      [ build-box                    ]                      │
+   │ Folder    /home/ubuntu/code/app   (where you ran the command)   │
+   │                                  [ Deny ]   [ Approve ]         │
+   └─────────────────────────────────────────────────────────────────┘
+   ```
+4. **Start working.** "app on build-box is ready" with **New session**; the composer opens with that placement
+   chosen. The machine's terminal says the same in one line.
+5. **More projects, as on this computer.** **Create project…** offers "Folder on build-box" with the same folder
+   dialog this computer uses, and a repository (URL or connected code host) cloned onto build-box. The Where chip
+   offers "New worktree on build-box". Running the command again in another folder on that machine also adds that
+   folder, after the person confirms it in the app.
+
+From then on, Settings → Machines shows each machine's state in words, and any failure the machine can report
+appears there in one line with its fix. A server with no browser at hand (AWS user data, cloud-init) gets a
+pre-approved command from the same drawer.
+
+## 3. Workstreams
+
+Each workstream proves its behaviour live before its broad suites run (AGENTS.md, "Validation cadence"): build, run
+it through its real entrypoint against staging or a real machine with the logs tailed, cover every case it claims,
+and only then run the affected e2e flows at merge.
+
+### C0 — Baseline
+
+- [ ] Time and screen-record today's journey from **Connect a machine…** to a first session's first output, on
+  fresh Ubuntu 24.04, macOS and Windows boxes against staging, through the published CLI. Each step is timed
+  separately: install, invite, connect, first folder, first output. Progress:
+- [ ] The 29-minute Windows install is reproduced from npm and explained (`npm install --timing --loglevel http`,
+  with and without a Defender exclusion on the prefix), or shown not to recur from the registry. Moved from W5.
+  Progress:
+
+### C1 — The app mints the command
+
+No second computer, no token file, no roots typed on a laptop.
+
+- [ ] A hosted operation (`machines.pair`) mints a pairing invitation for the signed-in person: single use, 15 min,
+  with no roots (the machine names its folder when it redeems; C3). The invitation route and store gain that kind; `claxedo host invite` keeps today's
+  pre-approved kind for C8. Progress:
+- [ ] The control plane serves `connect` (POSIX shell) and `connect.ps1` from its own origin, with its own URL
+  inside, so a staging command connects to staging and no `CLAXEDO_CONTROL_PLANE_URL` has to be set by hand. Each
+  installs the CLI as C2 describes and runs `claxedo connect --pair <code> --install-service`. Progress:
+- [ ] The drawer shows the command for the guessed OS, tabs for the others, a copy button, the code's remaining
+  time, and mints a fresh code when the old one expires while the drawer is open. Progress:
+- [ ] The drawer's two-command step and its `~/code` root are removed. Progress:
+- [ ] Refusals, each one line in the app and on the machine: the code expired, the code was already used, the code
+  belongs to another control plane, and the person signed out before the machine redeemed it. Progress:
+
+### C2 — Install in one step, on every OS, quickly
+
+- [ ] `connect` reuses an installed CLI whose version the control plane accepts, else installs as `install.sh` does
+  today; it prints numbered steps and one line per failure. `install.sh` is that script's install half, not a
+  second copy. Progress:
+- [ ] `connect.ps1` installs on Windows without admin: Node 24 if missing (checksum verified), the CLI with install
+  scripts off, the runtime's setup, Git for Windows found or named as the one missing prerequisite. Proven on a
+  fresh Windows 11 and Windows Server 2025 from npm. Moved from W5. Progress:
+- [ ] Measure what the connector loads to enroll and serve against what each harness loads, and report the install
+  time and size each option of decision 2 would give, before building one. Progress:
+- [ ] On a fresh box, the paste-to-approval-card time is ≤ 60 s on Linux and macOS and ≤ 3 min on Windows. These
+  targets need decision 2; record the measured time against each. Progress:
+
+### C3 — Approval in the app
+
+- [ ] A redeemed pairing creates an enrollment awaiting approval, which serves nothing and holds no assignment.
+  The machine reports its hostname, OS, architecture, CLI version and the folder the command ran in (its canonical
+  path, as `--root` records one today); the control plane adds the request's country. Progress:
+- [ ] The drawer, when open, shows the approval card. Otherwise the request appears at the top of Settings →
+  Machines, and the machine prints the app link to it. Progress:
+- [ ] **Approve** sets the name, makes that folder the machine's one root and assigns it as the first workspace,
+  and the machine starts serving it on its next ring. When the folder is the home directory or the filesystem root,
+  the card says so in one line before the person approves. **Deny**, or 15 minutes without an answer, revokes it:
+  the machine exits 78 with one line saying why, and the service does not restart into it. Progress:
+- [ ] Only the person who minted the code can approve it. Another member of the organization never sees the
+  request. Progress:
+
+### C4 — The app follows the machine live
+
+- [ ] Verify what today's machines list does when a machine enrolls, goes online, goes offline, is paused or is
+  removed while the app is open, and record it here. Progress:
+- [ ] The drawer moves through "Waiting for the command → Installing on <name> → Waiting for your approval →
+  Connected → Ready" with no button. The machine reports install progress against its pairing code before it
+  enrolls. Progress:
+- [ ] Settings → Machines, the Where chip and Projects reflect a machine enrolling, coming online, going offline,
+  being paused and being removed within 2 s, through one app-facing event beside the placement events, not
+  through polling. Progress:
+
+### C5 — Projects on a connected machine, as on this computer
+
+Today a project's source is a repository URL, a repository from a connected code host, or a folder, and the folder
+is offered only on the machine the app's server runs on (`capabilities().servingMachine`): "a folder on another
+machine is added on that machine, because no route sends a new project to a connected machine"
+(`claxedo-app/src/projects/README.md`). The folder dialog (`view/select-directory.tsx`: Search folders, Recent
+projects, Tab completes, Enter picks) reads `queries.folders.paths()`, `queries.folders.children(directory)` and
+`server.folders.search` from that same server. "New worktree on <machine>" is offered only for the serving machine,
+since worktrees are the local server's own route. This workstream gives a connected machine each of those, and
+takes over [Remote machine connection](./2026-09-14-003-feat-connect-implementation-plan.md)'s deferred P5.3
+(machines in the create-project form) and P5b (host folder operations).
+
+- [ ] **The boundary.** A workspace token authorizes one workspace, not the machine, so an operation on the
+  machine as a whole (listing folders, adding a folder, cloning, a new worktree as its own checkout) runs on a
+  host-management grant. The control plane mints it for (person, enrollment, operation, destination, expiry), only
+  to the machine's owner; the machine verifies it against the control plane's key, and it is distinct from the
+  relay's proof. Such an operation creates new workspace rows scoped to that enrollment and never rewrites an
+  existing one (the rule P3.3 set). Progress:
+- [ ] **Folder on <machine>.** The create-project form offers "Folder on <name>" for each online connected machine
+  the person owns. The same folder dialog opens with that machine's folders (its paths, children and search,
+  answered by the machine under the grant; `~` is the machine's home). Picking a folder adds it to the machine's
+  roots and assigns it, and it becomes a project the way `claxedo host assign` makes one today. Progress:
+- [ ] **Clone onto <machine>.** A repository URL or a code-host repository is cloned onto the chosen connected
+  machine, into a folder the person can change (by default beside the machine's first shared folder). The clone's
+  credential is brokered (single use, scoped to that repository, from the connections capability), never the
+  account's code-host token sent to the machine. Progress:
+- [ ] **New worktree on <machine>.** The Where chip offers "New worktree on <name>" for a connected machine's folder,
+  with the base-branch choice it has locally, created on first send as local worktrees are. Progress:
+- [ ] **Where it runs.** Settings → Projects → Where it runs offers Open, and "Clone at this location" for a
+  connected machine's folder that is gone, as it does for this computer's. Progress:
+- [ ] **Again in another folder.** Running the connect command in another folder on a machine that is already
+  connected asks the owner in the app to add that folder; it never re-enrolls the machine. Progress:
+- [ ] **One path.** Hosted operations for these (`machines.folders`, `machines.assign`, `machines.unassign`,
+  `machines.clone`, and the worktree create) reuse the route `claxedo host assign` uses and the local server's clone
+  and worktree code moved behind the grant, so each operation has one implementation for every machine. Progress:
+- [ ] **Parity proof.** e2e flow 2 (add a folder, clone, edit, remove, deep link, worktree branches) passes against a
+  connected machine as it does against this computer, on the web and the desktop. Progress:
+- [ ] The terminal never lists folders; in the app, folders appear only through the folder dialog's search and one
+  level at a time, as on this computer. Progress:
+
+### C6 — Failures, explained where the person looks
+
+- [ ] The machine reports its blocking reason to the control plane when it can reach it: no linger on Linux, a live
+  desktop daemon beside it, a CLI below the accepted version, a service the OS stopped. The machine's Details shows
+  the one line and the command that fixes it. Progress:
+- [ ] Offline reads "Offline · last seen <time>", with the most likely cause when the machine reported one before
+  going away. Progress:
+- [ ] Pasting the command on a machine that is enrolled, removed or reset offers to connect it again (it asks once
+  when it can ask, and says what it replaces), so nobody needs `--reset`. Progress:
+- [ ] Every line the connect flow prints, in the app and on the machine, is one short line (root AGENTS.md).
+  Progress:
+
+### C7 — Managing a machine from the app
+
+- [ ] Details renames the machine, changes its roots (assignments outside them are retired, after a confirmation
+  naming them) and removes it, with each delete confirming in a dialog. Progress:
+- [ ] Details shows the CLI version and, below the version the control plane accepts, "Update available" with the
+  command; W11 owns automatic updates. Progress:
+
+### C8 — Servers without a browser
+
+- [ ] The drawer's "For a server without a browser" mints a pre-approved invitation with a name and the folder to
+  share, typed as the server writes it, because a cloud-init run has no meaningful working folder. It is shown as a
+  cloud-init snippet and as one command. Today's `--token-file` path stays for it. Progress:
+- [ ] On Linux the script enables linger where it may and otherwise prints the one command that does. Progress:
+
+### C9 — Add a machine over SSH from the desktop app
+
+- [ ] The desktop app connects a machine it can reach over SSH: install, pair and approve in one flow, with a
+  checksum-verified release. Moved from W5. Progress:
+
+## 4. Order
+
+1. **First:** C0.
+2. **Then, in parallel:** C1 with C3 (they share the pairing contract), C2, C4.
+3. **Then:** C5, C6.
+4. **Later:** C7, C8, C9.
+
+## 5. Definition of done
+
+- [ ] On fresh Ubuntu 24.04, macOS and Windows machines against staging, a person signed in to the web app goes from
+  **Connect a machine…** to a first session's first output in a folder on that machine with one command pasted on
+  the machine and every other step in the app: no token file, no second computer, no `--root`, no `claxedo host
+  assign`.
+- [ ] That journey takes ≤ 2 min on Linux and macOS and ≤ 5 min on Windows, install included, measured the way C0
+  measured today's.
+- [ ] The same journey works from the desktop app.
+- [ ] On a connected machine, a person creates a project from a folder, from a cloned repository and as a new
+  worktree, from the web and the desktop, the same way they do on this computer (e2e flow 2 against a connected
+  machine).
+- [ ] Each failure in C1, C3 and C6 shows its one-line cause in the app and on the machine, and its recovery is
+  exercised live.
+- [ ] e2e flow 15 (`15-settings-machines`) covers pairing, approval, denial and expiry on the web and the desktop. The nightly real-machine run in the machine-connection plan's definition of done runs this journey.
+- [ ] The behaviour is documented where it lives (`claxedo-app/src/settings/README.md`, `packages/cli/README.md`),
+  and this plan is deleted once the work ships.
+
+## 6. Execution
+
+Run the workstreams as parallel lanes with disjoint file ownership, each proving its slice live before merge:
+
+- **Pairing lane (C1 server, C3):** the invitation and enrollment store and routes in `claxedo-server`, the hosted
+  operations in `account-contract`.
+- **Script and CLI lane (C1 scripts, C2, C8):** `packages/cli` (`connect --pair`, `install.sh`, the new
+  `connect` and `connect.ps1`), and the control-plane route that serves them.
+- **App lane (C1 drawer, C3 card, C4, C7):** `claxedo-app/src/settings` and `claxedo-app/src/server`.
+- **Machine projects lane (C5):** the host-management grant (minted in `claxedo-server`, verified in
+  `claxedo-host-serving`), the machine's folder, clone and worktree operations behind it, and the app's create-project
+  form, folder dialog and Where chip for a connected machine (`claxedo-app/src/projects`). The grant lands first;
+  the folder dialog, clone and worktree slices then run in parallel.
+
+Use a workflow for C0 and for the definition of done's three-OS journey: one agent per OS box, run in parallel,
+each returning timings and a recording. The pairing contract (the operation names, the enrollment's
+awaiting-approval state, what the machine reports) is agreed first and frozen before the lanes split, since three
+lanes build on it.

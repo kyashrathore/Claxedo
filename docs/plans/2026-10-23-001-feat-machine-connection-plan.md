@@ -13,6 +13,10 @@ machine that does not need them, and traffic we cannot read.
 
 Decided by the owner on 2026-10-23:
 
+- **W7 is parked.** Per-machine certificates, a domain of our own and DNS infrastructure cost more than a direct
+  LAN route for the web returns now; the web keeps the relay. Connecting a machine is the focus instead
+  ([Connecting a machine](./2026-10-23-002-feat-connect-a-machine-ux-plan.md)).
+
 - **Model credentials by machine kind.** A cloud machine (AWS and the like) spends the owner's accounts through
   the hosted egress broker on the control plane, so the real key never reaches it. A machine on the owner's LAN
   spends them through the egress broker on the owner's main machine (the desktop app), so the key never leaves
@@ -357,11 +361,9 @@ renewal on the beat, and Pi spending a binding. The LAN path is built as above. 
   `~/.local/bin`, Homebrew or nvm were missing. `systemd-analyze verify` accepts a unit written with `%` and `$` in
   its PATH. Pi's bash on Windows is Git Bash under `%ProgramFiles%` or `%ProgramFiles(x86)%` before a bare `bash`,
   as Pi's own lookup does, since Git for Windows puts only `Git\cmd` on PATH. Not proven on macOS or Windows.
-- [ ] `install.ps1` for Windows: installs prerequisites it needs, the CLI with install scripts off, and the
-  runtime's setup, proven on a fresh Windows Server from npm. Progress:
-- [ ] Add a machine over SSH from the desktop app: install, start and enroll, with a checksum-verified release.
-  Progress:
-- [ ] The 29-minute Windows install is explained and fixed or documented with evidence. Progress:
+
+The Windows installer, the 29-minute Windows install and adding a machine over SSH are in
+[Connecting a machine](./2026-10-23-002-feat-connect-a-machine-ux-plan.md) (C0, C2, C9).
 
 ### W6 — Relay placement
 
@@ -430,7 +432,7 @@ runtime-version floor and skew test (`MINIMUM_SERVED_WORKSPACE_RUNTIME_VERSION`)
 
 1. **Now:** W3 then W1 (W1 needs W3), W2, W4, W5.
 2. **Next:** W8, W9 (after decision 2), W6.
-3. **Later:** W7, W10 (after decision 3), W11, W12.
+3. **Later:** W10 (after decision 3), W11, W12. W7 is parked (owner, 2026-10-23).
 
 Proposed after the 2026-10-22 assessment: W4 first once decision 4 is answered, because it takes raw keys off
 machines and needs no other workstream; W5's installers on a Windows box; W3 once decision 1 is answered, then W1;
