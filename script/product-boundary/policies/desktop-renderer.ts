@@ -564,8 +564,17 @@ export const desktopRenderer: Policy = {
   // `settings/view/machine-details.tsx`, `machine-check.tsx`,
   // `machine-actions.tsx`, `machine-status.tsx`; and its server adapter,
   // `server/wire/machines.ts`). They add no package edge.
-  // 1563/37, no headroom.
-  ceilings: { modules: 1563, packages: 37 },
+  // The connect drawer's pairing code and the approval card a pairing asks
+  // with, and the decoder of the pairing answers (owner: the app's settings
+  // domain, `settings/pairing.ts` and `settings/view/pairing-request.tsx`; and
+  // its server adapter, `server/wire/pairings.ts`). They add no package edge.
+  // Connecting a machine over SSH from the drawer, shown only where the
+  // desktop's bridge offers it: the flow's machine, the reader of the
+  // bridge's answers and its view (owner: the app's settings domain,
+  // `settings/ssh-connect.ts`, `settings/ssh-bridge.ts` and
+  // `settings/view/machine-ssh.tsx`). They add no package edge.
+  // 1569/37, no headroom.
+  ceilings: { modules: 1569, packages: 37 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

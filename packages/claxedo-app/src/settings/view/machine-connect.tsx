@@ -8,6 +8,7 @@ import { Button, ClaxedoIconButton, Drawer, Tabs, useDialog } from "@/ui"
 import { settingsDictionary } from "../i18n"
 import { codeExpired, codeTimeLeft, createConnectCode, guessedPlatform, stageLineKey, stageLineValues, type CommandPlatform } from "../pairing"
 import { PairingRequestCard } from "./pairing-request"
+import { SshMachineConnect } from "./machine-ssh"
 
 function CommandLine(props: { readonly command: string; readonly label: string }) {
   const [copied, setCopied] = createSignal(false)
@@ -118,6 +119,7 @@ export function ConnectMachineDrawer() {
       <div class="settings-fields">
         <Show when={server.queries.organizations.signedIn} fallback={<p class="settings-row-description">{t("settings.machines.connect.signIn")}</p>}>
           <PairingCode />
+          <SshMachineConnect />
         </Show>
         <p class="settings-row-description">{t("settings.machines.connect.thisComputer")}</p>
       </div>

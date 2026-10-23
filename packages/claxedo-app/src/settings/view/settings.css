@@ -437,3 +437,32 @@
 .settings-pairing-answers {
   justify-content: flex-end;
 }
+
+.settings-ssh {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--v2-border-border-muted);
+}
+
+.settings-ssh-options {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 3fr);
+  gap: 8px;
+}
+
+.settings-ssh-fingerprint {
+  overflow-wrap: anywhere;
+  font-size: var(--font-size-small);
+}
+
+.settings-ssh-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+  font-size: var(--font-size-small);
+}
