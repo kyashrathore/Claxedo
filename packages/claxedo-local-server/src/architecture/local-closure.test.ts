@@ -283,11 +283,15 @@ describe("@claxedo/local-server closure", () => {
     //    the renderer's runtime requests and terminal sockets for a remote
     //    workspace, carried over TLS pinned to the key the machine reported,
     //    with `node:tls` and `node:http`.
+    //  - `workspace/owner-broker-dialer.ts` — this desktop's broker served to
+    //    the owner's connected machines over those routes: the channel it
+    //    opens to each, with `node:http2`, and the passes it admits, verified
+    //    under the control plane's key set with `jose`.
     //
-    // 97 modules and 30 packages, measured once the direct route joined; no
+    // 98 modules and 32 packages, measured once the owner broker joined; no
     // headroom.
     const { modules, packages } = closure({ runtimeOnly: true })
-    expect(modules.size).toBeLessThanOrEqual(97)
-    expect(packages.size).toBeLessThanOrEqual(30)
+    expect(modules.size).toBeLessThanOrEqual(98)
+    expect(packages.size).toBeLessThanOrEqual(32)
   })
 })

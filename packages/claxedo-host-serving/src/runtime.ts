@@ -45,6 +45,7 @@ import {
 import { createClaxedoAppliedRuntimeConfig } from "@claxedo/server-core/hosts/workspace-runtime/runtime-config"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { adoptHostEnrolledOwner, hostEnrolledOwner } from "./serving"
+import type { OwnerBrokerShim } from "./owner-broker-shim"
 
 const log = Log.create({ service: "host-runtime" })
 
@@ -61,6 +62,34 @@ const held: Record<HostProviderConfigSource, HostProviderConfig["credentials"] |
 
 const spent = () => layeredHostProviderConfig(held.owner, held["control-plane"])
 
+let ownerBroker: Pick<OwnerBrokerShim, "front"> | undefined
+
+type Rows = NonNullable<ReturnType<typeof spent>>["accounts"][string]
+
+function frontable(row: Rows[string]): row is Extract<Rows[string], { placeholder: string }> {
+  return !("unavailable" in row) && typeof row.placeholder === "string"
+}
+
+/**
+ * The spent rows with every row built from the owner's accounts spent through
+ * the owner broker shim instead of at its hosted binding. A row the owner
+ * pushed by hand goes where it says.
+ */
+function spentThroughOwnerBroker() {
+  const rows = spent()
+  if (!rows || !ownerBroker) return rows
+  const person = rows.machineOwnerUserId
+  const of = (source: HostProviderConfigSource) => held[source]?.machineOwnerUserId === person ? held[source].accounts[person] ?? {} : {}
+  const built = of("control-plane")
+  const pushed = of("owner")
+  const own: Rows = { ...rows.accounts[person] }
+  for (const [providerId, row] of Object.entries(own)) {
+    if (providerId in pushed || !(providerId in built) || !frontable(row)) continue
+    own[providerId] = { ...row, baseUrl: ownerBroker.front({ providerId, baseUrl: row.baseUrl, placeholder: row.placeholder, ...(row.expiresAt ? { expiresAt: row.expiresAt } : {}) }) }
+  }
+  return { ...rows, accounts: { ...rows.accounts, [person]: own } }
+}
+
 /**
  * Make the owner's configurations this process's only credential authority:
  * the rows the control plane built from their accounts, with the rows they
@@ -69,11 +98,15 @@ const spent = () => layeredHostProviderConfig(held.owner, held["control-plane"])
  * choice to honour; a provider neither names resolves to nothing and the
  * harness runs on whatever login the box holds. It starts holding nothing:
  * the host installs what it stored before its first beat.
+ *
+ * With `shim`, the built rows are spent through the owner's desktop broker
+ * whenever the desktop serves their provider (`owner-broker-shim.ts`).
  */
-export function installHostProviderConfigAuthority() {
+export function installHostProviderConfigAuthority(shim?: Pick<OwnerBrokerShim, "front">) {
   held.owner = undefined
   held["control-plane"] = undefined
-  configureAgentConfig({ projectAuth: hostProviderConfigProjectAuth(undefined, spent, hostEnrolledOwner, () => ({})) })
+  ownerBroker = shim
+  configureAgentConfig({ projectAuth: hostProviderConfigProjectAuth(undefined, spentThroughOwnerBroker, hostEnrolledOwner, () => ({})) })
 }
 
 /**

@@ -234,7 +234,17 @@ export const localServer: Policy = {
   // pinning the key the machine reported. Only this process can pin a key,
   // which is why they are the daemon's and not the renderer's; `node:tls`
   // and `node:http` are the dial and the request. 75/30, no headroom.
-  ceilings: { modules: 75, packages: 30 },
+  // +1 module, +2 packages (owner: the desktop's broker serving the owner's
+  // connected machines over that same direct route):
+  // `workspace/owner-broker-dialer.ts` dials each machine the route reaches
+  // with the owner's token and serves this process's credential broker on the
+  // upgraded connection, so the key stays in the one process that holds it and
+  // nothing listens on the desktop. `node:http2` is that channel's protocol;
+  // `jose` reads the owner's token's claims and the control plane's published
+  // key set the machines' passes verify under (the pass's own rule is
+  // server-core's `credentials/owner-broker-pass.ts`, the wire host-serving's
+  // `owner-broker-wire.ts`, both packages already here). 76/32, no headroom.
+  ceilings: { modules: 76, packages: 32 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

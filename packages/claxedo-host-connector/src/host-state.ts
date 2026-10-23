@@ -65,9 +65,11 @@ export type HostState = {
    * `tls_private_key_jwk` is a P-256 key of its own, never the identity key:
    * its public half is what a client pins, and it signs nothing the control
    * plane verifies. `port` is the one the listener last bound, kept so the
-   * routes a client holds stay valid across restarts.
+   * routes a client holds stay valid across restarts. `owner_broker_port` is
+   * the loopback port the agents' model calls go through while the direct
+   * route is on, kept so a harness keyed on its base URL keeps its home.
    */
-  direct?: { enabled: boolean; port?: number; tls_private_key_jwk?: JsonWebKey }
+  direct?: { enabled: boolean; port?: number; owner_broker_port?: number; tls_private_key_jwk?: JsonWebKey }
   created_at: number
   /** Frozen at first redeem; a different URL is a different host state. */
   control_plane_url: string
@@ -316,11 +318,17 @@ function builtProviderConfigRecord(value: unknown): NonNullable<HostState["built
 function directRecord(value: unknown): NonNullable<HostState["direct"]> {
   const record = stateRecord(value, "direct")
   if (typeof record.enabled !== "boolean") stateFieldError("direct.enabled", "must be true or false")
-  const port = stateNumberOrUndefined(record.port)
-  if (port !== undefined && !(Number.isInteger(port) && port > 0 && port < 65_536)) stateFieldError("direct.port", "must be a TCP port")
+  const tcpPort = (field: "port" | "owner_broker_port") => {
+    const value = stateNumberOrUndefined(record[field])
+    if (value !== undefined && !(Number.isInteger(value) && value > 0 && value < 65_536)) stateFieldError(`direct.${field}`, "must be a TCP port")
+    return value
+  }
+  const port = tcpPort("port")
+  const ownerBrokerPort = tcpPort("owner_broker_port")
   return {
     enabled: record.enabled,
     ...(port === undefined ? {} : { port }),
+    ...(ownerBrokerPort === undefined ? {} : { owner_broker_port: ownerBrokerPort }),
     ...(record.tls_private_key_jwk === undefined
       ? {}
       : { tls_private_key_jwk: privateKeyJwk(record.tls_private_key_jwk, "direct.tls_private_key_jwk") }),

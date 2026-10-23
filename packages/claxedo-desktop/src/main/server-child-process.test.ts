@@ -1,8 +1,21 @@
 import { describe, expect, test } from "bun:test"
 
-import { claxedoServerForkOptions } from "./server-child-process"
+import { claxedoServerChildEnv, claxedoServerForkOptions } from "./server-child-process"
 
 describe("Claxedo server daemon process", () => {
+  const child = { port: 3210, dataDir: "/data", protocol: 4, token: "daemon-token", generation: "generation-1", build: "1.2.3", discoveryPath: "/data/daemon.json" }
+
+  test("names the signed account's published key set, which signs the passes of the owner's connected machines", () => {
+    const env = claxedoServerChildEnv({ ...child, controlPlaneOrigin: "https://core.example" })
+
+    expect(env.CLAXEDO_CONTROL_PLANE_JWKS_URL).toBe("https://core.example/.well-known/jwks.json")
+    expect([env.CLAXEDO_CHILD_PORT, env.CLAXEDO_DATA_DIR, env.CLAXEDO_DAEMON_PROTOCOL, env.CLAXEDO_DAEMON_TOKEN]).toEqual(["3210", "/data", "4", "daemon-token"])
+  })
+
+  test("without a configured account it names no key set, so the daemon serves no connected machine", () => {
+    expect(claxedoServerChildEnv(child).CLAXEDO_CONTROL_PLANE_JWKS_URL).toBeUndefined()
+  })
+
   test("runs detached from Electron while retaining startup IPC", () => {
     const env = {
       PATH: "/usr/bin",

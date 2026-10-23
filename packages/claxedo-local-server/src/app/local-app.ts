@@ -26,6 +26,7 @@ import { createNodeWebSocket } from "@hono/node-ws"
 import { timingSafeEqual } from "node:crypto"
 import { createServer } from "node:http"
 import { createDirectRouteCarrier } from "../workspace/direct-route"
+import type { OwnerBrokerDialer } from "../workspace/owner-broker-dialer"
 import { CLAXEDO_DAEMON_SERVICE, DAEMON_PROTOCOL_HEADER } from "@claxedo/helpers/claxedo-daemon"
 import { isLoopbackLocalRequest, peerAddressStamp } from "@claxedo/server-core/platform/http/peer-address"
 import {
@@ -164,6 +165,8 @@ function daemonCaller(c: Context): MachineRecoveryCaller {
 
 export type LocalAppOptions = {
   egressBroker?: (request: Request) => Promise<Response>
+  /** Serves the owner's connected machines this desktop's broker over their direct routes; absent, it serves none. */
+  ownerBroker?: OwnerBrokerDialer
   services: ControlPlaneServicesContract
   corsOrigin?: (origin: string, path: string) => string | undefined
   /**
@@ -253,7 +256,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   // is a plain property and is safe to pull off.
   const nodeWebSocket = createNodeWebSocket({ app })
   const { upgradeWebSocket } = nodeWebSocket
-  const directRoute = createDirectRouteCarrier()
+  const directRoute = createDirectRouteCarrier(options.ownerBroker ? { ownerBroker: options.ownerBroker } : {})
   const runtimeProxyOptions = options.runtimeProxyOptions ?? {}
   // The desktop daemon hosts every local runtime in-process and issues no
   // sessions, so it always serves the host aggregate. The bootstrap declares
@@ -487,6 +490,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   app.use(sessionMetaProjectionTap(services.projectionStore))
 
   app.put("/api/claxedo/direct-routes/:workspaceId", directRoute.register)
+  app.delete("/api/claxedo/direct-routes", directRoute.forgetAll)
   app.all("/direct/workspaces/:workspaceId", directRoute.route)
   app.all("/direct/workspaces/:workspaceId/*", directRoute.route)
 
