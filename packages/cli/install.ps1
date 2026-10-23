@@ -157,7 +157,7 @@ function Install-Cli {
   # the install needs, the runtime's OpenCode patch step, runs below.
   $packages = if ($env:CLAXEDO_CLI_TARBALL) { $env:CLAXEDO_CLI_TARBALL -split " " } else { @("@claxedo/cli@$(if ($env:CLAXEDO_CLI_VERSION) { $env:CLAXEDO_CLI_VERSION } else { "latest" })") }
   Write-Host "    installing $($packages -join ' ')"
-  & npm install -g --ignore-scripts --no-fund --no-audit --loglevel=error --prefix $NpmPrefix @packages
+  & npm install -g --ignore-scripts --no-fund --no-audit --loglevel=error --prefix $NpmPrefix @packages | Out-Host
   if ($LASTEXITCODE -ne 0) { Refuse "npm install of $($packages -join ' ') failed" }
   $runtime = Join-Path $NpmPrefix "node_modules\@claxedo\cli\node_modules\@claxedo\workspace-runtime"
   if (-not (Test-Path $runtime)) { $runtime = Join-Path $NpmPrefix "node_modules\@claxedo\workspace-runtime" }

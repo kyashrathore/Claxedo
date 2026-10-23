@@ -37,7 +37,24 @@ fs.writeFileSync(process.env.FAKE_LOG, JSON.stringify({
   return bin
 }
 
-function runInstall(scratch: string, args: readonly string[]) {
+function fakeNpm(scratch: string) {
+  const bin = fakeClaxedo(scratch)
+  writeFileSync(path.join(bin, "npm"), `#!/usr/bin/env node
+const fs = require("node:fs")
+const path = require("node:path")
+const args = process.argv.slice(2)
+const prefix = args[args.indexOf("--prefix") + 1]
+const runtime = path.join(prefix, "node_modules", "@claxedo", "workspace-runtime", "scripts")
+fs.mkdirSync(runtime, { recursive: true })
+fs.writeFileSync(path.join(runtime, "install-opencode-node.mjs"), "")
+fs.copyFileSync(path.join(__dirname, "claxedo"), path.join(prefix, "claxedo.cmd"))
+fs.chmodSync(path.join(prefix, "claxedo.cmd"), 0o755)
+console.log("added 880 packages in 18m")
+`, { mode: 0o755 })
+  return bin
+}
+
+function runInstall(scratch: string, args: readonly string[], options: { npm?: boolean } = {}) {
   const node = Bun.which("node")
   expect(node, "a Node 24 on PATH, as on CI's unit lanes").toBeTruthy()
   const log = path.join(scratch, "claxedo-connect.json")
@@ -46,10 +63,11 @@ function runInstall(scratch: string, args: readonly string[]) {
     cwd: scratch,
     encoding: "utf8",
     env: {
-      PATH: `${fakeClaxedo(scratch)}:${path.dirname(node!)}:/usr/bin:/bin`,
+      PATH: `${options.npm ? fakeNpm(scratch) : fakeClaxedo(scratch)}:${path.dirname(node!)}:/usr/bin:/bin`,
       HOME: scratch,
       CLAXEDO_INSTALL_DIR: path.join(scratch, "install"),
       FAKE_LOG: log,
+      ...(options.npm ? { CLAXEDO_CLI_TARBALL: path.join(scratch, "claxedo-cli.tgz") } : {}),
     },
   })
   return { run, connected: () => (existsSync(log) ? JSON.parse(readFileSync(log, "utf8")) as FakeConnect : undefined) }
@@ -73,6 +91,13 @@ describe.skipIf(!pwsh)("install.ps1", () => {
       token: TOKEN,
       controlPlane: "https://plane.test",
     })
+  }), 60_000)
+
+  test.skipIf(process.platform === "win32")("with an invitation and no accepted claxedo, connects with the claxedo npm installed, whatever npm printed", () => inScratch((scratch) => {
+    const { run, connected } = runInstall(scratch, ["-Invitation", TOKEN, "-Root", "/srv/app", "-ControlPlane", "https://plane.test", "-MinimumCliVersion", "0.0.1"], { npm: true })
+    expect(run.status, run.stderr).toBe(0)
+    expect(run.stdout).toContain("added 880 packages in 18m")
+    expect(connected()?.args).toEqual(["connect", "--token-file", path.join(scratch, "install", "invitation.token"), "--root", "/srv/app", "--install-service"])
   }), 60_000)
 
   test.skipIf(process.platform === "win32")("refuses in one line, before installing anything, an invitation with no folder or a relative one, and a code with an invitation", () => inScratch((scratch) => {
