@@ -129,6 +129,11 @@ describe("publish-claxedo-packages", () => {
     expect(() => parseArgs(["--track", "wakes"])).toThrow("(got wakes)")
   })
 
+  test("keeps its packed tarballs in --work-dir instead of a temporary directory it deletes", () => {
+    expect(parseArgs(["--track", "all", "--dry-run", "--work-dir", "/tmp/packs"])).toMatchObject({ workDir: "/tmp/packs" })
+    expect(parseArgs(["--track", "all"]).workDir).toBeUndefined()
+  })
+
   test("is listed in dependency order, so an exact @claxedo pin always resolves on npm", () => {
     const seen = new Set<string>()
     for (const item of claxedoPackages) {

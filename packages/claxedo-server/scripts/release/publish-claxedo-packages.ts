@@ -576,6 +576,7 @@ export function parseArgs(argv: readonly string[]) {
     tag: argValue(argv, "--tag"),
     dryRun: argv.includes("--dry-run"),
     provenance: !argv.includes("--no-provenance"),
+    workDir: argValue(argv, "--work-dir"),
   }
 }
 
