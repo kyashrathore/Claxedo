@@ -114,7 +114,11 @@ export function sessionRequestIsHumanTurn(input: SessionHumanTurnReader): boolea
 export function sessionTurnOrigin(input: SessionRequestProvenanceReader): SessionTurnOrigin | undefined {
   if (sessionRequestProvenance(input) === "loopback-direct") return { provenance: "loopback-direct" }
   const { actor, authority } = sessionAccessContext(input)
-  return actor && authority ? { provenance: "relay-replayed", actor, authority } : undefined
+  if (!actor || !authority) return undefined
+  // An origin outlives the request that made it, so it keeps who asked and
+  // with what authority, not the token that request carried.
+  const { parentTokenId: _requestToken, ...lasting } = authority
+  return { provenance: "relay-replayed", actor, authority: lasting }
 }
 
 export function sessionAccessDenied(decision: Exclude<SessionAccessDecision, { allowed: true }>) {
