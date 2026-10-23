@@ -79,7 +79,7 @@ export class ClaudeModelCatalog {
       },
     } })
     try {
-      return await read(probe)
+      return await Promise.race([read(probe), rejectWhenDisposed(abort.signal)])
     } finally {
       this.disposal.signal.removeEventListener("abort", stop)
       abort.abort()
@@ -87,6 +87,11 @@ export class ClaudeModelCatalog {
       await Promise.all(spawned.map((child) => child.retire({ at: Date.now() + 5_000, signal: new AbortController().signal })))
     }
   }
+}
+
+function rejectWhenDisposed(signal: AbortSignal): Promise<never> {
+  return new Promise((_, reject) => signal.addEventListener("abort",
+    () => reject(new TransportError("claude", "session", "Claude transport disposed")), { once: true }))
 }
 
 export function claudeProbeModel(input: StartInput | DraftLaunch): { model?: string } {
