@@ -81,6 +81,7 @@ async function setup() {
     now,
     randomId: (prefix) => `${prefix}_${String(++sequence).padStart(4, "0")}`,
     resolveOrgId: (auth) => workspace.resolveOrgId(auth),
+    assignWorkspaceHost: (writer, args) => hostAccess.assignWorkspaceHost(writer, args),
   })
   const hostProviderConfig = new D1HostProviderConfigAuthority(database, {
     deploymentId: "deployment-a",
@@ -867,6 +868,7 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
     invitation: { invitationId: string; secret: string },
     hostId: string,
     key: Awaited<ReturnType<typeof hostKey>>,
+    displayName?: string,
   ) {
     return await input.hostInvitations.redeemHostInvitation({
       invitationId: invitation.invitationId,
@@ -876,6 +878,7 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
       signature: await key.sign(
         invitationRedeemPayload({ invitationId: invitation.invitationId, hostId, publicKeySha256: key.fingerprint }),
       ),
+      ...(displayName ? { displayName } : {}),
     })
   }
 
@@ -1208,6 +1211,54 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
       assignments: [],
       scope: { allowed_roots: ["/srv"], revision: 1 },
     })
+  })
+
+  test("an invitation that shares its root has the machine that redeems it serve that root as its first workspace, assigned as the inviter", async () => {
+    const input = await setup()
+    const { alice } = await fixture(input)
+    const owner = await signed(input.workspace, "alice", "org_acme")
+    const invitation = await input.hostInvitations.createHostInvitation(owner, { scope: { allowed_roots: ["/srv/app/"] }, displayName: "build-box", sharesRoot: true })
+    const key = await hostKey()
+    const result = await redeem(input, invitation, "vps-share", key, "ip-10-0-0-7")
+    expect(result).toMatchObject({ resumed: false, enrollment: { display_name: "build-box" }, scope: { allowed_roots: ["/srv/app"] }, workspace_id: expect.stringMatching(/^ws_/) })
+    const workspaceId = result.workspace_id!
+    expect(await input.database.prepare("select org_id, owner_user_id, display_name, repo_name, remote_directory, backing from workspaces where workspace_id = ?").bind(workspaceId).first()).toEqual({
+      org_id: "org_acme", owner_user_id: alice.principal!.userId, display_name: "app", repo_name: "app", remote_directory: "/srv/app", backing: "local-worktree",
+    })
+    expect(await machineBeat(input, result.enrollment.enrollment_id, [])).toMatchObject({
+      assignments: [{ workspace_id: workspaceId, remote_directory: "/srv/app", display_name: "app", revision: 1 }],
+    })
+
+    const resumed = await redeem(input, invitation, "vps-share", key)
+    expect(resumed).toMatchObject({ resumed: true, workspace_id: workspaceId })
+    const assignments = await input.database.prepare("select workspace_id, host_id from host_workspace_assignments").all()
+    expect(assignments.results).toEqual([{ workspace_id: workspaceId, host_id: "vps-share" }])
+    expect(await input.database.prepare("select count(*) as rows from workspaces where remote_directory = '/srv/app'").first()).toEqual({ rows: 1 })
+  })
+
+  test("only an invitation with exactly one root shares it, and one that shares nothing assigns nothing", async () => {
+    const input = await setup()
+    await fixture(input)
+    const owner = await signed(input.workspace, "alice", "org_acme")
+    for (const roots of [[], ["/srv/a", "/srv/b"]]) {
+      await expect(input.hostInvitations.createHostInvitation(owner, { scope: { allowed_roots: roots }, sharesRoot: true }))
+        .rejects.toMatchObject({ code: "invalid_input" })
+    }
+    const plain = await redeem(input, await invite(input, owner, ["/srv"]), "vps-plain", await hostKey(), "ip-10-0-0-8")
+    expect(plain).not.toHaveProperty("workspace_id")
+    expect(plain.enrollment.display_name, "an invitation with no name takes the machine's").toBe("ip-10-0-0-8")
+    expect((await input.database.prepare("select * from host_workspace_assignments").all()).results).toEqual([])
+  })
+
+  test("a shared root is assigned only while its inviter may still act: a suspended inviter's machine gets no workspace", async () => {
+    const input = await setup()
+    const { alice } = await fixture(input)
+    const owner = await signed(input.workspace, "alice", "org_acme")
+    const invitation = await input.hostInvitations.createHostInvitation(owner, { scope: { allowed_roots: ["/srv/app"] }, sharesRoot: true })
+    await input.database.prepare("update users set state = 'suspended', suspended_at = ? where user_id = ?").bind(input.now(), alice.principal!.userId).run()
+    await expect(redeem(input, invitation, "vps-suspended", await hostKey())).rejects.toMatchObject({ status: 403, code: "workspace_authorization_denied" })
+    expect((await input.database.prepare("select * from host_workspace_assignments").all()).results).toEqual([])
+    expect(await input.database.prepare("select count(*) as rows from workspaces where remote_directory = '/srv/app'").first()).toEqual({ rows: 0 })
   })
 
   test("a wrong secret or an unknown id is invitation_invalid with no redeemed-by detail", async () => {

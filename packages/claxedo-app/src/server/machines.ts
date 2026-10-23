@@ -4,7 +4,7 @@ import type { HostedAccount } from "./account"
 import { ServerError, toAppError } from "./errors"
 import { fetchQuery } from "./fetch-query"
 import { isRecord } from "@claxedo/helpers/guards"
-import type { Machine, MachineEnrollment, MachineProbe, MintedPairing, Pairing } from "./machine-types"
+import type { Machine, MachineEnrollment, MachineProbe, MintedInvitation, MintedPairing, Pairing } from "./machine-types"
 import { queryKeys } from "./query-keys"
 import type { Transport } from "./transport"
 import type { FetchQuery } from "./types"
@@ -12,6 +12,7 @@ import type { Workspaces } from "./workspaces"
 import { servingMachineOf } from "./capabilities"
 import { machinesFromDevices, RUNTIME_PROBE_PATH, runtimeProbeFromWire } from "./wire/machines"
 import { mintedPairingFromWire, pairingFromWire, pairingRequestsFromWire } from "./wire/pairings"
+import { mintedInvitationFromWire } from "./wire/invitations"
 
 export type MachinesApi = {
   readonly recheck: () => Promise<readonly Machine[]>
@@ -23,7 +24,10 @@ export type MachinesApi = {
   readonly approve: (pairingId: string, name: string | undefined) => Promise<void>
   readonly deny: (pairingId: string) => Promise<void>
   readonly cancelPairings: () => Promise<void>
+  readonly invite: (server: ServerInvitation) => Promise<MintedInvitation>
 }
+
+export type ServerInvitation = { readonly name: string; readonly folder: string }
 
 async function accountDevices(account: HostedAccount | undefined): Promise<readonly unknown[]> {
   return account ? (readArray(await account.run("machines.list"), "devices") ?? []) : []
@@ -101,6 +105,13 @@ function pairingAnswers(queryClient: QueryClient, server: string, account: Hoste
   }
 }
 
+async function mintInvitation(account: HostedAccount | undefined, server: ServerInvitation): Promise<MintedInvitation> {
+  const answer = await signedIn(account, "machines.invite").run("machines.invite", { folder: server.folder, ...(server.name ? { displayName: server.name } : {}) })
+  const minted = mintedInvitationFromWire(answer)
+  if (!minted) throw new ServerError({ class: "internal", message: "The invitation answer is not one this app can read" })
+  return minted
+}
+
 export function createMachinesApi(transport: Transport, queryClient: QueryClient, workspaces: Workspaces, account: HostedAccount | undefined): MachinesApi {
   const server = transport.serverUrl
   const change = async (operation: "machines.pause" | "machines.resume" | "machines.remove", enrollment: MachineEnrollment) => {
@@ -121,5 +132,6 @@ export function createMachinesApi(transport: Transport, queryClient: QueryClient
     },
     probe: (enrollment) => probeRuntime(transport, enrollment),
     ...pairingAnswers(queryClient, server, account),
+    invite: (invited) => mintInvitation(account, invited),
   }
 }

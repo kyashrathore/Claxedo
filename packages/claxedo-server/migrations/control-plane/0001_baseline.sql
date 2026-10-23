@@ -242,7 +242,7 @@ CREATE TABLE host_invitations (
   created_by_actor_id text not null references actors (actor_id) deferrable initially deferred,
   created_at integer not null,
   revoked_at integer
-, kind text not null default 'preapproved' check (kind in ('preapproved', 'pairing')), pairing_progress_json text check (pairing_progress_json is null or json_valid(pairing_progress_json)), pairing_request_json text check (pairing_request_json is null or json_valid(pairing_request_json)), pairing_decision text check (pairing_decision is null or pairing_decision in ('approved', 'denied')), pairing_decided_at integer, pairing_workspace_id text);
+, kind text not null default 'preapproved' check (kind in ('preapproved', 'pairing')), pairing_progress_json text check (pairing_progress_json is null or json_valid(pairing_progress_json)), pairing_request_json text check (pairing_request_json is null or json_valid(pairing_request_json)), pairing_decision text check (pairing_decision is null or pairing_decision in ('approved', 'denied')), pairing_decided_at integer, pairing_workspace_id text, first_workspace_id text);
 
 CREATE TABLE host_request_nonces (
   enrollment_id text not null,

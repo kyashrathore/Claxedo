@@ -66,6 +66,7 @@ export type InvitationRow = {
   pairing_decision: "approved" | "denied" | null
   pairing_decided_at: number | null
   pairing_workspace_id: string | null
+  first_workspace_id: string | null
 }
 
 /** The enrollment lease a new enrollment starts with and a beat renews when it names none. */

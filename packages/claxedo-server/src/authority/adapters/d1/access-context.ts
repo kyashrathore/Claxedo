@@ -25,6 +25,19 @@ export type D1AccessContext = {
 
 export type HumanPrincipal = { userId: string; actorId: string; actorKind: "human" }
 
+/**
+ * The person a pre-approved invitation speaks for once a machine redeems it:
+ * what they decided when minting it is done then as them. Its secret was the
+ * credential, so no signature is asked; every write still runs under the
+ * guards that person's own call would meet.
+ */
+export type InvitationOwner = { readonly invitationOwner: HumanPrincipal }
+
+/** Who is writing: the signed caller as `requireHuman` resolves it, or the owner an invitation speaks for. */
+export function requireWriter(database: D1Database, deploymentId: string, writer: SignedControlPlaneAuth | InvitationOwner): Promise<HumanPrincipal> {
+  return "invitationOwner" in writer ? Promise.resolve(writer.invitationOwner) : requireHuman(database, deploymentId, writer)
+}
+
 type IdentityRow = {
   user_id: string
   user_state: "active" | "suspended" | "deleted"

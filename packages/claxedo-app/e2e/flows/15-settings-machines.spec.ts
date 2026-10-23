@@ -192,6 +192,45 @@ test("15 Connect a machine: a machine its owner denies is told so and exits, and
   expect((await ownerDevices(signed)).map((device) => device.display_name)).toEqual([MACHINE])
 })
 
+const INVITATION_COMMAND = /^curl -fsSL https:\/\/\S+\/api\/claxedo\/connect \| sh -s -- --invitation (chx_inv_2\.\S+) --root '(.+)'$/
+
+test("15 Connect a machine: a server without a browser gets a pre-approved command, and running it connects the server and serves the folder with no approval", async ({ signed, page }, testInfo) => {
+  await page.goto(`${signed.url}/`)
+  await signed.signIn(page, signed.owner)
+  const yours = await machines(page, signed.url)
+  await page.getByRole("button", { name: "Connect a machine…" }).click()
+  const server = page.getByRole("dialog", { name: "Connect a machine" }).getByRole("region", { name: "For a server without a browser" })
+  const where = await connectFolder("srv-app")
+  const make = server.getByRole("button", { name: "Make the command" })
+  await server.getByRole("textbox", { name: "Server name" }).fill("cloud-box")
+  await server.getByRole("textbox", { name: "Folder to share" }).fill("srv-app")
+  await expect(make).toBeDisabled()
+  await server.getByRole("textbox", { name: "Folder to share" }).fill(where.folder)
+  await make.click()
+  await expect(server.getByText(/^Works once, until /)).toBeVisible()
+  await expect(server.getByText(/^#cloud-config\s+runcmd:\s+- "curl -fsSL \S+ \| sh -s -- --invitation chx_inv_2\./)).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath("server-cloud-init.png") })
+  await server.getByRole("tab", { name: "macOS / Linux" }).click()
+  const command = server.getByText(INVITATION_COMMAND)
+  await expect(command).toBeVisible()
+  const [, invitation, root] = INVITATION_COMMAND.exec((await command.textContent()) ?? "") ?? []
+  expect(root).toBe(where.folder)
+  const cli = startConnectCli(signed, { invitation: invitation ?? "", root: where.folder, home: where.home, folder: where.home })
+  try {
+    await page.getByRole("dialog", { name: "Connect a machine" }).getByRole("button", { name: "Done" }).click()
+    await expect(yours.getByText("cloud-box", { exact: true })).toBeVisible({ timeout: 30_000 })
+    await expect.poll(async () => (await ownerDevices(signed)).find((device) => device.display_name === "cloud-box"), { timeout: 30_000 })
+      .toMatchObject({ state: "online", serving_workspace_ids: [expect.any(String)] })
+    await expect(page.getByRole("group", { name: "Waiting for your approval" })).toHaveCount(0)
+    await page.screenshot({ path: testInfo.outputPath("server-connected.png") })
+    expect(cli.lines().some((line) => line.startsWith("Enrolled as "))).toBe(true)
+  } finally {
+    await cli.stop()
+    await testInfo.attach("claxedo connect", { body: cli.lines().join("\n"), contentType: "text/plain" })
+    await where.close()
+  }
+})
+
 test("15 Machines lists a machine asking to join while no drawer is open, and approving it there connects it", async ({ signed, page }, testInfo) => {
   await page.goto(`${signed.url}/`)
   await signed.signIn(page, signed.owner)

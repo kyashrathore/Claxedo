@@ -1279,6 +1279,21 @@ describe("host invitations", () => {
     expect((await call("/", { method: "POST", body: JSON.stringify({ scope: { allowed_roots: ["/srv"], visibility: "org" } }) })).status).toBe(400)
   })
 
+  test("an invitation that shares its root answers the commands that connect a server to it, from this control plane", async () => {
+    const { api, call } = invitationRoutes()
+    const response = await call("/", { method: "POST", body: JSON.stringify({ scope: { allowed_roots: ["/srv/app"] }, displayName: "build-box", sharesRoot: true }) })
+    expect(response.status, await response.clone().text()).toBe(200)
+    expect(api.createHostInvitation).toHaveBeenCalledWith(expect.anything(), { scope: { allowed_roots: ["/srv/app"] }, displayName: "build-box", sharesRoot: true })
+    const body = await response.json() as { token: string; commands: Record<string, string> }
+    expect(body.commands).toEqual({
+      posix: `curl -fsSL https://app.claxedo.dev/api/claxedo/connect | sh -s -- --invitation ${body.token} --root '/srv/app'`,
+      windows: `& ([scriptblock]::Create((irm https://app.claxedo.dev/api/claxedo/connect.ps1))) -Invitation ${body.token} -Root '/srv/app'`,
+      cloudInit: `#cloud-config\nruncmd:\n  - "curl -fsSL https://app.claxedo.dev/api/claxedo/connect | sh -s -- --invitation ${body.token} --root '/srv/app'"`,
+    })
+    const plain = await call("/", { method: "POST", body: JSON.stringify({ scope: { allowed_roots: ["/srv"] } }) })
+    expect(await plain.json()).not.toHaveProperty("commands")
+  })
+
   test("lists and revokes the owner's invitations, auditing a revocation that happened", async () => {
     const { api, call } = invitationRoutes()
     expect(await (await call("/", { method: "GET" })).json()).toEqual({

@@ -290,10 +290,23 @@ takes over [Remote machine connection](./2026-09-14-003-feat-connect-implementat
 
 ### C8 — Servers without a browser
 
-- [ ] The drawer's "For a server without a browser" mints a pre-approved invitation with a name and the folder to
+- [x] The drawer's "For a server without a browser" mints a pre-approved invitation with a name and the folder to
   share, typed as the server writes it, because a cloud-init run has no meaningful working folder. It is shown as a
-  cloud-init snippet and as one command. Today's `--token-file` path stays for it. Progress:
+  cloud-init snippet and as one command. Today's `--token-file` path stays for it. Progress: `ServerConnect`
+  (`claxedo-app/src/settings/view/server-connect.tsx`) mints through `machines.invite`, the owner's
+  `POST /api/claxedo/host/invitations` with `sharesRoot`; the control plane answers the cloud-init snippet and the
+  macOS / Linux and Windows commands from its own origin (`invitationCommands`). On redemption it assigns the folder
+  as the machine's first workspace as the person who minted it (`first_workspace_id`), so the machine serves it with
+  no approval, and the invitation's name names the machine. `install.sh --invitation T --root DIR` and
+  `install.ps1 -Invitation T -Root DIR` write the token to a file only the user reads and run
+  `claxedo connect --token-file F --root DIR --install-service`. Flow 15 runs the real `claxedo connect --token-file
+  --root` from the drawer's command on the web and the phone. Not yet run: the snippet on a real cloud VM's first
+  boot, and `install.ps1` on Windows.
 - [ ] On Linux the script enables linger where it may and otherwise prints the one command that does. Progress:
+  `install.sh` turns lingering on with `loginctl --no-ask-password enable-linger` (root, as cloud-init runs, always
+  may), says so in one line or prints `sudo loginctl enable-linger <user>` in one line, and when `XDG_RUNTIME_DIR`
+  is unset waits up to 10 s for the user manager's bus and exports it. Covered by `install-sh.test.ts` against a
+  fake `loginctl`; not yet run on a real systemd host.
 
 ### C9 — Add a machine over SSH from the desktop app
 

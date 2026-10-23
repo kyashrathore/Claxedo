@@ -14,6 +14,7 @@ type World = {
   devices: Record<string, unknown>[]
   connection: { status: number; body: unknown }
   health: unknown
+  invitation?: unknown
   calls: { method: string; path: string; body?: unknown }[]
 }
 
@@ -37,6 +38,7 @@ function worker(world: World) {
       world.devices = []
       return Response.json({ revoked: true })
     }
+    if (url.pathname === "/api/claxedo/host/invitations" && method === "POST") return Response.json(world.invitation)
     if (url.pathname === "/api/workspace/ws_box/connection") return Response.json(world.connection.body, { status: world.connection.status })
     if (url.href === "https://relay.test/workspaces/ws_box/global/health") return Response.json(world.health)
     throw new Error(`Unexpected request: ${method} ${url.href}`)
@@ -144,5 +146,20 @@ test("the runtime probe reads one served folder's health through the relay, says
     const probe = await server.machines.probe({ hostId: "host_box", lastSeenAt: 1_000, servingWorkspaceIds: ["ws_box"] })
     expect(probe).toMatchObject({ kind: "unreachable", error: { class: "conflict", code: "workspace_host_offline" } })
     expect(offline.calls.some((call) => call.path.startsWith("relay:"))).toBe(false)
+  })
+})
+
+test("invite mints a pre-approved invitation sharing the one folder named, with the commands the control plane wrote; an answer without them is an internal failure", async () => {
+  const commands = { posix: "curl -fsSL https://worker.test/api/claxedo/connect | sh -s -- --invitation chx_inv_2.x.y.z --root '/srv/app'", windows: "& … -Root '/srv/app'", cloudInit: "#cloud-config\nruncmd:\n  - \"curl …\"" }
+  const world = scenario({ invitation: { invitation_id: "invitation_1", token: "chx_inv_2.x.y.z", expires_at: 9_999, commands } })
+  await signedBrowser(async (server) => {
+    expect(await server.machines.invite({ name: "build-box", folder: "/srv/app" })).toEqual({ id: "invitation_1", expiresAt: 9_999, commands })
+    await server.machines.invite({ name: "", folder: "/srv/app" })
+    expect(world.calls.filter((call) => call.method === "POST")).toEqual([
+      { method: "POST", path: "/api/claxedo/host/invitations", body: { scope: { allowed_roots: ["/srv/app"] }, sharesRoot: true, displayName: "build-box" } },
+      { method: "POST", path: "/api/claxedo/host/invitations", body: { scope: { allowed_roots: ["/srv/app"] }, sharesRoot: true } },
+    ])
+    world.invitation = { invitation_id: "invitation_2", token: "chx_inv_2.x.y.z", expires_at: 9_999 }
+    await expect(server.machines.invite({ name: "", folder: "/srv/app" })).rejects.toMatchObject({ class: "internal" })
   })
 })

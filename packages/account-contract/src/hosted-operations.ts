@@ -178,6 +178,13 @@ export const CORE_HOSTED_OPERATIONS = {
     exposure: { renderer: true, app: false },
     body: () => ({}),
   }),
+  "machines.invite": defineOperation({
+    method: "POST", path: operationPath("/api/claxedo/host/invitations"),
+    input: operationInput({ folder: requiredParameter, displayName: optionalParameter }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: false },
+    body: (input) => ({ scope: { allowed_roots: [input.folder] }, sharesRoot: true, ...(input.displayName ? { displayName: input.displayName } : {}) }),
+  }),
   "machines.pairing": defineOperation({
     method: "GET", path: operationPath("/api/claxedo/host/pairings/:pairingId"),
     input: operationInput({ pairingId: requiredParameter }),

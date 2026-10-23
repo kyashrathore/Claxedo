@@ -14,7 +14,7 @@ import {
   activeGuard, batchUnder, deleteAssertion, mayGuard, maySql, wonAssertion, type WorkspaceAction,
 } from "./authorization"
 import { d1BatchAssertionFailed, d1UniqueFailureOn } from "../../../platform/db/d1-constraint"
-import { requireHuman } from "./access-context"
+import { requireHuman, requireWriter, type InvitationOwner } from "./access-context"
 import { D1HostAccessAuthorityError } from "./host-access-errors"
 import { randomBase64Url, storedKeyFingerprint, verifiedPublicKey, verifyHostSignature } from "./host-attestation-codec"
 import {
@@ -162,7 +162,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
    * repaired by the next assignment.
    */
   async assignWorkspaceHost(
-    auth: SignedControlPlaneAuth,
+    writer: SignedControlPlaneAuth | InvitationOwner,
     args: {
       workspaceId: string
       hostId: string
@@ -176,7 +176,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       homeRegion?: string
     },
   ) {
-    const who = await this.requirePrincipal(auth)
+    const who = await requireWriter(this.database, this.options.deploymentId, writer)
     const workspaceId = requireText(args.workspaceId, "workspaceId")
     const hostId = requireText(args.hostId, "hostId")
     const displayName = optionalText(args.displayName, "displayName", 200)
@@ -195,7 +195,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     // The workspace half is the admission `authorizeWorkspaceHostAssignment`
     // already gave this caller; the invitation and scope rules below are the
     // machine half, which only an assignment can know.
-    const { workspace } = await this.admitHostAssignment(auth, who, {
+    const { workspace } = await this.admitHostAssignment(writer, who, {
       workspaceId,
       // The organization a cold register files into: the caller's, else the
       // one this machine was invited to serve.
@@ -219,7 +219,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
         throw new D1HostAccessAuthorityError("host_attestation_denied", "Cold local workspace registration is unavailable")
       }
       const orgId = args.orgId ?? invitationOrgId
-      registration = (await this.options.localWorkspaceRegistration(auth, {
+      registration = (await this.options.localWorkspaceRegistration(writer, {
         workspaceId,
         displayName: displayName ?? workspaceId,
         ...(orgId ? { orgId } : {}),
@@ -802,7 +802,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
    * refused by one and admitted by the other.
    */
   private async admitHostAssignment(
-    auth: SignedControlPlaneAuth,
+    writer: SignedControlPlaneAuth | InvitationOwner,
     who: Principal,
     args: { workspaceId: string; orgId?: string; projectId?: string },
   ): Promise<{ registration: "existing" | "cold"; workspace?: WorkspaceRow }> {
@@ -814,7 +814,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     if (!this.options.authorizeLocalWorkspaceRegistration) {
       throw new D1HostAccessAuthorityError("host_attestation_denied", "Cold local workspace registration is unavailable")
     }
-    await this.options.authorizeLocalWorkspaceRegistration(auth, {
+    await this.options.authorizeLocalWorkspaceRegistration(writer, {
       ...(args.orgId ? { orgId: args.orgId } : {}),
       ...(args.projectId ? { projectId: args.projectId } : {}),
     })

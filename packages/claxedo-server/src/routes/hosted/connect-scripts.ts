@@ -33,6 +33,16 @@ export function connectCommands(origin: string, code: string) {
   }
 }
 
+/** The pre-approved twin of `connectCommands`: the machine enrolls with no approval and serves `folder`, written as that machine writes it. */
+export function invitationCommands(origin: string, token: string, folder: string) {
+  const posix = `curl -fsSL ${origin}${CONNECT_SCRIPT_PATH} | sh -s -- --invitation ${token} --root ${shellQuote(folder)}`
+  return {
+    posix,
+    windows: `& ([scriptblock]::Create((irm ${origin}${CONNECT_SCRIPT_PATH}.ps1))) -Invitation ${token} -Root ${powershellQuote(folder)}`,
+    cloudInit: ["#cloud-config", "runcmd:", `  - ${JSON.stringify(posix)}`].join("\n"),
+  }
+}
+
 /** Mounted at `/api/claxedo`; the scripts carry no secret, so they are served to anyone. */
 export function ConnectScriptRoutes(origin: string) {
   return new Hono()

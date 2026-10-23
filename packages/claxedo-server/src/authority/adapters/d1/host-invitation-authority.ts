@@ -1,3 +1,4 @@
+import { hostPathBasename } from "@claxedo/account-contract/host-path"
 import { invitationRedeemPayload } from "@claxedo/account-contract/machine"
 import type { D1Database } from "@cloudflare/workers-types"
 import { sha256Hex } from "@claxedo/helpers/crypto"
@@ -13,6 +14,7 @@ import {
 } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-crypto"
 import { d1BatchAssertionFailed, d1UniqueFailureOn } from "../../../platform/db/d1-constraint"
+import { newWorkspaceId } from "../../../platform/auth/workspace-id"
 import { requireHuman, type HumanPrincipal } from "./access-context"
 import { activeGuard, batchUnder, deleteAssertion } from "./authorization"
 import { D1HostAccessAuthorityError } from "./host-access-errors"
@@ -28,6 +30,7 @@ import {
   type InvitationRow,
 } from "./host-enrollment-records"
 import { requireScope, storedScope } from "./host-scope-rules"
+import type { D1HostAccessAuthority } from "./host-access-authority"
 
 export const D1_HOST_INVITATION_AUTHORITY_METHODS = [
   "createHostInvitation",
@@ -44,6 +47,8 @@ export type D1HostInvitationAuthorityOptions = {
   randomId?: (prefix: "enrollment" | "assert" | "invitation") => string
   /** The caller's current organization, recorded on an invitation when it is created. */
   resolveOrgId?: WorkspaceAuthority["resolveOrgId"]
+  /** How an invitation that shares its root has that root assigned once its machine redeems it. */
+  assignWorkspaceHost?: D1HostAccessAuthority["assignWorkspaceHost"]
 }
 
 const INVITATION_MIN_TTL_MS = 5 * 60_000
@@ -54,7 +59,9 @@ const INVITATION_DEFAULT_TTL_MS = 60 * 60_000
  * The owner's single-use invitations and their redemption, which is how a
  * `claxedo connect` machine is enrolled: the secret is the credential, the
  * store keeps its hash, and a redeemed invitation becomes an enrollment
- * confined to the invitation's organization and roots.
+ * confined to the invitation's organization and roots. One that shares its
+ * root also has that root assigned as the machine's first workspace when it
+ * is redeemed, as the person who minted it.
  */
 export class D1HostInvitationAuthority implements D1HostInvitationAuthorityPort {
   private readonly now: () => number
@@ -75,6 +82,9 @@ export class D1HostInvitationAuthority implements D1HostInvitationAuthorityPort 
   ): Promise<HostInvitationCreateResult> {
     const who = await this.requirePrincipal(auth)
     const scope = requireScope(args.scope)
+    if (args.sharesRoot && scope.allowed_roots.length !== 1) {
+      throw new D1HostAccessAuthorityError("invalid_input", "An invitation that shares its root names exactly one root")
+    }
     const displayName = optionalText(args.displayName, "displayName", 200)
     const orgId = await invitationOrgIdFor(this.database, who, auth, this.options.resolveOrgId)
     const now = this.now()
@@ -85,8 +95,8 @@ export class D1HostInvitationAuthority implements D1HostInvitationAuthorityPort 
       insert into host_invitations (
         invitation_id, owner_user_id, owner_actor_id, org_id, secret_hash, display_name, scope_json,
         expires_at, redeemed_at, redeemed_enrollment_id, redeemed_host_id, redeemed_public_key_fingerprint,
-        created_by_actor_id, created_at, revoked_at
-      ) values (?, ?, ?, ?, ?, ?, ?, ?, null, null, null, null, ?, ?, null)
+        created_by_actor_id, created_at, revoked_at, first_workspace_id
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, null, null, null, null, ?, ?, null, ?)
     `).bind(
       invitationId,
       who.userId,
@@ -98,6 +108,7 @@ export class D1HostInvitationAuthority implements D1HostInvitationAuthorityPort 
       expiresAt,
       who.actorId,
       now,
+      args.sharesRoot ? newWorkspaceId(now) : null,
     )])
     return { invitationId, secret, expiresAt }
   }
@@ -133,13 +144,37 @@ export class D1HostInvitationAuthority implements D1HostInvitationAuthorityPort 
     return { revoked: changes(result) > 0 }
   }
 
-  /**
-   * No caller auth: the invitation secret is the credential. The row is read
-   * once and every decision below is made against that read; the batch then
-   * re-asserts single use, so two concurrent redeems produce one enrollment and
-   * the loser is answered from a fresh read.
-   */
+  /** No caller auth: the invitation secret is the credential. */
   async redeemHostInvitation(args: HostInvitationRedeemInput): Promise<HostInvitationRedeemResult> {
+    const redeemed = await this.redeemEnrollment(args)
+    const invitation = await this.invitation(args.invitationId)
+    return invitation?.first_workspace_id ? await this.assignSharedRoot(invitation, invitation.first_workspace_id, redeemed) : redeemed
+  }
+
+  /**
+   * The shared root becomes the machine's first workspace, assigned as the
+   * person who minted the invitation and under that person's own admissions.
+   * A resumed redeem assigns it again, which repeats the same declaration.
+   */
+  private async assignSharedRoot(invitation: InvitationRow, workspaceId: string, redeemed: HostInvitationRedeemResult) {
+    const [root] = redeemed.scope.allowed_roots
+    if (!this.options.assignWorkspaceHost || !root) {
+      throw new D1HostAccessAuthorityError("resource_conflict", "This invitation's shared root cannot be assigned")
+    }
+    const name = hostPathBasename(root)
+    await this.options.assignWorkspaceHost(
+      { invitationOwner: { userId: invitation.owner_user_id, actorId: invitation.owner_actor_id, actorKind: "human" } },
+      { workspaceId, hostId: redeemed.enrollment.host_id, orgId: invitation.org_id, displayName: name, repoName: name, remoteDirectory: root },
+    )
+    return { ...redeemed, workspace_id: workspaceId }
+  }
+
+  /**
+   * The row is read once and every decision below is made against that read;
+   * the batch then re-asserts single use, so two concurrent redeems produce one
+   * enrollment and the loser is answered from a fresh read.
+   */
+  private async redeemEnrollment(args: HostInvitationRedeemInput): Promise<HostInvitationRedeemResult> {
     const invitationId = requireText(args.invitationId, "invitationId")
     const secret = requireText(args.secret, "secret")
     const hostId = requireText(args.hostId, "hostId")
@@ -199,7 +234,8 @@ export class D1HostInvitationAuthority implements D1HostInvitationAuthorityPort 
           enrollmentId,
           hostId,
           publicKey,
-          displayName ?? invitation.display_name,
+          // A machine always offers a name, its hostname by default; the one its owner chose wins.
+          invitation.display_name ?? displayName ?? null,
           now,
           expiresAt,
           now,

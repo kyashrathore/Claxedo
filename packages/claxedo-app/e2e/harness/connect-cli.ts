@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process"
+import { writeFileSync } from "node:fs"
 import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -17,6 +18,8 @@ export type ConnectCli = {
   readonly stop: () => Promise<number | null>
 }
 
+export type ConnectWith = { readonly code: string } | { readonly invitation: string; readonly root: string }
+
 export async function connectFolder(name: string): Promise<{ home: string; folder: string; close: () => Promise<void> }> {
   const home = await realpath(await mkdtemp(path.join(os.tmpdir(), "claxedo-connect-e2e-")))
   const folder = path.join(home, name)
@@ -24,9 +27,16 @@ export async function connectFolder(name: string): Promise<{ home: string; folde
   return { home, folder, close: () => rm(home, { recursive: true, force: true }) }
 }
 
-export function startConnectCli(signed: SignedStack, input: { readonly code: string; readonly home: string; readonly folder: string }): ConnectCli {
+function connectArgs(input: ConnectWith & { readonly home: string }): string[] {
+  if ("code" in input) return ["--pair", input.code]
+  const tokenFile = path.join(input.home, "invitation.token")
+  writeFileSync(tokenFile, input.invitation, { mode: 0o600 })
+  return ["--token-file", tokenFile, "--root", input.root]
+}
+
+export function startConnectCli(signed: SignedStack, input: ConnectWith & { readonly home: string; readonly folder: string }): ConnectCli {
   const output: string[] = []
-  const child = spawn(process.execPath, ["--conditions=development", "--import", TEXT_IMPORTS, "--import", LOCALHOST_RESOLVER, "--import", TSX_LOADER, CLI_ENTRY, "connect", "--pair", input.code], {
+  const child = spawn(process.execPath, ["--conditions=development", "--import", TEXT_IMPORTS, "--import", LOCALHOST_RESOLVER, "--import", TSX_LOADER, CLI_ENTRY, "connect", ...connectArgs(input)], {
     cwd: input.folder,
     env: {
       PATH: process.env.PATH ?? "",

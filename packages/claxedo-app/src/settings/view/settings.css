@@ -299,6 +299,24 @@
   white-space: nowrap;
 }
 
+.settings-command-snippet {
+  align-items: flex-start;
+}
+
+.settings-command-snippet code {
+  overflow-x: auto;
+  text-overflow: clip;
+  white-space: pre;
+}
+
+.settings-server-connect {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--v2-border-border-muted);
+}
+
 .settings-font-field {
   width: 220px;
   max-width: 100%;

@@ -340,6 +340,8 @@ export type HostInvitationCreateInput = {
   displayName?: string
   /** Clamped to [5 min, 24 h]; 1 h when absent. */
   expiresInMs?: number
+  /** The scope's one root is also the machine's first workspace, assigned as the inviter when the machine redeems. */
+  sharesRoot?: boolean
 }
 
 export type HostInvitationCreateResult = {
@@ -384,6 +386,8 @@ export type HostInvitationRedeemResult = {
   key_version: number
   serving_generation: number
   scope: HostEnrollmentScope
+  /** The workspace an invitation that shares its root assigned to this machine. */
+  workspace_id?: string
 }
 
 /** What a machine says about itself when it redeems a pairing code. */
