@@ -86,7 +86,8 @@ test("the catalog reads the first run makes answer in one serial control-plane r
  * two serial control-plane rounds (the sandbox lease is the sandbox manager's,
  * not this store's). A read off a serving machine pays two more between them,
  * since `activeWorkspaceHost` proves the caller's access again before it
- * reads the assignment.
+ * reads the assignment, and its last batch also reads the machine's direct
+ * routes for the owner.
  */
 test("a connect to a live sandbox pays two control-plane rounds", async () => {
   const { rounds } = await signedReader()
@@ -107,7 +108,7 @@ test("a workspace connection read off a serving machine pays four control-plane 
   await database.prepare(`insert into host_enrollments (enrollment_id, owner_user_id, owner_actor_id, host_id, public_key_json, last_seen_at, expires_at, created_at, updated_at, session_authority, serving_generation) values ('enr_1', ?, ?, 'host_laptop', '{}', ?, ?, ?, ?, 'local', 1)`).bind(who.userId, who.actorId, now, now + 600_000, now, now).run()
   await database.prepare(`insert into host_workspace_assignments (workspace_id, host_id, org_id, owner_user_id, owner_actor_id, assigned_at, updated_at, revision) values ('ws_laptop', 'host_laptop', ?, ?, ?, ?, ?, 1)`).bind(orgId, who.userId, who.actorId, now, now).run()
   await database.prepare(`insert into host_assignment_readiness (workspace_id, enrollment_id, generation, revision, ready_at) values ('ws_laptop', 'enr_1', 1, 1, ?)`).bind(now).run()
-  expect(await rounds("GET", "/api/workspace/ws_laptop/connection")).toEqual({ rounds: 4, statements: 9 })
+  expect(await rounds("GET", "/api/workspace/ws_laptop/connection")).toEqual({ rounds: 4, statements: 10 })
 })
 
 /**

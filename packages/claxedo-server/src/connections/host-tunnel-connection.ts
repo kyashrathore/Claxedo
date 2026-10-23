@@ -91,7 +91,10 @@ export async function hostTunnelConnectionInfo(
     hostId,
     role,
   })
-  await Promise.all([
+  // The routes are read beside the record, in the same database round: this
+  // answer is the workspace owner's, and a share holder's connection is minted
+  // elsewhere and names no route.
+  const [, , directRoutes] = await Promise.all([
     authority.recordRuntimeAccessToken(auth, {
       jti: token.jti,
       workspaceId,
@@ -111,6 +114,7 @@ export async function hostTunnelConnectionInfo(
         hostLeaseExpiresAt: activeLink.expires_at,
       },
     }),
+    authority.hostDirectRoutes?.({ workspaceId }),
   ])
   captureWorkspaceTelemetry({
     services,
@@ -123,9 +127,6 @@ export async function hostTunnelConnectionInfo(
   if (previousJti) {
     await authority.revokeRuntimeAccessToken(auth, { jti: previousJti, workspaceId })
   }
-  // Read only here, past the mint: this answer is the workspace owner's, and
-  // a share holder's connection is minted elsewhere and names no route.
-  const directRoutes = await authority.hostDirectRoutes?.({ workspaceId })
   return {
     connection: {
       backing: "local-worktree" as const,
