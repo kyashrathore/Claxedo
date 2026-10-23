@@ -83,7 +83,7 @@ function invalidationKeys(server: string, event: ServerEvent, endsWritingTurn: b
     case "usageChanged":
       return [queryKeys.usageAll(server)]
     case "machinesChanged":
-      return [queryKeys.machines(server)]
+      return [queryKeys.machines(server), queryKeys.accountCatalog(server)]
     case "streamGap":
       if (event.ref) return []
       return [

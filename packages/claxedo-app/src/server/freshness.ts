@@ -22,7 +22,7 @@ const machineOwned: Freshness = { kind: "event-owned", events: machineEvents }
 
 export const freshness = {
   bootstrap: catalog,
-  accountCatalog: placementOwned,
+  accountCatalog: machineOwned,
   sharedSessions: { kind: "event-owned", events: ["sessionsChanged", "streamGap"] },
   projects: catalog,
   project: catalog,

@@ -179,17 +179,22 @@ and only then run the affected e2e flows at merge.
 
 No second computer, no token file, no roots typed on a laptop.
 
-- [ ] A hosted operation (`machines.pair`) mints a pairing invitation for the signed-in person: single use, 15 min,
+- [x] A hosted operation (`machines.pair`) mints a pairing invitation for the signed-in person: single use, 15 min,
   with no roots (the machine names its folder when it redeems; C3). The invitation route and store gain that kind; `claxedo host invite` keeps today's
-  pre-approved kind for C8. Progress:
+  pre-approved kind for C8. Progress: `host_invitations.kind` (`preapproved` | `pairing`), `D1HostPairingAuthority`,
+  `POST /api/claxedo/host/pairings`; the invitation redeem refuses a pairing row (`invitation_invalid`).
 - [ ] The control plane serves `connect` (POSIX shell) and `connect.ps1` from its own origin, with its own URL
   inside, so a staging command connects to staging and no `CLAXEDO_CONTROL_PLANE_URL` has to be set by hand. Each
-  installs the CLI as C2 describes and runs `claxedo connect --pair <code> --install-service`. Progress:
-- [ ] The drawer shows the command for the guessed OS, tabs for the others, a copy button, the code's remaining
-  time, and mints a fresh code when the old one expires while the drawer is open. Progress:
-- [ ] The drawer's two-command step and its `~/code` root are removed. Progress:
+  installs the CLI as C2 describes and runs `claxedo connect --pair <code> --install-service`. Progress: done
+  (`routes/hosted/connect-scripts.ts` over a generated mirror of `install.sh` / `install.ps1`, checked by a test).
+- [x] The drawer shows the command for the guessed OS, tabs for the others, a copy button, the code's remaining
+  time, and mints a fresh code when the old one expires while the drawer is open. Progress: done; e2e flow 15 on web
+  and phone.
+- [x] The drawer's two-command step and its `~/code` root are removed. Progress: done.
 - [ ] Refusals, each one line in the app and on the machine: the code expired, the code was already used, the code
-  belongs to another control plane, and the person signed out before the machine redeemed it. Progress:
+  belongs to another control plane, and the person signed out before the machine redeemed it. Progress: done
+  (`PAIRING_REFUSALS` on the machine; signing out cancels unused codes; a code from another plane is not valid
+  there). The app shows no refusal of its own: a code it minted is either redeemed or runs out and is replaced.
 
 ### C2 — Install in one step, on every OS, quickly
 
@@ -199,35 +204,49 @@ No second computer, no token file, no roots typed on a laptop.
 - [ ] `connect.ps1` installs on Windows without admin: Node 24 if missing (checksum verified), the CLI with install
   scripts off, the runtime's setup, Git for Windows found or named as the one missing prerequisite. Proven on a
   fresh Windows 11 and Windows Server 2025 from npm. Moved from W5. Progress:
-- [ ] Measure what the connector loads to enroll and serve against what each harness loads, and report the install
-  time and size each option of decision 2 would give, before building one. Progress:
+- [x] Measure what the connector loads to enroll and serve against what each harness loads, and report the install
+  time and size each option of decision 2 would give, before building one. Progress: measured on Linux x64 against
+  `@claxedo/cli@0.2.1`: the full install is 568 packages, 823.7 MB, 82.4 s cold; harness code is 772.3 MB of it, and
+  240.3 MB is the Claude Agent SDK's native binary, which the runtime never runs. Core only would be 51.5 MB in 4.9 s
+  but needs the eight statically imported harness packages made lazy; deferring only today's lazy imports gives
+  202.0 MB in 40.2 s. First-use fetches: OpenCode 64.2 s, Pi 14.5 s, Claude 9.4 s, Cursor 2.5 s. Decision 2 is still
+  the owner's; the full install stays.
 - [ ] On a fresh box, the paste-to-approval-card time is ≤ 60 s on Linux and macOS and ≤ 3 min on Windows. These
   targets need decision 2; record the measured time against each. Progress:
 
 ### C3 — Approval in the app
 
-- [ ] A redeemed pairing creates an enrollment awaiting approval, which serves nothing and holds no assignment.
+- [x] A redeemed pairing creates an enrollment awaiting approval, which serves nothing and holds no assignment.
   The machine reports its hostname, OS, architecture, CLI version and the folder the command ran in (its canonical
-  path, as `--root` records one today); the control plane adds the request's country. Progress:
-- [ ] The drawer, when open, shows the approval card. Otherwise the request appears at the top of Settings →
-  Machines, and the machine prints the app link to it. Progress:
+  path, as `--root` records one today); the control plane adds the request's country. Progress: done
+  (`approval_requested_at`, `machine_json`; the verifier refuses a waiting machine everything but its doorbell and
+  its own pairing read).
+- [x] The drawer, when open, shows the approval card. Otherwise the request appears at the top of Settings →
+  Machines, and the machine prints the app link to it. Progress: done; e2e flow 15 covers both.
 - [ ] **Approve** sets the name, makes that folder the machine's one root and assigns it as the first workspace,
   and the machine starts serving it on its next ring. When the folder is the home directory or the filesystem root,
   the card says so in one line before the person approves. **Deny**, or 15 minutes without an answer, revokes it:
-  the machine exits 78 with one line saying why, and the service does not restart into it. Progress:
+  the machine exits 78 with one line saying why, and the service does not restart into it. Progress: done; the
+  approval assigns the folder as a workspace named after it; e2e flow 15 covers approve and deny, and the
+  connector and CLI tests cover expiry.
 - [ ] Only the person who minted the code can approve it. Another member of the organization never sees the
-  request. Progress:
+  request. Progress: done (`ownedPairing`; D1 test "only the person who minted a code sees or answers it").
 
 ### C4 — The app follows the machine live
 
-- [ ] Verify what today's machines list does when a machine enrolls, goes online, goes offline, is paused or is
-  removed while the app is open, and record it here. Progress:
-- [ ] The drawer moves through "Waiting for the command → Installing on <name> → Waiting for your approval →
+- [x] Verify what today's machines list does when a machine enrolls, goes online, goes offline, is paused or is
+  removed while the app is open, and record it here. Progress: before this work only the placement events
+  (`placementsChanged`, `cloudWorkspaceChanged`, `streamGap`) refreshed it, and no event named a machine, so the list
+  changed only on the person's own action or the next reload.
+- [x] The drawer moves through "Waiting for the command → Installing on <name> → Waiting for your approval →
   Connected → Ready" with no button. The machine reports install progress against its pairing code before it
-  enrolls. Progress:
+  enrolls. Progress: done (`POST /api/claxedo/host/pairings/progress` from the connect script).
 - [ ] Settings → Machines, the Where chip and Projects reflect a machine enrolling, coming online, going offline,
   being paused and being removed within 2 s, through one app-facing event beside the placement events, not
-  through polling. Progress:
+  through polling. Progress: `machine.changed`, sent to each organization room of the owner on a pairing's moves,
+  on an acquire, on a beat that changes what the machine serves, and on every owner-side change; the app's
+  `machinesChanged` refreshes the machines, the pairings and the account catalog. A machine that goes away without
+  a last beat (a crash, a lost network) shows offline at the next read, after its lease lapses, not within 2 s.
 
 ### C5 — Projects on a connected machine, as on this computer
 

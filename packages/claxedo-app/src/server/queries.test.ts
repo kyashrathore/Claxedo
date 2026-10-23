@@ -75,3 +75,12 @@ test("an event after a cache's first read answered reads it once", async () => {
   expect(list.data()?.map((row) => row.status)).toEqual(["failed"])
   list.unsubscribe()
 })
+
+test("a machine notice refreshes the machines, the pairings under them and the account catalog's reachability, and nothing a session owns", () => {
+  const server = "https://worker.test"
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const keys = [queryKeys.machines(server), queryKeys.pairing(server, "pair_1"), queryKeys.pairingRequests(server), queryKeys.accountCatalog(server), queryKeys.sharedSessions(server), queryKeys.usageAll(server)]
+  for (const queryKey of keys) queryClient.setQueryData(queryKey, [])
+  void invalidateFor(queryClient, server, { type: "machinesChanged" }, false)
+  expect(keys.map((queryKey) => queryClient.getQueryState(queryKey)?.isInvalidated)).toEqual([true, true, true, true, false, false])
+})
