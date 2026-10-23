@@ -22,12 +22,15 @@ test("a catalog probe for a draft that names its model asks Claude Code with tha
 test("disposing the transport retires a model probe still waiting on Claude Code, so no probe outlives its owner", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "claude-probe-"))
   const probes: ScriptedProcess<unknown>[] = []
+  let spawned = () => {}
+  const firstSpawn = new Promise<"spawned">((resolve) => { spawned = () => resolve("spawned") })
   const services = {
     clock: { now: Date.now, setTimeout, clearTimeout }, firstPartyMcp: () => undefined,
     log: { debug() {}, info() {}, warn() {}, error() {} },
     spawn: async () => {
       const silent = new ScriptedProcess<unknown>(() => {})
       probes.push(silent)
+      spawned()
       return silent.owned()
     },
   } satisfies Partial<HarnessServices>
@@ -35,7 +38,8 @@ test("disposing the transport retires a model probe still waiting on Claude Code
     userConfigRoot: path.join(root, "owner"), env: {} })
   try {
     const listing = transport.config.options({ draft: draft({ directory: root }) }, "probe").then(() => undefined, (error: unknown) => error)
-    while (probes.length === 0) await new Promise((resolve) => setTimeout(resolve, 5))
+    const first = await Promise.race([firstSpawn, listing])
+    expect(first, `the listing settled before Claude Code was spawned: ${String(first)}`).toBe("spawned")
 
     await transport.dispose()
 
