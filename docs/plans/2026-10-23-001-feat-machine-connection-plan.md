@@ -84,8 +84,8 @@ why it was or was not built:
 
 | | Verdict |
 |---|---|
-| W3 | Built and proven on the hosted stack run locally; the control-plane side is not deployed to staging |
-| W1 | Built and proven on one box; the LAN latency gain is not measured |
+| W3 | Built; proven on staging (`ecaee99e66`) with a machine built from dev `e36efd45` |
+| W1 | Built; proven against staging from one box, where the direct route answers in milliseconds; the desktop app end to end and a real two-machine LAN are not measured |
 | W2 | Not built as written: most of it already holds, and what is left is small; reshaped below |
 | W4 | Cloud path built for every `claxedo connect` machine; LAN path built: a machine its owner's desktop reaches spends through the desktop's broker. Both proven on the hosted stack run locally; plan refresh and a deploy remain |
 | W5 | `claxedo doctor`, the service's PATH and Pi's Windows bash built; installers need a Windows box |
@@ -119,8 +119,12 @@ required, switchable off per machine). The web app is not covered until W7.
   HTTP and terminal sockets went direct (established TCP connections to the alias rose while the direct terminal
   was open), a token refreshed away was refused on the direct route within 13 ms, a cut LAN port fell back to the
   relay in 22 ms and came back on a recheck, and a pause closed a direct terminal in 32 ms and refused reads until
-  the resume, 116 ms later. Not measured: the latency gain, which needs a relay that is not on the same box, and a
-  real two-machine LAN or tailnet, macOS, Windows, IPv6 and the signed Electron renderer.
+  the resume, 116 ms later. On staging (2026-10-23, dev `e36efd45`, machine and client on one Linux box in IAD, the
+  route on a private alias address, the client pinning the key the connection named): reads 2–4 ms, a terminal
+  created in 11–20 ms after the first request (600 ms, the one authority check), its first frame 8 ms after the
+  socket opened, keystroke echo 3–6 ms where the relay's was 81–159 ms (p50 83 ms); a wrong token was refused 401.
+  Not measured: the desktop app using the route end to end, a real two-machine LAN or tailnet, macOS, Windows, IPv6
+  and the signed Electron renderer.
 - [x] A per-machine switch turns the private listener off. Progress: `claxedo connect --direct on|off`, saved, on by
   default; off, nothing listens and the connection names no routes (proven live).
 
@@ -193,12 +197,11 @@ Decision 1 accepted the bound: revoked within about a second, a minute at worst.
   - after the owner revoked the share, the colleague's next read was refused 52–69 ms after the revoke; after the
     colleague was removed from the organization, 57–70 ms;
   - a pause was heard in 24–46 ms and a resume in 30–50 ms, with the process running throughout.
-  On staging (`claxedo-64bf4618d99a`, without this control-plane side) the same machine asked on every request
-  (30 calls for 10 terminals), as an older control plane gives no `grantTtlMs`; first-terminal mint to prompt was
-  1.25 s p50 and a second terminal 0.61 s, from IAD. A build from just before the pause reached the direct route
-  (712b47f), driven the same way, kept a paused machine's direct terminal open and answered its reads; this
-  branch closes it in 32 ms. Deploying the control-plane side to staging was blocked: the
-  GitHub token in the agent's environment cannot dispatch workflows (403) and the deploy secrets are not there.
+  On staging (`ecaee99e66`, 2026-10-23), a machine built from dev `e36efd45` checked once per connection token:
+  six mints with two terminals each, opened and closed, cost six checks for 24 requests; over the direct route six
+  terminals under one token cost one. First-terminal mint to prompt was 1.23 s p50 (0.86–2.35 s) and a second
+  terminal 0.35 s, from IAD; the older control plane (`claxedo-64bf4618d99a`) gave no `grantTtlMs`, so the same
+  machine asked on every request (30 calls for 10 terminals).
 
 A pause no longer stops a `claxedo connect` machine: it withdraws serving, so its relay tunnels and its direct route
 (W1) close at once, keeps beating, says so once, and serves again when a beat finds it resumed. One started while
@@ -206,6 +209,12 @@ paused waits instead of exiting with a decision its service manager would not re
 `claxedo doctor` report the pause. The control plane admits a paused machine to its doorbell, which carries only
 rings, so a resume reaches it at once: on the hosted stack run locally a running machine served again 34 ms after the
 resume and one restarted while paused 130 ms after it, where staging, without this, took the next beat (22.3 s).
+On staging (`ecaee99e66`, machine from dev `e36efd45`): the machine logged the pause 0.48 s after the owner's request
+and its direct terminal closed then; direct reads answered 503 `machine_paused`, `POST /connection` 409 by 0.86 s,
+and the relay refused the old token 403, with the process running. It logged the resume 0.63 s after the request,
+served direct reads at 0.65 s, minted a connection at 1.0 s and opened a relay terminal at 1.8 s. Restarted while
+paused, it retried acquire about every 20 s with its doorbell held, and served 2.3 s after the resume (a relay
+terminal at 5.5 s).
 
 ### W4 — The owner's accounts on connected machines
 
