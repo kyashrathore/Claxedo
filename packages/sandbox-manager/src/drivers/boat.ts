@@ -8,7 +8,7 @@ import {
   type SandboxTarget,
   type SandboxResource,
 } from "../contract"
-import { SandboxHostGoneError, SandboxRuntimeBootError, runtimeBootDiagnostic } from "../lease-failure"
+import { SandboxHostGoneError, SandboxImageDownloadError, SandboxRuntimeBootError, runtimeBootDiagnostic } from "../lease-failure"
 import { workspaceRuntimeBootEnv, workspaceRuntimeBootSecrets, type WorkspaceRuntimeControlEnv } from "../runtime-env"
 import { envFile, shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
@@ -22,7 +22,9 @@ import {
   CONTAINER_START_TIMEOUT_SECONDS,
   DEFAULT_CONTAINER_NAME,
   holdingBootLock,
+  IMAGE_DOWNLOAD_INTERRUPTED,
   IMAGE_PREPARATION_TIMEOUT_SECONDS,
+  KEPT_IMAGE_SKIPPED,
   machineBootScripts,
   REGISTRY_PASSWORD_PATH,
   RUNTIME_ENV_PATH,
@@ -368,8 +370,13 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     let booted: string | undefined
     try {
       const prepared = await execOrThrow(sandboxId, scripts.prepare, "runtime image preparation", { timeoutSeconds: IMAGE_PREPARATION_TIMEOUT_SECONDS, secrets })
+        .catch((error: unknown) => {
+          throw error instanceof BoatDriverError && error.message.includes(IMAGE_DOWNLOAD_INTERRUPTED) ? new SandboxImageDownloadError(error.message) : error
+        })
       booted = bootedImage(prepared.stdout)
       if (!booted) throw new BoatDriverError(`Boat ${sandboxId} runtime image preparation named no image it booted`)
+      const skipped = keepPreviousImage ? prepared.stderr.split("\n").find((line) => line.startsWith(KEPT_IMAGE_SKIPPED)) : undefined
+      if (skipped) console.warn("A Boat wake took the deployment's image instead of the one the machine last booted", { sandboxId, workspaceId: input.workspaceId, found: skipped.slice(KEPT_IMAGE_SKIPPED.length).trim() })
       try {
         await execOrThrow(sandboxId, scripts.start, "container start", { timeoutSeconds: CONTAINER_START_TIMEOUT_SECONDS, secrets })
       } catch (error) {
