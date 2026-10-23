@@ -201,6 +201,30 @@ const treesFunctions = [
  * recreated after a stop that was not this driver's; then it removes the
  * image if a seed left it. A failure there leaves nothing serving.
  */
+/**
+ * `docker pull` that goes on after the connection under it breaks. Docker ends
+ * a pull at the first reset and keeps none of a layer that was still
+ * downloading, but keeps every layer it finished, so pulling again continues
+ * from those. Boat's link to ghcr resets mid-pull (2 of 8 staging updates on
+ * 22 October, `failed to copy: read tcp …: connection reset by peer`). A pull
+ * is run again only after such a transport failure and only while each run
+ * finishes a layer none before it did, so it ends; any other failure, and a
+ * run that finished nothing new, fails with the pull's own output.
+ */
+/** The last line a preparation prints when its pull gave up on a registry link that kept breaking. */
+export const IMAGE_DOWNLOAD_INTERRUPTED = "image_download_interrupted"
+
+/** Leads the line a boot that could keep the machine's last image prints when it takes the named one instead, with what it found. */
+export const KEPT_IMAGE_SKIPPED = "kept_image_skipped:"
+
+const PULL_RESUMING = `pull_resuming() { finished=$(mktemp) && while :; do `
+  + `if output=$(docker pull "$1" 2>&1); then rm -f "$finished"; return 0; fi; `
+  + `case "$output" in *"connection reset by peer"*|*"unexpected EOF"*|*"i/o timeout"*|*"TLS handshake timeout"*) ;; *) printf '%s\\n' "$output" >&2; rm -f "$finished"; return 1 ;; esac; `
+  + `before=$(wc -l < "$finished"); `
+  + `{ cat "$finished"; printf '%s\\n' "$output" | sed -n -e 's/^\\([0-9a-f]\\{12\\}\\): Download complete$/\\1/p' -e 's/^\\([0-9a-f]\\{12\\}\\): Pull complete$/\\1/p'; } | sort -u > "$finished.next" && mv "$finished.next" "$finished"; `
+  + `[ "$(wc -l < "$finished")" -gt "$before" ] || { printf '%s\\n' "$output" ${IMAGE_DOWNLOAD_INTERRUPTED} >&2; rm -f "$finished"; return 1; }; `
+  + `done; }`
+
 export function machineBootScripts(boot: MachineBoot): { prepare: string; start: string } {
   const named = shell(boot.image)
   const trees = `"$(trees_of ${named})"`
@@ -252,10 +276,11 @@ export function machineBootScripts(boot: MachineBoot): { prepare: string; start:
     + `&& sudo mv "$stub/${IMAGE_ENV_FILE}" "$stub/${STUB_IMAGE_ARCHIVE}" ${trees}/ && rm -rf "$stub"`
   // Trees an earlier start marked complete hold what a person or a harness
   // changed since, so a seed missing only its stub or env builds those alone.
-  const seedNamed = `{ docker image inspect ${named} >/dev/null 2>&1 || docker pull ${named} >/dev/null; } `
+  const seedNamed = `{ docker image inspect ${named} >/dev/null 2>&1 || pull_resuming ${named}; } `
     + `&& { [ -f ${trees}/${IMAGE_TREES_COMPLETE_MARKER} ] || { ${seedTrees}; }; } && ${seedStub}`
   // The machine's last boot is the image its stub, which Boat's resume loads again, stands for.
   const keepPrevious = `previous=$(${stubLabel}) && [ -n "$previous" ] && seeded "$(trees_of "$previous")" && served "$(trees_of "$previous")"`
+  const keptImageSkipped = `echo "${KEPT_IMAGE_SKIPPED} stub=\${previous:-none} seeded=$(seeded "$(trees_of "$previous")" && echo yes || echo no) version=$(cat "$(trees_of "$previous")/${VERSION_FILE}" 2>/dev/null || echo none)" >&2`
   // Run by the start once the runtime container is the booted image's stub's:
   // until then it may be one of the image itself (an earlier driver ran the
   // image), and any other container of the image is a leftover, such as a seed
@@ -275,9 +300,10 @@ export function machineBootScripts(boot: MachineBoot): { prepare: string; start:
         + `rc=$?; rm -f ${boot.staged.password}; (exit $rc); }`]
       : []),
     treesFunctions,
+    PULL_RESUMING,
     `booted=${named}`,
     `if ! seeded ${trees}; then `
-      + (boot.keepPreviousImage ? `if ${keepPrevious}; then booted=$previous; else ${seedNamed}; fi` : seedNamed)
+      + (boot.keepPreviousImage ? `if ${keepPrevious}; then booted=$previous; else ${keptImageSkipped}; ${seedNamed}; fi` : seedNamed)
       + `; fi`,
     `{ [ "$(${stubLabel})" = "$booted" ] || docker load -i "$(trees_of "$booted")/${STUB_IMAGE_ARCHIVE}" >/dev/null; }`,
     `sudo find "$(pwd)/${PERSISTENT_ROOT}" -mindepth 1 -maxdepth 1 -name 'image-*' ! -path "$(trees_of "$booted")" -exec rm -rf {} +`,

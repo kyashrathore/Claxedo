@@ -27,6 +27,29 @@ export class SandboxRuntimeBootError extends Error implements SandboxRuntimeBoot
   }
 }
 
+/**
+ * A driver throws this shape when the image a start pulls did not finish
+ * downloading because the registry link kept breaking. Nothing the machine
+ * served has changed, so an update that fails this way leaves the workspace
+ * serving its image.
+ */
+export type SandboxImageDownloadFailure = { imageDownloadFailed: true; message: string }
+
+export function isSandboxImageDownloadFailure(err: unknown): err is SandboxImageDownloadFailure {
+  return err instanceof Error && "imageDownloadFailed" in err && err.imageDownloadFailed === true
+}
+
+export class SandboxImageDownloadError extends Error implements SandboxImageDownloadFailure {
+  readonly imageDownloadFailed = true as const
+  constructor(reason: string) {
+    super(reason)
+    this.name = "SandboxImageDownloadError"
+  }
+}
+
+/** The answer to a person's update whose image download kept breaking; the lease keeps the provider's own text. */
+export const SANDBOX_UPDATE_DOWNLOAD_INTERRUPTED = "update_download_interrupted"
+
 export { isSandboxCheckpointUnusableCause, sandboxCheckpointUnusableCauses, type SandboxCheckpointUnusableCause }
 
 /**
@@ -287,6 +310,7 @@ export const SANDBOX_RETRY_CAP_EXCEEDED = "runtime_retry_cap_exceeded"
 const CODED_REASONS: ReadonlyMap<string, string> = new Map([
   [SANDBOX_RUNTIME_UNHEALTHY, "The workspace machine stopped answering."],
   [SANDBOX_RETRY_CAP_EXCEEDED, "Several tries in a row failed; try again later."],
+  [SANDBOX_UPDATE_DOWNLOAD_INTERRUPTED, "The update couldn't finish downloading; your workspace is still running. Try again."],
 ])
 
 function firstLine(text: string) {

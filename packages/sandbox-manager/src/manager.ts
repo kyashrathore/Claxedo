@@ -21,11 +21,13 @@ import { sweepSandboxes } from "./garbage-collect"
 import {
   isSandboxCheckpointUnusable,
   isSandboxHostGone,
+  isSandboxImageDownloadFailure,
   isSandboxProviderKeyRefused,
   isSandboxProviderRateLimited,
   isSandboxRuntimeBootFailure,
   isSandboxStartRefusal,
   SANDBOX_RETRY_CAP_EXCEEDED,
+  SANDBOX_UPDATE_DOWNLOAD_INTERRUPTED,
   sandboxCheckpointUnusableError,
   sandboxHostGoneError,
   sandboxLeaseEndedUnderStart,
@@ -297,7 +299,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         // reason: answered ready, it would read as the update having run.
         if (managerInput.updateImage) {
           console.warn("A workspace's update to the deployment's image failed; it keeps serving its image", { workspaceId, epoch: lease.epoch, error })
-          return { status: "unavailable", error, epoch: lease.epoch, homeRegion }
+          return { status: "unavailable", error: isSandboxImageDownloadFailure(err) ? SANDBOX_UPDATE_DOWNLOAD_INTERRUPTED : error, epoch: lease.epoch, homeRegion }
         }
         if (updated) {
           const resolved = await leaseTarget(updated)

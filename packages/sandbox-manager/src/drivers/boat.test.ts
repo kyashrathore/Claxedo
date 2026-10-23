@@ -5,7 +5,7 @@ import path from "node:path"
 import { describe, expect, test, vi } from "vitest"
 import { createBoatSandboxDriver, formatBoatRuntimeTemplate, parseBoatRuntimeTemplate, type BoatFetch } from "./boat"
 import { boatTemplateResetCommand } from "./boat-machine"
-import { createSandboxManager, isSandboxHostGone, isSandboxProviderKeyRefused, isSandboxProviderRateLimited, isSandboxRuntimeBootFailure, sandboxRuntimeBootFailure, type SandboxDriverEnsureInput } from ".."
+import { createSandboxManager, isSandboxHostGone, isSandboxProviderKeyRefused, isSandboxProviderRateLimited, isSandboxRuntimeBootFailure, SANDBOX_UPDATE_DOWNLOAD_INTERRUPTED, sandboxRuntimeBootFailure, sandboxStartFailureReason, type SandboxDriverEnsureInput } from ".."
 import { createMemoryLeaseStore, sandboxLease } from "../stores/memory"
 import { MINIMUM_SERVED_WORKSPACE_RUNTIME_VERSION } from "../runtime-version"
 import { preparedImageOutput } from "./boat-preparation.test-support"
@@ -61,7 +61,7 @@ const PENDING_STATES = new Set(["init", "provisioning", "provisioned", "cloning"
  * first ready one. Records every call so tests can assert on it; `options` is
  * read at each call, so a test changes the sandbox mid-flight.
  */
-function fakeBoat(options: { states?: string[]; startingRefusals?: number; hostUrl?: string; failHealthOnce?: boolean; failingStderr?: string; containerState?: string; hostPublishFailures?: string[]; keptImage?: string } = {}) {
+function fakeBoat(options: { states?: string[]; startingRefusals?: number; hostUrl?: string; failHealthOnce?: boolean; failingStderr?: string; containerState?: string; hostPublishFailures?: string[]; keptImage?: string; prepareStderr?: string; prepareFails?: boolean } = {}) {
   const calls: Call[] = []
   const states = options.states ?? ["ready"]
   let stateIdx = 0
@@ -113,7 +113,8 @@ function fakeBoat(options: { states?: string[]; startingRefusals?: number; hostU
       }
       if (command.startsWith("host url")) return json(commandFinished({ stdout: `${hostUrl}\n` }))
       if (command.includes("docker info")) {
-        return json(commandFinished({ stdout: options.keptImage && command.includes("previous=") ? `${options.keptImage}\n` : preparedImageOutput(command) }))
+        if (options.prepareFails) return json(commandFinished({ stderr: options.prepareStderr ?? "", exitCode: 1 }))
+        return json(commandFinished({ stdout: options.keptImage && command.includes("previous=") ? `${options.keptImage}\n` : preparedImageOutput(command), stderr: options.prepareStderr ?? "" }))
       }
       const publishFailure = isHostCommand(command) ? options.hostPublishFailures?.shift() : undefined
       if (publishFailure) return json(commandFinished({ stderr: publishFailure, exitCode: 1 }))
@@ -198,6 +199,13 @@ type Vm = {
   bootLockHeld?: boolean
   /** Files a boot that never finished staged, written long before this boot. */
   staleStaged?: string[]
+  /**
+   * What each pull does in turn, past which a pull completes: `reset <n>` ends
+   * with a connection reset once the image's first n of four layers are
+   * downloaded, as Docker reports them, and `refused` is the registry
+   * refusing the reference.
+   */
+  pulls?: string[]
   /** Run in the fixture an earlier run left, as a later start on the same VM. */
   dir?: string
 }
@@ -227,6 +235,7 @@ function vmFixture(vm: Vm) {
       writeFileSync(path.join(dir, file), "secret")
       utimesSync(path.join(dir, file), new Date(Date.now() - 31 * 60_000), new Date(Date.now() - 31 * 60_000))
     }
+    writeFileSync(path.join(dir, "pull-outcomes"), (vm.pulls ?? []).join("\n"))
     writeFileSync(recreations, (vm.recreatedBeforeRun ?? []).join("\n"))
     writeFileSync(imageContainers, (vm.imageContainers ?? []).map((id) => `${id}\n`).join(""))
     if (vm.existingUsesImage) writeFileSync(slotUsesImage, "")
@@ -276,7 +285,12 @@ function vmFixture(vm: Vm) {
       `for last; do :; done`,
       `case "$1" in`,
       `  info) n=$(($(cat ${dir}/info 2>/dev/null || echo 0) + 1)); echo $n > ${dir}/info; [ $n -gt ${vm.daemonUpAfter ?? 0} ] ;;`,
-      `  pull) touch ${images}/image ;;`,
+      `  pull) n=$(($(cat ${dir}/pulls 2>/dev/null || echo 0) + 1)); echo $n > ${dir}/pulls; outcome=$(sed -n "\${n}p" ${dir}/pull-outcomes 2>/dev/null)`,
+      `    case "$outcome" in`,
+      `      refused) echo 'Error response from daemon: manifest unknown' >&2; exit 1 ;;`,
+      `      reset*) for layer in $(seq 1 \${outcome#reset }); do echo "00000000000$layer: Download complete"; done; echo 'failed to copy: read tcp [2001:db8::1]:40000->[2001:db8::2]:443: read: connection reset by peer' >&2; exit 1 ;;`,
+      `    esac`,
+      `    for layer in 1 2 3 4; do echo "00000000000$layer: Download complete"; done; touch ${images}/image ;;`,
       `  rmi) if [ -s ${imageContainers} ] || [ -f ${slotUsesImage} ]; then echo 'conflict: unable to delete (must be forced) - container is using its referenced image' >&2; exit 1; fi; rm ${images}/image ;;`,
       `  ps) cat ${imageContainers} ;;`,
       `  image) case "$last" in`,
@@ -572,7 +586,7 @@ describe("boat sandbox driver", () => {
     expect(run?.body.timeoutSeconds).toBe(120)
     const prepare = boat.calls.find((c) => c.path.endsWith("/commands") && c.body.command.includes("docker info"))
     expect(prepare?.body.timeoutSeconds).toBe(600)
-    expect(prepare?.body.command).toContain(`booted='ghcr.io/test/sandbox:1' && if ! seeded "$(trees_of 'ghcr.io/test/sandbox:1')"; then { docker image inspect 'ghcr.io/test/sandbox:1' >/dev/null 2>&1 || docker pull 'ghcr.io/test/sandbox:1'`)
+    expect(prepare?.body.command).toContain(`booted='ghcr.io/test/sandbox:1' && if ! seeded "$(trees_of 'ghcr.io/test/sandbox:1')"; then { docker image inspect 'ghcr.io/test/sandbox:1' >/dev/null 2>&1 || pull_resuming 'ghcr.io/test/sandbox:1'`)
     expect(prepare?.body.command).not.toContain("previous=")
     expect(prepare?.body.command).toContain("sudo rm -rf")
     expect(prepare?.body.command).toContain("sudo mkdir -p")
@@ -689,6 +703,30 @@ describe("boat sandbox driver", () => {
     }
     expect(root).toContainEqual(expect.stringMatching(/^drwxrwxrwt.* 0(?:\/| +)0 .* \.\/tmp\/?$/))
     expect(existsSync(path.join(run.dir, "claxedo-persistent", "workspace"))).toBe(false)
+  })
+
+  onVm("a pull that a connection reset cuts goes on from the layers it finished, and the boot completes", async () => {
+    const run = runStartCommand(await startCommands(), { pulls: ["reset 2", "reset 3"] })
+    expect(run.prepared).toBe(0)
+    expect(run.started).toBe(0)
+    expect(run.calls.filter((call) => call.startsWith("pull "))).toHaveLength(3)
+    expect(run.image()).toBe(IMAGE)
+  })
+
+  onVm("a pull the registry refuses fails the boot at once with the registry's answer", async () => {
+    const run = runStartCommand(await startCommands(), { pulls: ["refused"] })
+    expect(run.prepared).not.toBe(0)
+    expect(run.calls.filter((call) => call.startsWith("pull "))).toHaveLength(1)
+    expect(run.stderr).toContain("manifest unknown")
+    expect(run.stderr).not.toContain("image_download_interrupted")
+  })
+
+  onVm("a pull whose run after a reset finishes no layer the earlier ones had not stops with the reset", async () => {
+    const run = runStartCommand(await startCommands(), { pulls: ["reset 2", "reset 2"] })
+    expect(run.prepared).not.toBe(0)
+    expect(run.calls.filter((call) => call.startsWith("pull "))).toHaveLength(2)
+    expect(run.stderr).toContain("connection reset by peer")
+    expect(run.stderr.trim().split("\n").pop()).toBe("image_download_interrupted")
   })
 
   onVm("a sandbox that booted before the trees existed has a persistent root only root may write into, and the seed lands there all the same", async () => {
@@ -841,6 +879,7 @@ describe("boat sandbox driver", () => {
     const run = runStartCommand(await resumeCommands(), { existingImage: previous, seededImages: [previous], stubLoaded: previous, seededRuntimeVersion: "0.5.1" })
     expect(run.started).toBe(0)
     expect(run.booted).toBe(IMAGE)
+    expect(run.stderr).toContain(`kept_image_skipped: stub=${previous} seeded=yes version=0.5.1`)
     expect(run.calls).toContain(`pull ${IMAGE}`)
     expect(run.image()).toBe(IMAGE)
     expect(existsSync(run.trees(previous))).toBe(false)
@@ -876,6 +915,44 @@ describe("boat sandbox driver", () => {
     expect(await updated.ensure("ws1", { homeRegion: "eu", updateImage: true })).toMatchObject({ status: "ready", labels: { image: IMAGE } })
     expect(await updated.target("ws1")).not.toHaveProperty("imageOutdated")
     expect(boat.calls.filter((call) => call.path === "/sandboxes" && call.method === "POST")).toHaveLength(1)
+  })
+
+  test("a Restart to update whose image download kept breaking answers that in one line a person can act on, and the workspace keeps serving", async () => {
+    const store = createMemoryLeaseStore()
+    const boat = fakeBoat()
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const manager = (image: string) => createSandboxManager({
+      leaseStore: store,
+      driver: createBoatSandboxDriver({ apiKey: "k", image, fetchImpl: boat.fetchImpl, healthIntervalMs: 0 }),
+      onEgressUnenforced: () => {},
+    })
+    await manager("ghcr.io/test/sandbox:0").ensure("ws1", { homeRegion: "eu" })
+    boat.options.prepareFails = true
+    boat.options.prepareStderr = "failed to copy: read tcp [2001:db8::1]:40000->[2001:db8::2]:443: read: connection reset by peer\nimage_download_interrupted\n"
+
+    const answer = await manager(IMAGE).ensure("ws1", { homeRegion: "eu", updateImage: true })
+    expect(answer).toMatchObject({ status: "unavailable", error: SANDBOX_UPDATE_DOWNLOAD_INTERRUPTED })
+    expect(sandboxStartFailureReason(SANDBOX_UPDATE_DOWNLOAD_INTERRUPTED)).toBe("The update couldn't finish downloading; your workspace is still running. Try again.")
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("update to the deployment's image failed"), expect.objectContaining({ error: expect.stringContaining("connection reset by peer") }))
+    expect(await manager(IMAGE).target("ws1")).toMatchObject({ status: "ready", imageOutdated: true })
+    warn.mockRestore()
+  })
+
+  test("a wake that could have kept the machine's image but took the deployment's says what it found", async () => {
+    const store = createMemoryLeaseStore()
+    const boat = fakeBoat()
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const manager = (image: string) => createSandboxManager({
+      leaseStore: store,
+      driver: createBoatSandboxDriver({ apiKey: "k", image, fetchImpl: boat.fetchImpl, healthIntervalMs: 0 }),
+      onEgressUnenforced: () => {},
+    })
+    await manager("ghcr.io/test/sandbox:0").ensure("ws1", { homeRegion: "eu" })
+    boat.options.prepareStderr = "kept_image_skipped: stub=ghcr.io/test/sandbox:0 seeded=no version=none\n"
+
+    expect(await manager(IMAGE).ensure("ws1", { homeRegion: "eu" })).toMatchObject({ status: "ready", labels: { image: IMAGE } })
+    expect(warn).toHaveBeenCalledWith("A Boat wake took the deployment's image instead of the one the machine last booted", expect.objectContaining({ found: "stub=ghcr.io/test/sandbox:0 seeded=no version=none" }))
+    warn.mockRestore()
   })
 
   onVm("a start that finds this image's container, which a stop keeps and Boat creates again stopped, only starts it", async () => {
