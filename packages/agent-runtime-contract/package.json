@@ -1,6 +1,6 @@
 {
   "name": "@claxedo/agent-runtime-contract",
-  "version": "0.10.1",
+  "version": "0.10.2",
   "type": "module",
   "description": "Dependency-free canonical contracts for Claxedo agent sessions, content, execution, errors, and events",
   "license": "MIT",

@@ -140,7 +140,7 @@ Root runtime value exports:
 `isPtyStreamSocket`, `ptyAccessRefusalResponse`, `ptyStreamAccess`, 
 `createRuntimeCredentialIssuer`, `createWorkspaceHost`,
 `createWorkspaceRuntimeApp`, `createWorkspaceRuntimeJwtManagementAuth`, `embeddedWorkspaceRuntimeExposure`,
-`firstPartyMcpServerFor`, `isLoopbackHostname`,
+`firstPartyMcpServerFor`, `installedTerminalAgents`, `isLoopbackHostname`,
 `loadWorkspaceRuntimeManagementVerificationKey`, `loopbackWorkspaceRuntimeExposure`,
 `normalizeRuntimeSnapshot`, `privateNetworkDevUnsafeWorkspaceRuntimeExposure`,
 `privateNetworkWorkspaceRuntimeExposure`, `relayWorkspaceRuntimeExposure`,
@@ -165,6 +165,9 @@ runtime itself mints per session:
 - `runtimeCredentialWorkspaceId` reads the workspace id claim from a token
   without verifying it, so a process hosting several runtimes can pick which
   runtime's verifier to call.
+
+`installedTerminalAgents` names the agent CLIs (Claude Code, Codex, Cursor) a
+terminal on this machine can start, read off what is installed.
 
 Relay host helpers are intentionally exposed from
 `@claxedo/workspace-runtime/relay`, not the package root:
