@@ -229,8 +229,9 @@ describe("claxedo doctor", () => {
   test("git missing from PATH fails, and the agent CLIs the runtime would find on PATH are named", async () => {
     const bin = await fs.mkdtemp(path.join(os.tmpdir(), "doctor-bin-"))
     try {
-      const executable = (name: string) => (process.platform === "win32" ? `${name}.cmd` : name)
-      for (const name of ["codex", "cursor-agent"]) await fs.writeFile(path.join(bin, executable(name)), "#!/bin/sh\n", { mode: 0o755 })
+      // On Windows a `codex.cmd` is npm's launcher shim, which counts only with the native binary installed beside it.
+      const executables = process.platform === "win32" ? ["codex.exe", "cursor-agent.cmd"] : ["codex", "cursor-agent"]
+      for (const name of executables) await fs.writeFile(path.join(bin, name), "#!/bin/sh\n", { mode: 0o755 })
       const { deps: doctorDeps } = deps({ state: enrolled(), files: { [UNIT]: systemdUnitWithPath }, commands: { ...runningSystemd, "git --version": { code: -1, stdout: "" } } })
       const checks = await doctorChecks({ ...doctorDeps, env: { PATH: bin }, home: path.join(bin, "home") })
       expect(checks).toContainEqual({ level: "fail", line: "git is not on PATH, so this machine cannot clone repositories or make worktrees" })
