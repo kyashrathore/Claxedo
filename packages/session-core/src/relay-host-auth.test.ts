@@ -4,6 +4,7 @@ import { Hono } from "hono"
 import { SignJWT, exportJWK, exportSPKI, generateKeyPair } from "jose"
 import { deriveRelayHostKid, mintRelayHostToken, mintRuntimeAccessToken, relayHostTokenAudience, relayHostTokenIssuer, type RelayKey } from "@claxedo/workspace-relay"
 import { createServer } from "node:http"
+import { sessionAccessContext } from "./session-request-context"
 import {
   createRelayHostAuthMiddleware,
   createRelayHostTokenVerifier,
@@ -1115,6 +1116,16 @@ describe("a Runtime Access Token presented without the relay", () => {
     expect(await res.json()).toEqual({ actorId: "actor_1", workspaceId: "ws_1" })
     expect(harness.asked).toEqual(["jti_1"])
     expect(harness.auditEvents.map((event) => event.action)).toEqual(["runtime_access_token.accepted"])
+  })
+
+  test("names the token itself as the authority a request descends from, so the answers it is granted are reused under it", async () => {
+    const harness = await directApp()
+    harness.app.get("/authority", (c) => c.json(sessionAccessContext(c).authority ?? null))
+    const token = await mintRuntimeAccessToken(tokenInput, harness.controlPlaneKey.privateKey, "EdDSA")
+
+    const res = await harness.app.request("http://localhost/authority", { headers: { authorization: `Bearer ${token}` } })
+
+    expect(await res.json()).toMatchObject({ workspaceId: "ws_1", parentTokenId: "jti_1" })
   })
 
   test("refuses a token the control plane revoked, without serving the route", async () => {
