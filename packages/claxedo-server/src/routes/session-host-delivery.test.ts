@@ -294,7 +294,7 @@ describe("/turn-execution", () => {
       scope: "session", session_id: root, role: "editor", host_id: VM_HOST, routing_id: "route_1", actor_id: plane.owner.principal!.actorId, purpose: "turn-execution",
     })
     const jti = String(decodeJwt(access!.runtimeAccessToken).jti)
-    expect(await plane.store.runtimeAccessTokenActive({ jti, workspaceId: WORKSPACE_ID, hostId: VM_HOST })).toEqual({ active: true })
+    expect(await plane.store.runtimeAccessTokenActive({ jti, workspaceId: WORKSPACE_ID, hostId: VM_HOST })).toEqual({ active: true, expiresAt: expect.any(Number) })
   })
 
   test("a call that asks starts a machine that is not running as the workspace's owner and answers at once that this call started it, when to ask again, and, joining that start, how long it has run", async () => {

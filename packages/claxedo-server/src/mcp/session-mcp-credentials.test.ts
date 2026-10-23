@@ -101,7 +101,7 @@ describe("the first-party MCP credential of a session served by its own host", (
     const token = decodeJwt(bearer)
     expect(token).toMatchObject({ aud: "workspace-relay", host_id: VM_HOST, role: "editor", actor_id: plane.owner.principal!.actorId })
     expect(token.session_id).toBeUndefined()
-    expect(await plane.store.runtimeAccessTokenActive({ jti: String(token.jti), workspaceId: WORKSPACE_ID, hostId: VM_HOST })).toEqual({ active: true })
+    expect(await plane.store.runtimeAccessTokenActive({ jti: String(token.jti), workspaceId: WORKSPACE_ID, hostId: VM_HOST })).toEqual({ active: true, expiresAt: expect.any(Number) })
     const elsewhere = await client.callTool({ name: "sessions_list", arguments: { workspace: "ws_elsewhere" } })
     expect(JSON.parse((elsewhere.content as Array<{ text: string }>)[0].text)).toEqual({
       workspaces: [{ workspace: "ws_elsewhere", unavailable: `Session ${ROOT} reaches workspace ${WORKSPACE_ID}, not ws_elsewhere` }],
@@ -119,7 +119,7 @@ describe("the first-party MCP credential of a session served by its own host", (
     expect(calls.map((call) => call.path.split("?")[0])).toEqual([`/workspaces/${WORKSPACE_ID}/session/${ROOT}/message`])
     const token = decodeJwt(calls[0]?.authorization?.replace(/^Bearer /, "") ?? "")
     expect(token).toMatchObject({ aud: "workspace-relay", host_id: sessionHostId(ROOT), session_id: ROOT, role: "editor", actor_id: plane.owner.principal!.actorId })
-    expect(await plane.store.runtimeAccessTokenActive({ jti: String(token.jti), workspaceId: WORKSPACE_ID, hostId: sessionHostId(ROOT) })).toEqual({ active: true })
+    expect(await plane.store.runtimeAccessTokenActive({ jti: String(token.jti), workspaceId: WORKSPACE_ID, hostId: sessionHostId(ROOT) })).toEqual({ active: true, expiresAt: expect.any(Number) })
   })
 
   test("a later turn's bearer calls tools with no MCP session, over the machine and own-host tokens the session already holds", async () => {
@@ -178,7 +178,7 @@ describe("the first-party MCP credential of a session served by its own host", (
     await expect(plane.store.recordOwnerRuntimeAccessToken(plane.owner.principal!.actorId, record("rat_mcp_vm", VM))).rejects.toThrow()
     await expect(plane.store.recordOwnerRuntimeAccessToken(plane.owner.principal!.actorId, record("rat_mcp_host", ROOT, sessionHostId(ROOT)))).rejects.toThrow()
     await plane.store.recordOwnerRuntimeAccessToken(plane.owner.principal!.actorId, record("rat_mcp_owner", ROOT))
-    expect(await plane.store.runtimeAccessTokenActive({ jti: "rat_mcp_owner", workspaceId: WORKSPACE_ID, hostId: VM_HOST })).toEqual({ active: true })
+    expect(await plane.store.runtimeAccessTokenActive({ jti: "rat_mcp_owner", workspaceId: WORKSPACE_ID, hostId: VM_HOST })).toEqual({ active: true, expiresAt: expect.any(Number) })
   })
 
   test("the owner's session-host token is recorded only for the workspace owner, for that live session's own host", async () => {
@@ -190,6 +190,6 @@ describe("the first-party MCP credential of a session served by its own host", (
     await expect(plane.store.recordSessionMcpSessionHostAccessToken(owner, record("rat_mcph_machine", ROOT, VM_HOST))).rejects.toThrow()
     await expect(plane.store.recordSessionMcpSessionHostAccessToken(owner, record("rat_mcph_other", ROOT, sessionHostId(OTHER)))).rejects.toThrow()
     await plane.store.recordSessionMcpSessionHostAccessToken(owner, record("rat_mcph_owner", ROOT))
-    expect(await plane.store.runtimeAccessTokenActive({ jti: "rat_mcph_owner", workspaceId: WORKSPACE_ID, hostId: sessionHostId(ROOT) })).toEqual({ active: true })
+    expect(await plane.store.runtimeAccessTokenActive({ jti: "rat_mcph_owner", workspaceId: WORKSPACE_ID, hostId: sessionHostId(ROOT) })).toEqual({ active: true, expiresAt: expect.any(Number) })
   })
 })
