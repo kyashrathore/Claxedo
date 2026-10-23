@@ -46,7 +46,7 @@ Open, for the owner (each blocks only its own workstream):
 | Keystroke echo through the relay | ~0.2–0.4 s (estimated from the relay's 180–205 ms host leg plus the edge) |
 | Same request over a LAN, for comparison | ~1–10 ms |
 | Connector stop | 0.75–1.7 s, 2.9 s with a terminal open |
-| CLI install from npm | 2–3 min on Linux and macOS; 29 min on Windows (cause not isolated) |
+| CLI install from npm | 2–3 min on Linux and macOS; 15 min cold, 11 min warm on a 2-vCPU Windows Server with Defender on (unpacking each file) |
 
 Every byte between the app and a connected machine goes through the relay (`@claxedo/workspace-relay`, one Durable
 Object room per workspace). A room is placed once, when it is created, and for a machine that is the machine's own
@@ -376,7 +376,13 @@ renewal on the beat, and Pi spending a binding. The LAN path is built as above. 
   installs the Claude Agent SDK's 230 MB binary (850a3a1d; 574 MB packed). On Linux an install takes 70 s cold, 41 s
   of it npm resolving the tree, and an update rewrites the whole tree (`npm install -g`, 79 s for an unchanged
   version). `packages/cli/scripts/measure-install.mjs` times each phase; the CI job that runs it on Windows waits on
-  the owner, since GitHub refuses workflow changes from the agent. Not measured on Windows yet.
+  the owner, since GitHub refuses workflow changes from the agent. On Windows Server 2025 (t3.large, 2 vCPU, Node 24,
+  npm 11.19, Defender real-time on), 2026-10-23: 0.2.1 installs in 896 s cold and 680 s from a warm cache, 671 s of
+  it `reify:unpack` and 192 s `idealTree`; the packed 0.2.2 in 850 s and 664 s. Defender's `MsMpEng` spent about
+  2,300 CPU seconds per install against node's few hundred, and npm logged each tarball's fetch at about 500 s
+  because the fetch streams into extraction. 250 MB fewer bytes but 800 fewer files saved 5%, so the cost is per
+  file written. Not yet run: the same install with a Defender exclusion on the install folder (adding one was
+  refused to the agent as a security-setting change), which would confirm the cause by A/B.
 
 ### W6 — Relay placement
 
