@@ -137,7 +137,8 @@ stamped at load, the runtime sends no CORS headers, Chromium's Local Network Acc
 pinning is possible only in main (`setCertificateVerifyProc`), and the repository has no certificate library.
 Built in that shape: the direct route lives in the daemon, which reaches the LAN address over Node TLS pinning the
 listener's own key, so the renderer keeps talking to loopback; with W3 a terminal reuses the machine's authority
-answer, and the direct admission asks the control plane once per token per 10 s.
+answer over the direct route as over the relay (six direct terminals cost one control-plane check where they cost
+twelve), and the direct admission asks the control plane once per token per 10 s.
 
 ### W2 — One connection per workspace
 
