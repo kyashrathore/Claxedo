@@ -170,7 +170,7 @@ and only then run the affected e2e flows at merge.
 
 - [ ] Time and screen-record today's journey from **Connect a machine…** to a first session's first output, on
   fresh Ubuntu 24.04, macOS and Windows boxes against staging, through the published CLI. Each step is timed
-  separately: install, invite, connect, first folder, first output. Progress:
+  separately: install, invite, connect, first folder, first output. Progress: blocked here: it needs fresh Ubuntu, macOS and Windows boxes against staging.
 - [ ] The 29-minute Windows install is reproduced from npm and explained (`npm install --timing --loglevel http`,
   with and without a Defender exclusion on the prefix), or shown not to recur from the registry. Moved from W5.
   Progress:
@@ -198,12 +198,14 @@ No second computer, no token file, no roots typed on a laptop.
 
 ### C2 — Install in one step, on every OS, quickly
 
-- [ ] `connect` reuses an installed CLI whose version the control plane accepts, else installs as `install.sh` does
+- [x] `connect` reuses an installed CLI whose version the control plane accepts, else installs as `install.sh` does
   today; it prints numbered steps and one line per failure. `install.sh` is that script's install half, not a
-  second copy. Progress:
+  second copy. Progress: done; `install.sh` is the one script, served with the plane's URL and its accepted version
+  (`MINIMUM_CONNECT_CLI_VERSION`) set at its top.
 - [ ] `connect.ps1` installs on Windows without admin: Node 24 if missing (checksum verified), the CLI with install
   scripts off, the runtime's setup, Git for Windows found or named as the one missing prerequisite. Proven on a
-  fresh Windows 11 and Windows Server 2025 from npm. Moved from W5. Progress:
+  fresh Windows 11 and Windows Server 2025 from npm. Moved from W5. Progress: `install.ps1` written and served as
+  `connect.ps1`; it parses under PowerShell 7. Not yet run on Windows: no Windows box was available.
 - [x] Measure what the connector loads to enroll and serve against what each harness loads, and report the install
   time and size each option of decision 2 would give, before building one. Progress: measured on Linux x64 against
   `@claxedo/cli@0.2.1`: the full install is 568 packages, 823.7 MB, 82.4 s cold; harness code is 772.3 MB of it, and
@@ -212,7 +214,8 @@ No second computer, no token file, no roots typed on a laptop.
   202.0 MB in 40.2 s. First-use fetches: OpenCode 64.2 s, Pi 14.5 s, Claude 9.4 s, Cursor 2.5 s. Decision 2 is still
   the owner's; the full install stays.
 - [ ] On a fresh box, the paste-to-approval-card time is ≤ 60 s on Linux and macOS and ≤ 3 min on Windows. These
-  targets need decision 2; record the measured time against each. Progress:
+  targets need decision 2; record the measured time against each. Progress: blocked on decision 2 and on fresh
+  Linux, macOS and Windows boxes against staging.
 
 ### C3 — Approval in the app
 
