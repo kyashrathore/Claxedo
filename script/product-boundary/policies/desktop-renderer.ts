@@ -571,7 +571,11 @@ export const desktopRenderer: Policy = {
   // folder on another machine through the route `claxedo host assign` uses
   // (owner: the app's server adapter, `server/machine-projects.ts`). They add
   // no package edge.
-  ceilings: { modules: 1565, packages: 37 },
+  // The adapter's freshness table, which the first read with a lifetime of its
+  // own cites at the read: whether a connected machine still holds a checkout
+  // (owner: the app's server adapter, `server/freshness.ts`, read by
+  // `server/folders.ts`). It adds no package edge.
+  ceilings: { modules: 1566, packages: 37 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
