@@ -214,7 +214,10 @@ No second computer, no token file, no roots typed on a laptop.
 - [ ] `connect.ps1` installs on Windows without admin: Node 24 if missing (checksum verified), the CLI with install
   scripts off, the runtime's setup, Git for Windows found or named as the one missing prerequisite. Proven on a
   fresh Windows 11 and Windows Server 2025 from npm. Moved from W5. Progress: `install.ps1` written and served as
-  `connect.ps1`; it parses under PowerShell 7. Not yet run on Windows: no Windows box was available.
+  `connect.ps1`; it parses under PowerShell 7. On a fresh Windows Server 2025 box (2026-10-24, as Administrator,
+  from local packs of 0.2.2) it installed Node with its checksum, named a missing Git for Windows in one line, then
+  installed and enrolled in one run, after two fixes (the Node folder's parent; npm's output in the returned path).
+  Not yet run without admin or on Windows 11.
 - [x] Measure what the connector loads to enroll and serve against what each harness loads, and report the install
   time and size each option of decision 2 would give, before building one. Progress: measured on Linux x64 against
   `@claxedo/cli@0.2.1`: the full install is 568 packages, 823.7 MB, 82.4 s cold; harness code is 772.3 MB of it, and

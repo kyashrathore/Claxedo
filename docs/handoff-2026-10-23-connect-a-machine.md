@@ -86,8 +86,9 @@ Run every command with Node 24 and bun 1.3.14 on `PATH`.
 ## Not proven, or open
 
 - **C0 and the definition of done:** need fresh Ubuntu, macOS and Windows boxes against staging.
-- **Windows:** `connect.ps1` installing without admin, the paste-to-approval time, and the 29-minute install (left
-  as asked; dev's measurements are under C0).
+- **Windows:** `connect.ps1` installing without admin (the run below was as Administrator; creating a standard user
+  on the box was refused to the agent), the task starting at a real logon, and the paste-to-approval time, which
+  needs this branch's Worker on staging.
 - **Lingering** is tested against a fake `loginctl` only.
 - **SSH (C9)** ran live under xvfb against a local sshd, not on macOS or Windows. It has no committed e2e flow: the
   harness runs no sshd, and Playwright's Electron launch forces a password store a signed Linux desktop refuses.
@@ -101,12 +102,46 @@ Run every command with Node 24 and bun 1.3.14 on `PATH`.
 - **Re-pairing a machine connected to another control plane** has no test of its own.
 - **Accessibility:** the Create project dialog's select options sit under an `aria-hidden` portal, so screen readers
   and role queries cannot reach them; keyboard selection works.
-- **Windows `unit (windows, harness-2)`** still hangs on dev before the Claude probe spawns. See the earlier
-  handoff.
+- **Pi on Windows:** "stopping a Pi turn mid-bash kills the command's process" (`harness/src/conformance/pi.test.ts`,
+  a real-CLI suite Windows CI skips) fails three runs of three on Windows Server 2025: the command's background
+  `sleep` outlives the Stop. Likely from dev's 4818d444db, which lets a process a Pi command leaves running outlive
+  the command on Windows. `docs/release/windows-real-cli-suites.md` makes this suite a Windows release gate.
 - **The e2e harness's default ports (46100–46199, `packages/harness/e2e/harness/ports.ts`) sit inside Linux's
   ephemeral range (32768–60999).** With the server suite running beside it, two signed tests failed in setup with
   `EADDRINUSE` on 127.0.0.1:46104 and :46102, then passed alone. Moving the default below 32768 means finding
   everywhere the app's e2e build reads `PORT_RANGE`.
+
+## Windows run on the merged tree (2026-10-24)
+
+The branch merged with dev's Windows work (dev's 1cf863c0 and this branch's fix of the same harness-2 hang: the
+branch's is kept), on Windows Server 2025:
+
+- **Full suite**, as `script/cbx-ci-windows.ps1`'s unit lane runs it (`build:packages`, `test:opencode-node`, then
+  `bun turbo test --concurrency=1 --continue` with the real-CLI suites on), on a c7i.2xlarge: 2 h 2 min. Every
+  package passed but:
+  - desktop: `readSshTarget` joined `~` with a `/` (fixed in `ssh.ts`), and the local-server closure walk read
+    files encoded, 9.0 s against bun's 5 s timeout (fixed);
+  - host-serving: the two clone tests read README.md as CRLF under Git for Windows' `core.autocrlf=true` (the
+    fixture now commits `* -text`);
+  - harness: the Pi stop test above; server: the documents backend's "direct writer races the archive claim"
+    failed with `EPERM` (one run of three alone); channels: the Chat SDK smoke test ran past 5 s cold and passes
+    alone in 1–6 s. These three predate the branch.
+  - workspace-runtime: `real-spawn.test.ts`'s neighbor terminal never echoed `echo neighbor-%OS%`, because OpenSSH
+    sets `SHELL` to PowerShell and the PTY prefers `SHELL` to `COMSPEC`; with `SHELL` unset it passes two runs of
+    two, as do the Pi native routes the failure had kept from running. A rig effect, not a defect.
+  - The CLI's 38 skips are the `install.sh` and `install.ps1` tests, which need a POSIX shell or pwsh.
+- **`connect.ps1` on a fresh box** (t3.large, no Node, no Git, Defender on), with the merged tree's packed 0.2.2 and
+  a staging invitation:
+  - It failed before installing anything: `Install-Node` moved Node into a folder whose parent no step had made
+    (fixed). It then installed Node v24.22.1 in 49 s and named Git for Windows as missing, in one line.
+  - After an 18-minute npm install it could not run the CLI: npm's summary line went into `Install-Cli`'s return
+    value (fixed, with a test under pwsh that fails without the fix).
+  - Fixed, it installed and enrolled in one run (1,105 s, npm 18 min of it), registered `ClaxedoConnect` and said
+    it would start at the next logon. Run again with the CLI installed, it reused 0.2.2 and enrolled in 9 s.
+  - The task's own wrapper served (owner accounts delivered), assign answered in 3.3 s, a terminal opened and
+    answered 0.6 s after its socket, and a revoke made the wrapper exit 78 within 2 s and disabled the task.
+  - Staging runs dev's Worker, so the machine report (C6) answered 404 and the invitation's name lost to the
+    hostname, as expected there.
 
 ## Working rules this stretch taught
 
