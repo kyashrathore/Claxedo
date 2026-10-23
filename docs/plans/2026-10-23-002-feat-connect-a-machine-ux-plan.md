@@ -309,8 +309,14 @@ takes over [Remote machine connection](./2026-09-14-003-feat-connect-implementat
 - [x] Offline reads "Offline · last seen <time>", with the most likely cause when the machine reported one before
   going away. Progress: the list row and Details read "Offline · last seen … · Claxedo was stopped there" (e2e flow
   15, web and phone).
-- [ ] Pasting the command on a machine that is enrolled, removed or reset offers to connect it again (it asks once
-  when it can ask, and says what it replaces), so nobody needs `--reset`. Progress:
+- [x] Pasting the command on a machine that is enrolled, removed or reset offers to connect it again (it asks once
+  when it can ask, and says what it replaces), so nobody needs `--reset`. Progress: `pair()` in
+  `packages/cli/src/connect/pair.ts`. A machine connected to the code's person asks to share the folder the command
+  runs in and never enrolls again; one its owner removed, or one connected to another control plane, says so, asks
+  "Connect this machine again?" once and replaces its state only on yes (its service stays and serves the new
+  connection); a reset machine has no state and pairs as new. Proven by the CLI's pair tests, the connector's pairing
+  tests and the D1 test "a connected machine's code asks to share another folder"; the other-control-plane branch
+  has no test of its own.
 - [ ] Every line the connect flow prints, in the app and on the machine, is one short line (root AGENTS.md).
   Progress:
 
