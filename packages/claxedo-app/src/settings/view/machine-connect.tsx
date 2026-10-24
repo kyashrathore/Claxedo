@@ -1,15 +1,18 @@
-import { createEffect, createSignal, Match, Show, Switch } from "solid-js"
+import { createEffect, createSignal, For, Match, Show, Switch, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useErrorCopy, useTranslator } from "@/i18n"
 import { useSecondClock } from "@/lib/clock"
+import { desktopBridge } from "@/lib/desktop-bridge"
 import { useServer, type MintedPairing, type Pairing } from "@/server"
-import { Button, Drawer, Tabs, useDialog } from "@/ui"
-import { settingsDictionary } from "../i18n"
+import { Button, Drawer, SegmentedControl, SegmentedControlItem, Tabs, useDialog } from "@/ui"
+import { settingsDictionary, type SettingsKey } from "../i18n"
 import { codeExpired, codeTimeLeft, createConnectCode, guessedPlatform, stageLineKey, stageLineValues, type CommandPlatform } from "../pairing"
+import { readSshBridge } from "../ssh-bridge"
 import { CommandLine } from "./command-line"
 import { PairingRequestCard } from "./pairing-request"
 import { ServerConnect } from "./server-connect"
 import { SshMachineConnect } from "./machine-ssh"
+import "./settings.css"
 
 function CommandTabs(props: { readonly minted: MintedPairing }) {
   const t = useTranslator(settingsDictionary)
@@ -98,19 +101,72 @@ function PairingCode() {
   )
 }
 
+type ConnectWay = "paste" | "ssh" | "server"
+
+const WAY_LABELS = {
+  paste: "settings.machines.connect.way.paste",
+  ssh: "settings.machines.connect.way.ssh",
+  server: "settings.machines.connect.way.server",
+} as const satisfies Record<ConnectWay, SettingsKey>
+
+const isConnectWay = (value: string): value is ConnectWay => Object.hasOwn(WAY_LABELS, value)
+
+function WayPanel(props: { readonly way: ConnectWay; readonly chosen: ConnectWay; readonly opened: ReadonlySet<ConnectWay>; readonly children: JSX.Element }) {
+  const t = useTranslator(settingsDictionary)
+  return (
+    <section class="settings-connect-way" hidden={props.chosen !== props.way} aria-label={t(WAY_LABELS[props.way])}>
+      <Show when={props.opened.has(props.way)}>{props.children}</Show>
+    </section>
+  )
+}
+
+function ConnectWays() {
+  const t = useTranslator(settingsDictionary)
+  const ssh = readSshBridge()
+  const ways: readonly ConnectWay[] = ssh ? ["paste", "ssh", "server"] : ["paste", "server"]
+  const [chosen, setChosen] = createSignal<ConnectWay>("paste")
+  const [opened, setOpened] = createSignal<ReadonlySet<ConnectWay>>(new Set(["paste"]))
+  const choose = (way: ConnectWay) => {
+    setChosen(way)
+    setOpened((current) => new Set([...current, way]))
+  }
+  return (
+    <>
+      <SegmentedControl class="segmented-control-v2--fit" aria-label={t("settings.machines.connect.how")} value={chosen()} onChange={(value) => value !== null && isConnectWay(value) && choose(value)}>
+        <For each={ways}>{(way) => <SegmentedControlItem value={way}>{t(WAY_LABELS[way])}</SegmentedControlItem>}</For>
+      </SegmentedControl>
+      <WayPanel way="paste" chosen={chosen()} opened={opened()}>
+        <p class="settings-row-description">{t("settings.machines.connect.description")}</p>
+        <PairingCode />
+      </WayPanel>
+      <Show when={ssh}>
+        {(bridge) => (
+          <WayPanel way="ssh" chosen={chosen()} opened={opened()}>
+            <SshMachineConnect bridge={bridge()} />
+          </WayPanel>
+        )}
+      </Show>
+      <WayPanel way="server" chosen={chosen()} opened={opened()}>
+        <ServerConnect />
+      </WayPanel>
+    </>
+  )
+}
+
 export function ConnectMachineDrawer() {
   const t = useTranslator(settingsDictionary)
   const server = useServer()
   const dialog = useDialog()
+  const signedIn = () => server.queries.organizations.signedIn
   return (
-    <Drawer title={t("settings.machines.connect.title")} description={t("settings.machines.connect.description")} closeLabel={t("settings.machines.connect.done")} onClose={() => dialog.close()}>
+    <Drawer title={t("settings.machines.connect.title")} description={signedIn() ? t("settings.machines.connect.how") : undefined} closeLabel={t("settings.machines.connect.done")} onClose={() => dialog.close()}>
       <div class="settings-fields">
-        <Show when={server.queries.organizations.signedIn} fallback={<p class="settings-row-description">{t("settings.machines.connect.signIn")}</p>}>
-          <PairingCode />
-          <SshMachineConnect />
-          <ServerConnect />
+        <Show when={signedIn()} fallback={<p class="settings-row-description">{t("settings.machines.connect.signIn")}</p>}>
+          <ConnectWays />
         </Show>
-        <p class="settings-row-description">{t("settings.machines.connect.thisComputer")}</p>
+        <Show when={!desktopBridge()}>
+          <p class="settings-row-description">{t("settings.machines.connect.thisComputer")}</p>
+        </Show>
       </div>
     </Drawer>
   )

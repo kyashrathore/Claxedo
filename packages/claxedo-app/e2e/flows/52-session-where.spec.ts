@@ -144,7 +144,7 @@ test("52 on the web with no connected machine, the Where chip offers Connect a m
   await page.screenshot({ path: testInfo.outputPath("where-picker-no-machine.png") })
   await picker.getByRole("button", { name: "Connect a machine…" }).click()
   const drawer = page.getByRole("dialog", { name: "Connect a machine" })
-  await expect(drawer.getByRole("button", { name: "Copy invite command" })).toBeVisible()
+  await expect(drawer.getByRole("region", { name: "Paste a command" }).getByRole("button", { name: "Copy command" }).filter({ visible: true })).toBeVisible()
   await expect(page).toHaveURL(new RegExp(`${sessionRoute(workspace.id)}$`))
   await drawer.getByRole("button", { name: "Done" }).click()
   expect(await ownerDevices(signed)).toEqual([])

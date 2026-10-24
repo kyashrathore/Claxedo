@@ -90,7 +90,7 @@ test("01 first run on the web: where it runs, a connected repository, the AI, th
   await expect(page.getByText(/this machine|this computer/i).filter({ visible: true })).toHaveCount(0)
   await page.getByRole("button", { name: "Connect a machine…" }).click()
   const drawer = page.getByRole("dialog", { name: "Connect a machine" })
-  await expect(drawer.getByRole("button", { name: "Copy invite command" })).toBeVisible()
+  await expect(drawer.getByRole("region", { name: "Paste a command" }).getByRole("button", { name: "Copy command" }).filter({ visible: true })).toBeVisible()
   await drawer.getByRole("button", { name: "Done" }).click()
   await expect(drawer).toHaveCount(0)
   expect(await pageOverflows(page)).toBe(false)

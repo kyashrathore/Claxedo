@@ -38,3 +38,6 @@ export async function pairedMachine(signed: SignedStack, code: string, testInfo:
 }
 
 export const approvalCard = (scope: Locator) => scope.getByRole("region", { name: `Approve ${HOSTNAME}?` })
+
+export const connectWay = (drawer: Locator, way: "Paste a command" | "Over SSH" | "New server") =>
+  drawer.getByRole("group", { name: "How will you reach the machine?" }).getByRole("button", { name: way, exact: true })

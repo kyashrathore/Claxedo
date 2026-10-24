@@ -47,9 +47,15 @@ export function ServerConnect() {
   const command = createServerCommand(server.machines)
   const [name, setName] = createSignal("")
   const [folder, setFolder] = createSignal("")
+  const [folderRefused, setFolderRefused] = createSignal(false)
   const edit = (set: (value: string) => void) => (value: string) => {
     set(value)
+    setFolderRefused(false)
     command.edited()
+  }
+  const make = () => {
+    if (isServerFolder(folder())) void command.mint({ name: name(), folder: folder() })
+    else setFolderRefused(true)
   }
   const minting = () => command.state().kind === "minting"
   const minted = () => {
@@ -61,14 +67,13 @@ export function ServerConnect() {
     return state.kind === "failed" ? state.error : undefined
   }
   return (
-    <section class="settings-server-connect" aria-label={t("settings.machines.server.title")}>
-      <span class="settings-row-title">{t("settings.machines.server.title")}</span>
-      <span class="settings-row-description">{t("settings.machines.server.description")}</span>
-      <TextField label={t("settings.machines.server.name")} value={name()} onChange={edit(setName)} autocomplete="off" />
-      <TextField label={t("settings.machines.server.folder")} placeholder="/srv/app" value={folder()} onChange={edit(setFolder)} autocomplete="off" />
+    <>
+      <p class="settings-row-description">{t("settings.machines.server.description")}</p>
+      <TextField label={t("settings.machines.server.folder")} placeholder="/srv/app" value={folder()} onChange={edit(setFolder)} invalid={folderRefused()} error={folderRefused() ? t("settings.machines.server.folderInvalid") : undefined} autocomplete="off" spellcheck={false} />
       <span class="settings-row-description">{t("settings.machines.server.folderHint")}</span>
+      <TextField label={t("settings.machines.server.name")} placeholder={t("settings.machines.server.namePlaceholder")} value={name()} onChange={edit(setName)} autocomplete="off" />
       <div class="settings-inline">
-        <Button size="small" variant="neutral" disabled={minting() || !isServerFolder(folder())} onClick={() => void command.mint({ name: name(), folder: folder() })}>
+        <Button size="small" variant="neutral" disabled={minting()} onClick={make}>
           {t(minting() ? "settings.machines.server.minting" : "settings.machines.server.mint")}
         </Button>
       </div>
@@ -78,6 +83,6 @@ export function ServerConnect() {
       <Show when={minted()} keyed>
         {(invitation) => <ServerCommands invitation={invitation} />}
       </Show>
-    </section>
+    </>
   )
 }

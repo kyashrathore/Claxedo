@@ -309,12 +309,14 @@
   white-space: pre;
 }
 
-.settings-server-connect {
+.settings-connect-way {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding-top: 12px;
-  border-top: 1px solid var(--v2-border-border-muted);
+}
+
+.settings-connect-way[hidden] {
+  display: none;
 }
 
 .settings-command-wrapped code {
@@ -490,14 +492,6 @@
 
 .settings-pairing-answers {
   justify-content: flex-end;
-}
-
-.settings-ssh {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding-top: 12px;
-  border-top: 1px solid var(--v2-border-border-muted);
 }
 
 .settings-ssh-options {

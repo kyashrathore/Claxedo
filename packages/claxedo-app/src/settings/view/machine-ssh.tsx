@@ -1,4 +1,4 @@
-import { createSignal, For, Match, onCleanup, Show, Switch } from "solid-js"
+import { For, Match, onCleanup, Show, Switch } from "solid-js"
 import { createStore, type SetStoreFunction } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
 import { useErrorCopy, useTranslator } from "@/i18n"
@@ -6,7 +6,7 @@ import { useServer, type MintedPairing } from "@/server"
 import { Button, TextField } from "@/ui"
 import { settingsDictionary } from "../i18n"
 import { stageLineKey, stageLineValues } from "../pairing"
-import { readSshBridge, type SshBridge, type SshHostKey, type SshInstallStep, type SshTarget } from "../ssh-bridge"
+import { type SshBridge, type SshHostKey, type SshInstallStep, type SshTarget } from "../ssh-bridge"
 import { createSshConnect, sshFailureKey, sshHost, type SshConnect, type SshConnectFailure } from "../ssh-connect"
 import { PairingRequestCard } from "./pairing-request"
 
@@ -129,20 +129,12 @@ function SshConnectFlow(props: { readonly bridge: SshBridge }) {
   )
 }
 
-export function SshMachineConnect() {
+export function SshMachineConnect(props: { readonly bridge: SshBridge }) {
   const t = useTranslator(settingsDictionary)
-  const bridge = readSshBridge()
-  const [open, setOpen] = createSignal(false)
   return (
-    <Show when={bridge}>
-      {(available) => (
-        <section class="settings-ssh" aria-label={t("settings.machines.ssh.title")}>
-          <p class="settings-row-description">{t("settings.machines.ssh.intro")}</p>
-          <Show when={open()} fallback={<div class="settings-inline"><Button size="small" variant="neutral" onClick={() => setOpen(true)}>{t("settings.machines.ssh.open")}</Button></div>}>
-            <SshConnectFlow bridge={available()} />
-          </Show>
-        </section>
-      )}
-    </Show>
+    <>
+      <p class="settings-row-description">{t("settings.machines.ssh.intro")}</p>
+      <SshConnectFlow bridge={props.bridge} />
+    </>
   )
 }
