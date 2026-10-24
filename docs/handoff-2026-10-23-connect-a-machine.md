@@ -41,16 +41,19 @@ dev and staging.
 
 ## Before anyone pairs a real machine
 
-- **Publish 0.2.2.** The connect script reuses an installed CLI only at `MINIMUM_CONNECT_CLI_VERSION` (0.2.2) or
-  later and otherwise installs npm's `latest`, which is 0.2.1 and does not know `--pair`. Every proof here ran the CLI
-  from source. Publish through `claxedo-packages-release.yml` (helpers, then runtime, then cli), never by hand, and
-  not while dev is being merged into.
+- **0.2.2 is published.** `claxedo-packages-release.yml` published all ten packages from dev 17c2807bbd on
+  2026-10-24 (run 40056325061); npm's `latest` for `@claxedo/cli` is 0.2.2, which `MINIMUM_CONNECT_CLI_VERSION`
+  accepts.
 - **The control-plane schema grows.** `0001_baseline.sql` (pinned by `control-plane-schema.test.ts`) adds, to
   `host_enrollments`: `approval_requested_at`, `revoked_reason`, `machine_json`, `blocked_json`; to
   `host_invitations`: `kind` (default `'preapproved'`), `pairing_progress_json`, `pairing_request_json`,
   `pairing_decision`, `pairing_decided_at`, `pairing_workspace_id`, `first_workspace_id`; and the index
-  `host_invitations_by_pairing_code`. A deployed D1 needs these columns, by `ALTER TABLE … ADD COLUMN` or a reset as
-  staging had, before this branch's Worker serves it.
+  `host_invitations_by_pairing_code`. Staging's control-plane D1 got them on 2026-10-24 by eleven `ALTER TABLE … ADD
+  COLUMN` statements and the `CREATE INDEX`, each written as the baseline spells it and in its order, which keeps
+  every row: SQLite writes an added column into the stored `CREATE TABLE` text just after the last column, so the
+  deploy's `requireControlPlaneBaseline` admits the result as the current baseline. That was rehearsed first on the
+  live schema's own text with the deploy's check, and the deploy then admitted it. Production needs the same
+  statements before it runs this Worker.
 
 ## Decisions waiting on the owner
 
@@ -77,7 +80,7 @@ Run every command with Node 24 and bun 1.3.14 on `PATH`.
   `packages/claxedo-server`; the sandbox credential-scope sweep and `routes-are-routes.test.ts` are the two that new
   hosted routes trip.
 - **Release:** `bun run --cwd packages/claxedo-server release:packages --track all --dry-run`.
-- **Live, once 0.2.2 is published:**
+- **Live** (Windows passed on 2026-10-24; see below):
   1. On a fresh Ubuntu, macOS and Windows box, paste the drawer's command.
   2. Approve the card, then time paste → card → ready. That is C0 and the definition of done.
   3. Then run the server command from cloud-init on a new VM.
@@ -85,10 +88,16 @@ Run every command with Node 24 and bun 1.3.14 on `PATH`.
 
 ## Not proven, or open
 
-- **C0 and the definition of done:** need fresh Ubuntu, macOS and Windows boxes against staging.
-- **Windows:** `connect.ps1` installing without admin (the run below was as Administrator; creating a standard user
-  on the box was refused to the agent), the task starting at a real logon, and the paste-to-approval time, which
-  needs this branch's Worker on staging.
+- **C0 and the definition of done:** passed on Windows (below); fresh Ubuntu and macOS boxes are still to run.
+- **Windows:** `connect.ps1` installing without admin. Every run was as Administrator; creating a standard user on
+  the box was refused to the agent.
+- **A pairing code is counted from when the drawer mints it**, and the install's progress report does not extend it,
+  so a machine whose install outlasts 15 minutes is refused `pairing_expired` at redeem. The registry install took
+  3 minutes on a c7i.2xlarge; a smaller box with Defender scanning each unpacked file is unmeasured against npm.
+- **A connected machine has no harness of its own.** The connect script installs none, and the runtime launches the
+  machine's own `claude`, so a fresh machine's first look at Claude Code's models answers "Claude Code is not
+  installed or not on PATH" with the npm command. Nothing before the model picker tells the person.
+- **The approval card's "asked 2 seconds ago"** read the same 35 s later; it may not tick.
 - **Lingering** is tested against a fake `loginctl` only.
 - **SSH (C9)** ran live under xvfb against a local sshd, not on macOS or Windows. It has no committed e2e flow: the
   harness runs no sshd, and Playwright's Electron launch forces a password store a signed Linux desktop refuses.
@@ -142,6 +151,30 @@ branch's is kept), on Windows Server 2025:
     answered 0.6 s after its socket, and a revoke made the wrapper exit 78 within 2 s and disabled the task.
   - Staging runs dev's Worker, so the machine report (C6) answered 404 and the invitation's name lost to the
     hostname, as expected there.
+
+## Live end to end on staging (2026-10-24)
+
+Staging ran dev 17c2807bbd, then 270c96bcb8, with npm's 0.2.2, against a fresh Windows Server 2025 c7i.2xlarge
+(Git for Windows installed first, as the script asks; no Node; Defender on), driven through the web app signed in as
+the owner:
+
+- **Settings → Machines → Connect a machine…** minted a code; its Windows tab's command, pasted into Windows
+  PowerShell 5.1 in `C:\work\demo`, put "Installing on EC2AMAZ-8GLRGQ2…" in the drawer within a second.
+- **The first paste stopped at step 3/4:** npm refused `Invalid tag name "@" of package "@"`. With one package and no
+  `CLAXEDO_CLI_TARBALL`, `$packages` was a string and `@packages` splatted it one character at a time; every earlier
+  Windows run had set the tarball seam. Fixed in 270c96bcb8, with a registry-path test under pwsh that fails without
+  it. The run below used the served script with that fix applied; staging now serves the same code byte for byte.
+- **Paste to "Approve this machine": 170 s**, nearly all of it `@claxedo/cli@latest` (564 packages, 163 s). Node
+  v24.22.1 was already there: the first paste had installed it in 27 s.
+  The card showed the hostname, "Windows Server 2025 Datacenter · x64 · IN" and `C:\work\demo`; Approve made it
+  "Approved; waiting for EC2AMAZ-8GLRGQ2 to connect…", and the machine's row said "Its service starts when its user
+  next logs on". The paste's own process ended there: over SSH the `ClaxedoConnect` task stays Ready.
+- **At a real logon** (auto-logon, then a reboot) Administrator's console session began 77 s after the reboot, the task
+  ran, and the row turned Online and the drawer "demo on EC2AMAZ-8GLRGQ2 is ready" 2 min 2 s after it.
+- **A session from the app:** the composer's project picker offered "demo"; Claude Code's models failed until
+  `npm install -g @anthropic-ai/claude-code` (16 s) and loaded 3 s after Retry. A prompt sent with Default ran
+  `hostname; node --version; git --version; printf 'e2e ok' > hello.txt; ls -la` on the machine and answered in 8 s;
+  `C:\work\demo\hello.txt` held exactly `e2e ok`.
 
 ## Working rules this stretch taught
 
