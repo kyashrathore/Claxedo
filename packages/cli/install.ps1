@@ -155,7 +155,8 @@ function Install-Cli {
   # Install scripts stay off: tree-sitter-powershell, which OpenCode reads only
   # as .wasm, compiles in its own and would need a C++ toolchain. The one script
   # the install needs, the runtime's OpenCode patch step, runs below.
-  $packages = if ($env:CLAXEDO_CLI_TARBALL) { $env:CLAXEDO_CLI_TARBALL -split " " } else { @("@claxedo/cli@$(if ($env:CLAXEDO_CLI_VERSION) { $env:CLAXEDO_CLI_VERSION } else { "latest" })") }
+  # One package collapses an if's value to a string, and splatting a string passes each character as an argument.
+  $packages = @(if ($env:CLAXEDO_CLI_TARBALL) { $env:CLAXEDO_CLI_TARBALL -split " " } else { "@claxedo/cli@$(if ($env:CLAXEDO_CLI_VERSION) { $env:CLAXEDO_CLI_VERSION } else { "latest" })" })
   Write-Host "    installing $($packages -join ' ')"
   & npm install -g --ignore-scripts --no-fund --no-audit --loglevel=error --prefix $NpmPrefix @packages | Out-Host
   if ($LASTEXITCODE -ne 0) { Refuse "npm install of $($packages -join ' ') failed" }
